@@ -43,7 +43,11 @@ export async function supabaseRequest<T>(
     throw new SupabaseError(response.status, detail || response.statusText);
   }
   if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  const body = await response.text();
+  // PostgREST commonly returns 200/201 with an empty body when the request
+  // uses `Prefer: return=minimal`. Treat that as a successful void response.
+  if (!body.trim()) return undefined as T;
+  return JSON.parse(body) as T;
 }
 
 export function readCookie(request: Request, name: string): string | null {

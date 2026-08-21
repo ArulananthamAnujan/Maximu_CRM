@@ -47,7 +47,7 @@ export async function GET(request: Request) {
         token,
       ),
       safeRest(
-        "email_messages?select=*&order=created_at.desc&limit=300",
+        "email_messages?select=*&order=sent_at.desc.nullslast&limit=300",
         token,
       ),
       safeRest("invoices?select=*&order=issued_on.desc&limit=300", token),

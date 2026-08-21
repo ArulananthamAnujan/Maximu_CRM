@@ -76,3 +76,11 @@ test("record creation preserves branch security and exposes form failures", asyn
   assert.match(page, /setFormError\(message\)/);
   assert.match(page, /disabled=\{saving\}/);
 });
+
+test("Supabase minimal writes are accepted as successful form submissions", async () => {
+  const client = await read("server/supabase.ts");
+  const workspace = await read("app/api/crm/workspace/route.ts");
+  assert.match(client, /const body = await response\.text\(\)/);
+  assert.match(client, /if \(!body\.trim\(\)\) return undefined as T/);
+  assert.doesNotMatch(workspace, /email_messages\?select=\*&order=created_at/);
+});
