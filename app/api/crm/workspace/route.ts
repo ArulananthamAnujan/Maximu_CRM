@@ -153,6 +153,7 @@ export async function GET(request: Request) {
           target: row.target ?? "",
           stage: stage.name ?? client.current_lifecycle ?? "Enquiry",
           owner: owner.display_name ?? "",
+          ownerId: row.owner_id ?? "",
           branch: branch.name ?? "",
           branchId: row.branch_id,
           due: dateOnly(row.due_at),
@@ -681,6 +682,64 @@ export async function POST(request: Request) {
         },
         token,
       );
+      return Response.json({ ok: true });
+    }
+
+    if (action === "assign") {
+      // Reassignment is a management action: it changes who is accountable for
+      // the case and who sees it in their queue.
+      if (
+        session.identity.role !== "super_admin" &&
+        session.identity.role !== "admin"
+      )
+        throw new LiveAccessError(
+          403,
+          "Only an administrator can reassign a case.",
+        );
+      const caseId = required(body.caseId, "Case");
+      const ownerId = required(body.ownerId, "Staff member");
+      const candidates = await rest<Json[]>(
+        `profiles?select=id,display_name,level,active&id=eq.${encodeURIComponent(ownerId)}&limit=1`,
+        token,
+      );
+      const candidate = candidates[0];
+      if (!candidate)
+        throw new InputError("That staff member is not in this organisation.");
+      if (candidate.active !== true)
+        throw new InputError("That account is deactivated.");
+      if (candidate.level === "student")
+        throw new InputError("A case cannot be assigned to a portal account.");
+
+      await patchRow("cases", caseId, { owner_id: ownerId }, token);
+      await auditEvent(
+        org,
+        actor,
+        "case.reassigned",
+        "case",
+        caseId,
+        session.identity.branchId,
+        `Reassigned case to ${String(candidate.display_name ?? "a colleague")}`,
+        token,
+      );
+      // Tell the new owner, unless an administrator assigned it to themselves.
+      if (ownerId !== actor)
+        await insert(
+          "notifications",
+          {
+            id: crypto.randomUUID(),
+            organisation_id: org,
+            recipient_id: ownerId,
+            case_id: caseId,
+            kind: "case_assigned",
+            title: "A case was assigned to you",
+            body: `${session.identity.displayName} assigned you a case.`,
+          },
+          token,
+        ).catch((error) => {
+          // The assignment itself succeeded; a failed notification must not
+          // undo it, but it should not disappear either.
+          console.error("Could not notify the new case owner", error);
+        });
       return Response.json({ ok: true });
     }
 

@@ -17,13 +17,24 @@ const PROFILE = {
   active: true,
 };
 const CASE_ID = "44444444-4444-4444-8444-444444444444";
+const TARGET_STAFF = {
+  id: "55555555-5555-4555-8555-555555555555",
+  display_name: "Ravi Kumar",
+  level: "staff",
+  active: true,
+};
 
 /**
  * Supabase stand-in that records every write, so a test can assert on what the
  * route actually sent. `rpcFailure` makes move_case_lifecycle raise the way
  * PostgREST reports a raised exception.
  */
-async function startStub({ rpcFailure = null, level = "staff" } = {}) {
+async function startStub({
+  rpcFailure = null,
+  level = "staff",
+  targetOverride = null,
+} = {}) {
+  const target = targetOverride ?? TARGET_STAFF;
   const requests = [];
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://stub");
@@ -41,8 +52,13 @@ async function startStub({ rpcFailure = null, level = "staff" } = {}) {
         res.end(JSON.stringify(body));
       };
       if (url.pathname === "/auth/v1/user") return send(200, USER);
-      if (url.pathname === "/rest/v1/profiles")
+      if (url.pathname === "/rest/v1/profiles") {
+        // The route looks the assignment target up by id; the session lookup
+        // asks for the signed-in user.
+        const filter = url.searchParams.get("id") ?? "";
+        if (filter.includes(target.id)) return send(200, [target]);
         return send(200, [{ ...PROFILE, level }]);
+      }
       if (url.pathname === "/rest/v1/rpc/move_case_lifecycle") {
         if (rpcFailure)
           return send(400, { code: "22023", message: rpcFailure, hint: null });
@@ -178,4 +194,71 @@ test("a portal account cannot move a case through the pipeline", async () => {
     result.requests.some((r) => r.path.includes("move_case_lifecycle")),
     false,
   );
+});
+
+
+test("an administrator can reassign a case to another staff member", async () => {
+  const result = await post(
+    { action: "assign", caseId: CASE_ID, ownerId: TARGET_STAFF.id },
+    { level: "branch_admin" },
+  );
+  assert.equal(result.status, 200);
+  const patch = result.requests.find(
+    (r) => r.method === "PATCH" && r.path === "/rest/v1/cases",
+  );
+  assert.equal(patch.body.owner_id, TARGET_STAFF.id);
+});
+
+test("reassignment notifies the new owner", async () => {
+  const result = await post(
+    { action: "assign", caseId: CASE_ID, ownerId: TARGET_STAFF.id },
+    { level: "branch_admin" },
+  );
+  const notification = result.requests.find(
+    (r) => r.path === "/rest/v1/notifications",
+  );
+  assert.equal(notification.body.recipient_id, TARGET_STAFF.id);
+  assert.equal(notification.body.kind, "case_assigned");
+  assert.equal(notification.body.case_id, CASE_ID);
+});
+
+test("reassignment is recorded in the audit trail", async () => {
+  const result = await post(
+    { action: "assign", caseId: CASE_ID, ownerId: TARGET_STAFF.id },
+    { level: "branch_admin" },
+  );
+  const audit = result.requests.find((r) => r.path === "/rest/v1/audit_events");
+  assert.equal(audit.body.action, "case.reassigned");
+  assert.match(String(audit.body.summary), /Ravi Kumar/);
+});
+
+test("a staff account cannot reassign a case", async () => {
+  const result = await post(
+    { action: "assign", caseId: CASE_ID, ownerId: TARGET_STAFF.id },
+    { level: "staff" },
+  );
+  assert.equal(result.status, 403);
+  assert.equal(
+    result.requests.some((r) => r.method === "PATCH"),
+    false,
+  );
+});
+
+test("a case cannot be assigned to a portal account", async () => {
+  const stubTarget = { ...TARGET_STAFF, level: "student" };
+  const result = await post(
+    { action: "assign", caseId: CASE_ID, ownerId: stubTarget.id },
+    { level: "branch_admin", targetOverride: stubTarget },
+  );
+  assert.equal(result.status, 400);
+  assert.match(result.body.error, /portal account/i);
+});
+
+test("a case cannot be assigned to a deactivated account", async () => {
+  const result = await post(
+    { action: "assign", caseId: CASE_ID, ownerId: TARGET_STAFF.id },
+    { level: "branch_admin", targetOverride: { ...TARGET_STAFF, active: false } },
+  );
+  assert.equal(result.status, 400);
+  assert.match(result.body.error, /deactivated/i);
 });

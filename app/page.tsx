@@ -106,6 +106,7 @@ type CaseRecord = {
   target: string;
   stage: string;
   owner: string;
+  ownerId: string;
   branch: string;
   due: string;
   health: "healthy" | "attention" | "critical";
@@ -172,6 +173,13 @@ type WorkflowRecord = {
   active: boolean;
 };
 type AuditRecord = { id: string; text: string; at: string };
+type StaffRecord = {
+  id: string;
+  display_name: string;
+  email: string;
+  level: string;
+  active: boolean;
+};
 type LiveIdentity = {
   profileId: string;
   organisationId: string;
@@ -3032,6 +3040,9 @@ function CaseDrawer({
   edit,
   remove,
   moveStage,
+  assign,
+  staff,
+  canAssign,
 }: {
   item: CaseRecord | null;
   close: () => void;
@@ -3042,6 +3053,9 @@ function CaseDrawer({
     stage: LifecycleStage,
     reason: string,
   ) => Promise<void>;
+  assign: (record: CaseRecord, ownerId: string) => Promise<void>;
+  staff: StaffRecord[];
+  canAssign: boolean;
 }) {
   return item ? (
     <CaseDrawerBody
@@ -3050,6 +3064,9 @@ function CaseDrawer({
       edit={edit}
       remove={remove}
       moveStage={moveStage}
+      assign={assign}
+      staff={staff}
+      canAssign={canAssign}
     />
   ) : null;
 }
@@ -3060,6 +3077,9 @@ function CaseDrawerBody({
   edit,
   remove,
   moveStage,
+  assign,
+  staff,
+  canAssign,
 }: {
   item: CaseRecord;
   close: () => void;
@@ -3070,9 +3090,14 @@ function CaseDrawerBody({
     stage: LifecycleStage,
     reason: string,
   ) => Promise<void>;
+  assign: (record: CaseRecord, ownerId: string) => Promise<void>;
+  staff: StaffRecord[];
+  canAssign: boolean;
 }) {
   const [reason, setReason] = useState("");
   const [moving, setMoving] = useState<LifecycleStage | "">("");
+  const [owner, setOwner] = useState(item.ownerId);
+  const [assigning, setAssigning] = useState(false);
   const stage = item.lifecycleStage;
   const moves = allowedStageMoves(stage);
   const run = async (next: LifecycleStage) => {
@@ -3129,6 +3154,52 @@ function CaseDrawerBody({
             {item.branch || "Not set"}
           </p>
         </section>
+        {canAssign && (
+          <section className="assignPanel">
+            <span className="kicker">CASE OWNER</span>
+            <h3>{item.owner || "Unassigned"}</h3>
+            <p className="assignHint">
+              Reassign this case to another member of the team. They are
+              notified and it moves into their queue.
+            </p>
+            <div className="assignRow">
+              <select
+                value={owner}
+                onChange={(e) => setOwner(e.target.value)}
+                aria-label="Assign case to"
+              >
+                <option value="">Select a staff member</option>
+                {staff.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.display_name}
+                    {person.id === item.ownerId ? " (current owner)" : ""}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="primaryButton"
+                disabled={assigning || !owner || owner === item.ownerId}
+                onClick={async () => {
+                  setAssigning(true);
+                  try {
+                    await assign(item, owner);
+                  } finally {
+                    setAssigning(false);
+                  }
+                }}
+              >
+                <UserCog size={15} />
+                {assigning ? "Assigning…" : "Assign"}
+              </button>
+            </div>
+            {staff.length === 0 && (
+              <p className="assignHint">
+                No active staff accounts are available to assign to.
+              </p>
+            )}
+          </section>
+        )}
         <section className="lifecyclePanel">
           <span className="kicker">CASE PIPELINE</span>
           <ol className="lifecycleTrack">
@@ -3978,7 +4049,8 @@ export default function Home() {
     [audits, setAudits] = useState<AuditRecord[]>([]),
     [roles, setRoles] = useState<{ id: string; name: string; scope: string }[]>(
       [],
-    );
+    ),
+    [staff, setStaff] = useState<StaffRecord[]>([]);
   const [identity, setIdentity] = useState<LiveIdentity | null>(null),
     [sessionReady, setSessionReady] = useState(false),
     [serviceMode, setServiceMode] = useStored<ServiceMode>(
@@ -4023,6 +4095,11 @@ export default function Home() {
       setWorkflows(result.workflows || []);
       setAudits(result.audits || []);
       setRoles(result.roles || []);
+      setStaff(
+        ((result.profiles || []) as StaffRecord[]).filter(
+          (person) => person.active && person.level !== "student",
+        ),
+      );
       setActive(roleConfig[result.identity.role as AppRole].modules[0]);
     } catch (reason) {
       if (!authenticatedIdentity) setIdentity(null);
@@ -4147,6 +4224,36 @@ export default function Home() {
       URL.revokeObjectURL(url);
       say("Live data exported");
     };
+  const assignCase = async (record: CaseRecord, ownerId: string) => {
+    if (!record.dbId) {
+      say("This case could not be identified.");
+      return;
+    }
+    try {
+      const response = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "assign",
+          caseId: record.dbId,
+          ownerId,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "The case could not be reassigned.");
+      setSelected(null);
+      await loadWorkspace();
+      const owner = staff.find((person) => person.id === ownerId);
+      say(`${record.id} assigned to ${owner?.display_name || "the new owner"}`);
+    } catch (reason) {
+      say(
+        reason instanceof Error
+          ? reason.message
+          : "The case could not be reassigned.",
+      );
+    }
+  };
   const moveCaseStage = async (
     record: CaseRecord,
     stage: LifecycleStage,
@@ -4302,6 +4409,7 @@ export default function Home() {
     setTemplates([]);
     setWorkflows([]);
     setAudits([]);
+    setStaff([]);
   };
   if (!sessionReady)
     return (
@@ -4716,6 +4824,9 @@ export default function Home() {
       {role !== "client" ? (
         <CaseDrawer
           moveStage={moveCaseStage}
+          assign={assignCase}
+          staff={staff}
+          canAssign={role === "super_admin" || role === "admin"}
           item={selected}
           close={() => setSelected(null)}
           edit={editCase}

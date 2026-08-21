@@ -63,4 +63,12 @@ echo "== Case lifecycle transition rules =="
 psql_as app_user "-f ${work}/sql/05_lifecycle_rules.sql" 2>&1
 
 echo
-echo "Every count above must be 0, and every write must report 0 rows."
+echo "== Case reassignment and owner notification =="
+run 06_seed_second_staff.sql
+psql_as app_user "-f ${work}/sql/07_probe_assignment.sql" 2>&1 |
+  grep -v '^SET$\|Output format\|^INSERT\|^UPDATE'
+
+echo
+echo "Every count in the portal probes must be 0, and every portal write must"
+echo "report 0 rows. The reassignment probe must show the new owner and a"
+echo "notification visible only to them."
