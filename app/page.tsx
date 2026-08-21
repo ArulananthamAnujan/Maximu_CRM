@@ -620,8 +620,9 @@ function EmptyState({
   icon: typeof Users;
   title: string;
   copy: string;
-  action: string;
-  onAction: () => void;
+  // A read-only role sees the explanation without a call to action.
+  action?: string;
+  onAction?: () => void;
 }) {
   return (
     <div className="emptyState">
@@ -630,10 +631,12 @@ function EmptyState({
       </div>
       <h3>{title}</h3>
       <p>{copy}</p>
-      <button className="primaryButton" onClick={onAction}>
-        <Plus size={15} />
-        {action}
-      </button>
+      {action && onAction && (
+        <button className="primaryButton" onClick={onAction}>
+          <Plus size={15} />
+          {action}
+        </button>
+      )}
     </div>
   );
 }
@@ -2071,10 +2074,14 @@ function FinanceView({
   items,
   openModal,
   setItems,
+  canManage,
 }: {
   items: InvoiceRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: InvoiceRecord[]) => void;
+  // Invoices are writable only by manager level and above, so a case officer
+  // sees the ledger without controls the database would refuse.
+  canManage: boolean;
 }) {
   const total = items.reduce((s, x) => s + x.amount, 0);
   return (
@@ -2114,21 +2121,27 @@ function FinanceView({
             <span className="kicker">INVOICES</span>
             <h2>Financial records</h2>
           </div>
-          <button
-            className="primaryButton"
-            onClick={() => openModal("invoice")}
-          >
-            <Plus size={16} />
-            New invoice
-          </button>
+          {canManage && (
+            <button
+              className="primaryButton"
+              onClick={() => openModal("invoice")}
+            >
+              <Plus size={16} />
+              New invoice
+            </button>
+          )}
         </div>
         {items.length === 0 ? (
           <EmptyState
             icon={CircleDollarSign}
             title="No invoices"
-            copy="Create an invoice to start tracking fees and payments."
-            action="Create invoice"
-            onAction={() => openModal("invoice")}
+            copy={
+              canManage
+                ? "Create an invoice to start tracking fees and payments."
+                : "Invoices raised by your managers will appear here."
+            }
+            action={canManage ? "Create invoice" : undefined}
+            onAction={canManage ? () => openModal("invoice") : undefined}
           />
         ) : (
           items.map((i) => (
@@ -2138,30 +2151,36 @@ function FinanceView({
                 <span>Due {i.due || "not set"}</span>
               </div>
               <b>${i.amount.toLocaleString()}</b>
-              <button
-                className="ghostButton"
-                onClick={() =>
-                  setItems(
-                    items.map((x) =>
-                      x.id === i.id
-                        ? {
-                            ...x,
-                            status: x.status === "Paid" ? "Unpaid" : "Paid",
-                          }
-                        : x,
-                    ),
-                  )
-                }
-              >
-                {i.status === "Paid" ? "Mark unpaid" : "Record payment"}
-              </button>
-              <button
-                className="iconButton"
-                onClick={() => setItems(items.filter((x) => x.id !== i.id))}
-                aria-label="Delete invoice"
-              >
-                <Trash2 size={16} />
-              </button>
+              {canManage ? (
+                <>
+                  <button
+                    className="ghostButton"
+                    onClick={() =>
+                      setItems(
+                        items.map((x) =>
+                          x.id === i.id
+                            ? {
+                                ...x,
+                                status: x.status === "Paid" ? "Unpaid" : "Paid",
+                              }
+                            : x,
+                        ),
+                      )
+                    }
+                  >
+                    {i.status === "Paid" ? "Mark unpaid" : "Record payment"}
+                  </button>
+                  <button
+                    className="iconButton"
+                    onClick={() => setItems(items.filter((x) => x.id !== i.id))}
+                    aria-label="Delete invoice"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </>
+              ) : (
+                <Status value={i.status} />
+              )}
             </div>
           ))
         )}
@@ -2173,10 +2192,13 @@ function TemplatesView({
   items,
   openModal,
   setItems,
+  canManage,
 }: {
   items: TemplateRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: TemplateRecord[]) => void;
+  // Approved templates are writable only by manager level and above.
+  canManage: boolean;
 }) {
   return (
     <article className="panel listPanel">
@@ -2185,18 +2207,27 @@ function TemplatesView({
           <span className="kicker">APPROVED CONTENT</span>
           <h2>Templates</h2>
         </div>
-        <button className="primaryButton" onClick={() => openModal("template")}>
-          <Plus size={16} />
-          New template
-        </button>
+        {canManage && (
+          <button
+            className="primaryButton"
+            onClick={() => openModal("template")}
+          >
+            <Plus size={16} />
+            New template
+          </button>
+        )}
       </div>
       {items.length === 0 ? (
         <EmptyState
           icon={FileCheck2}
           title="No templates"
-          copy="Create reusable emails, notes and document requests."
-          action="Create template"
-          onAction={() => openModal("template")}
+          copy={
+            canManage
+              ? "Create reusable emails, notes and document requests."
+              : "Approved templates published by your managers will appear here."
+          }
+          action={canManage ? "Create template" : undefined}
+          onAction={canManage ? () => openModal("template") : undefined}
         />
       ) : (
         items.map((t) => (
@@ -2220,13 +2251,15 @@ function TemplatesView({
             >
               Copy
             </button>
-            <button
-              className="iconButton"
-              onClick={() => setItems(items.filter((x) => x.id !== t.id))}
-              aria-label="Delete template"
-            >
-              <Trash2 size={16} />
-            </button>
+            {canManage && (
+              <button
+                className="iconButton"
+                onClick={() => setItems(items.filter((x) => x.id !== t.id))}
+                aria-label="Delete template"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
           </div>
         ))
       )}
@@ -2237,48 +2270,79 @@ function WorkflowView({
   items,
   openModal,
   setItems,
+  canManage,
 }: {
   items: WorkflowRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: WorkflowRecord[]) => void;
+  canManage: boolean;
 }) {
-  void items;
-  void openModal;
-  void setItems;
-  const sections = [
-    ["Main status", "High, Medium and Low priority"],
-    ["Enquiry status", "15 configured statuses"],
-    ["Student status", "22 configured statuses"],
-    ["Application status", "Country and institution-specific statuses"],
-    ["Visa status", "Country and visa-specific statuses"],
-    ["Document checklists", "Application checklist and Visa checklist"],
-  ];
   return (
     <article className="panel listPanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">EXISTING CRM CONFIGURATION</span>
-          <h2>Statuses and document checklists</h2>
+          <span className="kicker">CASE WORKFLOWS</span>
+          <h2>Stage templates</h2>
         </div>
-        <Status value="Source: current CRM" />
+        {canManage && (
+          <button
+            className="primaryButton"
+            onClick={() => openModal("workflow")}
+          >
+            <Plus size={16} />
+            New workflow
+          </button>
+        )}
       </div>
       <p className="coverageIntro">
-        These are the existing Maximus configuration families. This build will
-        import their records from Supabase rather than inventing a replacement
-        workflow.
+        Every case also follows the fixed pipeline — enquiry, student,
+        application, visa and completed. These templates add the stages your
+        team works through inside it.
       </p>
-      {sections.map(([name, detail]) => (
-        <div className="functionalRow" key={name}>
-          <div className="workflowIcon">
-            <Workflow size={17} />
+      {items.length === 0 ? (
+        <EmptyState
+          icon={Workflow}
+          title="No workflows yet"
+          copy={
+            canManage
+              ? "Create a workflow to define the stages a case moves through."
+              : "Workflows published by your managers will appear here."
+          }
+          action={canManage ? "Create workflow" : undefined}
+          onAction={canManage ? () => openModal("workflow") : undefined}
+        />
+      ) : (
+        items.map((w) => (
+          <div className="functionalRow" key={w.id}>
+            <div className="workflowIcon">
+              <Workflow size={17} />
+            </div>
+            <div>
+              <strong>{w.name}</strong>
+              <span>
+                {w.stages.length
+                  ? w.stages.join(" → ")
+                  : "No stages configured"}
+              </span>
+            </div>
+            <Status value={w.active ? "Active" : "Inactive"} />
+            {canManage && (
+              <button
+                className="ghostButton"
+                onClick={() =>
+                  setItems(
+                    items.map((x) =>
+                      x.id === w.id ? { ...x, active: !x.active } : x,
+                    ),
+                  )
+                }
+              >
+                {w.active ? "Deactivate" : "Activate"}
+              </button>
+            )}
           </div>
-          <div>
-            <strong>{name}</strong>
-            <span>{detail}</span>
-          </div>
-          <Status value="Configurable" />
-        </div>
-      ))}
+        ))
+      )}
     </article>
   );
 }
@@ -4075,7 +4139,10 @@ export default function Home() {
       "study",
     );
   const role = identity?.role || "staff",
-    signedIn = Boolean(identity);
+    signedIn = Boolean(identity),
+    // Invoices, templates and workflows are writable only by manager level and
+    // above; the database enforces the same rule.
+    canManageFinance = role === "super_admin" || role === "admin";
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 2600);
@@ -4410,6 +4477,18 @@ export default function Home() {
         amount: changed.amount,
       });
   };
+  const syncWorkflows = (next: WorkflowRecord[]) => {
+    const changed = next.find(
+      (item) =>
+        workflows.find((previous) => previous.id === item.id)?.active !==
+        item.active,
+    );
+    setWorkflows(next);
+    if (changed)
+      void mutateRemote("workflow", "toggle", changed.id, {
+        active: changed.active,
+      });
+  };
   const syncTemplates = (next: TemplateRecord[]) => {
     const removed = templates.find(
       (item) => !next.some((candidate) => candidate.id === item.id),
@@ -4510,7 +4589,12 @@ export default function Home() {
     );
   else if (active === "finance")
     content = (
-      <FinanceView items={invoices} openModal={open} setItems={syncInvoices} />
+      <FinanceView
+        items={invoices}
+        openModal={open}
+        setItems={syncInvoices}
+        canManage={canManageFinance}
+      />
     );
   else if (active === "templates")
     content = (
@@ -4518,6 +4602,7 @@ export default function Home() {
         items={templates}
         openModal={open}
         setItems={syncTemplates}
+        canManage={canManageFinance}
       />
     );
   else if (active === "workflows")
@@ -4525,7 +4610,8 @@ export default function Home() {
       <WorkflowView
         items={workflows}
         openModal={open}
-        setItems={setWorkflows}
+        setItems={syncWorkflows}
+        canManage={canManageFinance}
       />
     );
   else if (active === "reports")

@@ -25,7 +25,8 @@ export async function POST(request: Request) {
       const rows=Array.isArray(body.rows)?body.rows.filter(isObject).slice(0,5000):[];
       if(!rows.length)throw new InputError("Import rows are required.");
       const batchId=crypto.randomUUID();
-      const normalized=rows.map((row,index)=>normalizeRow(row,index+1));
+      const branches=await branchLookup(body.branchId,session.identity.branchId,token);
+      const normalized=rows.map((row,index)=>normalizeRow(row,index+1,branches));
       const invalid=normalized.filter(row=>row.errors.length);
       await insert("import_batches",{id:batchId,organisation_id:org,source_system:optional(body.sourceSystem)||"legacy_maximus",source_file_name:optional(body.fileName),status:invalid.length?"validating":"ready",total_rows:rows.length,valid_rows:rows.length-invalid.length,invalid_rows:invalid.length,mapping:isObject(body.mapping)?body.mapping:{},started_by:session.identity.profileId,error_summary:invalid.length?`${invalid.length} rows require correction`:null},token);
       for(let offset=0;offset<normalized.length;offset+=200)await insert("import_rows",normalized.slice(offset,offset+200).map(row=>({id:crypto.randomUUID(),organisation_id:org,batch_id:batchId,row_number:row.rowNumber,source_key:row.sourceKey,raw_data:row.raw,normalized_data:row.normalized,validation_errors:row.errors,status:row.errors.length?"invalid":"valid"})),token);
@@ -46,7 +47,39 @@ export async function POST(request: Request) {
   } catch(error){return apiError(error);}
 }
 
-function normalizeRow(raw:Json,rowNumber:number){const errors:string[]=[];const first=optional(raw.first_name??raw.firstName);const last=optional(raw.last_name??raw.lastName);const email=optional(raw.email)?.toLowerCase()||null;const branch=optional(raw.branch_id??raw.branchId);if(!first)errors.push("First name is required");if(!last)errors.push("Last name is required");if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))errors.push("Email is invalid");if(!branch||!/^[0-9a-f-]{36}$/i.test(branch))errors.push("A valid branch ID is required");const date=optional(raw.date_of_birth??raw.dateOfBirth);if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(`${date}T00:00:00Z`))))errors.push("Date of birth is invalid");const sourceKey=optional(raw.crm_id??raw.crmId??raw.id);return{rowNumber,sourceKey,raw,errors,normalized:{source_key:sourceKey,crm_id:optional(raw.crm_id??raw.crmId),branch_id:branch,first_name:first,last_name:last,email,mobile:optional(raw.mobile??raw.phone),date_of_birth:date,nationality:optional(raw.nationality),current_lifecycle:optional(raw.current_lifecycle??raw.status)}};}
+type BranchLookup = { byKey: Map<string, string>; fallback: string | null };
+
+// A legacy export carries a branch name or code -- "MEL", "Melbourne" -- never
+// the Supabase UUID. Accept an id, a code or a name, and otherwise fall back to
+// the branch chosen for the whole import.
+function resolveRowBranch(raw: Json, branches: BranchLookup): string | null {
+  const explicit = optional(raw.branch_id ?? raw.branchId);
+  if (explicit && /^[0-9a-f-]{36}$/i.test(explicit)) return explicit;
+  const label = optional(raw.branch_code ?? raw.branchCode ?? raw.branch ?? raw.branch_name ?? raw.branchName) ?? explicit;
+  if (label) {
+    const matched = branches.byKey.get(label.trim().toLowerCase());
+    if (matched) return matched;
+  }
+  return branches.fallback;
+}
+
+function normalizeRow(raw:Json,rowNumber:number,branches:BranchLookup){const errors:string[]=[];const first=optional(raw.first_name??raw.firstName);const last=optional(raw.last_name??raw.lastName);const email=optional(raw.email)?.toLowerCase()||null;const branch=resolveRowBranch(raw,branches);if(!first)errors.push("First name is required");if(!last)errors.push("Last name is required");if(email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))errors.push("Email is invalid");if(!branch)errors.push("No branch matched. Add a branch_code column, or choose a default branch for this import.");const date=optional(raw.date_of_birth??raw.dateOfBirth);if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(`${date}T00:00:00Z`))))errors.push("Date of birth is invalid");const sourceKey=optional(raw.crm_id??raw.crmId??raw.id);return{rowNumber,sourceKey,raw,errors,normalized:{source_key:sourceKey,crm_id:optional(raw.crm_id??raw.crmId),branch_id:branch,first_name:first,last_name:last,email,mobile:optional(raw.mobile??raw.phone),date_of_birth:date,nationality:optional(raw.nationality),current_lifecycle:optional(raw.current_lifecycle??raw.status)}};}
+
+// Branches can be addressed by code or name, so build a lookup once per batch.
+async function branchLookup(requested: unknown, fallbackBranchId: string | null, token: string): Promise<BranchLookup> {
+  const rows = await get("branches?select=id,code,name&active=eq.true&order=name.asc", token) as Array<{id:string;code:string;name:string}>;
+  const byKey = new Map<string, string>();
+  for (const row of rows) {
+    if (row.code) byKey.set(String(row.code).trim().toLowerCase(), row.id);
+    if (row.name) byKey.set(String(row.name).trim().toLowerCase(), row.id);
+    byKey.set(String(row.id).toLowerCase(), row.id);
+  }
+  const asked = optional(requested);
+  const chosen = asked
+    ? (/^[0-9a-f-]{36}$/i.test(asked) ? asked : byKey.get(asked.toLowerCase()) ?? null)
+    : null;
+  return { byKey, fallback: chosen ?? fallbackBranchId ?? (rows.length === 1 ? rows[0].id : null) };
+}
 function requireAdmin(role:string){if(role!=="super_admin"&&role!=="admin")throw new LiveAccessError(403,"Administrator access is required.");}
 async function get(query:string,token:string){return supabaseRequest(`/rest/v1/${query}`,{method:"GET"},token);}
 async function insert(table:string,value:Json|Json[],token:string){await supabaseRequest(`/rest/v1/${table}`,{method:"POST",headers:{Prefer:"return=minimal"},body:JSON.stringify(value)},token);}

@@ -1,0 +1,230 @@
+// A minimal PostgREST stand-in over a real PostgreSQL database, covering the
+// query surface this CRM actually uses. Every request runs as the
+// `authenticated` role with auth.uid() set, so real row-level security applies.
+import { execFile } from "node:child_process";
+import http from "node:http";
+import { promisify } from "node:util";
+
+const run = promisify(execFile);
+const SOCK = process.env.PGSOCK || "/var/lib/postgresql/crm-audit/run";
+const PORT = process.env.PGPORT || "5440";
+
+const lit = (v) => (v === null || v === undefined ? "null" : `'${String(v).replace(/'/g, "''")}'`);
+const ident = (v) => `"${String(v).replace(/"/g, '""')}"`;
+
+// `asAuth` false runs as the database owner, used only for the auth endpoints
+// that Supabase itself would serve. Everything else runs as `authenticated`
+// with auth.uid() set, so row-level security is genuinely exercised.
+async function sql(text, uid, asAuth = true) {
+  const user = asAuth ? "app_user" : "postgres";
+  const prelude = asAuth
+    ? `set role authenticated; set test.uid = ${lit(uid || "")};`
+    : "";
+  const { stdout } = await run(
+    "su",
+    ["postgres", "-c",
+     `psql -h ${SOCK} -p ${PORT} -U ${user} -d postgres -tA -v ON_ERROR_STOP=1 -c ${JSON.stringify(prelude + text)}`],
+    { maxBuffer: 32 * 1024 * 1024 },
+  );
+  // The `set role` / `set test.uid` prelude echoes "SET" lines; the result is
+  // the final line.
+  // json_agg pretty-prints across lines, and the `set` prelude echoes "SET".
+  return stdout
+    .split("\n")
+    .filter((line) => line.trim() && line.trim() !== "SET")
+    .join("")
+    .trim();
+}
+
+// PostgREST knows each column's type from the schema cache; this shim looks it
+// up so an array lands as jsonb or as a real array according to the column.
+const columnTypes = new Map();
+async function typesFor(table) {
+  if (columnTypes.has(table)) return columnTypes.get(table);
+  const out = await sql(
+    `select coalesce(json_agg(json_build_object('c',column_name,'t',data_type))::text,'[]')` +
+    ` from information_schema.columns where table_schema='public' and table_name=${lit(table)}`,
+    null, false);
+  const map = new Map(JSON.parse(out || "[]").map((row) => [row.c, row.t]));
+  columnTypes.set(table, map);
+  return map;
+}
+
+// value -> SQL literal, preserving JSON/array shapes Postgres understands.
+function toSql(value, type) {
+  if (value === null || value === undefined) return "null";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) {
+    if (type === "ARRAY")
+      return lit(`{${value.map((v) => `"${String(v).replace(/"/g, '\\"')}"`).join(",")}}`);
+    return `${lit(JSON.stringify(value))}::jsonb`;
+  }
+  if (typeof value === "object") return `${lit(JSON.stringify(value))}::jsonb`;
+  return lit(value);
+}
+
+// PostgREST filter -> SQL predicate. Supports the operators this app sends.
+function predicate(column, spec) {
+  const [op, ...rest] = spec.split(".");
+  const value = rest.join(".");
+  if (op === "eq") return `${ident(column)} = ${lit(value)}`;
+  if (op === "neq") return `${ident(column)} <> ${lit(value)}`;
+  if (op === "is") return `${ident(column)} is ${value === "null" ? "null" : value}`;
+  if (op === "ilike") return `${ident(column)}::text ilike ${lit(value.replace(/\*/g, "%"))}`;
+  if (op === "in") return `${ident(column)}::text = any(${lit(value.replace(/[()]/g, "").split(",").join("|"))}::text)`;
+  if (op === "gte") return `${ident(column)} >= ${lit(value)}`;
+  if (op === "lte") return `${ident(column)} <= ${lit(value)}`;
+  throw new Error(`unsupported filter operator: ${op}`);
+}
+
+// `or=(a.ilike.*x*,b.ilike.*x*)` -> (a ilike '%x%' or b ilike '%x%')
+function orPredicate(raw) {
+  const inner = raw.replace(/^\(/, "").replace(/\)$/, "");
+  const parts = [];
+  let depth = 0, current = "";
+  for (const ch of inner) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if (ch === "," && depth === 0) { parts.push(current); current = ""; continue; }
+    current += ch;
+  }
+  if (current) parts.push(current);
+  return `(${parts.map((p) => {
+    const idx = p.indexOf(".");
+    return predicate(p.slice(0, idx), p.slice(idx + 1));
+  }).join(" or ")})`;
+}
+
+function buildWhere(params) {
+  const clauses = [];
+  for (const [key, value] of params) {
+    if (["select", "order", "limit", "offset"].includes(key)) continue;
+    if (key === "or") { clauses.push(orPredicate(value)); continue; }
+    clauses.push(predicate(key, value));
+  }
+  return clauses.length ? ` where ${clauses.join(" and ")}` : "";
+}
+
+function buildOrder(order) {
+  if (!order) return "";
+  const parts = order.split(",").map((piece) => {
+    const bits = piece.split(".");
+    const column = bits[0];
+    const dir = bits[1] === "desc" ? "desc" : "asc";
+    const nulls = bits[2] === "nullslast" ? " nulls last" : bits[2] === "nullsfirst" ? " nulls first" : "";
+    return `${ident(column)} ${dir}${nulls}`;
+  });
+  return ` order by ${parts.join(", ")}`;
+}
+
+const server = http.createServer((req, res) => {
+  const chunks = [];
+  req.on("data", (c) => chunks.push(c));
+  req.on("end", async () => {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    const url = new URL(req.url, "http://pgrest");
+    const uid = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || null;
+    const send = (status, body) => {
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(body === undefined ? "" : JSON.stringify(body));
+    };
+    try {
+      if (url.pathname === "/auth/v1/token") {
+        const { email } = JSON.parse(raw || "{}");
+        const id = await sql(`select id::text from auth.users where email = ${lit(email)}`, null, false);
+        if (!id) return send(400, { error: "invalid_grant", error_description: "Invalid login credentials" });
+        return send(200, { access_token: id, refresh_token: id, expires_in: 3600, token_type: "bearer", user: { id, email } });
+      }
+      if (url.pathname === "/auth/v1/user") {
+        if (!uid) return send(401, { message: "invalid token" });
+        const email = await sql(`select email from auth.users where id = ${lit(uid)}`, null, false);
+        if (!email) return send(401, { message: "invalid token" });
+        return send(200, { id: uid, email });
+      }
+      if (url.pathname === "/auth/v1/logout") return send(204, undefined);
+
+      if (url.pathname.startsWith("/rest/v1/rpc/")) {
+        const fn = url.pathname.replace("/rest/v1/rpc/", "");
+        const args = JSON.parse(raw || "{}");
+        const argList = Object.entries(args)
+          .map(([k, v]) => `${ident(k)} => ${toSql(v)}`).join(", ");
+        const out = await sql(
+          `select coalesce(json_agg(t)::text,'[]') from (select * from public.${ident(fn)}(${argList}) ) t`, uid);
+        const rows = JSON.parse(out || "[]");
+        // PostgREST returns a bare value for a function returning a scalar.
+        if (rows.length === 1 && Object.keys(rows[0]).length === 1 && Object.keys(rows[0])[0] === fn)
+          return send(200, rows[0][fn]);
+        return send(200, rows);
+      }
+
+      const table = url.pathname.replace("/rest/v1/", "");
+      const params = [...url.searchParams.entries()];
+      const where = buildWhere(params);
+
+      if (req.method === "GET") {
+        const select = url.searchParams.get("select") || "*";
+        const cols = select === "*" ? "*" : select.split(",").map((c) => ident(c.trim())).join(", ");
+        const limit = url.searchParams.get("limit");
+        const out = await sql(
+          `select coalesce(json_agg(t)::text,'[]') from (select ${cols} from public.${ident(table)}${where}` +
+          `${buildOrder(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""}) t`, uid);
+        return send(200, JSON.parse(out || "[]"));
+      }
+
+      if (req.method === "POST") {
+        const body = JSON.parse(raw || "{}");
+        const rows = Array.isArray(body) ? body : [body];
+        const prefer = String(req.headers.prefer || "");
+        const columns = Object.keys(rows[0]);
+        const types = await typesFor(table);
+        const values = rows
+          .map((r) => `(${columns.map((c) => toSql(r[c], types.get(c))).join(",")})`)
+          .join(",");
+        const conflict = prefer.includes("merge-duplicates") ? " on conflict do nothing" : "";
+        const statement = `insert into public.${ident(table)} (${columns.map(ident).join(",")}) values ${values}${conflict}`;
+        // PostgREST only adds RETURNING when the caller asks for the row back.
+        // That matters: RETURNING makes PostgreSQL apply the SELECT policy too.
+        if (prefer.includes("return=minimal")) {
+          await sql(statement, uid);
+          return send(201, undefined);
+        }
+        const out = await sql(
+          `with inserted as (${statement} returning *)` +
+          ` select coalesce(json_agg(inserted)::text,'[]') from inserted`, uid);
+        return send(201, JSON.parse(out || "[]"));
+      }
+
+      if (req.method === "PATCH") {
+        const body = JSON.parse(raw || "{}");
+        const patchTypes = await typesFor(table);
+        const sets = Object.entries(body)
+          .map(([k, v]) => `${ident(k)} = ${toSql(v, patchTypes.get(k))}`).join(", ");
+        const statement = `update public.${ident(table)} set ${sets}${where}`;
+        if (String(req.headers.prefer || "").includes("return=minimal")) {
+          await sql(statement, uid);
+          return send(204, undefined);
+        }
+        const out = await sql(
+          `with updated as (${statement} returning *) select coalesce(json_agg(updated)::text,'[]') from updated`, uid);
+        return send(200, JSON.parse(out || "[]"));
+      }
+
+      if (req.method === "DELETE") {
+        await sql(`delete from public.${ident(table)}${where}`, uid);
+        return send(204, undefined);
+      }
+      return send(405, { message: "method not allowed" });
+    } catch (error) {
+      const text = String(error.stderr || error.message || error);
+      if (process.env.SHIM_DEBUG)
+        console.error(`\n--- ${req.method} ${req.url}\n    uid=${uid}\n    body=${raw}\n    err=${text.split("\n").slice(0,3).join(" ")}`);
+      const match = text.match(/ERROR:\s*(.+)/);
+      const message = match ? match[1].trim() : text.trim();
+      const missing = /does not exist|schema cache/i.test(message);
+      return send(missing ? 404 : 400, { code: missing ? "PGRST202" : "P0001", message, details: null, hint: null });
+    }
+  });
+});
+
+const port = Number(process.env.SHIM_PORT || 8099);
+server.listen(port, "127.0.0.1", () => console.log(`pgrest shim on http://127.0.0.1:${port}`));

@@ -70,6 +70,18 @@ supabase db reset
 
 Copy the local Supabase URL and keys into `.env.local`.
 
+**Checking every feature.** `scripts/verify-features.sh` builds a throwaway
+PostgreSQL database, applies every migration, seeds a two-branch agency and
+drives the built Worker through the whole CRM as an owner, a branch manager, a
+case officer and a client portal account -- sign-in, enquiry intake, the case
+pipeline, assignment, tasks, appointments, documents, messages, invoices,
+templates, workflows, administration, operations, intake, legacy import and
+branch isolation. Supabase is not available locally, so
+`scripts/audit/postgrest-shim.mjs` speaks the slice of PostgREST this
+application uses and runs every request as the `authenticated` role with
+`auth.uid()` set, which means the policies are genuinely exercised rather than
+mocked. Run `npm run build` first.
+
 **Checking row-level security.** `scripts/verify-rls.sh` applies every migration
 to a throwaway PostgreSQL cluster and asserts that a client portal account
 cannot read or write another client's records, that the case lifecycle rules

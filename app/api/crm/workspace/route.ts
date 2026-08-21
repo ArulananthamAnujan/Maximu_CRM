@@ -591,6 +591,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "invoice") {
+      requireManager(session.identity.role, "raise an invoice");
       const id = crypto.randomUUID();
       const total = Number(body.amount ?? 0);
       await insert(
@@ -626,6 +627,7 @@ export async function POST(request: Request) {
     }
 
     if (action === "template") {
+      requireManager(session.identity.role, "create a template");
       const id = crypto.randomUUID();
       await insert(
         "content_templates",
@@ -818,6 +820,12 @@ export async function POST(request: Request) {
       const resource = required(body.resource, "Resource");
       const id = required(body.id, "Record id");
       const operation = required(body.operation, "Operation");
+      if (resource === "invoice")
+        requireManager(session.identity.role, "change an invoice");
+      if (resource === "template")
+        requireManager(session.identity.role, "change a template");
+      if (resource === "workflow")
+        requireManager(session.identity.role, "change a workflow");
       if (resource === "task" && operation === "toggle") {
         const completed = Boolean(body.completed);
         await patchRow(
@@ -1046,6 +1054,17 @@ function fullClientName(value?: Json): string {
     ? [value.first_name, value.last_name].filter(Boolean).join(" ")
     : "";
 }
+// invoices, content_templates and workflow_templates are all writable only by
+// manager level and above (migration 0005). Check it here so the CRM can say
+// so plainly instead of surfacing a row-level security rejection.
+function requireManager(role: string, action: string): void {
+  if (role !== "super_admin" && role !== "admin")
+    throw new LiveAccessError(
+      403,
+      `Only a manager or administrator can ${action}.`,
+    );
+}
+
 class InputError extends Error {}
 
 // PostgREST wraps a raised exception as {"code":…,"message":…}. Those messages

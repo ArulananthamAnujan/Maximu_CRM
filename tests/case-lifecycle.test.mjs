@@ -307,3 +307,49 @@ test("moving a case without the migration explains what to apply", async () => {
   assert.match(result.body.error, /0008_case_lifecycle\.sql/);
   assert.doesNotMatch(result.body.error, /schema cache/);
 });
+
+// invoices, content_templates and workflow_templates are writable only by
+// manager level and above (migration 0005). Without this guard the request
+// reached the database and came back as a row-level security rejection.
+test("a case officer is refused invoice creation with a clear reason", async () => {
+  const result = await post(
+    { action: "invoice", clientId: CASE_ID, amount: "100" },
+    { level: "staff" },
+  );
+  assert.equal(result.status, 403);
+  assert.match(result.body.error, /manager or administrator/i);
+  assert.equal(
+    result.requests.some((r) => r.path === "/rest/v1/invoices"),
+    false,
+    "the request must not reach the database",
+  );
+});
+
+test("a case officer is refused template creation with a clear reason", async () => {
+  const result = await post(
+    { action: "template", name: "T", templateType: "Email", content: "x" },
+    { level: "staff" },
+  );
+  assert.equal(result.status, 403);
+  assert.match(result.body.error, /manager or administrator/i);
+});
+
+test("a case officer cannot change an invoice, template or workflow", async () => {
+  for (const resource of ["invoice", "template", "workflow"]) {
+    const result = await post(
+      { action: "mutate", resource, operation: "delete", id: CASE_ID },
+      { level: "staff" },
+    );
+    assert.equal(result.status, 403, `${resource} should be refused`);
+  }
+});
+
+test("a manager may create an invoice", async () => {
+  const result = await post(
+    { action: "invoice", clientId: CASE_ID, amount: "100", due: "2026-12-01" },
+    { level: "branch_admin" },
+  );
+  assert.equal(result.status, 200);
+  const write = result.requests.find((r) => r.path === "/rest/v1/invoices");
+  assert.equal(write.body.total, 100);
+});
