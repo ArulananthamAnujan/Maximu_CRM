@@ -76,6 +76,12 @@ type ModuleKey =
   | "administration"
   | "integrations";
 type AppRole = "super_admin" | "admin" | "staff" | "client";
+type LifecycleStage =
+  | "enquiry"
+  | "student"
+  | "application"
+  | "visa"
+  | "completed";
 type ServiceMode = "study" | "direct_visa";
 type ModalType =
   | "case"
@@ -105,6 +111,10 @@ type CaseRecord = {
   health: "healthy" | "attention" | "critical";
   progress: number;
   status: "active" | "waiting" | "completed";
+  lifecycleStage: LifecycleStage;
+  visaExpiry: string;
+  completedAt: string;
+  reopenedAt: string;
   createdAt: string;
 };
 type TaskRecord = {
@@ -274,6 +284,41 @@ const superAdminToolGroups = [
     items: [["integrations", "Integrations", Workflow]],
   },
 ] as const;
+
+// The case pipeline. Cases move forward or back between the active stages, a
+// visa case is completed once the visa is approved, and a completed case can be
+// reopened into whichever stage the work resumes at. These rules mirror
+// public.move_case_lifecycle, which enforces them.
+const LIFECYCLE_STAGES: LifecycleStage[] = [
+  "enquiry",
+  "student",
+  "application",
+  "visa",
+  "completed",
+];
+const ACTIVE_STAGES = LIFECYCLE_STAGES.filter((stage) => stage !== "completed");
+const stageLabels: Record<LifecycleStage, string> = {
+  enquiry: "Enquiry",
+  student: "Student",
+  application: "Application",
+  visa: "Visa",
+  completed: "Completed",
+};
+const stageModule: Record<LifecycleStage, ModuleKey> = {
+  enquiry: "enquiries",
+  student: "students",
+  application: "applications",
+  visa: "visas",
+  completed: "case_complete",
+};
+function allowedStageMoves(from: LifecycleStage): LifecycleStage[] {
+  if (from === "completed") return [...ACTIVE_STAGES];
+  const moves: LifecycleStage[] = ACTIVE_STAGES.filter(
+    (stage) => stage !== from,
+  );
+  if (from === "visa") moves.push("completed");
+  return moves;
+}
 
 const roleConfig: Record<
   AppRole,
@@ -2986,13 +3031,58 @@ function CaseDrawer({
   close,
   edit,
   remove,
+  moveStage,
 }: {
   item: CaseRecord | null;
   close: () => void;
   edit: (x: CaseRecord) => void;
   remove: (id: string) => void;
+  moveStage: (
+    record: CaseRecord,
+    stage: LifecycleStage,
+    reason: string,
+  ) => Promise<void>;
 }) {
-  if (!item) return null;
+  return item ? (
+    <CaseDrawerBody
+      item={item}
+      close={close}
+      edit={edit}
+      remove={remove}
+      moveStage={moveStage}
+    />
+  ) : null;
+}
+
+function CaseDrawerBody({
+  item,
+  close,
+  edit,
+  remove,
+  moveStage,
+}: {
+  item: CaseRecord;
+  close: () => void;
+  edit: (x: CaseRecord) => void;
+  remove: (id: string) => void;
+  moveStage: (
+    record: CaseRecord,
+    stage: LifecycleStage,
+    reason: string,
+  ) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("");
+  const [moving, setMoving] = useState<LifecycleStage | "">("");
+  const stage = item.lifecycleStage;
+  const moves = allowedStageMoves(stage);
+  const run = async (next: LifecycleStage) => {
+    setMoving(next);
+    try {
+      await moveStage(item, next, reason);
+    } finally {
+      setMoving("");
+    }
+  };
   return (
     <div className="drawerBackdrop" onClick={close}>
       <aside className="caseDrawer" onClick={(e) => e.stopPropagation()}>
@@ -3038,6 +3128,91 @@ function CaseDrawer({
             Owner: {item.owner || "Unassigned"} · Branch:{" "}
             {item.branch || "Not set"}
           </p>
+        </section>
+        <section className="lifecyclePanel">
+          <span className="kicker">CASE PIPELINE</span>
+          <ol className="lifecycleTrack">
+            {LIFECYCLE_STAGES.map((step) => (
+              <li
+                key={step}
+                className={
+                  step === stage
+                    ? "current"
+                    : LIFECYCLE_STAGES.indexOf(step) <
+                        LIFECYCLE_STAGES.indexOf(stage)
+                      ? "done"
+                      : ""
+                }
+              >
+                <span>{stageLabels[step]}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="lifecycleMeta">
+            {stage === "completed"
+              ? `Completed${item.completedAt ? ` on ${item.completedAt}` : ""}. Reopen it into whichever stage the work resumes at.`
+              : `Visa expiry: ${item.visaExpiry || "not recorded"}${
+                  item.reopenedAt ? ` · reopened ${item.reopenedAt}` : ""
+                }`}
+          </p>
+          <label className="lifecycleReason">
+            Reason (optional)
+            <input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder={
+                stage === "visa"
+                  ? "e.g. Visa approved"
+                  : "e.g. Documents received"
+              }
+            />
+          </label>
+          <div className="lifecycleActions">
+            {moves.map((next) => (
+              <button
+                key={next}
+                type="button"
+                className={
+                  next === "completed"
+                    ? "primaryButton"
+                    : stage === "completed"
+                      ? "ghostButton"
+                      : "ghostButton"
+                }
+                disabled={moving !== ""}
+                onClick={() => void run(next)}
+              >
+                {next === "completed" ? (
+                  <>
+                    <Check size={15} />
+                    Mark visa approved &amp; complete
+                  </>
+                ) : stage === "completed" ? (
+                  <>
+                    <RefreshCw size={15} />
+                    Reopen in {stageLabels[next].toLowerCase()}
+                  </>
+                ) : (
+                  <>
+                    <ArrowRight size={15} />
+                    Move to {stageLabels[next].toLowerCase()}
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
+          {stage !== "visa" && stage !== "completed" && (
+            <p className="lifecycleHint">
+              A case is completed from the visa stage, once the visa is
+              approved.
+            </p>
+          )}
+          {stage !== "completed" && !item.visaExpiry && (
+            <p className="lifecycleHint">
+              Record a visa expiry date before moving this case to the visa
+              stage.
+            </p>
+          )}
         </section>
         <div className="drawerFooter">
           <button className="ghostButton" onClick={() => edit(item)}>
@@ -3137,10 +3312,11 @@ function RecordModal({
                     <input name="name" required defaultValue={editing?.name} />
                   </label>
                   <label>
-                    Email
+                    Email *
                     <input
                       name="email"
                       type="email"
+                      required
                       defaultValue={editing?.email}
                     />
                   </label>
@@ -3366,8 +3542,13 @@ function RecordModal({
                     </select>
                   </label>
                   <label>
-                    Visa expiry date
-                    <input name="visaExpiry" type="date" />
+                    Visa expiry date *
+                    <input
+                      name="visaExpiry"
+                      type="date"
+                      required
+                      defaultValue={editing?.visaExpiry}
+                    />
                   </label>
                 </div>
               </details>
@@ -3966,6 +4147,47 @@ export default function Home() {
       URL.revokeObjectURL(url);
       say("Live data exported");
     };
+  const moveCaseStage = async (
+    record: CaseRecord,
+    stage: LifecycleStage,
+    reason: string,
+  ) => {
+    if (!record.dbId) {
+      say("This case could not be identified.");
+      return;
+    }
+    try {
+      const response = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "lifecycle",
+          caseId: record.dbId,
+          stage,
+          reason: reason.trim() || null,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "The case could not be moved.");
+      setSelected(null);
+      await loadWorkspace();
+      setActive(stageModule[stage]);
+      say(
+        stage === "completed"
+          ? `${record.name} marked as completed`
+          : record.lifecycleStage === "completed"
+            ? `${record.name} reopened in ${stageLabels[stage].toLowerCase()}`
+            : `${record.name} moved to ${stageLabels[stage].toLowerCase()}`,
+      );
+    } catch (reason_) {
+      say(
+        reason_ instanceof Error
+          ? reason_.message
+          : "The case could not be moved.",
+      );
+    }
+  };
   async function mutateRemote(
     resource: string,
     operation: string,
@@ -4248,18 +4470,28 @@ export default function Home() {
     );
   else if (active === "integrations") content = <GoogleWorkspaceView />;
   else {
+    // Each pipeline module shows the cases actually sitting at that stage, so
+    // moving a case between stages moves it between these lists.
+    const atStage = (stage: LifecycleStage) =>
+      cases.filter((c) => c.lifecycleStage === stage);
     const list =
-      serviceMode === "direct_visa"
-        ? visa
-        : active === "visas"
-          ? visa
-          : active === "students"
-            ? education
-            : active === "defer"
-              ? education.filter((c) => /defer/i.test(c.stage))
-              : active === "case_complete"
-                ? visa.filter((c) => c.status === "completed")
-                : education;
+      active === "enquiries"
+        ? atStage("enquiry")
+        : active === "students"
+          ? atStage("student")
+          : active === "applications"
+            ? atStage("application")
+            : active === "visas"
+              ? atStage("visa")
+              : active === "direct_visas"
+                ? atStage("visa").filter((c) => visa.includes(c))
+                : active === "case_complete"
+                  ? atStage("completed")
+                  : active === "defer"
+                    ? cases.filter((c) => /defer/i.test(c.stage))
+                    : serviceMode === "direct_visa"
+                      ? visa
+                      : education;
     content = (
       <CaseWorkspace
         title={meta[active][0]}
@@ -4483,6 +4715,7 @@ export default function Home() {
       </main>
       {role !== "client" ? (
         <CaseDrawer
+          moveStage={moveCaseStage}
           item={selected}
           close={() => setSelected(null)}
           edit={editCase}

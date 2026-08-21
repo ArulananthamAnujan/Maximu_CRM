@@ -9,6 +9,29 @@ export const dynamic = "force-dynamic";
 
 type Json = Record<string, unknown>;
 
+// The pipeline an agency works: an enquiry becomes a student, a student gets
+// applications, an application leads to a visa, and an approved visa completes
+// the case. A completed case can be reopened into any active stage.
+const LIFECYCLE_STAGES = [
+  "enquiry",
+  "student",
+  "application",
+  "visa",
+  "completed",
+] as const;
+type LifecycleStage = (typeof LIFECYCLE_STAGES)[number];
+const ACTIVE_STAGES = LIFECYCLE_STAGES.filter((stage) => stage !== "completed");
+
+// Mirrors the rules enforced by public.move_case_lifecycle so the interface can
+// only offer transitions the database will accept. The database remains the
+// authority; this exists to keep the buttons honest.
+export function allowedLifecycleMoves(from: LifecycleStage): LifecycleStage[] {
+  if (from === "completed") return [...ACTIVE_STAGES];
+  const moves: LifecycleStage[] = ACTIVE_STAGES.filter((stage) => stage !== from);
+  if (from === "visa") moves.push("completed");
+  return moves;
+}
+
 export async function GET(request: Request) {
   try {
     const session = await liveSession(request);
@@ -135,11 +158,16 @@ export async function GET(request: Request) {
           due: dateOnly(row.due_at),
           health: row.health === "closed" ? "healthy" : row.health,
           progress: Number(row.progress ?? 0),
-          status: row.closed_at
-            ? "completed"
-            : row.health === "attention"
-              ? "waiting"
-              : "active",
+          lifecycleStage: (row.lifecycle_stage as LifecycleStage) ?? "enquiry",
+          visaExpiry: dateOnly(row.visa_expiry_on),
+          status:
+            row.lifecycle_stage === "completed" || row.closed_at
+              ? "completed"
+              : row.health === "attention"
+                ? "waiting"
+                : "active",
+          completedAt: dateOnly(row.completed_at),
+          reopenedAt: dateOnly(row.reopened_at),
           createdAt: row.opened_at,
         };
       }),
@@ -252,6 +280,8 @@ export async function POST(request: Request) {
 
     if (action === "update_case") {
       const displayName = required(body.name, "Client name");
+      const emailAddress = requiredEmail(body.email);
+      const visaExpiry = requiredDay(body.visaExpiry, "Visa expiry date");
       const parts = displayName.split(/\s+/);
       const firstName = parts.shift() || displayName;
       const lastName = parts.join(" ") || "—";
@@ -263,29 +293,27 @@ export async function POST(request: Request) {
         {
           first_name: firstName,
           last_name: lastName,
-          email: nullable(body.email),
+          email: emailAddress,
           mobile: nullable(body.phone),
           updated_at: new Date().toISOString(),
         },
         token,
       );
-      await patchRow(
-        "cases",
-        caseId,
-        {
-          service_type: /visa|migration|skill|eoi/i.test(
-            String(body.type ?? ""),
-          )
-            ? "direct_visa"
-            : "study_abroad",
-          target: nullable(body.target),
-          next_action: nullable(body.stage),
-          due_at: nullableDate(body.due),
-          health: normalHealth(body.health),
-          progress: Number(body.progress ?? 0),
-        },
-        token,
-      );
+      const caseChanges: Json = {
+        service_type: /visa|migration|skill|eoi/i.test(String(body.type ?? ""))
+          ? "direct_visa"
+          : "study_abroad",
+        target: nullable(body.target),
+        next_action: nullable(body.stage),
+        due_at: nullableDate(body.due),
+        visa_expiry_on: visaExpiry,
+        health: normalHealth(body.health),
+      };
+      // Progress tracks the lifecycle stage, so an edit that does not carry a
+      // progress value must not reset it to zero.
+      if (body.progress !== undefined && body.progress !== "")
+        caseChanges.progress = Number(body.progress);
+      await patchRow("cases", caseId, caseChanges, token);
       await auditEvent(
         org,
         actor,
@@ -301,6 +329,8 @@ export async function POST(request: Request) {
 
     if (action === "case") {
       const displayName = required(body.name, "Client name");
+      const emailAddress = requiredEmail(body.email);
+      const visaExpiry = requiredDay(body.visaExpiry, "Visa expiry date");
       const parts = displayName.split(/\s+/);
       const firstName = parts.shift() || displayName;
       const lastName = parts.join(" ") || "—";
@@ -323,7 +353,7 @@ export async function POST(request: Request) {
         crm_id: `MAX-${new Date().getUTCFullYear()}-${clientId.slice(0, 8).toUpperCase()}`,
         first_name: firstName,
         last_name: lastName,
-        email: nullable(body.email),
+        email: emailAddress,
         mobile: nullable(body.phone),
         owner_id: actor,
         current_lifecycle: "enquiry",
@@ -354,6 +384,7 @@ export async function POST(request: Request) {
             target: nullable(body.target),
             next_action: nullable(body.stage),
             due_at: nullableDate(body.due),
+            visa_expiry_on: visaExpiry,
             custom_fields: {
               intake_type: nullable(body.type),
               workspace: nullable(body.workspace),
@@ -653,6 +684,41 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
+    if (action === "lifecycle") {
+      const caseId = required(body.caseId, "Case");
+      const stage = required(body.stage, "Stage") as LifecycleStage;
+      if (!LIFECYCLE_STAGES.includes(stage))
+        throw new InputError("That is not a valid case stage.");
+      const reason = nullable(body.reason);
+      let moved: Json[];
+      try {
+        moved = await supabaseRequest<Json[]>(
+          "/rest/v1/rpc/move_case_lifecycle",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              target_case: caseId,
+              target_stage: stage,
+              transition_reason: reason,
+            }),
+          },
+          token,
+        );
+      } catch (error) {
+        // move_case_lifecycle raises messages meant for the user, such as the
+        // missing visa expiry date or completing outside the visa stage.
+        if (error instanceof SupabaseError) {
+          const message = databaseMessage(error.message);
+          if (message) throw new InputError(message);
+        }
+        throw error;
+      }
+      return Response.json({
+        ok: true,
+        case: Array.isArray(moved) ? (moved[0] ?? null) : moved,
+      });
+    }
+
     if (action === "mutate") {
       if (session.identity.role === "client")
         throw new LiveAccessError(
@@ -849,6 +915,21 @@ function intakeFields(body: Json, excluded: string[]): Json {
   }
   return result;
 }
+// Email and visa expiry are mandatory on the intake form: a case cannot be
+// worked without a contact address, and the visa stage is meaningless without
+// the expiry it is worked against.
+function requiredEmail(value: unknown): string {
+  const parsed = required(value, "Email address").toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed))
+    throw new InputError("Enter a valid email address.");
+  return parsed;
+}
+function requiredDay(value: unknown, label: string): string {
+  const parsed = required(value, label);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed) || Number.isNaN(Date.parse(parsed)))
+    throw new InputError(`${label} must be a valid date.`);
+  return parsed;
+}
 function required(value: unknown, label: string): string {
   const parsed = typeof value === "string" ? value.trim() : "";
   if (!parsed) throw new InputError(`${label} is required.`);
@@ -876,6 +957,20 @@ function fullClientName(value?: Json): string {
     : "";
 }
 class InputError extends Error {}
+
+// PostgREST wraps a raised exception as {"code":…,"message":…}. Those messages
+// are written for the person using the CRM, so pass them through rather than
+// replacing them with a generic failure.
+function databaseMessage(detail: string): string | null {
+  try {
+    const parsed = JSON.parse(detail) as { message?: unknown };
+    return typeof parsed.message === "string" && parsed.message.trim()
+      ? parsed.message
+      : null;
+  } catch {
+    return null;
+  }
+}
 function apiError(error: unknown): Response {
   if (error instanceof InputError)
     return Response.json({ ok: false, error: error.message }, { status: 400 });

@@ -1,0 +1,181 @@
+import assert from "node:assert/strict";
+import http from "node:http";
+import test from "node:test";
+
+const USER = {
+  id: "11111111-1111-4111-8111-111111111111",
+  email: "staff@maximus.test",
+};
+const PROFILE = {
+  id: USER.id,
+  organisation_id: "22222222-2222-4222-8222-222222222222",
+  branch_id: "33333333-3333-4333-8333-333333333333",
+  display_name: "Case Officer",
+  email: USER.email,
+  level: "staff",
+  department: "Operations",
+  active: true,
+};
+const CASE_ID = "44444444-4444-4444-8444-444444444444";
+
+/**
+ * Supabase stand-in that records every write, so a test can assert on what the
+ * route actually sent. `rpcFailure` makes move_case_lifecycle raise the way
+ * PostgREST reports a raised exception.
+ */
+async function startStub({ rpcFailure = null, level = "staff" } = {}) {
+  const requests = [];
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url, "http://stub");
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      requests.push({
+        method: req.method,
+        path: url.pathname,
+        body: raw ? JSON.parse(raw) : null,
+      });
+      const send = (status, body) => {
+        res.writeHead(status, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (url.pathname === "/auth/v1/user") return send(200, USER);
+      if (url.pathname === "/rest/v1/profiles")
+        return send(200, [{ ...PROFILE, level }]);
+      if (url.pathname === "/rest/v1/rpc/move_case_lifecycle") {
+        if (rpcFailure)
+          return send(400, { code: "22023", message: rpcFailure, hint: null });
+        return send(200, [{ id: CASE_ID, lifecycle_stage: "visa" }]);
+      }
+      return send(200, []);
+    });
+  });
+  await new Promise((resolve) => server.listen(0, resolve));
+  return { server, requests, url: `http://127.0.0.1:${server.address().port}` };
+}
+
+async function post(body, options = {}) {
+  const stub = await startStub(options);
+  try {
+    const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+    workerUrl.searchParams.set("lifecycle", `${process.pid}-${Date.now()}`);
+    const { default: worker } = await import(workerUrl.href);
+    const response = await worker.fetch(
+      new Request("https://crm.example/api/crm/workspace", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          cookie: "maximus_access=token",
+        },
+        body: JSON.stringify(body),
+      }),
+      {
+        SUPABASE_URL: stub.url,
+        SUPABASE_PUBLISHABLE_KEY: "stub-key",
+        ASSETS: { fetch: async () => new Response("", { status: 404 }) },
+      },
+      { waitUntil() {}, passThroughOnException() {} },
+    );
+    return {
+      status: response.status,
+      body: await response.json(),
+      requests: stub.requests,
+    };
+  } finally {
+    stub.server.close();
+  }
+}
+
+const NEW_CASE = {
+  action: "case",
+  name: "Priya Sharma",
+  phone: "+61412345678",
+  email: "priya@example.test",
+  visaExpiry: "2027-03-31",
+};
+
+test("a new case is rejected without an email address", async () => {
+  const { action, ...rest } = NEW_CASE;
+  const result = await post({ action, ...rest, email: "" });
+  assert.equal(result.status, 400);
+  assert.match(result.body.error, /email/i);
+});
+
+test("a new case is rejected when the email address is malformed", async () => {
+  const result = await post({ ...NEW_CASE, email: "priya-at-example" });
+  assert.equal(result.status, 400);
+  assert.match(result.body.error, /valid email/i);
+});
+
+test("a new case is rejected without a visa expiry date", async () => {
+  const result = await post({ ...NEW_CASE, visaExpiry: "" });
+  assert.equal(result.status, 400);
+  assert.match(result.body.error, /visa expiry/i);
+});
+
+test("a valid case records the email and visa expiry it was given", async () => {
+  const result = await post(NEW_CASE);
+  assert.equal(result.status, 200);
+  const caseWrite = result.requests.find((r) => r.path === "/rest/v1/cases");
+  const clientWrite = result.requests.find(
+    (r) => r.path === "/rest/v1/clients" && r.method === "POST",
+  );
+  assert.equal(clientWrite.body.email, "priya@example.test");
+  assert.equal(caseWrite.body.visa_expiry_on, "2027-03-31");
+  assert.equal(caseWrite.body.case_number.startsWith("CASE-"), true);
+});
+
+test("moving a case calls the lifecycle function with the requested stage", async () => {
+  const result = await post({
+    action: "lifecycle",
+    caseId: CASE_ID,
+    stage: "visa",
+    reason: "Documents verified",
+  });
+  assert.equal(result.status, 200);
+  const rpc = result.requests.find(
+    (r) => r.path === "/rest/v1/rpc/move_case_lifecycle",
+  );
+  assert.deepEqual(rpc.body, {
+    target_case: CASE_ID,
+    target_stage: "visa",
+    transition_reason: "Documents verified",
+  });
+});
+
+test("an unknown stage never reaches the database", async () => {
+  const result = await post({
+    action: "lifecycle",
+    caseId: CASE_ID,
+    stage: "archived",
+  });
+  assert.equal(result.status, 400);
+  assert.equal(
+    result.requests.some((r) => r.path.includes("move_case_lifecycle")),
+    false,
+  );
+});
+
+test("a rejected transition reports the database's own explanation", async () => {
+  const message =
+    "Record the visa expiry date before moving this case to the visa stage";
+  const result = await post(
+    { action: "lifecycle", caseId: CASE_ID, stage: "visa" },
+    { rpcFailure: message },
+  );
+  assert.equal(result.status, 400);
+  assert.equal(result.body.error, message);
+});
+
+test("a portal account cannot move a case through the pipeline", async () => {
+  const result = await post(
+    { action: "lifecycle", caseId: CASE_ID, stage: "visa" },
+    { level: "student" },
+  );
+  assert.equal(result.status, 403);
+  assert.equal(
+    result.requests.some((r) => r.path.includes("move_case_lifecycle")),
+    false,
+  );
+});
