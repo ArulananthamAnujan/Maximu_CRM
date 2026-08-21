@@ -56,3 +56,12 @@ test("Netlify build uses the supported Next.js runtime", async () => {
   assert.match(config, /npm run build:netlify/);
   assert.equal(pkg.scripts["build:netlify"], "next build");
 });
+
+test("login identity survives an unavailable workspace dataset", async () => {
+  const page = await read("app/page.tsx");
+  const workspace = await read("app/api/crm/workspace/route.ts");
+  assert.match(page, /fetch\("\/api\/auth\/session"/);
+  assert.match(page, /if \(!authenticatedIdentity\) setIdentity\(null\)/);
+  assert.match(workspace, /async function safeRest/);
+  assert.match(workspace, /Workspace dataset unavailable/);
+});

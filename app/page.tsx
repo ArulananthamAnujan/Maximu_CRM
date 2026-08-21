@@ -3806,10 +3806,24 @@ export default function Home() {
   }, [toast]);
   const say = (text: string) => setToast(text);
   const loadWorkspace = async () => {
+    let authenticatedIdentity: LiveIdentity | null = null;
     try {
+      const sessionResponse = await fetch("/api/auth/session", {
+        cache: "no-store",
+      });
+      const sessionResult = await sessionResponse.json();
+      if (!sessionResponse.ok || !sessionResult.authenticated)
+        throw new Error(sessionResult.error || "Sign in is required.");
+      authenticatedIdentity = sessionResult.identity as LiveIdentity;
+      setIdentity(authenticatedIdentity);
+      setActive(roleConfig[authenticatedIdentity.role].modules[0]);
+
       const response = await fetch("/api/crm/workspace", { cache: "no-store" });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Sign in is required.");
+      if (!response.ok)
+        throw new Error(
+          result.error || "Your workspace data could not be loaded.",
+        );
       setIdentity(result.identity);
       setCases(result.cases || []);
       setTasks(result.tasks || []);
@@ -3822,8 +3836,14 @@ export default function Home() {
       setAudits(result.audits || []);
       setRoles(result.roles || []);
       setActive(roleConfig[result.identity.role as AppRole].modules[0]);
-    } catch {
-      setIdentity(null);
+    } catch (reason) {
+      if (!authenticatedIdentity) setIdentity(null);
+      else
+        say(
+          reason instanceof Error
+            ? reason.message
+            : "Your workspace data could not be loaded.",
+        );
     } finally {
       setSessionReady(true);
     }

@@ -30,48 +30,48 @@ export async function GET(request: Request) {
       profiles,
       roles,
     ] = await Promise.all([
-      rest<Json[]>(
+      safeRest(
         "clients?select=*&archived_at=is.null&order=updated_at.desc&limit=200",
         token,
       ),
-      rest<Json[]>("cases?select=*&order=opened_at.desc&limit=200", token),
-      rest<Json[]>("workflow_stages?select=*&order=position.asc", token),
-      rest<Json[]>("tasks?select=*&order=created_at.desc&limit=300", token),
-      rest<Json[]>(
+      safeRest("cases?select=*&order=opened_at.desc&limit=200", token),
+      safeRest("workflow_stages?select=*&order=position.asc", token),
+      safeRest("tasks?select=*&order=created_at.desc&limit=300", token),
+      safeRest(
         "appointments?select=*&order=starts_at.asc&limit=300",
         token,
       ),
-      rest<Json[]>("documents?select=*&order=created_at.desc&limit=300", token),
-      rest<Json[]>(
+      safeRest("documents?select=*&order=created_at.desc&limit=300", token),
+      safeRest(
         "email_threads?select=*&order=last_message_at.desc&limit=200",
         token,
       ),
-      rest<Json[]>(
+      safeRest(
         "email_messages?select=*&order=created_at.desc&limit=300",
         token,
       ),
-      rest<Json[]>("invoices?select=*&order=issued_on.desc&limit=300", token),
-      rest<Json[]>(
+      safeRest("invoices?select=*&order=issued_on.desc&limit=300", token),
+      safeRest(
         "content_templates?select=*&order=updated_at.desc&limit=200",
         token,
       ),
-      rest<Json[]>(
+      safeRest(
         "workflow_templates?select=*&order=created_at.desc&limit=100",
         token,
       ),
-      rest<Json[]>(
+      safeRest(
         "audit_events?select=*&order=occurred_at.desc&limit=100",
         token,
       ),
-      rest<Json[]>(
+      safeRest(
         "branches?select=id,name,code,country_code&active=eq.true&order=name.asc",
         token,
       ),
-      rest<Json[]>(
+      safeRest(
         "profiles?select=id,display_name,email,branch_id,level,active&active=eq.true&order=display_name.asc",
         token,
       ),
-      rest<Json[]>(
+      safeRest(
         "roles?select=id,name,data_scope,system_role&system_role=eq.false&order=name.asc",
         token,
       ),
@@ -203,6 +203,15 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     return apiError(error);
+  }
+}
+
+async function safeRest(path: string, token: string): Promise<Json[]> {
+  try {
+    return await rest<Json[]>(path, token);
+  } catch (error) {
+    console.error(`Workspace dataset unavailable: ${path.split("?")[0]}`, error);
+    return [];
   }
 }
 
