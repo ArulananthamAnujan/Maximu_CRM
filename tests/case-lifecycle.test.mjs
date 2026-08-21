@@ -33,6 +33,7 @@ async function startStub({
   rpcFailure = null,
   level = "staff",
   targetOverride = null,
+  lifecycleMigrationApplied = true,
 } = {}) {
   const target = targetOverride ?? TARGET_STAFF;
   const requests = [];
@@ -59,7 +60,23 @@ async function startStub({
         if (filter.includes(target.id)) return send(200, [target]);
         return send(200, [{ ...PROFILE, level }]);
       }
+      // A database still on migration 0007 has neither the column nor the
+      // function; PostgREST reports both as a schema-cache miss.
+      if (
+        !lifecycleMigrationApplied &&
+        url.searchParams.get("select") === "lifecycle_stage"
+      )
+        return send(400, {
+          code: "42703",
+          message: "column cases.lifecycle_stage does not exist",
+        });
       if (url.pathname === "/rest/v1/rpc/move_case_lifecycle") {
+        if (!lifecycleMigrationApplied)
+          return send(404, {
+            code: "PGRST202",
+            message:
+              "Could not find the function public.move_case_lifecycle in the schema cache",
+          });
         if (rpcFailure)
           return send(400, { code: "22023", message: rpcFailure, hint: null });
         return send(200, [{ id: CASE_ID, lifecycle_stage: "visa" }]);
@@ -133,7 +150,9 @@ test("a new case is rejected without a visa expiry date", async () => {
 test("a valid case records the email and visa expiry it was given", async () => {
   const result = await post(NEW_CASE);
   assert.equal(result.status, 200);
-  const caseWrite = result.requests.find((r) => r.path === "/rest/v1/cases");
+  const caseWrite = result.requests.find(
+    (r) => r.path === "/rest/v1/cases" && r.method === "POST",
+  );
   const clientWrite = result.requests.find(
     (r) => r.path === "/rest/v1/clients" && r.method === "POST",
   );
@@ -261,4 +280,30 @@ test("a case cannot be assigned to a deactivated account", async () => {
   );
   assert.equal(result.status, 400);
   assert.match(result.body.error, /deactivated/i);
+});
+
+
+// A deployment can be ahead of the Supabase schema, because migrations are
+// applied separately. The CRM must stay usable and say what is needed.
+test("a case can still be created against a database without the lifecycle migration", async () => {
+  const result = await post(NEW_CASE, { lifecycleMigrationApplied: false });
+  assert.equal(result.status, 200);
+  const caseWrite = result.requests.find(
+    (r) => r.path === "/rest/v1/cases" && r.method === "POST",
+  );
+  assert.equal(
+    "visa_expiry_on" in caseWrite.body,
+    false,
+    "must not write a column the database does not have",
+  );
+});
+
+test("moving a case without the migration explains what to apply", async () => {
+  const result = await post(
+    { action: "lifecycle", caseId: CASE_ID, stage: "visa" },
+    { lifecycleMigrationApplied: false },
+  );
+  assert.equal(result.status, 400);
+  assert.match(result.body.error, /0008_case_lifecycle\.sql/);
+  assert.doesNotMatch(result.body.error, /schema cache/);
 });

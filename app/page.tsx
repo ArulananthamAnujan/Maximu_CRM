@@ -3043,6 +3043,8 @@ function CaseDrawer({
   assign,
   staff,
   canAssign,
+  lifecycleReady,
+  schemaWarning,
 }: {
   item: CaseRecord | null;
   close: () => void;
@@ -3056,6 +3058,8 @@ function CaseDrawer({
   assign: (record: CaseRecord, ownerId: string) => Promise<void>;
   staff: StaffRecord[];
   canAssign: boolean;
+  lifecycleReady: boolean;
+  schemaWarning: string;
 }) {
   return item ? (
     <CaseDrawerBody
@@ -3067,6 +3071,8 @@ function CaseDrawer({
       assign={assign}
       staff={staff}
       canAssign={canAssign}
+      lifecycleReady={lifecycleReady}
+      schemaWarning={schemaWarning}
     />
   ) : null;
 }
@@ -3080,6 +3086,8 @@ function CaseDrawerBody({
   assign,
   staff,
   canAssign,
+  lifecycleReady,
+  schemaWarning,
 }: {
   item: CaseRecord;
   close: () => void;
@@ -3093,6 +3101,8 @@ function CaseDrawerBody({
   assign: (record: CaseRecord, ownerId: string) => Promise<void>;
   staff: StaffRecord[];
   canAssign: boolean;
+  lifecycleReady: boolean;
+  schemaWarning: string;
 }) {
   const [reason, setReason] = useState("");
   const [moving, setMoving] = useState<LifecycleStage | "">("");
@@ -3226,6 +3236,12 @@ function CaseDrawerBody({
                   item.reopenedAt ? ` · reopened ${item.reopenedAt}` : ""
                 }`}
           </p>
+          {!lifecycleReady && (
+            <p className="schemaNotice">
+              <AlertTriangle size={14} />
+              {schemaWarning}
+            </p>
+          )}
           <label className="lifecycleReason">
             Reason (optional)
             <input
@@ -3250,7 +3266,7 @@ function CaseDrawerBody({
                       ? "ghostButton"
                       : "ghostButton"
                 }
-                disabled={moving !== ""}
+                disabled={moving !== "" || !lifecycleReady}
                 onClick={() => void run(next)}
               >
                 {next === "completed" ? (
@@ -4050,7 +4066,8 @@ export default function Home() {
     [roles, setRoles] = useState<{ id: string; name: string; scope: string }[]>(
       [],
     ),
-    [staff, setStaff] = useState<StaffRecord[]>([]);
+    [staff, setStaff] = useState<StaffRecord[]>([]),
+    [schemaWarning, setSchemaWarning] = useState<string>("");
   const [identity, setIdentity] = useState<LiveIdentity | null>(null),
     [sessionReady, setSessionReady] = useState(false),
     [serviceMode, setServiceMode] = useStored<ServiceMode>(
@@ -4099,6 +4116,9 @@ export default function Home() {
         ((result.profiles || []) as StaffRecord[]).filter(
           (person) => person.active && person.level !== "student",
         ),
+      );
+      setSchemaWarning(
+        typeof result.schemaWarning === "string" ? result.schemaWarning : "",
       );
       setActive(roleConfig[result.identity.role as AppRole].modules[0]);
     } catch (reason) {
@@ -4410,6 +4430,7 @@ export default function Home() {
     setWorkflows([]);
     setAudits([]);
     setStaff([]);
+    setSchemaWarning("");
   };
   if (!sessionReady)
     return (
@@ -4613,6 +4634,12 @@ export default function Home() {
   }
   return (
     <div className={`appShell mode-${serviceMode}`}>
+      {schemaWarning && (
+        <div className="schemaBanner" role="status">
+          <AlertTriangle size={15} />
+          <span>{schemaWarning}</span>
+        </div>
+      )}
       <Sidebar
         active={active}
         setActive={setActive}
@@ -4826,6 +4853,8 @@ export default function Home() {
           moveStage={moveCaseStage}
           assign={assignCase}
           staff={staff}
+          lifecycleReady={!schemaWarning}
+          schemaWarning={schemaWarning}
           canAssign={role === "super_admin" || role === "admin"}
           item={selected}
           close={() => setSelected(null)}

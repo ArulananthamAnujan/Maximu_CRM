@@ -5,13 +5,18 @@ begin;
 -- visa, and an approved visa completes the case. It is deliberately separate
 -- from the optional `workflow_templates` machinery, which only applies to
 -- cases that were created from a template.
-create type public.case_lifecycle_stage as enum (
-  'enquiry',
-  'student',
-  'application',
-  'visa',
-  'completed'
-);
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'case_lifecycle_stage') then
+    create type public.case_lifecycle_stage as enum (
+      'enquiry',
+      'student',
+      'application',
+      'visa',
+      'completed'
+    );
+  end if;
+end $$;
 
 alter table public.cases
   add column if not exists lifecycle_stage public.case_lifecycle_stage
@@ -23,16 +28,6 @@ alter table public.cases
 
 create index if not exists cases_lifecycle_idx
   on public.cases(organisation_id, lifecycle_stage, due_at);
-
--- Place existing cases on the pipeline from the signals already recorded.
-update public.cases set lifecycle_stage = case
-  when closed_at is not null or health = 'closed' then 'completed'
-  when service_type = 'direct_visa' then 'visa'
-  else 'enquiry'
-end::public.case_lifecycle_stage;
-
-update public.cases set completed_at = closed_at
-  where lifecycle_stage = 'completed' and completed_at is null;
 
 create table if not exists public.case_lifecycle_events (
   id bigint generated always as identity primary key,
@@ -46,6 +41,26 @@ create table if not exists public.case_lifecycle_events (
 );
 create index if not exists case_lifecycle_events_case_idx
   on public.case_lifecycle_events(case_id, occurred_at desc);
+
+-- Place existing cases on the pipeline from the signals already recorded. This
+-- runs only on first application: once any transition has been recorded, or a
+-- case has been moved off the default stage, the stored stage is authoritative
+-- and must not be recomputed.
+do $$
+begin
+  if not exists (select 1 from public.case_lifecycle_events) then
+    update public.cases set lifecycle_stage = case
+      when closed_at is not null or health = 'closed' then 'completed'
+      when service_type = 'direct_visa' then 'visa'
+      else 'enquiry'
+    end::public.case_lifecycle_stage
+    where lifecycle_stage = 'enquiry';
+
+    update public.cases set completed_at = closed_at
+      where lifecycle_stage = 'completed' and completed_at is null;
+  end if;
+end $$;
+
 
 -- Canonical progress for each pipeline position. Reopening a completed case
 -- returns its progress to the stage it reopens into rather than leaving it
@@ -163,6 +178,7 @@ $$;
 
 alter table public.case_lifecycle_events enable row level security;
 
+drop policy if exists case_lifecycle_events_read on public.case_lifecycle_events;
 create policy case_lifecycle_events_read on public.case_lifecycle_events
 for select to authenticated using (
   organisation_id = public.current_organisation_id()
@@ -172,6 +188,7 @@ for select to authenticated using (
       and public.can_access_client(c.client_id)
   )
 );
+drop policy if exists case_lifecycle_events_insert on public.case_lifecycle_events;
 create policy case_lifecycle_events_insert on public.case_lifecycle_events
 for insert to authenticated with check (
   organisation_id = public.current_organisation_id()

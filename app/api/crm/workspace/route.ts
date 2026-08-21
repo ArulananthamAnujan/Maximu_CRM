@@ -39,6 +39,7 @@ export async function GET(request: Request) {
     // Datasets are read independently so one unavailable table cannot fail the
     // whole load; the names of any that failed are reported to the client.
     const degraded: string[] = [];
+    const lifecycleEnabled = await lifecycleReady(token);
     const [
       clients,
       cases,
@@ -127,6 +128,8 @@ export async function GET(request: Request) {
     const payload = {
       identity: session.identity,
       degraded,
+      capabilities: { lifecycle: lifecycleEnabled },
+      schemaWarning: lifecycleEnabled ? null : LIFECYCLE_MIGRATION_HINT,
       branches,
       profiles,
       roles: roles.map((row) => ({
@@ -250,6 +253,29 @@ export async function GET(request: Request) {
   }
 }
 
+// The schema lives in Supabase and is migrated separately from this code, so a
+// deployment can be ahead of the database. Rather than failing with PostgREST
+// internals ("Could not find the function ... in the schema cache"), detect
+// whether the case-lifecycle migration has been applied and say so plainly.
+//
+// Only a positive result is remembered: once the migration is applied the
+// answer cannot go back to false, and while it is missing every request
+// re-checks, so the CRM starts working the moment the migration is run.
+let lifecycleMigrationApplied = false;
+export const LIFECYCLE_MIGRATION_HINT =
+  "This CRM needs a database update. Apply supabase/migrations/0008_case_lifecycle.sql to your Supabase project, then reload.";
+
+async function lifecycleReady(token: string): Promise<boolean> {
+  if (lifecycleMigrationApplied) return true;
+  try {
+    await rest<Json[]>("cases?select=lifecycle_stage&limit=1", token);
+    lifecycleMigrationApplied = true;
+  } catch {
+    lifecycleMigrationApplied = false;
+  }
+  return lifecycleMigrationApplied;
+}
+
 async function safeRest(
   path: string,
   token: string,
@@ -307,9 +333,9 @@ export async function POST(request: Request) {
         target: nullable(body.target),
         next_action: nullable(body.stage),
         due_at: nullableDate(body.due),
-        visa_expiry_on: visaExpiry,
         health: normalHealth(body.health),
       };
+      if (await lifecycleReady(token)) caseChanges.visa_expiry_on = visaExpiry;
       // Progress tracks the lifecycle stage, so an edit that does not carry a
       // progress value must not reset it to zero.
       if (body.progress !== undefined && body.progress !== "")
@@ -332,6 +358,7 @@ export async function POST(request: Request) {
       const displayName = required(body.name, "Client name");
       const emailAddress = requiredEmail(body.email);
       const visaExpiry = requiredDay(body.visaExpiry, "Visa expiry date");
+      const lifecycleEnabled = await lifecycleReady(token);
       const parts = displayName.split(/\s+/);
       const firstName = parts.shift() || displayName;
       const lastName = parts.join(" ") || "—";
@@ -385,7 +412,9 @@ export async function POST(request: Request) {
             target: nullable(body.target),
             next_action: nullable(body.stage),
             due_at: nullableDate(body.due),
-            visa_expiry_on: visaExpiry,
+            // Written only when the lifecycle migration has been applied, so
+            // an out-of-date database still accepts new cases.
+            ...(lifecycleEnabled ? { visa_expiry_on: visaExpiry } : {}),
             custom_fields: {
               intake_type: nullable(body.type),
               workspace: nullable(body.workspace),
@@ -748,6 +777,8 @@ export async function POST(request: Request) {
       const stage = required(body.stage, "Stage") as LifecycleStage;
       if (!LIFECYCLE_STAGES.includes(stage))
         throw new InputError("That is not a valid case stage.");
+      if (!(await lifecycleReady(token)))
+        throw new InputError(LIFECYCLE_MIGRATION_HINT);
       const reason = nullable(body.reason);
       let moved: Json[];
       try {
