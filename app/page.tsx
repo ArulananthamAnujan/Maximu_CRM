@@ -3063,12 +3063,16 @@ function RecordModal({
   submit,
   cases,
   editing,
+  saving,
+  error,
 }: {
   type: ModalType;
   close: () => void;
   submit: (e: FormEvent<HTMLFormElement>) => void;
   cases: CaseRecord[];
   editing: CaseRecord | null;
+  saving: boolean;
+  error: string;
 }) {
   if (!type) return null;
   const titles: Record<Exclude<ModalType, null>, string> = {
@@ -3754,13 +3758,14 @@ function RecordModal({
             </>
           )}
         </div>
+        {error ? <p className="formError" role="alert">{error}</p> : null}
         <footer>
           <button type="button" className="ghostButton" onClick={close}>
             Cancel
           </button>
-          <button type="submit" className="primaryButton">
+          <button type="submit" className="primaryButton" disabled={saving}>
             <Check size={15} />
-            Save complete record
+            {saving ? "Saving securely…" : "Save complete record"}
           </button>
         </footer>
       </form>
@@ -3777,6 +3782,8 @@ export default function Home() {
     [selected, setSelected] = useState<CaseRecord | null>(null),
     [editing, setEditing] = useState<CaseRecord | null>(null),
     [toast, setToast] = useState(""),
+    [formError, setFormError] = useState(""),
+    [saving, setSaving] = useState(false),
     [quickOpen, setQuickOpen] = useState(false),
     [notifications, setNotifications] = useState(false);
   const [cases, setCases] = useState<CaseRecord[]>([]),
@@ -3863,12 +3870,15 @@ export default function Home() {
   );
   const open = (x: ModalType) => {
     setEditing(null);
+    setFormError("");
     setModal(x);
     setQuickOpen(false);
   };
   const save = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!modal) return;
+    if (!modal || saving) return;
+    setSaving(true);
+    setFormError("");
     const f = new FormData(e.currentTarget),
       payload = Object.fromEntries(
         Array.from(f.entries()).filter(
@@ -3891,7 +3901,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       if (!response.ok)
         throw new Error(result.error || "The record could not be saved.");
       setModal(null);
@@ -3899,11 +3909,13 @@ export default function Home() {
       await loadWorkspace();
       say(`${modal[0].toUpperCase() + modal.slice(1)} saved to Supabase`);
     } catch (reason) {
-      say(
-        reason instanceof Error
-          ? reason.message
-          : "The record could not be saved.",
-      );
+      const message = reason instanceof Error
+        ? reason.message
+        : "The record could not be saved.";
+      setFormError(message);
+      say(message);
+    } finally {
+      setSaving(false);
     }
   };
   const editCase = (c: CaseRecord) => {
@@ -4482,10 +4494,13 @@ export default function Home() {
         close={() => {
           setModal(null);
           setEditing(null);
+          setFormError("");
         }}
         submit={save}
         cases={cases}
         editing={editing}
+        saving={saving}
+        error={formError}
       />
       {toast && (
         <div className="toast">

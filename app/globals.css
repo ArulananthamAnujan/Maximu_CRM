@@ -3757,6 +3757,19 @@ body {
   padding: 18px 21px;
   border-bottom: 1px solid #e6edf3;
 }
+.recordModal .formError {
+  margin: 0 24px 16px;
+  padding: 12px 14px;
+  border: 1px solid #f3b8b4;
+  border-radius: 12px;
+  background: #fff2f1;
+  color: #9f2f28;
+  font-weight: 700;
+}
+.recordModal button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
 .recordModal header span {
   font-size: 8px;
   letter-spacing: 0.12em;

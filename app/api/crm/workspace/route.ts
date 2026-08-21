@@ -286,6 +286,7 @@ export async function POST(request: Request) {
       const branchId = await resolveBranchId(
         body.branchId,
         session.identity.branchId,
+        session.identity.sourceLevel,
         token,
       );
       const clientId = crypto.randomUUID();
@@ -305,7 +306,13 @@ export async function POST(request: Request) {
         mobile: nullable(body.phone),
         owner_id: actor,
         current_lifecycle: "enquiry",
-        custom_fields: {},
+        date_of_birth: nullableDay(body.dob),
+        nationality: nullable(body.nationality),
+        source: nullable(body.source),
+        custom_fields: intakeFields(body, [
+          "action", "name", "email", "phone", "dob", "nationality", "source",
+          "branchId", "type", "target", "stage", "due", "health", "progress",
+        ]),
         updated_at: now,
       };
       await insert("clients", client, token);
@@ -326,7 +333,14 @@ export async function POST(request: Request) {
             target: nullable(body.target),
             next_action: nullable(body.stage),
             due_at: nullableDate(body.due),
-            custom_fields: { intake_type: nullable(body.type) },
+            custom_fields: {
+              intake_type: nullable(body.type),
+              workspace: nullable(body.workspace),
+              ...intakeFields(body, [
+                "action", "name", "email", "phone", "dob", "nationality", "source",
+                "branchId", "type", "target", "stage", "due", "health", "progress",
+              ]),
+            },
           },
           token,
         );
@@ -348,7 +362,7 @@ export async function POST(request: Request) {
         `Created ${kind === "study_abroad" ? "student" : "migration"} case for ${displayName}`,
         token,
       );
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, clientId, caseId });
     }
 
     if (action === "task") {
@@ -781,10 +795,15 @@ async function auditEvent(
 async function resolveBranchId(
   value: unknown,
   fallback: string | null,
+  sourceLevel: string,
   token: string,
-): Promise<string> {
+): Promise<string | null> {
   if (typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)) return value;
   if (fallback) return fallback;
+  // A branch-scoped user with no branch assignment may create an unassigned
+  // record, but must never be silently placed into a branch they cannot access.
+  if (sourceLevel !== "super_admin" && sourceLevel !== "platform_owner")
+    return null;
   const branches = await rest<Array<{ id: string }>>(
     "branches?select=id&active=eq.true&order=name.asc&limit=1",
     token,
@@ -792,6 +811,22 @@ async function resolveBranchId(
   if (!branches[0])
     throw new Error("Create an active branch before adding CRM records.");
   return branches[0].id;
+}
+function nullableDay(value: unknown): string | null {
+  const parsed = nullable(value);
+  if (!parsed) return null;
+  const date = new Date(`${parsed}T12:00:00Z`);
+  if (Number.isNaN(date.getTime())) throw new InputError("Date is invalid.");
+  return parsed.slice(0, 10);
+}
+function intakeFields(body: Json, excluded: string[]): Json {
+  const result: Json = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (excluded.includes(key) || typeof value !== "string") continue;
+    const clean = value.trim();
+    if (clean) result[key] = clean;
+  }
+  return result;
 }
 function required(value: unknown, label: string): string {
   const parsed = typeof value === "string" ? value.trim() : "";

@@ -65,3 +65,14 @@ test("login identity survives an unavailable workspace dataset", async () => {
   assert.match(workspace, /async function safeRest/);
   assert.match(workspace, /Workspace dataset unavailable/);
 });
+
+test("record creation preserves branch security and exposes form failures", async () => {
+  const page = await read("app/page.tsx");
+  const workspace = await read("app/api/crm/workspace/route.ts");
+  assert.match(workspace, /sourceLevel !== "super_admin"/);
+  assert.match(workspace, /return null;/);
+  assert.match(workspace, /date_of_birth: nullableDay\(body\.dob\)/);
+  assert.match(workspace, /custom_fields: intakeFields/);
+  assert.match(page, /setFormError\(message\)/);
+  assert.match(page, /disabled=\{saving\}/);
+});
