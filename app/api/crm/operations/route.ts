@@ -46,7 +46,7 @@ export async function GET(request: Request) {
     } else {
       throw new InputError("Unsupported operations view.");
     }
-    return appendRefreshCookies(Response.json({ ok: true, data }), session.refreshed);
+    return appendRefreshCookies(Response.json({ ok: true, data }), session.refreshed, request);
   } catch (error) { return apiError(error); }
 }
 
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     } else {
       throw new InputError("Unsupported operations action.");
     }
-    return appendRefreshCookies(Response.json({ ok: true }), session.refreshed);
+    return appendRefreshCookies(Response.json({ ok: true }), session.refreshed, request);
   } catch (error) { return apiError(error); }
 }
 

@@ -59,16 +59,37 @@ export function readCookie(request: Request, name: string): string | null {
   return null;
 }
 
-export function sessionCookieHeaders(session: SupabaseSession): string[] {
+export function sessionCookieHeaders(
+  session: SupabaseSession,
+  secure = true,
+): string[] {
   const accessMaxAge = Math.max(60, Number(session.expires_in) || 3600);
   return [
-    cookie(ACCESS_COOKIE, session.access_token, accessMaxAge),
-    cookie(REFRESH_COOKIE, session.refresh_token, 60 * 60 * 24 * 30),
+    cookie(ACCESS_COOKIE, session.access_token, accessMaxAge, secure),
+    cookie(REFRESH_COOKIE, session.refresh_token, 60 * 60 * 24 * 30, secure),
   ];
 }
 
-export function clearSessionCookieHeaders(): string[] {
-  return [cookie(ACCESS_COOKIE, "", 0), cookie(REFRESH_COOKIE, "", 0)];
+export function clearSessionCookieHeaders(secure = true): string[] {
+  return [
+    cookie(ACCESS_COOKIE, "", 0, secure),
+    cookie(REFRESH_COOKIE, "", 0, secure),
+  ];
+}
+
+// A `Secure` cookie is silently discarded by the browser on an insecure
+// origin, which lets sign-in return 200 while the session never persists and
+// the user is bounced straight back to the login form. Mark the cookie secure
+// whenever the request really is https, and fall back to secure when the
+// scheme cannot be determined.
+export function isSecureRequest(request: Request): boolean {
+  const forwarded = request.headers.get("x-forwarded-proto");
+  if (forwarded) return forwarded.split(",")[0].trim().toLowerCase() === "https";
+  try {
+    return new URL(request.url).protocol === "https:";
+  } catch {
+    return true;
+  }
 }
 
 export function jsonWithCookies(
@@ -93,6 +114,14 @@ export class SupabaseError extends Error {
   }
 }
 
-function cookie(name: string, value: string, maxAge: number): string {
-  return `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+function cookie(
+  name: string,
+  value: string,
+  maxAge: number,
+  secure: boolean,
+): string {
+  const flags = ["Path=/", "HttpOnly"];
+  if (secure) flags.push("Secure");
+  flags.push("SameSite=Lax", `Max-Age=${maxAge}`);
+  return `${name}=${encodeURIComponent(value)}; ${flags.join("; ")}`;
 }

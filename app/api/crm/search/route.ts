@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       ...clients.map(row => ({ type: "client", id: row.id, reference: row.crm_id, title: [row.first_name, row.last_name].filter(Boolean).join(" "), subtitle: row.email || row.mobile || row.current_lifecycle, branchId: row.branch_id })),
       ...cases.map(row => ({ type: "case", id: row.id, clientId: row.client_id, reference: row.case_number, title: row.target || row.service_type, subtitle: row.next_action || row.health, branchId: row.branch_id })),
     ].slice(0, 40);
-    return appendRefreshCookies(Response.json({ ok: true, results }), session.refreshed);
+    return appendRefreshCookies(Response.json({ ok: true, results }), session.refreshed, request);
   } catch (error) {
     if (error instanceof SupabaseError) return Response.json({ ok: false, error: "Search is temporarily unavailable." }, { status: 503 });
     console.error(error); return Response.json({ ok: false, error: "Search could not be completed." }, { status: 500 });

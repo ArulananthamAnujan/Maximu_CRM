@@ -12,6 +12,7 @@ export async function GET(request: Request) {
     return appendRefreshCookies(
       Response.json({ authenticated: true, identity: session.identity }),
       session.refreshed,
+      request,
     );
   } catch (error) {
     if (error instanceof LiveAccessError)

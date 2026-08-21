@@ -22,7 +22,7 @@ export async function GET(request: Request) {
       get(`service_agreements?select=*&client_id=eq.${clientId}&order=created_at.desc`, token),
       rpc("client_intake_completeness", { target_client: clientId }, token),
     ]);
-    return appendRefreshCookies(Response.json({ ok: true, intake: { client: asRows(client)[0] || null, education, employment, tests, preferences: asRows(preferences)[0] || null, visas, declarations, agreements }, completeness: Number(completeness || 0) }), session.refreshed);
+    return appendRefreshCookies(Response.json({ ok: true, intake: { client: asRows(client)[0] || null, education, employment, tests, preferences: asRows(preferences)[0] || null, visas, declarations, agreements }, completeness: Number(completeness || 0) }), session.refreshed, request);
   } catch (error) { return apiError(error); }
 }
 
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       await insert("service_agreements", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, case_id: optionalUuid(body.caseId), agreement_type: required(body.agreementType,"Agreement type"), version: required(body.version,"Version"), status: "draft", terms_snapshot: isObject(body.terms) ? cleanObject(body.terms) : {}, created_by: session.identity.profileId }, token);
     } else throw new InputError("Unsupported intake action.");
 
-    return appendRefreshCookies(Response.json({ ok: true }), session.refreshed);
+    return appendRefreshCookies(Response.json({ ok: true }), session.refreshed, request);
   } catch (error) { return apiError(error); }
 }
 

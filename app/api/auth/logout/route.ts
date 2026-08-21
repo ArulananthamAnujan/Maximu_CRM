@@ -1,6 +1,7 @@
 import {
   ACCESS_COOKIE,
   clearSessionCookieHeaders,
+  isSecureRequest,
   jsonWithCookies,
   readCookie,
   supabaseRequest,
@@ -15,5 +16,9 @@ export async function POST(request: Request) {
       /* Local sign-out must still complete. */
     }
   }
-  return jsonWithCookies({ ok: true }, 200, clearSessionCookieHeaders());
+  return jsonWithCookies(
+    { ok: true },
+    200,
+    clearSessionCookieHeaders(isSecureRequest(request)),
+  );
 }

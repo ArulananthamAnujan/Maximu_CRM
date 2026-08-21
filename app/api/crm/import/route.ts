@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     const session = await liveSession(request);
     requireAdmin(session.identity.role);
     const batches = await get("import_batches?select=*&order=started_at.desc&limit=50",session.accessToken);
-    return appendRefreshCookies(Response.json({ok:true,batches}),session.refreshed);
+    return appendRefreshCookies(Response.json({ok:true,batches}),session.refreshed, request);
   } catch(error){return apiError(error);}
 }
 

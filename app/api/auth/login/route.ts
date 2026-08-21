@@ -1,4 +1,5 @@
 import {
+  isSecureRequest,
   jsonWithCookies,
   sessionCookieHeaders,
   SupabaseError,
@@ -49,7 +50,11 @@ export async function POST(request: Request) {
         },
         { status: 403 },
       );
-    return jsonWithCookies({ ok: true }, 200, sessionCookieHeaders(session));
+    return jsonWithCookies(
+      { ok: true },
+      200,
+      sessionCookieHeaders(session, isSecureRequest(request)),
+    );
   } catch (error) {
     if (
       error instanceof SupabaseError &&

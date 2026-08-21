@@ -17,7 +17,7 @@ export async function GET(request: Request) {
       get("branches?select=*&order=name.asc", token),
       get("client_user_links?select=profile_id,client_id,created_at", token),
     ]);
-    return appendRefreshCookies(Response.json({ ok: true, profiles, roles, permissions, invitations, branches, clientLinks }), session.refreshed);
+    return appendRefreshCookies(Response.json({ ok: true, profiles, roles, permissions, invitations, branches, clientLinks }), session.refreshed, request);
   } catch (error) { return apiError(error); }
 }
 
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
     } else {
       throw new InputError("Unsupported administration action.");
     }
-    return appendRefreshCookies(Response.json({ ok: true }), session.refreshed);
+    return appendRefreshCookies(Response.json({ ok: true }), session.refreshed, request);
   } catch (error) { return apiError(error); }
 }
 

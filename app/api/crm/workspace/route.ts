@@ -13,6 +13,9 @@ export async function GET(request: Request) {
   try {
     const session = await liveSession(request);
     const token = session.accessToken;
+    // Datasets are read independently so one unavailable table cannot fail the
+    // whole load; the names of any that failed are reported to the client.
+    const degraded: string[] = [];
     const [
       clients,
       cases,
@@ -33,47 +36,57 @@ export async function GET(request: Request) {
       safeRest(
         "clients?select=*&archived_at=is.null&order=updated_at.desc&limit=200",
         token,
+        degraded,
       ),
-      safeRest("cases?select=*&order=opened_at.desc&limit=200", token),
-      safeRest("workflow_stages?select=*&order=position.asc", token),
-      safeRest("tasks?select=*&order=created_at.desc&limit=300", token),
+      safeRest("cases?select=*&order=opened_at.desc&limit=200", token, degraded),
+      safeRest("workflow_stages?select=*&order=position.asc", token, degraded),
+      safeRest("tasks?select=*&order=created_at.desc&limit=300", token, degraded),
       safeRest(
         "appointments?select=*&order=starts_at.asc&limit=300",
         token,
+        degraded,
       ),
-      safeRest("documents?select=*&order=created_at.desc&limit=300", token),
+      safeRest("documents?select=*&order=created_at.desc&limit=300", token, degraded),
       safeRest(
         "email_threads?select=*&order=last_message_at.desc&limit=200",
         token,
+        degraded,
       ),
       safeRest(
         "email_messages?select=*&order=sent_at.desc.nullslast&limit=300",
         token,
+        degraded,
       ),
-      safeRest("invoices?select=*&order=issued_on.desc&limit=300", token),
+      safeRest("invoices?select=*&order=issued_on.desc&limit=300", token, degraded),
       safeRest(
         "content_templates?select=*&order=updated_at.desc&limit=200",
         token,
+        degraded,
       ),
       safeRest(
         "workflow_templates?select=*&order=created_at.desc&limit=100",
         token,
+        degraded,
       ),
       safeRest(
         "audit_events?select=*&order=occurred_at.desc&limit=100",
         token,
+        degraded,
       ),
       safeRest(
         "branches?select=id,name,code,country_code&active=eq.true&order=name.asc",
         token,
+        degraded,
       ),
       safeRest(
         "profiles?select=id,display_name,email,branch_id,level,active&active=eq.true&order=display_name.asc",
         token,
+        degraded,
       ),
       safeRest(
         "roles?select=id,name,data_scope,system_role&system_role=eq.false&order=name.asc",
         token,
+        degraded,
       ),
     ]);
 
@@ -90,6 +103,7 @@ export async function GET(request: Request) {
 
     const payload = {
       identity: session.identity,
+      degraded,
       branches,
       profiles,
       roles: roles.map((row) => ({
@@ -200,17 +214,24 @@ export async function GET(request: Request) {
     return appendRefreshCookies(
       Response.json({ ok: true, ...payload }),
       session.refreshed,
+      request,
     );
   } catch (error) {
     return apiError(error);
   }
 }
 
-async function safeRest(path: string, token: string): Promise<Json[]> {
+async function safeRest(
+  path: string,
+  token: string,
+  degraded?: string[],
+): Promise<Json[]> {
   try {
     return await rest<Json[]>(path, token);
   } catch (error) {
-    console.error(`Workspace dataset unavailable: ${path.split("?")[0]}`, error);
+    const dataset = path.split("?")[0];
+    console.error(`Workspace dataset unavailable: ${dataset}`, error);
+    degraded?.push(dataset);
     return [];
   }
 }

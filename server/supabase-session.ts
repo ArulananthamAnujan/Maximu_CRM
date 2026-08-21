@@ -1,5 +1,6 @@
 import {
   ACCESS_COOKIE,
+  isSecureRequest,
   REFRESH_COOKIE,
   readCookie,
   sessionCookieHeaders,
@@ -88,10 +89,12 @@ export async function liveSession(
 export function appendRefreshCookies(
   response: Response,
   refreshed?: SupabaseSession,
+  request?: Request,
 ): Response {
   if (!refreshed) return response;
   const headers = new Headers(response.headers);
-  sessionCookieHeaders(refreshed).forEach((value) =>
+  const secure = request ? isSecureRequest(request) : true;
+  sessionCookieHeaders(refreshed, secure).forEach((value) =>
     headers.append("Set-Cookie", value),
   );
   return new Response(response.body, { status: response.status, headers });
