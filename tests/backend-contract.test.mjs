@@ -84,3 +84,38 @@ test("Supabase minimal writes are accepted as successful form submissions", asyn
   assert.match(client, /if \(!body\.trim\(\)\) return undefined as T/);
   assert.doesNotMatch(workspace, /email_messages\?select=\*&order=created_at/);
 });
+
+test("every table left on the blanket tenant policy is now scoped", async () => {
+  const sql = await read("supabase/migrations/0009_close_remaining_rls_gaps.sql");
+  // Migration 0001 gave these a `for all` policy keyed on the organisation
+  // alone, which let any signed-in account read and write every row.
+  for (const table of [
+    "dependants",
+    "enquiries",
+    "client_consents",
+    "case_stage_history",
+    "education_applications",
+    "visa_matters",
+    "case_notes",
+    "payments",
+    "commission_claims",
+    "drive_jobs",
+    "mailbox_connections",
+    "ai_interactions",
+    "ai_action_proposals",
+  ])
+    assert.match(sql, new RegExp(table), `${table} is still unscoped`);
+  assert.match(sql, /can_access_client/);
+  assert.match(sql, /is_internal_user/);
+});
+
+test("the case lifecycle is enforced in the database, not only the interface", async () => {
+  const sql = await read("supabase/migrations/0008_case_lifecycle.sql");
+  assert.match(sql, /create type public\.case_lifecycle_stage as enum/);
+  assert.match(sql, /A case can only be completed from the visa stage/);
+  assert.match(sql, /Record the visa expiry date before moving this case/);
+  assert.match(sql, /case_lifecycle_events/);
+  // Reopening must clear the closed state rather than leave a completed case
+  // sitting in an active stage.
+  assert.match(sql, /reopened_at/);
+});
