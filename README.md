@@ -34,9 +34,11 @@ to keep communications, invoices and personal documents after the last action
 on a file. The timeline exists so oral advice and client instructions can be
 written up contemporaneously.
 
-Document requests track what has been asked for and whether it arrived. File
-storage is not connected, so nothing is uploaded through the CRM yet; the form
-says so rather than implying otherwise.
+Documents are stored in the organisation's Google Shared Drive. A document is
+first requested, then the file is attached when it arrives; the CRM records the
+Drive file, its size and a SHA-256 checksum, and replacing a file bins the one
+it supersedes rather than leaving it behind. Until the Shared Drive is
+configured the CRM says so plainly instead of implying a file was stored.
 
 Cases move through an explicit pipeline -- enquiry, student, application, visa
 and completed. Cases move forward or back between the active stages, a case is
@@ -104,6 +106,35 @@ to a throwaway PostgreSQL cluster and asserts that a client portal account
 cannot read or write another client's records, that the case lifecycle rules
 hold, and that case reassignment notifies only the new owner. It needs
 `postgresql-16` and a `postgres` system user.
+
+## Connecting the Shared Drive
+
+Files live in a Shared Drive the agency owns. The CRM reaches it through a
+service account that is a member of that drive and nothing else, and decides
+for itself who may download a document, so no file is ever shared with an
+individual Google account.
+
+1. In the Google Cloud project, enable the Drive API.
+2. Create a service account. Create a JSON key for it and keep it secret.
+3. Create the Shared Drive in the Workspace organisation, if it does not exist.
+4. Add the service account's email as a **Content manager** of that Shared Drive
+   only. It needs no other access anywhere.
+5. Take the drive's ID from its URL: `drive.google.com/drive/folders/<id>`.
+6. Set three values, from the JSON key and step 5:
+
+```
+GOOGLE_SERVICE_ACCOUNT_EMAIL=crm@your-project.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+GOOGLE_SHARED_DRIVE_ID=0ABcdEfGhIjKlMnOpQr
+```
+
+Put them in `.dev.vars` for local Worker runs and in the deployment's secrets
+for Cloudflare or Netlify. Never commit them. `GOOGLE_PRIVATE_KEY` keeps its
+escaped newlines; the application converts them.
+
+Each client gets a folder named `Full Name - CRM-ID` on first upload, with the
+standard subfolders from `lib/google-drive-plan.ts`. `MAX_UPLOAD_MB` caps an
+individual file, defaulting to 25.
 
 ## Safe Google rollout
 

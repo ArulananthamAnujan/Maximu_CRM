@@ -4,6 +4,7 @@ import {
   liveSession,
 } from "@/server/supabase-session";
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
+import { driveConfigured } from "@/server/google-drive";
 
 export const dynamic = "force-dynamic";
 
@@ -128,7 +129,10 @@ export async function GET(request: Request) {
     const payload = {
       identity: session.identity,
       degraded,
-      capabilities: { lifecycle: lifecycleEnabled },
+      capabilities: {
+        lifecycle: lifecycleEnabled,
+        documentStorage: driveConfigured(),
+      },
       schemaWarning: lifecycleEnabled ? null : LIFECYCLE_MIGRATION_HINT,
       branches,
       profiles,

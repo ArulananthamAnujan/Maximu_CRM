@@ -2871,6 +2871,7 @@ function CaseDrawer({
   canAssign,
   lifecycleReady,
   schemaWarning,
+  storageConnected,
 }: {
   item: CaseRecord | null;
   close: () => void;
@@ -2886,6 +2887,7 @@ function CaseDrawer({
   canAssign: boolean;
   lifecycleReady: boolean;
   schemaWarning: string;
+  storageConnected: boolean;
 }) {
   return item ? (
     <CaseDrawerBody
@@ -2899,6 +2901,7 @@ function CaseDrawer({
       canAssign={canAssign}
       lifecycleReady={lifecycleReady}
       schemaWarning={schemaWarning}
+      storageConnected={storageConnected}
     />
   ) : null;
 }
@@ -3023,6 +3026,7 @@ function CaseDrawerBody({
   canAssign,
   lifecycleReady,
   schemaWarning,
+  storageConnected,
 }: {
   item: CaseRecord;
   close: () => void;
@@ -3038,6 +3042,7 @@ function CaseDrawerBody({
   canAssign: boolean;
   lifecycleReady: boolean;
   schemaWarning: string;
+  storageConnected: boolean;
 }) {
   const [tab, setTab] = useState<CaseTab>("overview");
   const [reason, setReason] = useState("");
@@ -3563,16 +3568,10 @@ function CaseDrawerBody({
                 </button>
               </form>
             </section>
-            <RecordTable
-              title="Requested documents"
-              rows={file?.documents ?? []}
-              columns={[
-                ["Document", "display_name"],
-                ["Type", "document_type"],
-                ["State", "state"],
-                ["Expires", "expires_on"],
-              ]}
-              empty="No documents requested for this case yet."
+            <DocumentsPanel
+              documents={file?.documents ?? []}
+              storageConnected={storageConnected}
+              onChanged={reload}
             />
           </>
         )}
@@ -3706,6 +3705,113 @@ function RecordTable({
           </table>
         </div>
       )}
+    </section>
+  );
+}
+
+function DocumentsPanel({
+  documents,
+  storageConnected,
+  onChanged,
+}: {
+  documents: Record<string, unknown>[];
+  storageConnected: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+
+  const store = async (documentId: string, chosen: File) => {
+    setBusy(documentId);
+    setError("");
+    try {
+      const body = new FormData();
+      body.append("documentId", documentId);
+      body.append("file", chosen);
+      const response = await fetch("/api/crm/documents", {
+        method: "POST",
+        body,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The file was not stored.");
+      await onChanged();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "The file was not stored.",
+      );
+    } finally {
+      setBusy("");
+    }
+  };
+
+  return (
+    <section className="caseWorkPanel">
+      <span className="kicker">DOCUMENTS</span>
+      {!storageConnected && (
+        <p className="schemaNotice">
+          <AlertTriangle size={14} />
+          The Shared Drive is not connected, so files cannot be stored yet. Set
+          the Google service account and Shared Drive ID to enable it.
+        </p>
+      )}
+      {documents.length === 0 ? (
+        <p className="caseWorkEmpty">
+          No documents requested for this case yet. Request one, then attach the
+          file when it arrives.
+        </p>
+      ) : (
+        <ul className="documentList">
+          {documents.map((row) => {
+            const id = String(row.id);
+            const stored = Boolean(row.drive_file_id);
+            const size = Number(row.size_bytes ?? 0);
+            return (
+              <li key={id}>
+                <div className="docIcon">
+                  <FileText size={17} />
+                </div>
+                <div className="documentMeta">
+                  <b>{text(row.display_name)}</b>
+                  <small>
+                    {humanise(row.document_type)} · {humanise(row.state)}
+                    {stored && size
+                      ? ` · ${(size / 1024).toFixed(0)} KB`
+                      : ""}
+                  </small>
+                </div>
+                {stored ? (
+                  <a
+                    className="ghostButton"
+                    href={`/api/crm/documents?documentId=${id}`}
+                  >
+                    <Download size={14} />
+                    Download
+                  </a>
+                ) : (
+                  <label
+                    className={`ghostButton fileButton${
+                      storageConnected ? "" : " disabled"
+                    }`}
+                  >
+                    <Cloud size={14} />
+                    {busy === id ? "Storing…" : "Attach file"}
+                    <input
+                      type="file"
+                      disabled={!storageConnected || busy === id}
+                      onChange={(event) => {
+                        const chosen = event.target.files?.[0];
+                        event.target.value = "";
+                        if (chosen) void store(id, chosen);
+                      }}
+                    />
+                  </label>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {error && <p className="caseWorkError">{error}</p>}
     </section>
   );
 }
@@ -4959,7 +5065,8 @@ export default function Home() {
       [],
     ),
     [staff, setStaff] = useState<StaffRecord[]>([]),
-    [schemaWarning, setSchemaWarning] = useState<string>("");
+    [schemaWarning, setSchemaWarning] = useState<string>(""),
+    [storageConnected, setStorageConnected] = useState(false);
   const [identity, setIdentity] = useState<LiveIdentity | null>(null),
     [sessionReady, setSessionReady] = useState(false),
     [serviceMode, setServiceMode] = useStored<ServiceMode>(
@@ -5042,6 +5149,7 @@ export default function Home() {
       setSchemaWarning(
         typeof result.schemaWarning === "string" ? result.schemaWarning : "",
       );
+      setStorageConnected(result.capabilities?.documentStorage === true);
       setActive(roleConfig[result.identity.role as AppRole].modules[0]);
       void loadAlerts(result.identity.role as AppRole);
     } catch (reason) {
@@ -5367,6 +5475,7 @@ export default function Home() {
     setStaff([]);
     setSchemaWarning("");
     setAlerts([]);
+    setStorageConnected(false);
   };
   if (!sessionReady)
     return (
@@ -5812,6 +5921,7 @@ export default function Home() {
           staff={staff}
           lifecycleReady={!schemaWarning}
           schemaWarning={schemaWarning}
+          storageConnected={storageConnected}
           canAssign={role === "super_admin" || role === "admin"}
           item={selected}
           close={() => setSelected(null)}

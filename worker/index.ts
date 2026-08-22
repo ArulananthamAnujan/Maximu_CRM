@@ -11,6 +11,9 @@ interface Env {
   DB: D1Database;
   SUPABASE_URL?: string;
   SUPABASE_PUBLISHABLE_KEY?: string;
+  GOOGLE_SERVICE_ACCOUNT_EMAIL?: string;
+  GOOGLE_PRIVATE_KEY?: string;
+  GOOGLE_SHARED_DRIVE_ID?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -50,6 +53,21 @@ const worker = {
     ).__MAXIMUS_SUPABASE__ = {
       url: env.SUPABASE_URL ?? "",
       publishableKey: env.SUPABASE_PUBLISHABLE_KEY ?? "",
+    };
+    // Documents live in the organisation's Shared Drive; the service account
+    // credentials never leave the Worker.
+    (
+      globalThis as typeof globalThis & {
+        __MAXIMUS_DRIVE__?: {
+          clientEmail: string;
+          privateKey: string;
+          sharedDriveId: string;
+        };
+      }
+    ).__MAXIMUS_DRIVE__ = {
+      clientEmail: env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? "",
+      privateKey: env.GOOGLE_PRIVATE_KEY ?? "",
+      sharedDriveId: env.GOOGLE_SHARED_DRIVE_ID ?? "",
     };
     const url = new URL(request.url);
 

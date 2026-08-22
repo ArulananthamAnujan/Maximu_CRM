@@ -5,11 +5,18 @@ const workerUrl = new URL(process.env.WORKER_ENTRY ?? "../../dist/server/index.j
 workerUrl.searchParams.set("audit", `${process.pid}-${Date.now()}`);
 const { default: worker } = await import(workerUrl.href);
 
+const { readFileSync } = await import("node:fs");
 const env = {
   SUPABASE_URL: SHIM,
   SUPABASE_PUBLISHABLE_KEY: "audit-key",
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+  GOOGLE_PRIVATE_KEY: process.env.GOOGLE_PRIVATE_KEY_FILE
+    ? readFileSync(process.env.GOOGLE_PRIVATE_KEY_FILE, "utf8")
+    : undefined,
+  GOOGLE_SHARED_DRIVE_ID: process.env.GOOGLE_SHARED_DRIVE_ID,
   ASSETS: { fetch: async () => new Response("", { status: 404 }) },
 };
+const DRIVE_STUB = process.env.DRIVE_STUB_URL;
 const ctx = { waitUntil() {}, passThroughOnException() {} };
 
 const results = [];
@@ -455,6 +462,101 @@ const health2 = await call("/api/crm/health", { cookie: owner.cookie });
 expect("seven-year retention rules are configured",
   Number(health2.json?.readiness?.retention_rules ?? 0) >= 4,
   JSON.stringify(health2.json?.readiness));
+
+section("Document storage");
+const storageWs = await call("/api/crm/workspace", { cookie: officer.cookie });
+expect("the CRM reports the Shared Drive as connected",
+  storageWs.json?.capabilities?.documentStorage === true,
+  JSON.stringify(storageWs.json?.capabilities));
+
+const docRequest = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "document", title: "Passport bio page", clientId: created.json?.clientId,
+          caseId: newCaseId, folder: "01 Personal and Identity" } });
+expect("a document can be requested", docRequest.status === 200, JSON.stringify(docRequest.json));
+const fileAfterRequest = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+const passport = (fileAfterRequest.json?.documents ?? []).find(
+  (d) => d.display_name === "Passport bio page");
+expect("a requested document starts with no stored file",
+  passport && passport.state === "requested" && !passport.drive_file_id,
+  JSON.stringify(passport)?.slice(0, 200));
+
+// Upload goes through the Worker exactly as the browser sends it.
+const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a, 0x25, 0xc2, 0xa5, 0x0a]);
+async function upload(documentId, bytes, name, mime, cookie = officer.cookie) {
+  const body = new FormData();
+  body.append("documentId", documentId ?? "");
+  body.append("file", new File([bytes], name, { type: mime }));
+  const response = await worker.fetch(
+    new Request("https://crm.test/api/crm/documents", {
+      method: "POST", headers: { cookie }, body }), env, ctx);
+  const text = await response.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* not json */ }
+  return { status: response.status, json, text };
+}
+
+const stored = await upload(passport?.id, PDF_BYTES, "passport.pdf", "application/pdf");
+expect("a file can be stored in the Shared Drive", stored.status === 200,
+  JSON.stringify(stored.json ?? stored.text)?.slice(0, 240));
+
+const driveState = await (await fetch(`${DRIVE_STUB}/__state`)).json();
+expect("the client's folder tree was provisioned in the drive",
+  driveState.folders.some((f) => f.name.includes("Arun Kumar")) &&
+    driveState.folders.some((f) => f.name === "01 Personal and Identity"),
+  JSON.stringify(driveState.folders.map((f) => f.name)).slice(0, 240));
+expect("the file reached the drive with its bytes intact",
+  driveState.files.length === 1 && driveState.files[0].size === PDF_BYTES.length,
+  JSON.stringify(driveState.files));
+
+const fileAfterUpload = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+const uploaded = (fileAfterUpload.json?.documents ?? []).find((d) => d.id === passport?.id);
+expect("the document records the drive file, size and checksum",
+  uploaded?.state === "uploaded" && Boolean(uploaded?.drive_file_id) &&
+    Number(uploaded?.size_bytes) === PDF_BYTES.length &&
+    typeof uploaded?.checksum === "string" && uploaded.checksum.length === 64,
+  JSON.stringify(uploaded)?.slice(0, 260));
+
+// Download must return exactly what went in.
+const downloaded = await worker.fetch(
+  new Request(`https://crm.test/api/crm/documents?documentId=${passport?.id}`, {
+    headers: { cookie: officer.cookie } }), env, ctx);
+const downloadedBytes = new Uint8Array(await downloaded.arrayBuffer());
+expect("the stored file can be downloaded byte for byte",
+  downloaded.status === 200 &&
+    downloadedBytes.length === PDF_BYTES.length &&
+    downloadedBytes.every((byte, index) => byte === PDF_BYTES[index]),
+  `status ${downloaded.status}, ${downloadedBytes.length} bytes`);
+
+// Replacing supersedes rather than orphaning.
+const REPLACEMENT = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a, 0x41, 0x42]);
+const replaced = await upload(passport?.id, REPLACEMENT, "passport-v2.pdf", "application/pdf");
+expect("a stored file can be replaced", replaced.status === 200, JSON.stringify(replaced.json));
+const afterReplace = await (await fetch(`${DRIVE_STUB}/__state`)).json();
+expect("the superseded file is binned, not orphaned",
+  afterReplace.files.filter((f) => f.trashed).length === 1 &&
+    afterReplace.files.filter((f) => !f.trashed).length === 1,
+  JSON.stringify(afterReplace.files.map((f) => ({ n: f.name, t: f.trashed }))));
+
+// MAX_UPLOAD_MB is lowered to 0.5MB for this run so the same guard runs on a
+// small file. An in-process Request with a chunked FormData body of 1MB or more
+// stalls in Node -- a limitation of driving the Worker directly, not of the
+// Worker: raw bytes and JSON of the same size are served normally, and a real
+// upload arrives with a length or as a runtime-managed stream.
+const tooBig = await upload(passport?.id, new Uint8Array(700 * 1024), "big.pdf", "application/pdf");
+expect("an oversized file is refused with the limit named",
+  tooBig.status === 400 && /512KB/.test(tooBig.json?.error ?? ""),
+  `${tooBig.status} ${JSON.stringify(tooBig.json)}`);
+const wrongType = await upload(passport?.id, PDF_BYTES, "payload.exe", "application/x-msdownload");
+expect("an unaccepted file type is refused", wrongType.status === 400,
+  `${wrongType.status} ${JSON.stringify(wrongType.json)}`);
+const portalUpload = await upload(passport?.id, PDF_BYTES, "p.pdf", "application/pdf", student.cookie);
+expect("a portal account cannot store files", portalUpload.status === 403,
+  `${portalUpload.status} ${JSON.stringify(portalUpload.json)}`);
+const crossBranchDownload = await worker.fetch(
+  new Request(`https://crm.test/api/crm/documents?documentId=${passport?.id}`, {
+    headers: { cookie: (await login("colombo@maximus.test")).cookie } }), env, ctx);
+expect("another branch cannot download the file", crossBranchDownload.status === 403,
+  `status ${crossBranchDownload.status}`);
 
 section("Branch isolation");
 const colombo = await login("colombo@maximus.test");
