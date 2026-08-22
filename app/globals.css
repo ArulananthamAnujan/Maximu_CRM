@@ -7779,3 +7779,221 @@ body {
   font-size: 10px;
   color: var(--muted);
 }
+
+/* Notice inside a record modal, for a limitation the user must know about. */
+.modalNotice {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 4px 0 0;
+  padding: 9px 10px;
+  border: 1px solid #f0c9a4;
+  border-radius: 8px;
+  background: #fdf3e8;
+  color: #7c2d12;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.modalNotice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+.intakeModeLabel {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-right: 4px;
+  align-self: center;
+}
+
+/* Tabbed case file. */
+.caseDrawer.wide {
+  max-width: 720px;
+  width: min(720px, 96vw);
+}
+.caseTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 16px 0 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.caseTabs button {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 6px 11px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+.caseTabs button:hover {
+  color: var(--ink);
+  border-color: var(--line);
+}
+.caseTabs button.active {
+  color: #fff;
+  background: var(--brand);
+  border-color: var(--brand);
+}
+.factGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 9px;
+  margin-top: 10px;
+}
+.factField small {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.factField b {
+  font-size: 12px;
+  color: var(--ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.recordTableWrap {
+  overflow-x: auto;
+  margin: 10px 0;
+}
+.recordTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.recordTable th {
+  text-align: left;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.recordTable td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  vertical-align: middle;
+}
+.recordTable select {
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+.stackedForm {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.stackedForm label {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.stackedForm label.wide {
+  grid-column: 1 / -1;
+}
+.stackedForm label.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.stackedForm input,
+.stackedForm select {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink);
+  background: #fff;
+}
+.stackedForm label.checkboxLabel input {
+  width: auto;
+  margin: 0;
+}
+.formActions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 8px;
+}
+
+/* Chronological file note and activity record. */
+.timeline {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0 0 0 14px;
+  border-left: 2px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.timeline li {
+  position: relative;
+}
+.timeline li::before {
+  content: "";
+  position: absolute;
+  left: -19px;
+  top: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.timeline li.kind-note::before,
+.timeline li.kind-private_note::before {
+  background: var(--brand);
+}
+.timeline li.kind-stage::before {
+  background: #2e7d32;
+}
+.timeline b {
+  display: block;
+  font-size: 12px;
+  color: var(--ink);
+}
+.timeline p {
+  margin: 3px 0 0;
+  font-size: 11px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.timeline small {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--muted);
+}

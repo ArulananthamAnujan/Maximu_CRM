@@ -21,6 +21,23 @@ A local-first, case-centric CRM foundation for education and migration agencies.
 - Team calendar, approved template library and compliance centre
 - Database records for AI citations, action proposals, consent and appointments
 
+Every case opens as a full file: overview and pipeline, client details,
+family and dependants, education and employment history, education
+applications, the visa matter, documents and checklist, a chronological file
+note and activity record, and finance. A case carries both a service stream
+(study abroad or migration) and a matter type (Student Visa 500, 482, Partner
+820/801), which are separate fields so a matter label can never reclassify the
+case.
+
+Client files are retained by default for seven years, matching the obligation
+to keep communications, invoices and personal documents after the last action
+on a file. The timeline exists so oral advice and client instructions can be
+written up contemporaneously.
+
+Document requests track what has been asked for and whether it arrived. File
+storage is not connected, so nothing is uploaded through the CRM yet; the form
+says so rather than implying otherwise.
+
 Cases move through an explicit pipeline -- enquiry, student, application, visa
 and completed. Cases move forward or back between the active stages, a case is
 completed only from the visa stage once the visa is approved, and a completed

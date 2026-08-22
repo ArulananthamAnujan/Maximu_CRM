@@ -323,6 +323,139 @@ expect("the deactivation was saved",
   wsAfter.json?.workflows?.find((w) => w.id === workflow?.id)?.active === false,
   JSON.stringify(wsAfter.json?.workflows));
 
+section("Case file");
+const fileNow = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+expect("the case file loads", fileNow.status === 200, JSON.stringify(fileNow.json)?.slice(0, 200));
+expect("the case file carries the client and intake",
+  fileNow.json?.client?.first_name === "Arun" &&
+    Array.isArray(fileNow.json?.intake?.education),
+  JSON.stringify(fileNow.json?.client)?.slice(0, 160));
+expect("the timeline merges notes, stage changes and audited actions",
+  (fileNow.json?.timeline ?? []).some((e) => e.kind === "stage") &&
+    (fileNow.json?.timeline ?? []).some((e) => e.kind === "note"),
+  JSON.stringify((fileNow.json?.timeline ?? []).map((e) => e.kind).slice(0, 8)));
+
+const casefile = (body, cookie = officer.cookie) =>
+  call("/api/crm/casefile", { method: "POST", cookie, body });
+
+section("Applications module");
+for (const institution of ["Monash University", "RMIT University", "Deakin University"]) {
+  const r = await casefile({ action: "application_create", caseId: newCaseId,
+    institution, course: "Master of IT", intake: "February 2027", status: "draft" });
+  expect(`an application to ${institution} can be added`, r.status === 200, JSON.stringify(r.json));
+}
+const withApps = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+expect("a student can hold several applications at once",
+  (withApps.json?.applications ?? []).length === 3,
+  `${(withApps.json?.applications ?? []).length} applications`);
+const firstApp = withApps.json?.applications?.[0];
+const advanced = await casefile({ action: "application_update", id: firstApp?.id, status: "offer_received" });
+expect("an application status can be advanced", advanced.status === 200, JSON.stringify(advanced.json));
+const afterAdvance = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+const advancedRow = afterAdvance.json?.applications?.find((a) => a.id === firstApp?.id);
+expect("advancing to offer received stamps the offer date",
+  advancedRow?.status === "offer_received" && Boolean(advancedRow?.offer_received_at),
+  JSON.stringify(advancedRow)?.slice(0, 180));
+const badStatus = await casefile({ action: "application_update", id: firstApp?.id, status: "invented" });
+expect("an unknown application status is refused", badStatus.status === 400);
+expect("an application can be removed",
+  (await casefile({ action: "application_delete", id: firstApp?.id })).status === 200);
+
+section("Visa matter workspace");
+const visaSave = await casefile({ action: "visa_matter_save", caseId: newCaseId,
+  destinationCountry: "AU", subclass: "482", stream: "Core Skills", status: "lodged",
+  marn: "1234567", lodgementReference: "LOD-99", trn: "EGO123456789",
+  bridgingVisa: "BVA", currentVisaExpiry: "2027-09-30",
+  healthExamination: "completed", biometrics: "requested",
+  policeClearance: "in_progress", skillsAssessment: "completed",
+  lodgedAt: "2026-08-01", informationRequestedAt: "2026-09-01",
+  informationDueAt: "2026-09-28", conditions: ["8105", "8501"] });
+expect("a visa matter can be recorded", visaSave.status === 200, JSON.stringify(visaSave.json));
+const withVisa = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+const matter = withVisa.json?.visaMatter;
+expect("the visa matter keeps subclass, MARN, TRN and the s56 deadline",
+  matter?.visa_subclass === "482" && matter?.responsible_agent_marn === "1234567" &&
+    matter?.trn === "EGO123456789" && Boolean(matter?.information_due_at),
+  JSON.stringify(matter)?.slice(0, 240));
+expect("visa conditions are stored as a list",
+  Array.isArray(matter?.visa_conditions) && matter.visa_conditions.includes("8105"),
+  JSON.stringify(matter?.visa_conditions));
+const visaAgain = await casefile({ action: "visa_matter_save", caseId: newCaseId,
+  destinationCountry: "AU", subclass: "482", status: "decision", outcome: "granted" });
+expect("saving again updates rather than duplicating", visaAgain.status === 200);
+const afterVisa = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+expect("there is still exactly one visa matter",
+  afterVisa.json?.visaMatter?.outcome === "granted",
+  JSON.stringify(afterVisa.json?.visaMatter)?.slice(0, 160));
+const badCheck = await casefile({ action: "visa_matter_save", caseId: newCaseId,
+  destinationCountry: "AU", healthExamination: "maybe" });
+expect("an unknown check status is refused", badCheck.status === 400);
+
+section("Family and dependants");
+for (const [relationship, name] of [["spouse", "Meera Kumar"], ["child", "Aarav Kumar"],
+                                    ["child", "Anika Kumar"], ["parent", "Suresh Kumar"]]) {
+  const r = await casefile({ action: "dependant_create", clientId: created.json?.clientId,
+    relationship, fullName: name, dateOfBirth: "1995-05-05", passportNumber: "P123", included: true });
+  expect(`a ${relationship} can be added as a dependant`, r.status === 200, JSON.stringify(r.json));
+}
+const withFamily = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+expect("a family is not limited to one spouse and one child",
+  (withFamily.json?.dependants ?? []).length === 4,
+  `${(withFamily.json?.dependants ?? []).length} dependants`);
+const badRelationship = await casefile({ action: "dependant_create",
+  clientId: created.json?.clientId, relationship: "cousin-in-law", fullName: "X" });
+expect("an unknown relationship is refused", badRelationship.status === 400);
+expect("a dependant can be removed",
+  (await casefile({ action: "dependant_delete", id: withFamily.json?.dependants?.[0]?.id })).status === 200);
+
+section("Service stream and matter type");
+const streamCase = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "case", name: "Sunil Rathnayake", phone: "+61400000004",
+          email: "sunil@example.test", visaExpiry: "2027-05-31",
+          workspace: "Direct Visa", matterType: "Partner visa 820/801" } });
+expect("a migration case can be created", streamCase.status === 200, JSON.stringify(streamCase.json));
+const streamWs = await call("/api/crm/workspace", { cookie: officer.cookie });
+const sunil = streamWs.json?.cases?.find((c) => c.name === "Sunil Rathnayake");
+expect("the matter type survives and is shown, not the stream",
+  sunil?.matterType === "Partner visa 820/801" && sunil?.type === "Partner visa 820/801",
+  JSON.stringify(sunil)?.slice(0, 200));
+expect("the service stream is recorded separately",
+  sunil?.serviceType === "direct_visa", `serviceType=${sunil?.serviceType}`);
+const reEdit = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "update_case", caseId: sunil?.dbId, clientId: sunil?.clientId,
+          name: "Sunil Rathnayake", email: "sunil@example.test", phone: "+61400000004",
+          visaExpiry: "2027-05-31", workspace: "Direct Visa",
+          matterType: "Partner visa 820/801" } });
+expect("editing does not reclassify the case", reEdit.status === 200, JSON.stringify(reEdit.json));
+const afterEdit = await call("/api/crm/workspace", { cookie: officer.cookie });
+const sunilAfter = afterEdit.json?.cases?.find((c) => c.name === "Sunil Rathnayake");
+expect("the matter type and stream are unchanged by an edit",
+  sunilAfter?.matterType === "Partner visa 820/801" &&
+    sunilAfter?.serviceType === "direct_visa",
+  JSON.stringify(sunilAfter)?.slice(0, 200));
+
+// A "Student visa" matter is study abroad, not migration. Classifying by the
+// matter label put such a case in the wrong list.
+const studyVisa = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "case", name: "Tashi Dorji", phone: "+61400000005",
+          email: "tashi@example.test", visaExpiry: "2027-07-31",
+          workspace: "Study Abroad", matterType: "Student visa" } });
+expect("a student visa case can be created in the study stream", studyVisa.status === 200,
+  JSON.stringify(studyVisa.json));
+const streamCheck = await call("/api/crm/workspace", { cookie: officer.cookie });
+const tashi = streamCheck.json?.cases?.find((c) => c.name === "Tashi Dorji");
+expect("a Student visa matter stays in the study abroad stream",
+  tashi?.serviceType === "study_abroad" && tashi?.matterType === "Student visa",
+  JSON.stringify(tashi)?.slice(0, 200));
+
+section("Retention defaults");
+const retention = await call("/api/crm/operations?view=report", { cookie: owner.cookie });
+expect("the operations report still loads with the new schema", retention.status === 200);
+const health2 = await call("/api/crm/health", { cookie: owner.cookie });
+expect("seven-year retention rules are configured",
+  Number(health2.json?.readiness?.retention_rules ?? 0) >= 4,
+  JSON.stringify(health2.json?.readiness));
+
 section("Branch isolation");
 const colombo = await login("colombo@maximus.test");
 expect("the Colombo officer signs in", colombo.ok);

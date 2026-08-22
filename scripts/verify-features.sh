@@ -45,7 +45,7 @@ done
 echo "Seeding a two-branch agency..."
 pg_run "${work}/sql/seed.sql"
 
-SHIM_PORT="${shim_port}" node "${root}/scripts/audit/postgrest-shim.mjs" >"${work}/shim.log" 2>&1 &
+SHIM_DEBUG="${SHIM_DEBUG:-}" SHIM_PORT="${shim_port}" node "${root}/scripts/audit/postgrest-shim.mjs" >"${work}/shim.log" 2>&1 &
 shim_pid=$!
 sleep 2
 kill -0 "${shim_pid}" 2>/dev/null || { echo "The PostgREST shim failed to start:"; cat "${work}/shim.log"; exit 70; }

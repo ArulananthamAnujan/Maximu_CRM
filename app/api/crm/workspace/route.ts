@@ -152,7 +152,15 @@ export async function GET(request: Request) {
           name,
           email: client.email ?? "",
           phone: client.mobile ?? "",
-          type: row.service_type,
+          // The stream the case is worked in, and the matter itself. Before
+          // these were separated the interface showed "direct_visa" where the
+          // user had chosen "Partner 820/801".
+          serviceType: row.service_type,
+          matterType:
+            row.matter_type ??
+            (row.custom_fields as Json | undefined)?.intake_type ??
+            "",
+          type: row.matter_type || row.service_type,
           target: row.target ?? "",
           stage: stage.name ?? client.current_lifecycle ?? "Enquiry",
           owner: owner.display_name ?? "",
@@ -327,9 +335,8 @@ export async function POST(request: Request) {
         token,
       );
       const caseChanges: Json = {
-        service_type: /visa|migration|skill|eoi/i.test(String(body.type ?? ""))
-          ? "direct_visa"
-          : "study_abroad",
+        service_type: serviceStream(body.workspace, body.matterType ?? body.type),
+        matter_type: nullable(body.matterType ?? body.type),
         target: nullable(body.target),
         next_action: nullable(body.stage),
         due_at: nullableDate(body.due),
@@ -371,9 +378,8 @@ export async function POST(request: Request) {
       const clientId = crypto.randomUUID();
       const caseId = crypto.randomUUID();
       const now = new Date().toISOString();
-      const kind = /visa|migration|skill|eoi/i.test(String(body.type ?? ""))
-        ? "direct_visa"
-        : "study_abroad";
+      const matterType = nullable(body.matterType ?? body.type);
+      const kind = serviceStream(body.workspace, matterType);
       const client = {
         id: clientId,
         organisation_id: org,
@@ -405,6 +411,7 @@ export async function POST(request: Request) {
             branch_id: branchId,
             case_number: `CASE-${new Date().getUTCFullYear()}-${caseId.slice(0, 8).toUpperCase()}`,
             service_type: kind,
+            matter_type: matterType,
             owner_id: actor,
             health: normalHealth(body.health),
             priority: "medium",
@@ -526,7 +533,12 @@ export async function POST(request: Request) {
           display_name: required(body.title, "Document title"),
           state: "requested",
           requested_by: actor,
-          metadata: { upload_pending: true },
+          // No file is transferred here. The document is tracked as requested
+          // until storage is connected and someone records that it arrived.
+          metadata: {
+            storage: "not_connected",
+            note: nullable(body.documentNote),
+          },
         },
         token,
       );
@@ -1057,6 +1069,18 @@ function fullClientName(value?: Json): string {
 // invoices, content_templates and workflow_templates are all writable only by
 // manager level and above (migration 0005). Check it here so the CRM can say
 // so plainly instead of surfacing a row-level security rejection.
+// The service stream is chosen explicitly on the form. Matching on the matter
+// label is only a fallback for records created before the two were separated.
+function serviceStream(workspace: unknown, matterType: unknown): string {
+  const chosen = String(workspace ?? "").toLowerCase();
+  if (chosen.includes("direct") || chosen.includes("visa") || chosen.includes("migration"))
+    return "direct_visa";
+  if (chosen.includes("study")) return "study_abroad";
+  return /visa|migration|skill|eoi|subclass|\b\d{3}\b/i.test(String(matterType ?? ""))
+    ? "direct_visa"
+    : "study_abroad";
+}
+
 function requireManager(role: string, action: string): void {
   if (role !== "super_admin" && role !== "admin")
     throw new LiveAccessError(

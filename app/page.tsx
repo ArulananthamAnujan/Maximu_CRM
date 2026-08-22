@@ -105,6 +105,8 @@ type CaseRecord = {
   email: string;
   phone: string;
   type: string;
+  serviceType: string;
+  matterType: string;
   target: string;
   stage: string;
   owner: string;
@@ -1039,10 +1041,10 @@ function WorkspaceDashboard({
   serviceMode: ServiceMode;
 }) {
   const direct = serviceMode === "direct_visa",
+    // Classify by the recorded service stream, never by the matter label: a
+    // "Student visa" matter belongs to study abroad, not migration.
     workspaceCases = cases.filter((c) =>
-      direct
-        ? /visa|migration|skill|eoi/i.test(c.type)
-        : !/migration|skill|eoi/i.test(c.type),
+      direct ? c.serviceType === "direct_visa" : c.serviceType !== "direct_visa",
     ),
     attention = workspaceCases.filter((c) => c.health !== "healthy").length,
     waiting = workspaceCases.filter((c) => c.status === "waiting").length,
@@ -1623,15 +1625,15 @@ function DocumentsView({
             onClick={() => openModal("document")}
           >
             <Plus size={16} />
-            Add document
+            Request document
           </button>
         </div>
         {items.length === 0 ? (
           <EmptyState
             icon={FolderOpen}
-            title="No documents indexed"
-            copy="Add file metadata now. Google Drive upload can replace this adapter later."
-            action="Add document"
+            title="No documents requested"
+            copy="Request the documents this case needs and track whether they have arrived. File storage is not connected yet."
+            action="Request document"
             onAction={() => openModal("document")}
           />
         ) : (
@@ -2148,7 +2150,7 @@ function ClientModuleView({
             onClick={() => openModal("document")}
           >
             <Plus size={16} />
-            Upload document
+            Request document
           </button>
         </div>
         {own.length ? (
@@ -2901,6 +2903,115 @@ function CaseDrawer({
   ) : null;
 }
 
+type CaseTab =
+  | "overview"
+  | "client"
+  | "family"
+  | "history"
+  | "applications"
+  | "visa"
+  | "documents"
+  | "timeline"
+  | "finance";
+
+const caseTabs: [CaseTab, string][] = [
+  ["overview", "Overview"],
+  ["client", "Client"],
+  ["family", "Family"],
+  ["history", "History"],
+  ["applications", "Applications"],
+  ["visa", "Visa matter"],
+  ["documents", "Documents"],
+  ["timeline", "Timeline"],
+  ["finance", "Finance"],
+];
+
+type CaseFile = {
+  case: Record<string, unknown>;
+  client: Record<string, unknown> | null;
+  applications: Record<string, unknown>[];
+  visaMatter: Record<string, unknown> | null;
+  dependants: Record<string, unknown>[];
+  documents: Record<string, unknown>[];
+  notes: CaseNote[];
+  invoices: Record<string, unknown>[];
+  intake: {
+    education: Record<string, unknown>[];
+    employment: Record<string, unknown>[];
+    tests: Record<string, unknown>[];
+    preferences: Record<string, unknown> | null;
+    visaHistory: Record<string, unknown>[];
+    declarations: Record<string, unknown>[];
+  };
+  timeline: {
+    id: string;
+    at: string;
+    kind: string;
+    title: string;
+    detail: string | null;
+  }[];
+};
+
+const APPLICATION_STATUS_OPTIONS = [
+  "draft",
+  "submitted",
+  "offer_received",
+  "offer_accepted",
+  "coe_received",
+  "deferred",
+  "withdrawn",
+  "rejected",
+];
+const CHECK_STATUS_OPTIONS = [
+  "not_started",
+  "requested",
+  "in_progress",
+  "completed",
+  "not_required",
+];
+const humanise = (value: unknown) =>
+  String(value ?? "")
+    .replace(/_/g, " ")
+    .replace(/^\w/, (c) => c.toUpperCase());
+const day = (value: unknown) =>
+  typeof value === "string" && value ? value.slice(0, 10) : "";
+const text = (value: unknown) => (value == null ? "" : String(value));
+
+function Field({ label, value }: { label: string; value: unknown }) {
+  return (
+    <div className="factField">
+      <small>{label}</small>
+      <b>{text(value) || "—"}</b>
+    </div>
+  );
+}
+
+function FactList({
+  title,
+  rows,
+  empty,
+}: {
+  title: string;
+  rows: [string, unknown][];
+  empty?: string;
+}) {
+  const filled = rows.filter(([, value]) => text(value));
+  return (
+    <section className="caseWorkPanel">
+      <span className="kicker">{title.toUpperCase()}</span>
+      {filled.length === 0 ? (
+        <p className="caseWorkEmpty">{empty ?? "Nothing recorded yet."}</p>
+      ) : (
+        <div className="factGrid">
+          {filled.map(([label, value]) => (
+            <Field key={label} label={label} value={value} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function CaseDrawerBody({
   item,
   close,
@@ -2928,36 +3039,39 @@ function CaseDrawerBody({
   lifecycleReady: boolean;
   schemaWarning: string;
 }) {
+  const [tab, setTab] = useState<CaseTab>("overview");
   const [reason, setReason] = useState("");
   const [moving, setMoving] = useState<LifecycleStage | "">("");
   const [owner, setOwner] = useState(item.ownerId);
   const [assigning, setAssigning] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
-  const [notes, setNotes] = useState<CaseNote[]>([]);
+  const [file, setFile] = useState<CaseFile | null>(null);
   const [newItem, setNewItem] = useState("");
   const [newNote, setNewNote] = useState("");
   const [working, setWorking] = useState(false);
   const [caseError, setCaseError] = useState("");
   const caseId = item.dbId;
+  const stage = item.lifecycleStage;
+  const moves = allowedStageMoves(stage);
 
-  // Reads the case's checklist and notes. Kept free of state updates so the
-  // mount effect can discard a response that arrives after the drawer closes.
-  const fetchCaseWork = async (id: string) => {
-    const [checklistResponse, notesResponse] = await Promise.all([
+  // Reads the whole case file. Kept free of state updates so the mount effect
+  // can discard a response that arrives after the drawer has closed.
+  const fetchCaseFile = async (id: string) => {
+    const [fileResponse, checklistResponse] = await Promise.all([
+      fetch(`/api/crm/casefile?caseId=${id}`, { cache: "no-store" }),
       fetch(`/api/crm/operations?view=checklist&caseId=${id}`, {
         cache: "no-store",
       }),
-      fetch(`/api/crm/operations?view=notes&caseId=${id}`, {
-        cache: "no-store",
-      }),
     ]);
+    const fileResult = await fileResponse.json();
     const checklistResult = await checklistResponse.json();
-    const notesResult = await notesResponse.json();
+    if (!fileResponse.ok)
+      throw new Error(fileResult.error || "The case file could not be loaded.");
     return {
+      file: fileResult as CaseFile,
       checklist: checklistResponse.ok
         ? ((checklistResult.data ?? []) as ChecklistItem[])
         : [],
-      notes: notesResponse.ok ? ((notesResult.data ?? []) as CaseNote[]) : [],
     };
   };
 
@@ -2966,14 +3080,18 @@ function CaseDrawerBody({
     let cancelled = false;
     void (async () => {
       try {
-        const work = await fetchCaseWork(caseId);
+        const loaded = await fetchCaseFile(caseId);
         if (cancelled) return;
-        setChecklist(work.checklist);
-        setNotes(work.notes);
+        setFile(loaded.file);
+        setChecklist(loaded.checklist);
         setCaseError("");
-      } catch {
+      } catch (reason_) {
         if (!cancelled)
-          setCaseError("The checklist and notes could not be loaded.");
+          setCaseError(
+            reason_ instanceof Error
+              ? reason_.message
+              : "The case file could not be loaded.",
+          );
       }
     })();
     return () => {
@@ -2981,22 +3099,25 @@ function CaseDrawerBody({
     };
   }, [caseId]);
 
-  const reloadCaseWork = async () => {
+  const reload = async () => {
     if (!caseId) return;
     try {
-      const work = await fetchCaseWork(caseId);
-      setChecklist(work.checklist);
-      setNotes(work.notes);
+      const loaded = await fetchCaseFile(caseId);
+      setFile(loaded.file);
+      setChecklist(loaded.checklist);
       setCaseError("");
-    } catch {
-      setCaseError("The checklist and notes could not be loaded.");
+    } catch (reason_) {
+      setCaseError(
+        reason_ instanceof Error ? reason_.message : "That did not reload.",
+      );
     }
   };
 
-  const operation = async (body: Record<string, unknown>) => {
+  // Posts to an endpoint and refreshes the file, reporting the reason on failure.
+  const send = async (url: string, body: Record<string, unknown>) => {
     setWorking(true);
     try {
-      const response = await fetch("/api/crm/operations", {
+      const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -3004,7 +3125,7 @@ function CaseDrawerBody({
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "That did not save.");
       setCaseError("");
-      await reloadCaseWork();
+      await reload();
       return true;
     } catch (reason_) {
       setCaseError(
@@ -3015,8 +3136,11 @@ function CaseDrawerBody({
       setWorking(false);
     }
   };
-  const stage = item.lifecycleStage;
-  const moves = allowedStageMoves(stage);
+  const operation = (body: Record<string, unknown>) =>
+    send("/api/crm/operations", body);
+  const casefile = (body: Record<string, unknown>) =>
+    send("/api/crm/casefile", body);
+
   const run = async (next: LifecycleStage) => {
     setMoving(next);
     try {
@@ -3025,324 +3149,507 @@ function CaseDrawerBody({
       setMoving("");
     }
   };
+
+  const client = file?.client ?? {};
+  const visa = file?.visaMatter ?? null;
+
   return (
     <div className="drawerBackdrop" onClick={close}>
-      <aside className="caseDrawer" onClick={(e) => e.stopPropagation()}>
+      <aside className="caseDrawer wide" onClick={(e) => e.stopPropagation()}>
         <div className="drawerHead">
           <div>
             <span>{item.id}</span>
             <h2>{item.name}</h2>
             <p>
-              {item.type} · {item.target || "No target"}
+              {item.matterType || item.type} ·{" "}
+              {item.serviceType === "direct_visa" ? "Migration" : "Study abroad"}
+              {item.target ? ` · ${item.target}` : ""}
             </p>
           </div>
-          <button
-            className="iconButton"
-            onClick={close}
-            aria-label="Close case"
-          >
+          <button className="iconButton" onClick={close} aria-label="Close case">
             <X size={20} />
           </button>
         </div>
-        <div className="drawerHealth">
-          <div>
-            <small>Health</small>
-            <Status value={item.health} />
-          </div>
-          <div>
-            <small>Progress</small>
-            <strong>{item.progress}%</strong>
-          </div>
-          <div>
-            <small>Due</small>
-            <strong>{item.due || "Not set"}</strong>
-          </div>
-        </div>
-        <section>
-          <span className="kicker">CONTACT</span>
-          <h3>{item.email || "No email"}</h3>
-          <p>{item.phone || "No phone"}</p>
-        </section>
-        <section>
-          <span className="kicker">CURRENT STAGE</span>
-          <h3>{item.stage}</h3>
-          <p>
-            Owner: {item.owner || "Unassigned"} · Branch:{" "}
-            {item.branch || "Not set"}
-          </p>
-        </section>
-        {canAssign && (
-          <section className="assignPanel">
-            <span className="kicker">CASE OWNER</span>
-            <h3>{item.owner || "Unassigned"}</h3>
-            <p className="assignHint">
-              Reassign this case to another member of the team. They are
-              notified and it moves into their queue.
-            </p>
-            <div className="assignRow">
-              <select
-                value={owner}
-                onChange={(e) => setOwner(e.target.value)}
-                aria-label="Assign case to"
-              >
-                <option value="">Select a staff member</option>
-                {staff.map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.display_name}
-                    {person.id === item.ownerId ? " (current owner)" : ""}
-                  </option>
+
+        <nav className="caseTabs" role="tablist">
+          {caseTabs.map(([key, label]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={tab === key}
+              className={tab === key ? "active" : ""}
+              onClick={() => setTab(key)}
+            >
+              {label}
+              {key === "applications" && file?.applications.length
+                ? ` (${file.applications.length})`
+                : ""}
+              {key === "family" && file?.dependants.length
+                ? ` (${file.dependants.length})`
+                : ""}
+            </button>
+          ))}
+        </nav>
+
+        {caseError && <p className="caseWorkError">{caseError}</p>}
+
+        {tab === "overview" && (
+          <>
+            <div className="drawerHealth">
+              <div>
+                <small>Health</small>
+                <Status value={item.health} />
+              </div>
+              <div>
+                <small>Progress</small>
+                <strong>{item.progress}%</strong>
+              </div>
+              <div>
+                <small>Due</small>
+                <strong>{item.due || "Not set"}</strong>
+              </div>
+            </div>
+            <FactList
+              title="Case"
+              rows={[
+                ["Matter type", item.matterType || "Not set"],
+                [
+                  "Service stream",
+                  item.serviceType === "direct_visa"
+                    ? "Migration"
+                    : "Study abroad",
+                ],
+                ["Target", item.target],
+                ["Owner", item.owner || "Unassigned"],
+                ["Branch", item.branch],
+                ["Visa expiry", item.visaExpiry],
+                ["Opened", day(item.createdAt)],
+                ["Completed", item.completedAt],
+                ["Reopened", item.reopenedAt],
+              ]}
+            />
+            {canAssign && (
+              <section className="assignPanel">
+                <span className="kicker">CASE OWNER</span>
+                <h3>{item.owner || "Unassigned"}</h3>
+                <p className="assignHint">
+                  Reassign this case to another member of the team. They are
+                  notified and it moves into their queue.
+                </p>
+                <div className="assignRow">
+                  <select
+                    value={owner}
+                    onChange={(e) => setOwner(e.target.value)}
+                    aria-label="Assign case to"
+                  >
+                    <option value="">Select a staff member</option>
+                    {staff.map((person) => (
+                      <option key={person.id} value={person.id}>
+                        {person.display_name}
+                        {person.id === item.ownerId ? " (current owner)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="primaryButton"
+                    disabled={assigning || !owner || owner === item.ownerId}
+                    onClick={async () => {
+                      setAssigning(true);
+                      try {
+                        await assign(item, owner);
+                      } finally {
+                        setAssigning(false);
+                      }
+                    }}
+                  >
+                    <UserCog size={15} />
+                    {assigning ? "Assigning…" : "Assign"}
+                  </button>
+                </div>
+              </section>
+            )}
+            <section className="lifecyclePanel">
+              <span className="kicker">CASE PIPELINE</span>
+              <ol className="lifecycleTrack">
+                {LIFECYCLE_STAGES.map((step) => (
+                  <li
+                    key={step}
+                    className={
+                      step === stage
+                        ? "current"
+                        : LIFECYCLE_STAGES.indexOf(step) <
+                            LIFECYCLE_STAGES.indexOf(stage)
+                          ? "done"
+                          : ""
+                    }
+                  >
+                    <span>{stageLabels[step]}</span>
+                  </li>
                 ))}
-              </select>
-              <button
-                type="button"
-                className="primaryButton"
-                disabled={assigning || !owner || owner === item.ownerId}
-                onClick={async () => {
-                  setAssigning(true);
-                  try {
-                    await assign(item, owner);
-                  } finally {
-                    setAssigning(false);
+              </ol>
+              {!lifecycleReady && (
+                <p className="schemaNotice">
+                  <AlertTriangle size={14} />
+                  {schemaWarning}
+                </p>
+              )}
+              <label className="lifecycleReason">
+                Reason (optional)
+                <input
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder={
+                    stage === "visa"
+                      ? "e.g. Visa approved"
+                      : "e.g. Documents received"
                   }
+                />
+              </label>
+              <div className="lifecycleActions">
+                {moves.map((next) => (
+                  <button
+                    key={next}
+                    type="button"
+                    className={
+                      next === "completed" ? "primaryButton" : "ghostButton"
+                    }
+                    disabled={moving !== "" || !lifecycleReady}
+                    onClick={() => void run(next)}
+                  >
+                    {next === "completed" ? (
+                      <>
+                        <Check size={15} />
+                        Mark visa approved &amp; complete
+                      </>
+                    ) : stage === "completed" ? (
+                      <>
+                        <RefreshCw size={15} />
+                        Reopen in {stageLabels[next].toLowerCase()}
+                      </>
+                    ) : (
+                      <>
+                        <ArrowRight size={15} />
+                        Move to {stageLabels[next].toLowerCase()}
+                      </>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+
+        {tab === "client" && (
+          <>
+            <FactList
+              title="Personal"
+              rows={[
+                ["Preferred name", client.preferred_name],
+                ["Email", client.email],
+                ["Mobile", client.mobile],
+                ["Date of birth", day(client.date_of_birth)],
+                ["Nationality", client.nationality],
+                ["Country of birth", client.country_of_birth],
+                ["Current country", client.current_country],
+                ["Gender", client.gender],
+                ["Marital status", humanise(client.marital_status)],
+                ["Preferred language", client.preferred_language],
+                ["CRM reference", client.crm_id],
+                ["Source", client.source],
+              ]}
+            />
+            <FactList
+              title="Passport and consent"
+              rows={[
+                ["Passport country", client.passport_country],
+                ["Passport expiry", day(client.passport_expiry)],
+                [
+                  "Privacy consent",
+                  client.privacy_consent_at
+                    ? new Date(String(client.privacy_consent_at)).toLocaleDateString()
+                    : "",
+                ],
+                ["Marketing consent", client.marketing_consent ? "Yes" : "No"],
+              ]}
+            />
+            {file?.intake.preferences && (
+              <FactList
+                title="Study preferences"
+                rows={[
+                  [
+                    "Destinations",
+                    (file.intake.preferences.destination_countries as string[])?.join(", "),
+                  ],
+                  [
+                    "Levels",
+                    (file.intake.preferences.study_levels as string[])?.join(", "),
+                  ],
+                  [
+                    "Fields",
+                    (file.intake.preferences.fields_of_study as string[])?.join(", "),
+                  ],
+                  ["Budget", file.intake.preferences.annual_budget],
+                  ["Funding", file.intake.preferences.funding_source],
+                ]}
+              />
+            )}
+          </>
+        )}
+
+        {tab === "family" && (
+          <FamilyTab
+            dependants={file?.dependants ?? []}
+            clientId={String(item.clientId ?? "")}
+            working={working}
+            onSave={casefile}
+          />
+        )}
+
+        {tab === "history" && (
+          <>
+            <RecordTable
+              title="Education"
+              rows={file?.intake.education ?? []}
+              columns={[
+                ["Institution", "institution"],
+                ["Qualification", "qualification"],
+                ["From", "started_on"],
+                ["To", "completed_on"],
+                ["Result", "result"],
+              ]}
+            />
+            <RecordTable
+              title="Employment"
+              rows={file?.intake.employment ?? []}
+              columns={[
+                ["Employer", "employer"],
+                ["Role", "job_title"],
+                ["From", "started_on"],
+                ["To", "ended_on"],
+                ["Hours", "hours_per_week"],
+              ]}
+            />
+            <RecordTable
+              title="English tests"
+              rows={file?.intake.tests ?? []}
+              columns={[
+                ["Test", "test_type"],
+                ["Date", "test_date"],
+                ["Overall", "overall"],
+                ["Expires", "expires_on"],
+              ]}
+            />
+            <RecordTable
+              title="Visa history"
+              rows={file?.intake.visaHistory ?? []}
+              columns={[
+                ["Country", "country_code"],
+                ["Visa", "visa_type"],
+                ["Status", "status"],
+                ["Granted", "granted_on"],
+                ["Expires", "expires_on"],
+              ]}
+            />
+          </>
+        )}
+
+        {tab === "applications" && (
+          <ApplicationsTab
+            applications={file?.applications ?? []}
+            caseId={caseId ?? ""}
+            working={working}
+            onSave={casefile}
+          />
+        )}
+
+        {tab === "visa" && (
+          <VisaMatterTab
+            matter={visa}
+            caseId={caseId ?? ""}
+            working={working}
+            onSave={casefile}
+          />
+        )}
+
+        {tab === "documents" && (
+          <>
+            <section className="caseWorkPanel">
+              <span className="kicker">DOCUMENT CHECKLIST</span>
+              {checklist.length === 0 ? (
+                <p className="caseWorkEmpty">
+                  Nothing on the checklist yet. Add the documents this case
+                  needs.
+                </p>
+              ) : (
+                <ul className="checklist">
+                  {checklist.map((entry) => {
+                    const settled =
+                      entry.status === "completed" || entry.status === "waived";
+                    return (
+                      <li key={entry.id} className={settled ? "settled" : ""}>
+                        <span>
+                          <b>{entry.title}</b>
+                          <small>
+                            {entry.required ? "Required" : "Optional"}
+                            {entry.due_at ? ` · due ${day(entry.due_at)}` : ""}
+                            {settled ? ` · ${entry.status}` : ""}
+                          </small>
+                        </span>
+                        {!settled && (
+                          <span className="checklistActions">
+                            <button
+                              type="button"
+                              className="ghostButton"
+                              disabled={working}
+                              onClick={() =>
+                                void operation({
+                                  action: "complete_checklist_item",
+                                  id: entry.id,
+                                })
+                              }
+                            >
+                              <Check size={14} />
+                              Received
+                            </button>
+                            <button
+                              type="button"
+                              className="ghostButton"
+                              disabled={working}
+                              onClick={() =>
+                                void operation({
+                                  action: "complete_checklist_item",
+                                  id: entry.id,
+                                  waived: true,
+                                })
+                              }
+                            >
+                              Waive
+                            </button>
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <form
+                className="inlineAdd"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (!newItem.trim()) return;
+                  if (
+                    await operation({
+                      action: "checklist_item",
+                      caseId,
+                      title: newItem.trim(),
+                    })
+                  )
+                    setNewItem("");
                 }}
               >
-                <UserCog size={15} />
-                {assigning ? "Assigning…" : "Assign"}
+                <input
+                  value={newItem}
+                  onChange={(event) => setNewItem(event.target.value)}
+                  placeholder="Add a required document"
+                  aria-label="Add a checklist item"
+                />
+                <button
+                  className="ghostButton"
+                  disabled={working || !newItem.trim()}
+                >
+                  <Plus size={14} />
+                  Add
+                </button>
+              </form>
+            </section>
+            <RecordTable
+              title="Requested documents"
+              rows={file?.documents ?? []}
+              columns={[
+                ["Document", "display_name"],
+                ["Type", "document_type"],
+                ["State", "state"],
+                ["Expires", "expires_on"],
+              ]}
+              empty="No documents requested for this case yet."
+            />
+          </>
+        )}
+
+        {tab === "timeline" && (
+          <section className="caseWorkPanel">
+            <span className="kicker">FILE NOTE AND ACTIVITY</span>
+            <p className="caseWorkEmpty">
+              Every note, stage change and recorded action, newest first. Write
+              up oral advice and client instructions here as they happen.
+            </p>
+            <form
+              className="inlineAdd"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                if (!newNote.trim()) return;
+                if (
+                  await operation({
+                    action: "case_note",
+                    caseId,
+                    body: newNote.trim(),
+                  })
+                )
+                  setNewNote("");
+              }}
+            >
+              <input
+                value={newNote}
+                onChange={(event) => setNewNote(event.target.value)}
+                placeholder="Record a call, advice given or an instruction received"
+                aria-label="Add a file note"
+              />
+              <button
+                className="ghostButton"
+                disabled={working || !newNote.trim()}
+              >
+                <Plus size={14} />
+                Record
               </button>
-            </div>
-            {staff.length === 0 && (
-              <p className="assignHint">
-                No active staff accounts are available to assign to.
-              </p>
+            </form>
+            {file && file.timeline.length === 0 ? (
+              <p className="caseWorkEmpty">Nothing recorded yet.</p>
+            ) : (
+              <ol className="timeline">
+                {(file?.timeline ?? []).map((entry) => (
+                  <li key={entry.id} className={`kind-${entry.kind}`}>
+                    <div>
+                      <b>{humanise(entry.title)}</b>
+                      {entry.detail && <p>{entry.detail}</p>}
+                      <small>
+                        {new Date(entry.at).toLocaleString()}
+                        {entry.kind === "private_note" ? " · private" : ""}
+                      </small>
+                    </div>
+                  </li>
+                ))}
+              </ol>
             )}
           </section>
         )}
-        <section className="lifecyclePanel">
-          <span className="kicker">CASE PIPELINE</span>
-          <ol className="lifecycleTrack">
-            {LIFECYCLE_STAGES.map((step) => (
-              <li
-                key={step}
-                className={
-                  step === stage
-                    ? "current"
-                    : LIFECYCLE_STAGES.indexOf(step) <
-                        LIFECYCLE_STAGES.indexOf(stage)
-                      ? "done"
-                      : ""
-                }
-              >
-                <span>{stageLabels[step]}</span>
-              </li>
-            ))}
-          </ol>
-          <p className="lifecycleMeta">
-            {stage === "completed"
-              ? `Completed${item.completedAt ? ` on ${item.completedAt}` : ""}. Reopen it into whichever stage the work resumes at.`
-              : `Visa expiry: ${item.visaExpiry || "not recorded"}${
-                  item.reopenedAt ? ` · reopened ${item.reopenedAt}` : ""
-                }`}
-          </p>
-          {!lifecycleReady && (
-            <p className="schemaNotice">
-              <AlertTriangle size={14} />
-              {schemaWarning}
-            </p>
-          )}
-          <label className="lifecycleReason">
-            Reason (optional)
-            <input
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder={
-                stage === "visa"
-                  ? "e.g. Visa approved"
-                  : "e.g. Documents received"
-              }
-            />
-          </label>
-          <div className="lifecycleActions">
-            {moves.map((next) => (
-              <button
-                key={next}
-                type="button"
-                className={
-                  next === "completed"
-                    ? "primaryButton"
-                    : stage === "completed"
-                      ? "ghostButton"
-                      : "ghostButton"
-                }
-                disabled={moving !== "" || !lifecycleReady}
-                onClick={() => void run(next)}
-              >
-                {next === "completed" ? (
-                  <>
-                    <Check size={15} />
-                    Mark visa approved &amp; complete
-                  </>
-                ) : stage === "completed" ? (
-                  <>
-                    <RefreshCw size={15} />
-                    Reopen in {stageLabels[next].toLowerCase()}
-                  </>
-                ) : (
-                  <>
-                    <ArrowRight size={15} />
-                    Move to {stageLabels[next].toLowerCase()}
-                  </>
-                )}
-              </button>
-            ))}
-          </div>
-          {stage !== "visa" && stage !== "completed" && (
-            <p className="lifecycleHint">
-              A case is completed from the visa stage, once the visa is
-              approved.
-            </p>
-          )}
-          {stage !== "completed" && !item.visaExpiry && (
-            <p className="lifecycleHint">
-              Record a visa expiry date before moving this case to the visa
-              stage.
-            </p>
-          )}
-        </section>
-        <section className="caseWorkPanel">
-          <span className="kicker">DOCUMENT CHECKLIST</span>
-          {checklist.length === 0 ? (
-            <p className="caseWorkEmpty">
-              Nothing on the checklist yet. Add the documents this case needs.
-            </p>
-          ) : (
-            <ul className="checklist">
-              {checklist.map((entry) => {
-                const settled =
-                  entry.status === "completed" || entry.status === "waived";
-                return (
-                  <li key={entry.id} className={settled ? "settled" : ""}>
-                    <span>
-                      <b>{entry.title}</b>
-                      <small>
-                        {entry.required ? "Required" : "Optional"}
-                        {entry.due_at
-                          ? ` · due ${String(entry.due_at).slice(0, 10)}`
-                          : ""}
-                        {settled ? ` · ${entry.status}` : ""}
-                      </small>
-                    </span>
-                    {!settled && (
-                      <span className="checklistActions">
-                        <button
-                          type="button"
-                          className="ghostButton"
-                          disabled={working}
-                          onClick={() =>
-                            void operation({
-                              action: "complete_checklist_item",
-                              id: entry.id,
-                            })
-                          }
-                        >
-                          <Check size={14} />
-                          Done
-                        </button>
-                        <button
-                          type="button"
-                          className="ghostButton"
-                          disabled={working}
-                          onClick={() =>
-                            void operation({
-                              action: "complete_checklist_item",
-                              id: entry.id,
-                              waived: true,
-                            })
-                          }
-                        >
-                          Waive
-                        </button>
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <form
-            className="inlineAdd"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (!newItem.trim()) return;
-              if (
-                await operation({
-                  action: "checklist_item",
-                  caseId,
-                  title: newItem.trim(),
-                })
-              )
-                setNewItem("");
-            }}
-          >
-            <input
-              value={newItem}
-              onChange={(event) => setNewItem(event.target.value)}
-              placeholder="Add a required document"
-              aria-label="Add a checklist item"
-            />
-            <button className="ghostButton" disabled={working || !newItem.trim()}>
-              <Plus size={14} />
-              Add
-            </button>
-          </form>
-        </section>
-        <section className="caseWorkPanel">
-          <span className="kicker">CASE NOTES</span>
-          {notes.length === 0 ? (
-            <p className="caseWorkEmpty">
-              No notes yet. Notes stay internal and are never shown in the
-              client portal.
-            </p>
-          ) : (
-            <ul className="caseNotes">
-              {notes.map((note) => (
-                <li key={note.id}>
-                  <p>{note.body}</p>
-                  <small>
-                    {new Date(note.created_at).toLocaleString()}
-                    {note.visibility === "private" ? " · private" : ""}
-                  </small>
-                </li>
-              ))}
-            </ul>
-          )}
-          <form
-            className="inlineAdd"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              if (!newNote.trim()) return;
-              if (
-                await operation({
-                  action: "case_note",
-                  caseId,
-                  body: newNote.trim(),
-                })
-              )
-                setNewNote("");
-            }}
-          >
-            <input
-              value={newNote}
-              onChange={(event) => setNewNote(event.target.value)}
-              placeholder="Add an internal note"
-              aria-label="Add a case note"
-            />
-            <button className="ghostButton" disabled={working || !newNote.trim()}>
-              <Plus size={14} />
-              Add
-            </button>
-          </form>
-          {caseError && <p className="caseWorkError">{caseError}</p>}
-        </section>
+
+        {tab === "finance" && (
+          <RecordTable
+            title="Invoices"
+            rows={file?.invoices ?? []}
+            columns={[
+              ["Invoice", "invoice_number"],
+              ["Type", "invoice_type"],
+              ["Total", "total"],
+              ["Paid", "paid"],
+              ["State", "state"],
+              ["Due", "due_on"],
+            ]}
+            empty="No invoices raised for this case."
+          />
+        )}
+
         <div className="drawerFooter">
           <button className="ghostButton" onClick={() => edit(item)}>
             <Pencil size={15} />
@@ -3353,11 +3660,542 @@ function CaseDrawerBody({
             onClick={() => remove(item.id)}
           >
             <Trash2 size={15} />
-            Delete
+            Archive
           </button>
         </div>
       </aside>
     </div>
+  );
+}
+
+function RecordTable({
+  title,
+  rows,
+  columns,
+  empty,
+}: {
+  title: string;
+  rows: Record<string, unknown>[];
+  columns: [string, string][];
+  empty?: string;
+}) {
+  return (
+    <section className="caseWorkPanel">
+      <span className="kicker">{title.toUpperCase()}</span>
+      {rows.length === 0 ? (
+        <p className="caseWorkEmpty">{empty ?? "Nothing recorded yet."}</p>
+      ) : (
+        <div className="recordTableWrap">
+          <table className="recordTable">
+            <thead>
+              <tr>
+                {columns.map(([label]) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <tr key={String(row.id ?? index)}>
+                  {columns.map(([label, key]) => (
+                    <td key={label}>{humanise(row[key]) || "—"}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ApplicationsTab({
+  applications,
+  caseId,
+  working,
+  onSave,
+}: {
+  applications: Record<string, unknown>[];
+  caseId: string;
+  working: boolean;
+  onSave: (body: Record<string, unknown>) => Promise<boolean>;
+}) {
+  const [adding, setAdding] = useState(false);
+  return (
+    <section className="caseWorkPanel">
+      <span className="kicker">EDUCATION APPLICATIONS</span>
+      <p className="caseWorkEmpty">
+        A student can hold several applications at once. Each carries its own
+        institution, course, intake and status.
+      </p>
+      {applications.length > 0 && (
+        <div className="recordTableWrap">
+          <table className="recordTable">
+            <thead>
+              <tr>
+                <th>Institution</th>
+                <th>Course</th>
+                <th>Intake</th>
+                <th>Reference</th>
+                <th>Status</th>
+                <th>Deadline</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {applications.map((row) => (
+                <tr key={String(row.id)}>
+                  <td>{text(row.institution)}</td>
+                  <td>{text(row.course)}</td>
+                  <td>{text(row.intake) || "—"}</td>
+                  <td>{text(row.application_reference) || "—"}</td>
+                  <td>
+                    <select
+                      value={text(row.status)}
+                      disabled={working}
+                      onChange={(event) =>
+                        void onSave({
+                          action: "application_update",
+                          id: row.id,
+                          status: event.target.value,
+                        })
+                      }
+                    >
+                      {APPLICATION_STATUS_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {humanise(option)}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>{day(row.deadline_at) || "—"}</td>
+                  <td>
+                    <button
+                      className="iconButton"
+                      aria-label="Remove application"
+                      disabled={working}
+                      onClick={() =>
+                        void onSave({ action: "application_delete", id: row.id })
+                      }
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {adding ? (
+        <form
+          className="stackedForm"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const ok = await onSave({
+              action: "application_create",
+              caseId,
+              institution: data.get("institution"),
+              course: data.get("course"),
+              campus: data.get("campus"),
+              intake: data.get("intake"),
+              reference: data.get("reference"),
+              status: data.get("status"),
+              deadline: data.get("deadline"),
+            });
+            if (ok) setAdding(false);
+          }}
+        >
+          <label>
+            Institution *<input name="institution" required />
+          </label>
+          <label>
+            Course *<input name="course" required />
+          </label>
+          <label>
+            Campus
+            <input name="campus" />
+          </label>
+          <label>
+            Intake
+            <input name="intake" placeholder="e.g. February 2027" />
+          </label>
+          <label>
+            Application reference
+            <input name="reference" />
+          </label>
+          <label>
+            Status
+            <select name="status" defaultValue="draft">
+              {APPLICATION_STATUS_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {humanise(option)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Deadline
+            <input name="deadline" type="date" />
+          </label>
+          <div className="formActions">
+            <button className="primaryButton" disabled={working}>
+              <Plus size={15} />
+              Add application
+            </button>
+            <button
+              type="button"
+              className="ghostButton"
+              onClick={() => setAdding(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button className="ghostButton" onClick={() => setAdding(true)}>
+          <Plus size={15} />
+          Add application
+        </button>
+      )}
+    </section>
+  );
+}
+
+function VisaMatterTab({
+  matter,
+  caseId,
+  working,
+  onSave,
+}: {
+  matter: Record<string, unknown> | null;
+  caseId: string;
+  working: boolean;
+  onSave: (body: Record<string, unknown>) => Promise<boolean>;
+}) {
+  const value = matter ?? {};
+  return (
+    <section className="caseWorkPanel">
+      <span className="kicker">VISA MATTER</span>
+      <form
+        className="stackedForm"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          await onSave({
+            action: "visa_matter_save",
+            caseId,
+            destinationCountry: data.get("destinationCountry"),
+            subclass: data.get("subclass"),
+            stream: data.get("stream"),
+            status: data.get("status"),
+            marn: data.get("marn"),
+            lodgementReference: data.get("lodgementReference"),
+            trn: data.get("trn"),
+            bridgingVisa: data.get("bridgingVisa"),
+            bridgingVisaGrantedOn: data.get("bridgingVisaGrantedOn"),
+            currentVisaExpiry: data.get("currentVisaExpiry"),
+            healthExamination: data.get("healthExamination"),
+            biometrics: data.get("biometrics"),
+            policeClearance: data.get("policeClearance"),
+            skillsAssessment: data.get("skillsAssessment"),
+            informationRequestedAt: data.get("informationRequestedAt"),
+            informationDueAt: data.get("informationDueAt"),
+            informationProvidedAt: data.get("informationProvidedAt"),
+            lodgedAt: data.get("lodgedAt"),
+            decisionAt: data.get("decisionAt"),
+            outcome: data.get("outcome"),
+            refusalReason: data.get("refusalReason"),
+            conditions: String(data.get("conditions") ?? "")
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter(Boolean),
+          });
+        }}
+      >
+        <label>
+          Destination country *
+          <input
+            name="destinationCountry"
+            required
+            defaultValue={text(value.destination_country) || "AU"}
+          />
+        </label>
+        <label>
+          Subclass
+          <input
+            name="subclass"
+            placeholder="e.g. 500"
+            defaultValue={text(value.visa_subclass)}
+          />
+        </label>
+        <label>
+          Stream
+          <input name="stream" defaultValue={text(value.visa_stream)} />
+        </label>
+        <label>
+          Status
+          <input name="status" defaultValue={text(value.status) || "assessment"} />
+        </label>
+        <label>
+          Responsible agent (MARN)
+          <input name="marn" defaultValue={text(value.responsible_agent_marn)} />
+        </label>
+        <label>
+          Lodgement reference
+          <input
+            name="lodgementReference"
+            defaultValue={text(value.lodgement_reference)}
+          />
+        </label>
+        <label>
+          TRN
+          <input name="trn" defaultValue={text(value.trn)} />
+        </label>
+        <label>
+          Current visa expiry
+          <input
+            name="currentVisaExpiry"
+            type="date"
+            defaultValue={day(value.current_visa_expiry)}
+          />
+        </label>
+        <label>
+          Bridging visa
+          <input name="bridgingVisa" defaultValue={text(value.bridging_visa)} />
+        </label>
+        <label>
+          Bridging visa granted
+          <input
+            name="bridgingVisaGrantedOn"
+            type="date"
+            defaultValue={day(value.bridging_visa_granted_on)}
+          />
+        </label>
+        {(
+          [
+            ["healthExamination", "Health examination", "health_examination_status"],
+            ["biometrics", "Biometrics", "biometrics_status"],
+            ["policeClearance", "Police clearance", "police_clearance_status"],
+            ["skillsAssessment", "Skills assessment", "skills_assessment_status"],
+          ] as [string, string, string][]
+        ).map(([name, label, key]) => (
+          <label key={name}>
+            {label}
+            <select name={name} defaultValue={text(value[key]) || "not_started"}>
+              {CHECK_STATUS_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {humanise(option)}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+        <label>
+          Lodged
+          <input name="lodgedAt" type="date" defaultValue={day(value.lodged_at)} />
+        </label>
+        <label>
+          Further information requested (s56)
+          <input
+            name="informationRequestedAt"
+            type="date"
+            defaultValue={day(value.information_requested_at)}
+          />
+        </label>
+        <label>
+          Response due
+          <input
+            name="informationDueAt"
+            type="date"
+            defaultValue={day(value.information_due_at)}
+          />
+        </label>
+        <label>
+          Response provided
+          <input
+            name="informationProvidedAt"
+            type="date"
+            defaultValue={day(value.information_provided_at)}
+          />
+        </label>
+        <label>
+          Decision
+          <input
+            name="decisionAt"
+            type="date"
+            defaultValue={day(value.decision_at)}
+          />
+        </label>
+        <label>
+          Outcome
+          <input name="outcome" defaultValue={text(value.outcome)} />
+        </label>
+        <label className="wide">
+          Refusal reason
+          <input name="refusalReason" defaultValue={text(value.refusal_reason)} />
+        </label>
+        <label className="wide">
+          Visa conditions (comma separated)
+          <input
+            name="conditions"
+            defaultValue={(value.visa_conditions as string[])?.join(", ") ?? ""}
+            placeholder="e.g. 8105, 8202, 8501"
+          />
+        </label>
+        <div className="formActions">
+          <button className="primaryButton" disabled={working}>
+            <Check size={15} />
+            Save visa matter
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function FamilyTab({
+  dependants,
+  clientId,
+  working,
+  onSave,
+}: {
+  dependants: Record<string, unknown>[];
+  clientId: string;
+  working: boolean;
+  onSave: (body: Record<string, unknown>) => Promise<boolean>;
+}) {
+  const [adding, setAdding] = useState(false);
+  return (
+    <section className="caseWorkPanel">
+      <span className="kicker">FAMILY AND DEPENDANTS</span>
+      <p className="caseWorkEmpty">
+        Add a spouse, partner, children or other dependants. There is no limit,
+        and each is a record of its own rather than a note on the client.
+      </p>
+      {dependants.length > 0 && (
+        <div className="recordTableWrap">
+          <table className="recordTable">
+            <thead>
+              <tr>
+                <th>Relationship</th>
+                <th>Name</th>
+                <th>Date of birth</th>
+                <th>Included</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {dependants.map((row) => {
+                const details = (row.details ?? {}) as Record<string, unknown>;
+                return (
+                  <tr key={String(row.id)}>
+                    <td>{humanise(row.relationship)}</td>
+                    <td>{text(row.full_name)}</td>
+                    <td>{day(row.date_of_birth) || "—"}</td>
+                    <td>{details.included_in_application ? "Yes" : "No"}</td>
+                    <td>
+                      <button
+                        className="iconButton"
+                        aria-label="Remove dependant"
+                        disabled={working}
+                        onClick={() =>
+                          void onSave({ action: "dependant_delete", id: row.id })
+                        }
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {adding ? (
+        <form
+          className="stackedForm"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const ok = await onSave({
+              action: "dependant_create",
+              clientId,
+              relationship: data.get("relationship"),
+              fullName: data.get("fullName"),
+              dateOfBirth: data.get("dateOfBirth"),
+              passportNumber: data.get("passportNumber"),
+              passportExpiry: data.get("passportExpiry"),
+              nationality: data.get("nationality"),
+              visaStatus: data.get("visaStatus"),
+              included: data.get("included") === "on",
+            });
+            if (ok) setAdding(false);
+          }}
+        >
+          <label>
+            Relationship *
+            <select name="relationship" defaultValue="spouse">
+              {["spouse", "partner", "child", "parent", "sibling", "other"].map(
+                (option) => (
+                  <option key={option} value={option}>
+                    {humanise(option)}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
+          <label>
+            Full name *<input name="fullName" required />
+          </label>
+          <label>
+            Date of birth
+            <input name="dateOfBirth" type="date" />
+          </label>
+          <label>
+            Nationality
+            <input name="nationality" />
+          </label>
+          <label>
+            Passport number
+            <input name="passportNumber" />
+          </label>
+          <label>
+            Passport expiry
+            <input name="passportExpiry" type="date" />
+          </label>
+          <label>
+            Current visa status
+            <input name="visaStatus" />
+          </label>
+          <label className="checkboxLabel">
+            <input name="included" type="checkbox" />
+            Included in this application
+          </label>
+          <div className="formActions">
+            <button className="primaryButton" disabled={working}>
+              <Plus size={15} />
+              Add dependant
+            </button>
+            <button
+              type="button"
+              className="ghostButton"
+              onClick={() => setAdding(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button className="ghostButton" onClick={() => setAdding(true)}>
+          <Plus size={15} />
+          Add dependant
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -3383,7 +4221,7 @@ function RecordModal({
     case: editing ? "Edit record" : "Create record",
     task: "Create task",
     appointment: "Schedule appointment",
-    document: "Add document",
+    document: "Request document",
     message: "Compose draft",
     invoice: "Create invoice",
     template: "Create template",
@@ -3419,17 +4257,23 @@ function RecordModal({
           {type === "case" && (
             <div className="legacyIntake full">
               <section className="intakeMode">
+                <span className="intakeModeLabel">Service stream</span>
                 <label>
                   <input
                     type="radio"
                     name="workspace"
                     value="Study Abroad"
-                    defaultChecked
+                    defaultChecked={editing?.serviceType !== "direct_visa"}
                   />
                   Study Abroad
                 </label>
                 <label>
-                  <input type="radio" name="workspace" value="Direct Visa" />
+                  <input
+                    type="radio"
+                    name="workspace"
+                    value="Direct Visa"
+                    defaultChecked={editing?.serviceType === "direct_visa"}
+                  />
                   Direct Visa
                 </label>
               </section>
@@ -3556,10 +4400,11 @@ function RecordModal({
                 <summary>3. Study preference and case classification</summary>
                 <div className="intakeFields">
                   <label>
-                    Service
+                    Matter type *
                     <select
-                      name="type"
-                      defaultValue={editing?.type || "Education enquiry"}
+                      name="matterType"
+                      required
+                      defaultValue={editing?.matterType || "Education enquiry"}
                     >
                       <option>Education enquiry</option>
                       <option>Student admission</option>
@@ -3948,18 +4793,20 @@ function RecordModal({
                 Folder
                 <input name="folder" placeholder="e.g. Identity documents" />
               </label>
-              <label>
-                File
-                <input name="file" type="file" />
+              <label className="wide">
+                Note for the client
+                <input
+                  name="documentNote"
+                  placeholder="e.g. Certified colour copy of the passport bio page"
+                />
               </label>
-              <label>
-                Status
-                <select name="documentStatus">
-                  <option>Pending review</option>
-                  <option>Verified</option>
-                  <option>Client action</option>
-                </select>
-              </label>
+              <p className="modalNotice">
+                <AlertTriangle size={14} />
+                This records a request for the document and tracks whether it
+                has arrived. File storage is not connected yet, so nothing is
+                uploaded here — attach the file in the shared drive and mark the
+                request received.
+              </p>
             </>
           )}
           {type === "message" && (
@@ -4530,16 +5377,10 @@ export default function Home() {
       </main>
     );
   if (!signedIn) return <LiveLogin onLogin={loadWorkspace} />;
-  const education = cases.filter(
-      (c) =>
-        !c.type.toLowerCase().includes("visa") &&
-        !c.type.toLowerCase().includes("migration"),
-    ),
-    visa = cases.filter(
-      (c) =>
-        c.type.toLowerCase().includes("visa") ||
-        c.type.toLowerCase().includes("migration"),
-    );
+  // The service stream is a recorded field. Matching on the matter label put a
+  // "Student visa 500" case into the migration list.
+  const education = cases.filter((c) => c.serviceType !== "direct_visa"),
+    visa = cases.filter((c) => c.serviceType === "direct_visa");
   const unreadAlerts = alerts.filter((alert) => !alert.read_at);
   let content: React.ReactNode;
   if (role === "client")
