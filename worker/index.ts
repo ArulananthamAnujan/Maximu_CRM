@@ -14,6 +14,7 @@ interface Env {
   GOOGLE_SERVICE_ACCOUNT_EMAIL?: string;
   GOOGLE_PRIVATE_KEY?: string;
   GOOGLE_SHARED_DRIVE_ID?: string;
+  FIELD_ENCRYPTION_KEY?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -69,6 +70,11 @@ const worker = {
       privateKey: env.GOOGLE_PRIVATE_KEY ?? "",
       sharedDriveId: env.GOOGLE_SHARED_DRIVE_ID ?? "",
     };
+    // Passport numbers are encrypted with a key held by the application, never
+    // by the database.
+    (
+      globalThis as typeof globalThis & { __MAXIMUS_FIELD_KEY__?: string }
+    ).__MAXIMUS_FIELD_KEY__ = env.FIELD_ENCRYPTION_KEY ?? "";
     const url = new URL(request.url);
 
     if (url.pathname === "/_vinext/image") {

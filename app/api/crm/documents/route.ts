@@ -84,11 +84,6 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const session = await liveSession(request);
-    if (session.identity.role === "client")
-      throw new LiveAccessError(
-        403,
-        "Uploading through the portal is not available yet.",
-      );
     // Fail on a missing configuration before doing any work: with no storage
     // connected there is nothing useful to look up, and the caller needs to be
     // told what to set rather than shown an access error from further in.
@@ -135,12 +130,22 @@ export async function POST(request: Request) {
       );
 
     const documents = await rest<Json[]>(
-      `documents?select=id,client_id,document_type,display_name,version,drive_file_id&id=eq.${documentId}&limit=1`,
+      `documents?select=id,client_id,document_type,display_name,version,drive_file_id,state&id=eq.${documentId}&limit=1`,
       token,
     );
     const document = documents[0];
     if (!document)
       throw new LiveAccessError(403, "That document is not available to you.");
+    // A client may supply a document that was asked of them, and nothing else.
+    // Row-level security enforces the same rule; this states it plainly.
+    if (
+      session.identity.role === "client" &&
+      !["requested", "rejected"].includes(String(document.state))
+    )
+      throw new LiveAccessError(
+        403,
+        "That document has already been provided. Ask your case officer if it needs to change.",
+      );
 
     const clients = await rest<Json[]>(
       `clients?select=id,first_name,last_name,crm_id,drive_folder_id&id=eq.${document.client_id}&limit=1`,

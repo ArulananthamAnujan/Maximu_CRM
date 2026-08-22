@@ -8050,3 +8050,16 @@ body {
 .fileButton.disabled input[type="file"] {
   cursor: not-allowed;
 }
+.fieldHint {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+.caseWorkEmpty.wideNote {
+  grid-column: 1 / -1;
+  margin: 0;
+}

@@ -5,6 +5,7 @@ import {
 } from "@/server/supabase-session";
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
 import { driveConfigured } from "@/server/google-drive";
+import { protectionConfigured } from "@/server/protected-fields";
 
 export const dynamic = "force-dynamic";
 
@@ -132,6 +133,7 @@ export async function GET(request: Request) {
       capabilities: {
         lifecycle: lifecycleEnabled,
         documentStorage: driveConfigured(),
+        protectedFields: protectionConfigured(),
       },
       schemaWarning: lifecycleEnabled ? null : LIFECYCLE_MIGRATION_HINT,
       branches,
@@ -311,11 +313,82 @@ export async function POST(request: Request) {
     const token = session.accessToken;
     const org = session.identity.organisationId;
     const actor = session.identity.profileId;
-    if (session.identity.role === "client" && action !== "message")
+    // A portal account may write only through the few actions built for it.
+    const PORTAL_ACTIONS = ["message", "appointment_request"];
+    if (
+      session.identity.role === "client" &&
+      !PORTAL_ACTIONS.includes(action)
+    )
       throw new LiveAccessError(
         403,
         "This action is not available in the client portal.",
       );
+
+    if (action === "appointment_request") {
+      // The client asks; staff confirm. The request is attached to one of their
+      // own cases and is created as requested rather than scheduled.
+      const linkedClient = await ownClientId(session.identity.profileId, token);
+      const caseId = required(body.caseId, "Case");
+      const cases = await rest<Json[]>(
+        `cases?select=id,client_id,owner_id,organisation_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+        token,
+      );
+      const linkedCase = cases[0];
+      if (!linkedCase)
+        throw new LiveAccessError(403, "That case is not available to you.");
+      if (
+        session.identity.role === "client" &&
+        String(linkedCase.client_id) !== String(linkedClient ?? "")
+      )
+        throw new LiveAccessError(
+          403,
+          "You can only request an appointment on your own case.",
+        );
+      const id = crypto.randomUUID();
+      const startsAt = new Date(
+        `${required(body.date, "Preferred date")}T${String(body.time || "09:00")}:00`,
+      );
+      if (Number.isNaN(startsAt.getTime()))
+        throw new InputError("That preferred date is not valid.");
+      if (startsAt.getTime() < Date.now())
+        throw new InputError("Choose a date in the future.");
+      await insert(
+        "appointments",
+        {
+          id,
+          organisation_id: org,
+          case_id: caseId,
+          owner_id: linkedCase.owner_id ?? null,
+          title: required(body.title, "What the appointment is about"),
+          appointment_type: String(body.appointmentType || "Consultation"),
+          starts_at: startsAt.toISOString(),
+          ends_at: new Date(startsAt.getTime() + 30 * 60 * 1000).toISOString(),
+          status: "requested",
+        },
+        token,
+      );
+      if (linkedCase.owner_id)
+        await insert(
+          "notifications",
+          {
+            id: crypto.randomUUID(),
+            organisation_id: org,
+            recipient_id: linkedCase.owner_id,
+            case_id: caseId,
+            kind: "appointment_requested",
+            title: "A client asked for an appointment",
+            body: `${session.identity.displayName} asked for ${String(body.title)}.`,
+          },
+          token,
+        ).catch((error) =>
+          console.error("Could not notify the case owner", error),
+        );
+      return appendRefreshCookies(
+        Response.json({ ok: true }),
+        session.refreshed,
+        request,
+      );
+    }
 
     if (action === "update_case") {
       const displayName = required(body.name, "Client name");
@@ -351,6 +424,8 @@ export async function POST(request: Request) {
       // progress value must not reset it to zero.
       if (body.progress !== undefined && body.progress !== "")
         caseChanges.progress = Number(body.progress);
+      if (typeof body.ownerId === "string" && body.ownerId.trim())
+        caseChanges.owner_id = await resolveOwnerId(body.ownerId, actor, token);
       await patchRow("cases", caseId, caseChanges, token);
       await auditEvent(
         org,
@@ -370,6 +445,7 @@ export async function POST(request: Request) {
       const emailAddress = requiredEmail(body.email);
       const visaExpiry = requiredDay(body.visaExpiry, "Visa expiry date");
       const lifecycleEnabled = await lifecycleReady(token);
+      const ownerId = await resolveOwnerId(body.ownerId, actor, token);
       const parts = displayName.split(/\s+/);
       const firstName = parts.shift() || displayName;
       const lastName = parts.join(" ") || "—";
@@ -393,7 +469,7 @@ export async function POST(request: Request) {
         last_name: lastName,
         email: emailAddress,
         mobile: nullable(body.phone),
-        owner_id: actor,
+        owner_id: ownerId,
         current_lifecycle: "enquiry",
         date_of_birth: nullableDay(body.dob),
         nationality: nullable(body.nationality),
@@ -416,7 +492,7 @@ export async function POST(request: Request) {
             case_number: `CASE-${new Date().getUTCFullYear()}-${caseId.slice(0, 8).toUpperCase()}`,
             service_type: kind,
             matter_type: matterType,
-            owner_id: actor,
+            owner_id: ownerId,
             health: normalHealth(body.health),
             priority: "medium",
             progress: Number(body.progress ?? 0),
@@ -933,6 +1009,14 @@ export async function POST(request: Request) {
   }
 }
 
+async function ownClientId(profileId: string, token: string) {
+  const rows = await rest<Array<{ client_id: string }>>(
+    `client_user_links?select=client_id&profile_id=eq.${profileId}&limit=1`,
+    token,
+  );
+  return rows[0]?.client_id ?? null;
+}
+
 async function rest<T>(query: string, token: string): Promise<T> {
   return await supabaseRequest<T>(
     `/rest/v1/${query}`,
@@ -1083,6 +1167,30 @@ function serviceStream(workspace: unknown, matterType: unknown): string {
   return /visa|migration|skill|eoi|subclass|\b\d{3}\b/i.test(String(matterType ?? ""))
     ? "direct_visa"
     : "study_abroad";
+}
+
+/**
+ * Resolves the staff member a case should belong to. Intake used to show a free
+ * text box, so a typed name assigned nothing; the case silently stayed with
+ * whoever created it.
+ */
+async function resolveOwnerId(
+  requested: unknown,
+  fallback: string,
+  token: string,
+): Promise<string> {
+  const asked = typeof requested === "string" ? requested.trim() : "";
+  if (!asked) return fallback;
+  const rows = await rest<Json[]>(
+    `profiles?select=id,level,active&id=eq.${encodeURIComponent(asked)}&limit=1`,
+    token,
+  );
+  const candidate = rows[0];
+  if (!candidate) throw new InputError("That staff member is not in this organisation.");
+  if (candidate.active !== true) throw new InputError("That account is deactivated.");
+  if (candidate.level === "student")
+    throw new InputError("A case cannot be assigned to a portal account.");
+  return String(candidate.id);
 }
 
 function requireManager(role: string, action: string): void {

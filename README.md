@@ -21,6 +21,13 @@ A local-first, case-centric CRM foundation for education and migration agencies.
 - Team calendar, approved template library and compliance centre
 - Database records for AI citations, action proposals, consent and appointments
 
+New Enquiry is deliberately short: who the client is, the matter, the branch and
+the staff member who will own it. Academic history, employment, English tests,
+family and passport details are recorded in the case file afterwards, where each
+becomes a proper record rather than a loose field. Nothing on a migration file is
+deleted -- an application or a dependant is withdrawn or removed with a reason,
+a date and a name, and stays on the file.
+
 Every case opens as a full file: overview and pipeline, client details,
 family and dependants, education and employment history, education
 applications, the visa matter, documents and checklist, a chronological file
@@ -106,6 +113,18 @@ to a throwaway PostgreSQL cluster and asserts that a client portal account
 cannot read or write another client's records, that the case lifecycle rules
 hold, and that case reassignment notifies only the new owner. It needs
 `postgresql-16` and a `postgres` system user.
+
+## Passport numbers
+
+Passport numbers are encrypted by the application before they reach the
+database and only a masked form, `N12••••7`, is ever sent to the browser.
+Revealing the real number is a manager action and is written to the case
+timeline against whoever asked for it.
+
+Set `FIELD_ENCRYPTION_KEY` to a base64 32-byte value, from
+`openssl rand -base64 32`, alongside the other secrets. Without it the CRM
+refuses to store a passport number rather than storing it in the clear.
+Changing the key makes existing stored numbers unreadable.
 
 ## Connecting the Shared Drive
 

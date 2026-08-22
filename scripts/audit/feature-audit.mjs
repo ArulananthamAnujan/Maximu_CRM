@@ -14,6 +14,7 @@ const env = {
     ? readFileSync(process.env.GOOGLE_PRIVATE_KEY_FILE, "utf8")
     : undefined,
   GOOGLE_SHARED_DRIVE_ID: process.env.GOOGLE_SHARED_DRIVE_ID,
+  FIELD_ENCRYPTION_KEY: process.env.FIELD_ENCRYPTION_KEY,
   ASSETS: { fetch: async () => new Response("", { status: 404 }) },
 };
 const DRIVE_STUB = process.env.DRIVE_STUB_URL;
@@ -365,8 +366,9 @@ expect("advancing to offer received stamps the offer date",
   JSON.stringify(advancedRow)?.slice(0, 180));
 const badStatus = await casefile({ action: "application_update", id: firstApp?.id, status: "invented" });
 expect("an unknown application status is refused", badStatus.status === 400);
-expect("an application can be removed",
-  (await casefile({ action: "application_delete", id: firstApp?.id })).status === 200);
+expect("an application is withdrawn with a reason, not deleted",
+  (await casefile({ action: "application_archive", id: firstApp?.id,
+    outcome: "withdrawn", reason: "Offer declined" })).status === 200);
 
 section("Visa matter workspace");
 const visaSave = await casefile({ action: "visa_matter_save", caseId: newCaseId,
@@ -412,8 +414,9 @@ expect("a family is not limited to one spouse and one child",
 const badRelationship = await casefile({ action: "dependant_create",
   clientId: created.json?.clientId, relationship: "cousin-in-law", fullName: "X" });
 expect("an unknown relationship is refused", badRelationship.status === 400);
-expect("a dependant can be removed",
-  (await casefile({ action: "dependant_delete", id: withFamily.json?.dependants?.[0]?.id })).status === 200);
+expect("a dependant is archived with a reason, not deleted",
+  (await casefile({ action: "dependant_archive", id: withFamily.json?.dependants?.[0]?.id,
+    reason: "Added in error" })).status === 200);
 
 section("Service stream and matter type");
 const streamCase = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
@@ -557,6 +560,110 @@ const crossBranchDownload = await worker.fetch(
     headers: { cookie: (await login("colombo@maximus.test")).cookie } }), env, ctx);
 expect("another branch cannot download the file", crossBranchDownload.status === 403,
   `status ${crossBranchDownload.status}`);
+
+section("Protected passport numbers");
+const depWithPassport = await casefile({ action: "dependant_create",
+  clientId: created.json?.clientId, relationship: "spouse",
+  fullName: "Lakshmi Kumar", dateOfBirth: "1995-05-05",
+  passportNumber: "N1234567", nationality: "Indian", included: true });
+expect("a dependant passport can be recorded", depWithPassport.status === 200,
+  JSON.stringify(depWithPassport.json));
+const familyFile = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+const meera = (familyFile.json?.dependants ?? []).find((d) => d.full_name === "Lakshmi Kumar");
+expect("only a masked passport reaches the browser",
+  meera?.passport_masked === "N12••••7" &&
+    !("passport_number_encrypted" in (meera ?? {})),
+  JSON.stringify(meera)?.slice(0, 220));
+expect("the plain passport number is never returned",
+  !JSON.stringify(familyFile.json).includes("N1234567"),
+  "the raw number appeared in the case file response");
+const revealByStaff = await casefile({ action: "reveal_passport", subject: "dependant", id: meera?.id });
+expect("a case officer cannot reveal a passport number", revealByStaff.status === 403,
+  `${revealByStaff.status} ${JSON.stringify(revealByStaff.json)}`);
+const revealByOwner = await casefile(
+  { action: "reveal_passport", subject: "dependant", id: meera?.id }, owner.cookie);
+expect("a manager can reveal it, and gets the real number back",
+  revealByOwner.status === 200 && revealByOwner.json?.passportNumber === "N1234567",
+  `${revealByOwner.status} ${JSON.stringify(revealByOwner.json)?.slice(0, 120)}`);
+
+section("Archive rather than delete");
+const appsNow = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+const liveApp = appsNow.json?.applications?.[0];
+const noReason = await casefile({ action: "application_archive", id: liveApp?.id });
+expect("withdrawing without a reason is refused", noReason.status === 400,
+  JSON.stringify(noReason.json));
+const withdrawn = await casefile({ action: "application_archive", id: liveApp?.id,
+  outcome: "withdrawn", reason: "Student chose another institution" });
+expect("an application can be withdrawn with a reason", withdrawn.status === 200,
+  JSON.stringify(withdrawn.json));
+const afterWithdraw = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+const archivedApp = afterWithdraw.json?.applications?.find((a) => a.id === liveApp?.id);
+expect("the withdrawn application stays on the file with who, when and why",
+  archivedApp && archivedApp.status === "withdrawn" && archivedApp.archived_at &&
+    archivedApp.archived_by && /another institution/.test(archivedApp.archive_reason ?? ""),
+  JSON.stringify(archivedApp)?.slice(0, 240));
+const depArchived = await casefile({ action: "dependant_archive", id: meera?.id,
+  reason: "Not included in this application" });
+expect("a dependant is archived rather than deleted", depArchived.status === 200,
+  JSON.stringify(depArchived.json));
+
+section("Case file audit trail");
+const timelineFile = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+const kinds = (timelineFile.json?.timeline ?? []).map((entry) => entry.kind);
+for (const kind of [
+  "application.created",
+  "application.status_changed",
+  "application.archived",
+  "visa.outcome_changed",
+  "dependant.added",
+  "dependant.archived",
+  "passport.revealed",
+]) expect(`the timeline records ${kind}`, kinds.includes(kind),
+  JSON.stringify([...new Set(kinds)]).slice(0, 300));
+const outcomeEntry = (timelineFile.json?.timeline ?? []).find(
+  (entry) => entry.kind === "visa.outcome_changed");
+expect("a visa outcome change names the outcome", /granted/i.test(outcomeEntry?.title ?? ""),
+  JSON.stringify(outcomeEntry));
+
+section("Client portal actions");
+const portalCases = await call("/api/crm/workspace", { cookie: student.cookie });
+const portalCase = portalCases.json?.cases?.[0];
+const requested = await call("/api/crm/workspace", { method: "POST", cookie: student.cookie,
+  body: { action: "appointment_request", caseId: portalCase?.dbId,
+          title: "Question about my visa", date: "2027-01-15", time: "10:00" } });
+expect("a client can request an appointment", requested.status === 200,
+  JSON.stringify(requested.json));
+const pastRequest = await call("/api/crm/workspace", { method: "POST", cookie: student.cookie,
+  body: { action: "appointment_request", caseId: portalCase?.dbId, title: "x", date: "2020-01-01" } });
+expect("a request in the past is refused", pastRequest.status === 400,
+  JSON.stringify(pastRequest.json));
+const otherCaseRequest = await call("/api/crm/workspace", { method: "POST", cookie: student.cookie,
+  body: { action: "appointment_request", caseId: newCaseId, title: "x", date: "2027-01-15" } });
+expect("a client cannot request against another client's case",
+  otherCaseRequest.status === 403, JSON.stringify(otherCaseRequest.json));
+const stillBlocked = await call("/api/crm/workspace", { method: "POST", cookie: student.cookie,
+  body: { action: "task", title: "nope" } });
+expect("the portal still cannot create staff records", stillBlocked.status === 403);
+
+section("Assignment at intake");
+const assignedCase = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "case", name: "Hasini Silva", phone: "+61400000006",
+          email: "hasini@example.test", visaExpiry: "2027-04-30",
+          workspace: "Study Abroad", matterType: "Student admission",
+          ownerId: "c0000000-0000-4000-8000-000000000003" } });
+expect("a case can be assigned at intake", assignedCase.status === 200,
+  JSON.stringify(assignedCase.json));
+const assignedWs = await call("/api/crm/workspace", { cookie: owner.cookie });
+const hasini = assignedWs.json?.cases?.find((c) => c.name === "Hasini Silva");
+expect("the chosen staff member actually owns the case",
+  hasini?.ownerId === "c0000000-0000-4000-8000-000000000003" &&
+    hasini?.owner === "Olivia Officer",
+  JSON.stringify(hasini)?.slice(0, 200));
+const badOwner = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "case", name: "Bad Owner", phone: "1", email: "b@x.test",
+          visaExpiry: "2027-01-01", ownerId: "c0000000-0000-4000-8000-000000000004" } });
+expect("a case cannot be assigned to a portal account at intake",
+  badOwner.status === 400, JSON.stringify(badOwner.json));
 
 section("Branch isolation");
 const colombo = await login("colombo@maximus.test");

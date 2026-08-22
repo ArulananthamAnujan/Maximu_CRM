@@ -70,4 +70,5 @@ SHIM_URL="http://127.0.0.1:${shim_port}" \
   GOOGLE_PRIVATE_KEY_FILE="${root}/scripts/audit/keys/test-service-account.pem" \
   DRIVE_STUB_URL="http://127.0.0.1:${drive_port}" \
   MAX_UPLOAD_MB="0.5" \
+  FIELD_ENCRYPTION_KEY="$(head -c 32 /dev/urandom | base64)" \
   node "${root}/scripts/audit/feature-audit.mjs"

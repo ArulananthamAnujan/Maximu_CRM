@@ -191,6 +191,7 @@ type CaseNote = {
   created_at: string;
   author_id: string | null;
 };
+type BranchRecord = { id: string; name: string; code: string };
 type StaffRecord = {
   id: string;
   display_name: string;
@@ -2113,6 +2114,7 @@ function ClientModuleView({
   client,
   appointments,
   documents,
+  storageConnected,
   messages,
   invoices,
   openModal,
@@ -2121,10 +2123,35 @@ function ClientModuleView({
   client: CaseRecord | undefined;
   appointments: AppointmentRecord[];
   documents: DocumentRecord[];
+  storageConnected: boolean;
   messages: MessageRecord[];
   invoices: InvoiceRecord[];
   openModal: (x: ModalType) => void;
 }) {
+  const [uploading, setUploading] = useState("");
+  const [portalError, setPortalError] = useState("");
+  // A client supplies a document that was asked of them. The API and the
+  // database both limit this to their own requested documents.
+  const uploadOwn = async (documentId: string, chosen: File) => {
+    setUploading(documentId);
+    setPortalError("");
+    try {
+      const body = new FormData();
+      body.append("documentId", documentId);
+      body.append("file", chosen);
+      const response = await fetch("/api/crm/documents", { method: "POST", body });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The file was not sent.");
+      window.location.reload();
+    } catch (reason) {
+      setPortalError(
+        reason instanceof Error ? reason.message : "The file was not sent.",
+      );
+    } finally {
+      setUploading("");
+    }
+  };
+
   if (!client)
     return (
       <article className="panel clientEmpty">
@@ -2143,15 +2170,8 @@ function ClientModuleView({
         <div className="panelHead">
           <div>
             <span className="kicker">MY FILES</span>
-            <h2>Documents shared with Maximus</h2>
+            <h2>Documents Maximus has asked for</h2>
           </div>
-          <button
-            className="primaryButton"
-            onClick={() => openModal("document")}
-          >
-            <Plus size={16} />
-            Request document
-          </button>
         </div>
         {own.length ? (
           own.map((d) => (
@@ -2164,6 +2184,21 @@ function ClientModuleView({
                 </span>
               </div>
               <Status value={d.status} />
+              {storageConnected && /request|reject/i.test(d.status) ? (
+                <label className="ghostButton fileButton">
+                  <Cloud size={14} />
+                  {uploading === d.id ? "Sending…" : "Upload"}
+                  <input
+                    type="file"
+                    disabled={uploading === d.id}
+                    onChange={(event) => {
+                      const chosen = event.target.files?.[0];
+                      event.target.value = "";
+                      if (chosen) void uploadOwn(d.id, chosen);
+                    }}
+                  />
+                </label>
+              ) : null}
             </div>
           ))
         ) : (
@@ -2171,6 +2206,7 @@ function ClientModuleView({
             No documents are linked to this client account.
           </p>
         )}
+        {portalError && <p className="caseWorkError">{portalError}</p>}
       </article>
     );
   }
@@ -3145,6 +3181,8 @@ function CaseDrawerBody({
     send("/api/crm/operations", body);
   const casefile = (body: Record<string, unknown>) =>
     send("/api/crm/casefile", body);
+  const intake = (body: Record<string, unknown>) =>
+    send("/api/crm/intake", body);
 
   const run = async (next: LifecycleStage) => {
     setMoving(next);
@@ -3156,6 +3194,7 @@ function CaseDrawerBody({
   };
 
   const client = file?.client ?? {};
+  const clientId = String(item.clientId ?? "");
   const visa = file?.visaMatter ?? null;
 
   return (
@@ -3413,7 +3452,7 @@ function CaseDrawerBody({
 
         {tab === "history" && (
           <>
-            <RecordTable
+            <HistorySection
               title="Education"
               rows={file?.intake.education ?? []}
               columns={[
@@ -3423,8 +3462,21 @@ function CaseDrawerBody({
                 ["To", "completed_on"],
                 ["Result", "result"],
               ]}
+              fields={[
+                ["institution", "Institution", "text", true],
+                ["qualification", "Qualification", "text", true],
+                ["fieldOfStudy", "Field of study", "text", false],
+                ["countryCode", "Country", "text", false],
+                ["startedOn", "Started", "date", false],
+                ["completedOn", "Completed", "date", false],
+                ["result", "Result", "text", false],
+              ]}
+              action="education"
+              clientId={clientId}
+              working={working}
+              onSave={intake}
             />
-            <RecordTable
+            <HistorySection
               title="Employment"
               rows={file?.intake.employment ?? []}
               columns={[
@@ -3434,8 +3486,21 @@ function CaseDrawerBody({
                 ["To", "ended_on"],
                 ["Hours", "hours_per_week"],
               ]}
+              fields={[
+                ["employer", "Employer", "text", true],
+                ["jobTitle", "Job title", "text", true],
+                ["countryCode", "Country", "text", false],
+                ["startedOn", "Started", "date", false],
+                ["endedOn", "Ended", "date", false],
+                ["hoursPerWeek", "Hours per week", "number", false],
+                ["duties", "Duties", "text", false],
+              ]}
+              action="employment"
+              clientId={clientId}
+              working={working}
+              onSave={intake}
             />
-            <RecordTable
+            <HistorySection
               title="English tests"
               rows={file?.intake.tests ?? []}
               columns={[
@@ -3444,8 +3509,23 @@ function CaseDrawerBody({
                 ["Overall", "overall"],
                 ["Expires", "expires_on"],
               ]}
+              fields={[
+                ["testType", "Test type", "text", true],
+                ["testDate", "Test date", "date", false],
+                ["overall", "Overall", "number", false],
+                ["listening", "Listening", "number", false],
+                ["reading", "Reading", "number", false],
+                ["writing", "Writing", "number", false],
+                ["speaking", "Speaking", "number", false],
+                ["referenceNumber", "Reference", "text", false],
+                ["expiresOn", "Expires", "date", false],
+              ]}
+              action="english_test"
+              clientId={clientId}
+              working={working}
+              onSave={intake}
             />
-            <RecordTable
+            <HistorySection
               title="Visa history"
               rows={file?.intake.visaHistory ?? []}
               columns={[
@@ -3455,6 +3535,19 @@ function CaseDrawerBody({
                 ["Granted", "granted_on"],
                 ["Expires", "expires_on"],
               ]}
+              fields={[
+                ["countryCode", "Country", "text", true],
+                ["visaType", "Visa type", "text", true],
+                ["status", "Status", "text", true],
+                ["appliedOn", "Applied", "date", false],
+                ["grantedOn", "Granted", "date", false],
+                ["expiresOn", "Expires", "date", false],
+                ["refusalReason", "Refusal reason", "text", false],
+              ]}
+              action="visa_history"
+              clientId={clientId}
+              working={working}
+              onSave={intake}
             />
           </>
         )}
@@ -3667,6 +3760,108 @@ function CaseDrawerBody({
   );
 }
 
+/**
+ * A history table with its own add form, so what the long intake form used to
+ * ask for is captured here instead, as proper records.
+ */
+function HistorySection({
+  title,
+  rows,
+  columns,
+  fields,
+  action,
+  clientId,
+  working,
+  onSave,
+}: {
+  title: string;
+  rows: Record<string, unknown>[];
+  columns: [string, string][];
+  fields: [string, string, string, boolean][];
+  action: string;
+  clientId: string;
+  working: boolean;
+  onSave: (body: Record<string, unknown>) => Promise<boolean>;
+}) {
+  const [adding, setAdding] = useState(false);
+  return (
+    <section className="caseWorkPanel">
+      <span className="kicker">{title.toUpperCase()}</span>
+      {rows.length === 0 ? (
+        <p className="caseWorkEmpty">Nothing recorded yet.</p>
+      ) : (
+        <div className="recordTableWrap">
+          <table className="recordTable">
+            <thead>
+              <tr>
+                {columns.map(([label]) => (
+                  <th key={label}>{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, index) => (
+                <tr key={String(row.id ?? index)}>
+                  {columns.map(([label, key]) => (
+                    <td key={label}>{humanise(row[key]) || "—"}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {adding ? (
+        <form
+          className="stackedForm"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const body: Record<string, unknown> = { action, clientId };
+            for (const [name, , kind] of fields) {
+              const raw = data.get(name);
+              if (raw === null || raw === "") continue;
+              body[name] = kind === "number" ? Number(raw) : raw;
+            }
+            if (await onSave(body)) setAdding(false);
+          }}
+        >
+          {fields.map(([name, label, kind, requiredField]) => (
+            <label key={name}>
+              {label}
+              {requiredField ? " *" : ""}
+              <input
+                name={name}
+                type={kind === "number" ? "number" : kind}
+                step={kind === "number" ? "any" : undefined}
+                required={requiredField}
+              />
+            </label>
+          ))}
+          <div className="formActions">
+            <button className="primaryButton" disabled={working}>
+              <Plus size={15} />
+              Add
+            </button>
+            <button
+              type="button"
+              className="ghostButton"
+              onClick={() => setAdding(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button className="ghostButton" onClick={() => setAdding(true)}>
+          <Plus size={15} />
+          Add {title.toLowerCase().replace(/s$/, "")}
+        </button>
+      )}
+    </section>
+  );
+}
+
 function RecordTable({
   title,
   rows,
@@ -3816,6 +4011,62 @@ function DocumentsPanel({
   );
 }
 
+/** Records why a migration file record was withdrawn, rather than deleting it. */
+function ArchiveForm({
+  title,
+  outcomes,
+  working,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  outcomes: string[];
+  working: boolean;
+  onCancel: () => void;
+  onConfirm: (outcome: string, reason: string) => Promise<void>;
+}) {
+  return (
+    <form
+      className="stackedForm"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+        await onConfirm(
+          String(data.get("outcome") ?? "withdrawn"),
+          String(data.get("reason") ?? ""),
+        );
+      }}
+    >
+      <p className="caseWorkEmpty wideNote">
+        {title}. Nothing is deleted: the record stays on the file with the
+        reason, the date and who did it.
+      </p>
+      <label>
+        Outcome
+        <select name="outcome" defaultValue={outcomes[0]}>
+          {outcomes.map((option) => (
+            <option key={option} value={option}>
+              {humanise(option)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="wide">
+        Reason *<input name="reason" required />
+      </label>
+      <div className="formActions">
+        <button className="primaryButton" disabled={working}>
+          <Check size={15} />
+          Confirm
+        </button>
+        <button type="button" className="ghostButton" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function ApplicationsTab({
   applications,
   caseId,
@@ -3828,6 +4079,7 @@ function ApplicationsTab({
   onSave: (body: Record<string, unknown>) => Promise<boolean>;
 }) {
   const [adding, setAdding] = useState(false);
+  const [archiving, setArchiving] = useState("");
   return (
     <section className="caseWorkPanel">
       <span className="kicker">EDUCATION APPLICATIONS</span>
@@ -3878,14 +4130,11 @@ function ApplicationsTab({
                   <td>{day(row.deadline_at) || "—"}</td>
                   <td>
                     <button
-                      className="iconButton"
-                      aria-label="Remove application"
+                      className="ghostButton"
                       disabled={working}
-                      onClick={() =>
-                        void onSave({ action: "application_delete", id: row.id })
-                      }
+                      onClick={() => setArchiving(String(row.id))}
                     >
-                      <Trash2 size={15} />
+                      Withdraw
                     </button>
                   </td>
                 </tr>
@@ -3893,6 +4142,23 @@ function ApplicationsTab({
             </tbody>
           </table>
         </div>
+      )}
+      {archiving && (
+        <ArchiveForm
+          title="Withdraw this application"
+          outcomes={["withdrawn", "rejected", "deferred", "removed_in_error"]}
+          working={working}
+          onCancel={() => setArchiving("")}
+          onConfirm={async (outcome, reason) => {
+            const ok = await onSave({
+              action: "application_archive",
+              id: archiving,
+              outcome,
+              reason,
+            });
+            if (ok) setArchiving("");
+          }}
+        />
       )}
       {adding ? (
         <form
@@ -4174,6 +4440,7 @@ function FamilyTab({
   onSave: (body: Record<string, unknown>) => Promise<boolean>;
 }) {
   const [adding, setAdding] = useState(false);
+  const [archiving, setArchiving] = useState("");
   return (
     <section className="caseWorkPanel">
       <span className="kicker">FAMILY AND DEPENDANTS</span>
@@ -4189,37 +4456,50 @@ function FamilyTab({
                 <th>Relationship</th>
                 <th>Name</th>
                 <th>Date of birth</th>
+                <th>Passport</th>
                 <th>Included</th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {dependants.map((row) => {
-                const details = (row.details ?? {}) as Record<string, unknown>;
-                return (
-                  <tr key={String(row.id)}>
-                    <td>{humanise(row.relationship)}</td>
-                    <td>{text(row.full_name)}</td>
-                    <td>{day(row.date_of_birth) || "—"}</td>
-                    <td>{details.included_in_application ? "Yes" : "No"}</td>
-                    <td>
-                      <button
-                        className="iconButton"
-                        aria-label="Remove dependant"
-                        disabled={working}
-                        onClick={() =>
-                          void onSave({ action: "dependant_delete", id: row.id })
-                        }
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+              {dependants.map((row) => (
+                <tr key={String(row.id)}>
+                  <td>{humanise(row.relationship)}</td>
+                  <td>{text(row.full_name)}</td>
+                  <td>{day(row.date_of_birth) || "—"}</td>
+                  {/* Only the masked form is ever sent to the browser. */}
+                  <td>{text(row.passport_masked) || "—"}</td>
+                  <td>{row.included_in_application ? "Yes" : "No"}</td>
+                  <td>
+                    <button
+                      className="ghostButton"
+                      disabled={working}
+                      onClick={() => setArchiving(String(row.id))}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
+      )}
+      {archiving && (
+        <ArchiveForm
+          title="Remove this dependant from the file"
+          outcomes={["withdrawn", "removed_in_error"]}
+          working={working}
+          onCancel={() => setArchiving("")}
+          onConfirm={async (_outcome, reason) => {
+            const ok = await onSave({
+              action: "dependant_archive",
+              id: archiving,
+              reason,
+            });
+            if (ok) setArchiving("");
+          }}
+        />
       )}
       {adding ? (
         <form
@@ -4267,7 +4547,10 @@ function FamilyTab({
           </label>
           <label>
             Passport number
-            <input name="passportNumber" />
+            <input name="passportNumber" autoComplete="off" />
+            <small className="fieldHint">
+              Encrypted before it is stored. Only a masked form is displayed.
+            </small>
           </label>
           <label>
             Passport expiry
@@ -4311,6 +4594,8 @@ function RecordModal({
   submit,
   cases,
   editing,
+  branches,
+  staff,
   saving,
   error,
 }: {
@@ -4319,6 +4604,8 @@ function RecordModal({
   submit: (e: FormEvent<HTMLFormElement>) => void;
   cases: CaseRecord[];
   editing: CaseRecord | null;
+  branches: BranchRecord[];
+  staff: StaffRecord[];
   saving: boolean;
   error: string;
 }) {
@@ -4383,432 +4670,144 @@ function RecordModal({
                   Direct Visa
                 </label>
               </section>
-              <details open>
-                <summary>1. Personal details</summary>
-                <div className="intakeFields">
-                  <label>
-                    Full name *
-                    <input name="name" required defaultValue={editing?.name} />
-                  </label>
-                  <label>
-                    Email *
-                    <input
-                      name="email"
-                      type="email"
-                      required
-                      defaultValue={editing?.email}
-                    />
-                  </label>
-                  <label>
-                    Mobile *
-                    <input
-                      name="phone"
-                      required
-                      defaultValue={editing?.phone}
-                      placeholder="+61 412 345 678"
-                    />
-                  </label>
-                  <label>
-                    Alternate number
-                    <input name="alternateNo" />
-                  </label>
-                  <label>
-                    Date of birth
-                    <input name="dob" type="date" />
-                  </label>
-                  <label>
-                    Gender
-                    <select name="gender">
-                      <option value="">Select gender</option>
-                      <option>Male</option>
-                      <option>Female</option>
-                      <option>Other</option>
-                    </select>
-                  </label>
-                  <label>
-                    Marital status
-                    <select name="maritalStatus">
-                      <option value="">Select status</option>
-                      <option>Single</option>
-                      <option>Married</option>
-                      <option>Divorced</option>
-                      <option>Widowed</option>
-                    </select>
-                  </label>
-                  <label>
-                    Nationality
-                    <input name="nationality" />
-                  </label>
-                  <label className="wide">
-                    Address
-                    <input name="address" />
-                  </label>
-                </div>
-              </details>
-              <details>
-                <summary>2. Spouse and children</summary>
-                <div className="intakeFields">
-                  <label>
-                    Spouse name
-                    <input name="spouseName" />
-                  </label>
-                  <label>
-                    Spouse mobile
-                    <input name="spouseMobile" />
-                  </label>
-                  <label>
-                    Spouse email
-                    <input name="spouseEmail" type="email" />
-                  </label>
-                  <label>
-                    Spouse visa type
-                    <input name="spouseVisaType" />
-                  </label>
-                  <label>
-                    Spouse visa expiry
-                    <input name="spouseVisaExpiry" type="date" />
-                  </label>
-                  <label>
-                    Marriage date
-                    <input name="marriageDate" type="date" />
-                  </label>
-                  <label>
-                    Marriage type
-                    <input name="marriageType" />
-                  </label>
-                  <label>
-                    Marriage registered?
-                    <select name="marriageRegistered">
-                      <option value="">Select</option>
-                      <option>Yes</option>
-                      <option>No</option>
-                    </select>
-                  </label>
-                  <label>
-                    Spouse passport
-                    <input name="spousePassport" />
-                  </label>
-                  <label>
-                    Spouse date of birth
-                    <input name="spouseDob" type="date" />
-                  </label>
-                  <label>
-                    Child name
-                    <input name="childName" />
-                  </label>
-                  <label>
-                    Child date of birth
-                    <input name="childDob" type="date" />
-                  </label>
-                </div>
-              </details>
-              <details>
-                <summary>3. Study preference and case classification</summary>
-                <div className="intakeFields">
-                  <label>
-                    Matter type *
-                    <select
-                      name="matterType"
-                      required
-                      defaultValue={editing?.matterType || "Education enquiry"}
-                    >
-                      <option>Education enquiry</option>
-                      <option>Student admission</option>
-                      <option>Student visa</option>
-                      <option>407 Training Visa</option>
-                      <option>408 Temporary work activity</option>
-                      <option>482 Work Visa</option>
-                      <option>485 Visa</option>
-                      <option>494 Regional Work Visa</option>
-                      <option>500 Student Dependent</option>
-                      <option>600 Visitor Visa</option>
-                      <option>Partner visa 820/801</option>
-                      <option>Partner visa 309/100</option>
-                      <option>Protection Visa 866</option>
-                      <option>Skill assessment program</option>
-                      <option>EOI lodgement</option>
-                    </select>
-                  </label>
-                  <label>
-                    Interested country
-                    <input name="country" />
-                  </label>
-                  <label>
-                    University / college
-                    <input name="university" />
-                  </label>
-                  <label>
-                    Course
-                    <input name="target" defaultValue={editing?.target} />
-                  </label>
-                  <label>
-                    Intake
-                    <input name="intake" />
-                  </label>
-                  <label>
-                    Course start date
-                    <input name="courseStart" type="date" />
-                  </label>
-                  <label>
-                    Course end date
-                    <input name="courseEnd" type="date" />
-                  </label>
-                  <label>
-                    Apply level
-                    <select name="applyLevel">
-                      <option value="">Select level</option>
-                      <option>Undergraduate</option>
-                      <option>Postgraduate</option>
-                      <option>Diploma</option>
-                      <option>PhD</option>
-                      <option>Certificate III</option>
-                      <option>Certificate IV</option>
-                      <option>Advanced Diploma</option>
-                      <option>Associate Degree</option>
-                      <option>Bachelor Degree</option>
-                      <option>Master Degree</option>
-                      <option>Graduate Diploma</option>
-                      <option>Graduate Certificate</option>
-                      <option>Master by Research</option>
-                    </select>
-                  </label>
-                  <label>
-                    Source
-                    <select name="source">
-                      <option value="">Select source</option>
-                      <option>Facebook</option>
-                      <option>Walk-In</option>
-                      <option>WhatsApp</option>
-                      <option>Email Marketing</option>
-                      <option>Word of Mouth</option>
-                      <option>Excel Import</option>
-                      <option>Facebook Lead</option>
-                      <option>Phone Enquiry</option>
-                      <option>Enquiry Form</option>
-                    </select>
-                  </label>
-                  <label>
-                    Priority
-                    <select name="mainStatus">
-                      <option>High</option>
-                      <option>Medium</option>
-                      <option>Low</option>
-                    </select>
-                  </label>
-                  <label>
-                    CRM status
-                    <select
-                      name="stage"
-                      defaultValue={editing?.stage || "New Inquiry"}
-                    >
-                      <option>New Inquiry</option>
-                      <option>Potential</option>
-                      <option>Follow Up</option>
-                      <option>Waiting for Documents</option>
-                      <option>Documents Received</option>
-                      <option>Confirmed</option>
-                      <option>Course Selection Pending</option>
-                      <option>University Selection Pending</option>
-                      <option>Admission Application Sent</option>
-                      <option>Offer Received</option>
-                      <option>Payment Received</option>
-                      <option>CoE Request Sent</option>
-                      <option>CoE Received</option>
-                      <option>Visa Application Process</option>
-                      <option>Visa Granted</option>
-                      <option>Visa Refused</option>
-                      <option>File Closed</option>
-                      <option>Not Interested</option>
-                    </select>
-                  </label>
-                  <label>
-                    Visa expiry date *
-                    <input
-                      name="visaExpiry"
-                      type="date"
-                      required
-                      defaultValue={editing?.visaExpiry}
-                    />
-                  </label>
-                </div>
-              </details>
-              <details>
-                <summary>4. Academic history and proficiency tests</summary>
-                <div className="intakeFields">
-                  <label>
-                    Highest qualification
-                    <select name="highestQualification">
-                      <option value="">Select qualification</option>
-                      <option>Year 10 / SSC / O-Level</option>
-                      <option>Year 12 / HSC / A-Level</option>
-                      <option>Certificate III</option>
-                      <option>Certificate IV</option>
-                      <option>Diploma</option>
-                      <option>Advanced Diploma</option>
-                      <option>Bachelor Degree</option>
-                      <option>Graduate Diploma</option>
-                      <option>Master Degree</option>
-                      <option>PhD</option>
-                    </select>
-                  </label>
-                  <label>
-                    Subjects / stream
-                    <input name="subjects" />
-                  </label>
-                  <label>
-                    College / board
-                    <input name="college" />
-                  </label>
-                  <label>
-                    Percentage / grade
-                    <input name="grade" />
-                  </label>
-                  <label>
-                    Backlogs
-                    <input name="backlogs" />
-                  </label>
-                  <label>
-                    Year passed
-                    <input name="yearPassed" />
-                  </label>
-                  <label>
-                    Test type
-                    <select name="testType">
-                      <option value="">Select test</option>
-                      <option>IELTS</option>
-                      <option>PTE</option>
-                      <option>TOEFL</option>
-                      <option>CELPIP</option>
-                      <option>GRE</option>
-                      <option>GMAT</option>
-                      <option>SAT</option>
-                      <option>TOPIK</option>
-                      <option>JLPT</option>
-                      <option>Other</option>
-                    </select>
-                  </label>
-                  <label>
-                    Listening
-                    <input name="testListening" />
-                  </label>
-                  <label>
-                    Reading
-                    <input name="testReading" />
-                  </label>
-                  <label>
-                    Writing
-                    <input name="testWriting" />
-                  </label>
-                  <label>
-                    Speaking
-                    <input name="testSpeaking" />
-                  </label>
-                  <label>
-                    Overall
-                    <input name="testOverall" />
-                  </label>
-                </div>
-              </details>
-              <details>
-                <summary>5. Passport, work experience and assignment</summary>
-                <div className="intakeFields">
-                  <label>
-                    Passport number
-                    <input name="passport" />
-                  </label>
-                  <label>
-                    Date of issue
-                    <input name="passportIssue" type="date" />
-                  </label>
-                  <label>
-                    Date of expiry
-                    <input name="passportExpiry" type="date" />
-                  </label>
-                  <label>
-                    Company name
-                    <input name="company" />
-                  </label>
-                  <label>
-                    Position
-                    <input name="position" />
-                  </label>
-                  <label>
-                    Total experience
-                    <input name="experience" />
-                  </label>
-                  <label>
-                    Branch
-                    <input name="branch" defaultValue={editing?.branch} />
-                  </label>
-                  <label>
-                    Assigned staff
-                    <input name="owner" defaultValue={editing?.owner} />
-                  </label>
-                  <label>
-                    Partner / sub-agent
-                    <input name="partner" />
-                  </label>
-                  <label>
-                    Due date
-                    <input name="due" type="date" defaultValue={editing?.due} />
-                  </label>
-                  <label>
-                    Health
-                    <select
-                      name="health"
-                      defaultValue={editing?.health || "healthy"}
-                    >
-                      <option value="healthy">Healthy</option>
-                      <option value="attention">Attention</option>
-                      <option value="critical">Critical</option>
-                    </select>
-                  </label>
-                  <label>
-                    Progress
-                    <input
-                      name="progress"
-                      type="number"
-                      min="0"
-                      max="100"
-                      defaultValue={editing?.progress || 0}
-                    />
-                  </label>
-                  <input type="hidden" name="status" value="active" />
-                </div>
-              </details>
-              <details>
-                <summary>6. Follow-up, appointment and remarks</summary>
-                <div className="intakeFields">
-                  <label>
-                    Follow-up date
-                    <input name="followUpDate" type="date" />
-                  </label>
-                  <label>
-                    Follow-up time
-                    <input name="followUpTime" type="time" />
-                  </label>
-                  <label className="wide">
-                    Follow-up remarks
-                    <textarea name="followUpRemarks" />
-                  </label>
-                  <label>
-                    Appointment date
-                    <input name="appointmentDate" type="date" />
-                  </label>
-                  <label>
-                    Appointment time
-                    <input name="appointmentTime" type="time" />
-                  </label>
-                  <label className="wide">
-                    Appointment remarks
-                    <textarea name="appointmentRemarks" />
-                  </label>
-                  <label className="wide">
-                    Case remarks
-                    <textarea name="remarks" />
-                  </label>
-                </div>
-              </details>
+              <p className="modalNotice">
+                <AlertTriangle size={14} />
+                This opens the file. Academic history, tests, employment,
+                passport details and family are recorded in the case file
+                afterwards, where they are stored as proper records rather than
+                loose fields.
+              </p>
+              <div className="intakeFields">
+                <label>
+                  Full name *
+                  <input name="name" required defaultValue={editing?.name} />
+                </label>
+                <label>
+                  Email *
+                  <input
+                    name="email"
+                    type="email"
+                    required
+                    defaultValue={editing?.email}
+                  />
+                </label>
+                <label>
+                  Mobile *
+                  <input
+                    name="phone"
+                    required
+                    defaultValue={editing?.phone}
+                    placeholder="+61 412 345 678"
+                  />
+                </label>
+                <label>
+                  Date of birth
+                  <input name="dob" type="date" />
+                </label>
+                <label>
+                  Nationality
+                  <input name="nationality" />
+                </label>
+                <label>
+                  Matter type *
+                  <select
+                    name="matterType"
+                    required
+                    defaultValue={editing?.matterType || "Education enquiry"}
+                  >
+                    <option>Education enquiry</option>
+                    <option>Student admission</option>
+                    <option>Student visa</option>
+                    <option>407 Training Visa</option>
+                    <option>408 Temporary work activity</option>
+                    <option>482 Work Visa</option>
+                    <option>485 Visa</option>
+                    <option>494 Regional Work Visa</option>
+                    <option>500 Student Dependent</option>
+                    <option>600 Visitor Visa</option>
+                    <option>Partner visa 820/801</option>
+                    <option>Partner visa 309/100</option>
+                    <option>Protection Visa 866</option>
+                    <option>Skill assessment program</option>
+                    <option>EOI lodgement</option>
+                  </select>
+                </label>
+                <label>
+                  Visa expiry date *
+                  <input
+                    name="visaExpiry"
+                    type="date"
+                    required
+                    defaultValue={editing?.visaExpiry}
+                  />
+                </label>
+                <label>
+                  Branch
+                  <select name="branchId" defaultValue={editing?.branchId ?? ""}>
+                    <option value="">Your own branch</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                        {branch.code ? ` (${branch.code})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Assigned staff
+                  <select name="ownerId" defaultValue={editing?.ownerId ?? ""}>
+                    <option value="">You</option>
+                    {staff.map((person) => (
+                      <option key={person.id} value={person.id}>
+                        {person.display_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Course or visa target
+                  <input
+                    name="target"
+                    defaultValue={editing?.target}
+                    placeholder="e.g. Master of IT, Monash"
+                  />
+                </label>
+                <label>
+                  CRM status
+                  <select
+                    name="stage"
+                    defaultValue={editing?.stage || "New Inquiry"}
+                  >
+                    <option>New Inquiry</option>
+                    <option>Potential</option>
+                    <option>Follow Up</option>
+                    <option>Waiting for Documents</option>
+                    <option>Documents Received</option>
+                    <option>Confirmed</option>
+                    <option>Not Interested</option>
+                  </select>
+                </label>
+                <label>
+                  Next follow-up
+                  <input name="due" type="date" defaultValue={editing?.due} />
+                </label>
+                <label>
+                  Source
+                  <select name="source">
+                    <option value="">Select source</option>
+                    <option>Walk in</option>
+                    <option>Referral</option>
+                    <option>Website</option>
+                    <option>Social media</option>
+                    <option>Agent</option>
+                    <option>Existing client</option>
+                  </select>
+                </label>
+                <label className="wide">
+                  Remarks
+                  <input name="remarks" placeholder="Anything worth noting now" />
+                </label>
+              </div>
             </div>
           )}
           {type === "task" && (
@@ -5065,6 +5064,7 @@ export default function Home() {
       [],
     ),
     [staff, setStaff] = useState<StaffRecord[]>([]),
+    [branches, setBranches] = useState<BranchRecord[]>([]),
     [schemaWarning, setSchemaWarning] = useState<string>(""),
     [storageConnected, setStorageConnected] = useState(false);
   const [identity, setIdentity] = useState<LiveIdentity | null>(null),
@@ -5150,6 +5150,7 @@ export default function Home() {
         typeof result.schemaWarning === "string" ? result.schemaWarning : "",
       );
       setStorageConnected(result.capabilities?.documentStorage === true);
+      setBranches((result.branches || []) as BranchRecord[]);
       setActive(roleConfig[result.identity.role as AppRole].modules[0]);
       void loadAlerts(result.identity.role as AppRole);
     } catch (reason) {
@@ -5195,6 +5196,10 @@ export default function Home() {
         ),
       ) as Record<string, unknown>;
     payload.action = modal;
+    // The portal asks; staff confirm. The workspace accepts only the actions
+    // built for a client account.
+    if (role === "client" && modal === "appointment")
+      payload.action = "appointment_request";
     if (modal === "case" && editing?.dbId && editing.clientId) {
       payload.action = "update_case";
       payload.caseId = editing.dbId;
@@ -5473,6 +5478,7 @@ export default function Home() {
     setWorkflows([]);
     setAudits([]);
     setStaff([]);
+    setBranches([]);
     setSchemaWarning("");
     setAlerts([]);
     setStorageConnected(false);
@@ -5505,6 +5511,7 @@ export default function Home() {
           messages={messages}
           invoices={invoices}
           openModal={open}
+          storageConnected={storageConnected}
         />
       );
   else if (active === "dashboard")
@@ -5939,6 +5946,8 @@ export default function Home() {
         submit={save}
         cases={cases}
         editing={editing}
+        branches={branches}
+        staff={staff}
         saving={saving}
         error={formError}
       />

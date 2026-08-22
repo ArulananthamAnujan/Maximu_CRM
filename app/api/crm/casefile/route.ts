@@ -4,6 +4,12 @@ import {
   liveSession,
 } from "@/server/supabase-session";
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
+import {
+  mask,
+  protect,
+  ProtectedFieldError,
+  reveal,
+} from "@/server/protected-fields";
 
 export const dynamic = "force-dynamic";
 type Json = Record<string, unknown>;
@@ -111,7 +117,13 @@ export async function GET(request: Request) {
         client: clients[0] ?? null,
         applications,
         visaMatter: visaMatters[0] ?? null,
-        dependants,
+        // The ciphertext never leaves the server; the masked form is what the
+        // interface shows.
+        dependants: dependants.map((row) => {
+          const visible = { ...row };
+          delete visible.passport_number_encrypted;
+          return visible;
+        }),
         documents,
         notes,
         invoices,
@@ -144,29 +156,33 @@ export async function POST(request: Request) {
     const action = required(body.action, "Action");
 
     if (action === "application_create") {
-      await insert(
-        "education_applications",
-        {
-          id: crypto.randomUUID(),
-          organisation_id: org,
-          case_id: uuid(body.caseId, "Case"),
-          institution: required(body.institution, "Institution"),
-          course: required(body.course, "Course"),
-          campus: optional(body.campus),
-          intake: optional(body.intake),
-          application_reference: optional(body.reference),
-          status: applicationStatus(body.status),
-          deadline_at: optionalDate(body.deadline),
-          details: {},
-        },
-        token,
-      );
+      const id = crypto.randomUUID();
+      const value = {
+        id,
+        organisation_id: org,
+        case_id: uuid(body.caseId, "Case"),
+        institution: required(body.institution, "Institution"),
+        course: required(body.course, "Course"),
+        campus: optional(body.campus),
+        intake: optional(body.intake),
+        application_reference: optional(body.reference),
+        status: applicationStatus(body.status),
+        deadline_at: optionalDate(body.deadline),
+        details: {},
+      };
+      await insert("education_applications", value, token);
+      await audit(session, "application.created", "education_application", id, {
+        caseId: value.case_id,
+        summary: `Added application to ${value.institution} for ${value.course}`,
+        after: { institution: value.institution, course: value.course, status: value.status },
+      });
     } else if (action === "application_update") {
+      const id = uuid(body.id, "Application");
+      const before = await one("education_applications", id, token);
       const changes: Json = {};
       if (body.institution !== undefined)
         changes.institution = required(body.institution, "Institution");
-      if (body.course !== undefined)
-        changes.course = required(body.course, "Course");
+      if (body.course !== undefined) changes.course = required(body.course, "Course");
       if (body.campus !== undefined) changes.campus = optional(body.campus);
       if (body.intake !== undefined) changes.intake = optional(body.intake);
       if (body.reference !== undefined)
@@ -183,20 +199,53 @@ export async function POST(request: Request) {
       if (body.deadline !== undefined)
         changes.deadline_at = optionalDate(body.deadline);
       changes.updated_at = new Date().toISOString();
+      await patch("education_applications", id, changes, token);
+      const statusChanged =
+        changes.status !== undefined && changes.status !== before?.status;
+      await audit(
+        session,
+        statusChanged ? "application.status_changed" : "application.updated",
+        "education_application",
+        id,
+        {
+          caseId: before?.case_id,
+          summary: statusChanged
+            ? `${before?.institution ?? "Application"} moved from ${before?.status} to ${changes.status}`
+            : `Updated the application to ${before?.institution ?? "an institution"}`,
+          before: statusChanged ? { status: before?.status } : before ?? undefined,
+          after: changes,
+        },
+      );
+    } else if (action === "application_archive") {
+      // Migration file records are archived with a reason, never destroyed.
+      const id = uuid(body.id, "Application");
+      const before = await one("education_applications", id, token);
+      const outcome = archiveOutcome(body.outcome);
       await patch(
         "education_applications",
-        uuid(body.id, "Application"),
-        changes,
+        id,
+        {
+          status: outcome,
+          archived_at: new Date().toISOString(),
+          archived_by: session.identity.profileId,
+          archive_reason: required(body.reason, "Reason"),
+          updated_at: new Date().toISOString(),
+        },
         token,
       );
-    } else if (action === "application_delete") {
-      await remove("education_applications", uuid(body.id, "Application"), token);
+      await audit(session, "application.archived", "education_application", id, {
+        caseId: before?.case_id,
+        summary: `${before?.institution ?? "Application"} ${outcome.replace(/_/g, " ")}: ${String(body.reason)}`,
+        before: { status: before?.status },
+        after: { status: outcome, reason: optional(body.reason) },
+      });
     } else if (action === "visa_matter_save") {
       const caseId = uuid(body.caseId, "Case");
       const existing = await get<Json[]>(
-        `visa_matters?select=id&case_id=eq.${caseId}&limit=1`,
+        `visa_matters?select=*&case_id=eq.${caseId}&limit=1`,
         token,
       );
+      const before = existing[0];
       const value: Json = {
         destination_country: required(
           body.destinationCountry,
@@ -224,35 +273,77 @@ export async function POST(request: Request) {
         refusal_reason: optional(body.refusalReason),
         visa_conditions: stringList(body.conditions),
       };
-      if (existing[0])
-        await patch("visa_matters", String(existing[0].id), value, token);
+      if (before) await patch("visa_matters", String(before.id), value, token);
       else
         await insert(
           "visa_matters",
           { id: crypto.randomUUID(), organisation_id: org, case_id: caseId, ...value },
           token,
         );
-    } else if (action === "dependant_create") {
-      await insert(
-        "dependants",
-        {
-          id: crypto.randomUUID(),
-          organisation_id: org,
-          client_id: uuid(body.clientId, "Client"),
-          relationship: relationship(body.relationship),
-          full_name: required(body.fullName, "Full name"),
-          date_of_birth: optionalDay(body.dateOfBirth),
-          details: {
-            passport_number: optional(body.passportNumber),
-            passport_expiry: optionalDay(body.passportExpiry),
-            nationality: optional(body.nationality),
-            included_in_application: body.included === true,
-            visa_status: optional(body.visaStatus),
-          },
+
+      // An outcome or a lodgement is a milestone; record it as its own event so
+      // the timeline shows what changed rather than only that something did.
+      const outcomeChanged = (before?.outcome ?? null) !== (value.outcome ?? null);
+      const lodgementChanged = (before?.lodged_at ?? null) !== (value.lodged_at ?? null);
+      const action_ = outcomeChanged
+        ? "visa.outcome_changed"
+        : lodgementChanged
+          ? "visa.lodged"
+          : before
+            ? "visa.updated"
+            : "visa.created";
+      await audit(session, action_, "visa_matter", String(before?.id ?? caseId), {
+        caseId,
+        summary: outcomeChanged
+          ? `Visa outcome set to ${value.outcome ?? "none"}`
+          : lodgementChanged
+            ? `Visa lodged${value.lodgement_reference ? ` (${value.lodgement_reference})` : ""}`
+            : `Updated the visa matter${value.visa_subclass ? ` (subclass ${value.visa_subclass})` : ""}`,
+        before: before
+          ? {
+              outcome: before.outcome,
+              status: before.status,
+              lodged_at: before.lodged_at,
+              information_due_at: before.information_due_at,
+            }
+          : undefined,
+        after: {
+          outcome: value.outcome,
+          status: value.status,
+          lodged_at: value.lodged_at,
+          information_due_at: value.information_due_at,
         },
-        token,
-      );
+      });
+    } else if (action === "dependant_create") {
+      const id = crypto.randomUUID();
+      const clientId = uuid(body.clientId, "Client");
+      const passport = optional(body.passportNumber);
+      const value: Json = {
+        id,
+        organisation_id: org,
+        client_id: clientId,
+        relationship: relationship(body.relationship),
+        full_name: required(body.fullName, "Full name"),
+        date_of_birth: optionalDay(body.dateOfBirth),
+        nationality: optional(body.nationality),
+        passport_expiry: optionalDay(body.passportExpiry),
+        included_in_application: body.included === true,
+        visa_status: optional(body.visaStatus),
+        details: {},
+      };
+      if (passport) {
+        value.passport_number_encrypted = await protect(passport);
+        value.passport_masked = mask(passport);
+      }
+      await insert("dependants", value, token);
+      await audit(session, "dependant.added", "dependant", id, {
+        caseId: optional(body.caseId) ?? (await caseForClient(clientId, token)),
+        summary: `Added ${value.relationship} ${value.full_name} as a dependant`,
+        after: { relationship: value.relationship, full_name: value.full_name },
+      });
     } else if (action === "dependant_update") {
+      const id = uuid(body.id, "Dependant");
+      const before = await one("dependants", id, token);
       const changes: Json = {};
       if (body.fullName !== undefined)
         changes.full_name = required(body.fullName, "Full name");
@@ -260,10 +351,73 @@ export async function POST(request: Request) {
         changes.relationship = relationship(body.relationship);
       if (body.dateOfBirth !== undefined)
         changes.date_of_birth = optionalDay(body.dateOfBirth);
-      if (isObject(body.details)) changes.details = body.details;
-      await patch("dependants", uuid(body.id, "Dependant"), changes, token);
-    } else if (action === "dependant_delete") {
-      await remove("dependants", uuid(body.id, "Dependant"), token);
+      if (body.nationality !== undefined)
+        changes.nationality = optional(body.nationality);
+      if (body.passportExpiry !== undefined)
+        changes.passport_expiry = optionalDay(body.passportExpiry);
+      if (body.visaStatus !== undefined)
+        changes.visa_status = optional(body.visaStatus);
+      if (typeof body.included === "boolean")
+        changes.included_in_application = body.included;
+      const passport = optional(body.passportNumber);
+      if (passport) {
+        changes.passport_number_encrypted = await protect(passport);
+        changes.passport_masked = mask(passport);
+      }
+      await patch("dependants", id, changes, token);
+      await audit(session, "dependant.updated", "dependant", id, {
+        caseId: await caseForClient(before?.client_id, token),
+        summary: `Updated dependant ${before?.full_name ?? ""}`.trim(),
+        after: { ...changes, passport_number_encrypted: undefined },
+      });
+    } else if (action === "dependant_archive") {
+      const id = uuid(body.id, "Dependant");
+      const before = await one("dependants", id, token);
+      await patch(
+        "dependants",
+        id,
+        {
+          archived_at: new Date().toISOString(),
+          archived_by: session.identity.profileId,
+          archive_reason: required(body.reason, "Reason"),
+        },
+        token,
+      );
+      await audit(session, "dependant.archived", "dependant", id, {
+        caseId: await caseForClient(before?.client_id, token),
+        summary: `Removed dependant ${before?.full_name ?? ""}: ${String(body.reason)}`.trim(),
+        before: { full_name: before?.full_name, relationship: before?.relationship },
+        after: { reason: optional(body.reason) },
+      });
+    } else if (action === "reveal_passport") {
+      // The real number is needed to lodge. Releasing it is a management action
+      // and is recorded against the person who asked for it.
+      if (
+        session.identity.role !== "super_admin" &&
+        session.identity.role !== "admin"
+      )
+        throw new LiveAccessError(
+          403,
+          "Only a manager or administrator can reveal a passport number.",
+        );
+      const table = body.subject === "client" ? "clients" : "dependants";
+      const id = uuid(body.id, "Record");
+      const record = await one(table, id, token);
+      if (!record?.passport_number_encrypted)
+        throw new InputError("No passport number is stored for that record.");
+      const number = await reveal(String(record.passport_number_encrypted));
+      await audit(session, "passport.revealed", table.slice(0, -1), id, {
+        caseId: await caseForClient(
+          table === "clients" ? id : record.client_id,
+          token,
+        ),
+        summary: `Revealed the passport number for ${record.full_name ?? `${record.first_name ?? ""} ${record.last_name ?? ""}`.trim()}`,
+      });
+      return appendRefreshCookies(
+        Response.json({ ok: true, passportNumber: number }),
+        session.refreshed,
+        request,
+      );
     } else {
       throw new InputError("Unsupported case file action.");
     }
@@ -324,6 +478,82 @@ function buildTimeline(
     .slice(0, 300);
 }
 
+/**
+ * A dependant and a passport belong to a client, but the file they appear on is
+ * the case. Resolve it so those events land on the case timeline rather than
+ * being recorded with no case and disappearing from the history.
+ */
+async function caseForClient(
+  clientId: unknown,
+  token: string,
+): Promise<string | null> {
+  if (typeof clientId !== "string" || !clientId) return null;
+  const rows = await get<Json[]>(
+    `cases?select=id&client_id=eq.${clientId}&order=opened_at.desc&limit=1`,
+    token,
+  );
+  return rows[0] ? String(rows[0].id) : null;
+}
+
+/** Reads one row by id, for recording what a change replaced. */
+async function one(table: string, id: string, token: string): Promise<Json | null> {
+  const rows = await get<Json[]>(`${table}?select=*&id=eq.${id}&limit=1`, token);
+  return rows[0] ?? null;
+}
+
+type LiveSession = Awaited<ReturnType<typeof liveSession>>;
+
+/**
+ * Writes the case-file change to the audit trail, which is what the case
+ * timeline reads. Without this a visa outcome or an archived application would
+ * change with nothing in the file to show it.
+ */
+async function audit(
+  session: LiveSession,
+  action: string,
+  resourceType: string,
+  resourceId: string,
+  detail: {
+    caseId?: unknown;
+    summary: string;
+    before?: Json;
+    after?: Json;
+  },
+): Promise<void> {
+  const caseId = typeof detail.caseId === "string" ? detail.caseId : null;
+  try {
+    await insert(
+      "audit_events",
+      {
+        organisation_id: session.identity.organisationId,
+        actor_id: session.identity.profileId,
+        action,
+        resource_type: resourceType,
+        resource_id: resourceId,
+        case_id: caseId,
+        summary: detail.summary,
+        before_data: detail.before ?? null,
+        after_data: detail.after ?? null,
+      },
+      session.accessToken,
+    );
+  } catch (error) {
+    // The change itself succeeded; losing its audit row must not undo it, but
+    // it must not vanish either.
+    console.error(`Could not record ${action} in the audit trail`, error);
+  }
+}
+
+const ARCHIVE_OUTCOMES = ["withdrawn", "rejected", "deferred", "removed_in_error"];
+function archiveOutcome(value: unknown): string {
+  const parsed = (optional(value) ?? "withdrawn").toLowerCase().replace(/\s+/g, "_");
+  if (!ARCHIVE_OUTCOMES.includes(parsed))
+    throw new InputError(
+      "Say whether this was withdrawn, rejected, deferred or removed in error.",
+    );
+  return parsed;
+}
+
 async function get<T>(query: string, token: string): Promise<T> {
   return supabaseRequest<T>(`/rest/v1/${query}`, { method: "GET" }, token);
 }
@@ -348,9 +578,6 @@ async function patch(table: string, id: string, value: Json, token: string) {
     },
     token,
   );
-}
-async function remove(table: string, id: string, token: string) {
-  await supabaseRequest(`/rest/v1/${table}?id=eq.${id}`, { method: "DELETE" }, token);
 }
 
 const APPLICATION_STATUSES = [
@@ -420,15 +647,14 @@ function stringList(value: unknown) {
     ? value.map(optional).filter((item): item is string => Boolean(item)).slice(0, 40)
     : [];
 }
-function isObject(value: unknown): value is Json {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 class InputError extends Error {}
 function apiError(error: unknown): Response {
   if (error instanceof InputError)
     return Response.json({ ok: false, error: error.message }, { status: 400 });
   if (error instanceof LiveAccessError)
     return Response.json({ ok: false, error: error.message }, { status: error.status });
+  if (error instanceof ProtectedFieldError)
+    return Response.json({ ok: false, error: error.message }, { status: 503 });
   if (error instanceof SupabaseError) {
     console.error(error.message);
     return Response.json(
