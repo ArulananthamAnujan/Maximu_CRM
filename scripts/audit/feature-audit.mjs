@@ -392,6 +392,12 @@ expect("visa conditions are stored as a list",
 const visaAgain = await casefile({ action: "visa_matter_save", caseId: newCaseId,
   destinationCountry: "AU", subclass: "482", status: "decision", outcome: "granted" });
 expect("saving again updates rather than duplicating", visaAgain.status === 200);
+const afterPartial = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+const partial = afterPartial.json?.visaMatter;
+expect("a partial save leaves untouched fields alone",
+  partial?.lodged_at && partial?.trn === "EGO123456789" &&
+    partial?.responsible_agent_marn === "1234567",
+  JSON.stringify(partial)?.slice(0, 240));
 const afterVisa = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
 expect("there is still exactly one visa matter",
   afterVisa.json?.visaMatter?.outcome === "granted",
@@ -664,6 +670,60 @@ const badOwner = await call("/api/crm/workspace", { method: "POST", cookie: owne
           visaExpiry: "2027-01-01", ownerId: "c0000000-0000-4000-8000-000000000004" } });
 expect("a case cannot be assigned to a portal account at intake",
   badOwner.status === 400, JSON.stringify(badOwner.json));
+
+section("Agency reporting");
+const reports = await call("/api/crm/reports", { cookie: owner.cookie });
+expect("the report builds", reports.status === 200, JSON.stringify(reports.json)?.slice(0, 200));
+const report = reports.json?.report;
+expect("the pipeline is broken down by stage, stream and matter",
+  report?.pipeline?.byStage && report?.pipeline?.byStream && report?.pipeline?.byMatter,
+  JSON.stringify(report?.pipeline)?.slice(0, 240));
+expect("enquiry conversion is measured",
+  typeof report?.conversion?.conversionRate === "number" &&
+    report.conversion.enquiries > 0,
+  JSON.stringify(report?.conversion));
+expect("applications submitted, offers and CoEs are counted",
+  typeof report?.conversion?.applicationsSubmitted === "number" &&
+    typeof report?.conversion?.offerRate === "number" &&
+    typeof report?.conversion?.coeRate === "number",
+  JSON.stringify(report?.conversion));
+expect("visa lodgement and outcomes are counted",
+  report?.visas?.lodged >= 1 && typeof report?.visas?.grantRate === "number",
+  JSON.stringify(report?.visas));
+expect("the s56 response deadline is surfaced",
+  Array.isArray(report?.deadlines?.informationRequests),
+  JSON.stringify(report?.deadlines?.informationRequests)?.slice(0, 200));
+expect("visa expiries are bucketed at 30, 60 and 90 days",
+  report?.deadlines?.visaExpiry &&
+    ["in30", "in60", "in90", "expired"].every(
+      (key) => typeof report.deadlines.visaExpiry[key] === "number"),
+  JSON.stringify(report?.deadlines?.visaExpiry));
+expect("outstanding documents and overdue tasks are counted",
+  typeof report?.deadlines?.documentsOutstanding === "number" &&
+    typeof report?.deadlines?.overdueTasks === "number",
+  JSON.stringify(report?.deadlines));
+expect("staff workload is reported per person",
+  Array.isArray(report?.workload) &&
+    report.workload.some((row) => row.name === "Olivia Officer"),
+  JSON.stringify(report?.workload)?.slice(0, 240));
+expect("branch performance is reported",
+  Array.isArray(report?.branches) && report.branches.length >= 2,
+  JSON.stringify(report?.branches)?.slice(0, 200));
+expect("outstanding fees are reported",
+  typeof report?.finance?.outstanding === "number" &&
+    typeof report?.finance?.overdueInvoices === "number",
+  JSON.stringify(report?.finance));
+
+// The report is built from what the reader may see, so a branch manager's
+// figures cover their branch rather than the organisation.
+const colomboOfficer = await login("colombo@maximus.test");
+const colomboReport = await call("/api/crm/reports", { cookie: colomboOfficer.cookie });
+expect("a report is scoped to what the reader may see",
+  colomboReport.status === 200 &&
+    colomboReport.json?.report?.pipeline?.total < report?.pipeline?.total,
+  `colombo ${colomboReport.json?.report?.pipeline?.total} vs owner ${report?.pipeline?.total}`);
+const portalReport = await call("/api/crm/reports", { cookie: student.cookie });
+expect("the client portal cannot open reporting", portalReport.status === 403);
 
 section("Branch isolation");
 const colombo = await login("colombo@maximus.test");

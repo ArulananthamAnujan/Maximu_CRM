@@ -114,6 +114,18 @@ cannot read or write another client's records, that the case lifecycle rules
 hold, and that case reassignment notifies only the new owner. It needs
 `postgresql-16` and a `postgres` system user.
 
+## Reporting
+
+Reports cover what an agency is run on: enquiry conversion, applications
+submitted, offer and CoE rates, visas lodged, granted and refused, requests for
+further information and their response deadlines, visa expiries at 30, 60 and 90
+days, overdue tasks and outstanding documents, workload per staff member, branch
+performance and outstanding fees.
+
+Every figure is scoped by row-level security to what the reader may see, so a
+branch manager's report covers their branch and an owner's covers the
+organisation, without the report filtering by branch itself.
+
 ## Passport numbers
 
 Passport numbers are encrypted by the application before they reach the

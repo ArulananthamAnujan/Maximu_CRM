@@ -2311,73 +2311,442 @@ function ClientModuleView({
     </article>
   );
 }
-function ReportsView({
-  cases,
-  invoices,
-  exportData,
-  openModal,
+type AgencyReport = {
+  pipeline: {
+    total: number;
+    open: number;
+    byStage: Record<string, number>;
+    byStream: Record<string, number>;
+    byMatter: Record<string, number>;
+    byHealth: Record<string, number>;
+  };
+  conversion: {
+    enquiries: number;
+    converted: number;
+    conversionRate: number;
+    applicationsSubmitted: number;
+    offers: number;
+    offerRate: number;
+    coes: number;
+    coeRate: number;
+  };
+  visas: {
+    matters: number;
+    lodged: number;
+    granted: number;
+    refused: number;
+    grantRate: number;
+    awaitingDecision: number;
+  };
+  deadlines: {
+    informationRequests: { caseId: string; dueAt: string; daysRemaining: number | null }[];
+    informationOverdue: number;
+    visaExpiry: { in30: number; in60: number; in90: number; expired: number };
+    applicationDeadlines: number;
+    overdueTasks: number;
+    documentsOutstanding: number;
+    casesPastDue: number;
+  };
+  workload: {
+    staffId: string;
+    name: string;
+    branch: string;
+    openCases: number;
+    needingAttention: number;
+    openTasks: number;
+    overdueTasks: number;
+  }[];
+  branches: {
+    branchId: string;
+    name: string;
+    cases: number;
+    open: number;
+    completed: number;
+  }[];
+  finance: {
+    invoiced: number;
+    collected: number;
+    outstanding: number;
+    overdueInvoices: number;
+    byState: Record<string, number>;
+  };
+  generatedAt: string;
+};
+
+/**
+ * Every figure here is something a person acts on, so each is shown as a number
+ * to read rather than a shape to interpret. Urgency is always carried by a word
+ * as well as a colour.
+ */
+function Attention({
+  label,
+  count,
+  detail,
+  level,
 }: {
-  cases: CaseRecord[];
-  invoices: InvoiceRecord[];
-  exportData: () => void;
-  openModal: (x: ModalType) => void;
+  label: string;
+  count: number;
+  detail: string;
+  level: "critical" | "serious" | "warning" | "calm";
 }) {
-  const completed = cases.filter((c) => c.status === "completed").length;
+  const settled = count === 0;
+  const shown = settled ? "calm" : level;
+  return (
+    <div className={`attentionRow level-${shown}`}>
+      {shown === "calm" ? (
+        <Check size={16} />
+      ) : (
+        <AlertTriangle size={16} />
+      )}
+      <div>
+        <b>{label}</b>
+        <small>{settled ? "Nothing outstanding" : detail}</small>
+      </div>
+      <strong>{count}</strong>
+    </div>
+  );
+}
+
+function ReportsView({
+  exportData,
+  canSeeFinance,
+}: {
+  exportData: () => void;
+  canSeeFinance: boolean;
+}) {
+  const [report, setReport] = useState<AgencyReport | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/crm/reports", { cache: "no-store" });
+        const result = await response.json();
+        if (cancelled) return;
+        if (!response.ok)
+          throw new Error(result.error || "The report could not be built.");
+        setReport(result.report as AgencyReport);
+        setError("");
+      } catch (reason) {
+        if (!cancelled)
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "The report could not be built.",
+          );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (error)
+    return (
+      <article className="panel listPanel">
+        <p className="caseWorkError">{error}</p>
+      </article>
+    );
+  if (!report)
+    return (
+      <article className="panel listPanel">
+        <p className="coverageIntro">Building the report…</p>
+      </article>
+    );
+
+  const { pipeline, conversion, visas, deadlines, workload, branches, finance } =
+    report;
+  const money = (value: number) =>
+    `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
   return (
     <>
       <div className="miniStats">
         <article>
-          <span>Total records</span>
-          <strong>{cases.length}</strong>
-          <small>All case types</small>
+          <span>Open cases</span>
+          <strong>{pipeline.open}</strong>
+          <small>{pipeline.total} on file</small>
         </article>
         <article>
-          <span>Completion rate</span>
-          <strong>
-            {cases.length ? Math.round((completed / cases.length) * 100) : 0}%
-          </strong>
-          <small>Calculated locally</small>
+          <span>Enquiry conversion</span>
+          <strong>{conversion.conversionRate}%</strong>
+          <small>
+            {conversion.converted} of {conversion.enquiries} moved past enquiry
+          </small>
         </article>
         <article>
-          <span>Revenue tracked</span>
-          <strong>
-            ${invoices.reduce((s, x) => s + x.amount, 0).toLocaleString()}
-          </strong>
-          <small>From invoices</small>
+          <span>Visa grant rate</span>
+          <strong>{visas.grantRate}%</strong>
+          <small>
+            {visas.granted} granted · {visas.refused} refused
+          </small>
         </article>
+        {canSeeFinance && (
+          <article>
+            <span>Outstanding fees</span>
+            <strong>{money(finance.outstanding)}</strong>
+            <small>{money(finance.collected)} collected</small>
+          </article>
+        )}
       </div>
+
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">DATA EXPORT</span>
-            <h2>Reporting</h2>
+            <span className="kicker">NEEDS ATTENTION</span>
+            <h2>What falls due next</h2>
           </div>
-          <button className="primaryButton" onClick={exportData}>
-            <Download size={16} />
-            Export JSON
+          <button className="ghostButton" onClick={exportData}>
+            <Download size={15} />
+            Export
           </button>
         </div>
-        {cases.length === 0 ? (
-          <EmptyState
-            icon={BarChart3}
-            title="No reporting data"
-            copy="Reports will populate automatically as you create records."
-            action="Create case"
-            onAction={() => openModal("case")}
-          />
-        ) : (
-          <div className="reportEmpty">
-            <BarChart3 size={28} />
-            <p>
-              Reports are calculated from {cases.length} case records and{" "}
-              {invoices.length} invoice records.
-            </p>
+        <Attention
+          label="Requests for further information overdue"
+          count={deadlines.informationOverdue}
+          detail="A s56 request left unanswered can end the application"
+          level="critical"
+        />
+        <Attention
+          label="Visas already expired"
+          count={deadlines.visaExpiry.expired}
+          detail="Open cases whose recorded visa expiry has passed"
+          level="critical"
+        />
+        <Attention
+          label="Visas expiring within 30 days"
+          count={deadlines.visaExpiry.in30}
+          detail="Lodge or arrange a bridging visa"
+          level="serious"
+        />
+        <Attention
+          label="Cases past their next action date"
+          count={deadlines.casesPastDue}
+          detail="The follow-up date has gone by"
+          level="serious"
+        />
+        <Attention
+          label="Overdue tasks"
+          count={deadlines.overdueTasks}
+          detail="Assigned work past its due date"
+          level="warning"
+        />
+        <Attention
+          label="Documents still outstanding"
+          count={deadlines.documentsOutstanding}
+          detail="Requested from clients and not yet provided"
+          level="warning"
+        />
+        <Attention
+          label="Application deadlines within 30 days"
+          count={deadlines.applicationDeadlines}
+          detail="Institution closing dates approaching"
+          level="warning"
+        />
+        {deadlines.informationRequests.length > 0 && (
+          <div className="recordTableWrap">
+            <table className="recordTable">
+              <thead>
+                <tr>
+                  <th>Request for further information</th>
+                  <th>Due</th>
+                  <th>Days left</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deadlines.informationRequests.slice(0, 10).map((entry) => (
+                  <tr key={entry.caseId}>
+                    <td>Case {String(entry.caseId).slice(0, 8)}</td>
+                    <td>{String(entry.dueAt).slice(0, 10)}</td>
+                    <td>
+                      {entry.daysRemaining === null
+                        ? "—"
+                        : entry.daysRemaining < 0
+                          ? `${Math.abs(entry.daysRemaining)} overdue`
+                          : entry.daysRemaining}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </article>
+
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">EDUCATION PIPELINE</span>
+            <h2>Enquiry to confirmation of enrolment</h2>
+          </div>
+        </div>
+        <ol className="funnel">
+          {(
+            [
+              ["Enquiries", conversion.enquiries, ""],
+              [
+                "Converted",
+                conversion.converted,
+                `${conversion.conversionRate}% of enquiries`,
+              ],
+              ["Applications submitted", conversion.applicationsSubmitted, ""],
+              ["Offers received", conversion.offers, `${conversion.offerRate}% of submitted`],
+              ["CoEs received", conversion.coes, `${conversion.coeRate}% of offers`],
+            ] as [string, number, string][]
+          ).map(([label, value, note]) => (
+            <li key={label}>
+              <span>
+                <b>{label}</b>
+                {note ? <small>{note}</small> : null}
+              </span>
+              <strong>{value}</strong>
+            </li>
+          ))}
+        </ol>
+      </article>
+
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">VISA MATTERS</span>
+            <h2>Lodgement and decisions</h2>
+          </div>
+        </div>
+        <div className="miniStats inline">
+          <article>
+            <span>Lodged</span>
+            <strong>{visas.lodged}</strong>
+            <small>of {visas.matters} matters</small>
+          </article>
+          <article>
+            <span>Awaiting decision</span>
+            <strong>{visas.awaitingDecision}</strong>
+            <small>Lodged, no decision recorded</small>
+          </article>
+          <article>
+            <span>Granted</span>
+            <strong>{visas.granted}</strong>
+            <small>Recorded outcome</small>
+          </article>
+          <article>
+            <span>Refused</span>
+            <strong>{visas.refused}</strong>
+            <small>Recorded outcome</small>
+          </article>
+        </div>
+      </article>
+
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">TEAM</span>
+            <h2>Workload</h2>
+          </div>
+        </div>
+        {workload.length === 0 ? (
+          <p className="caseWorkEmpty">No staff accounts to report on.</p>
+        ) : (
+          <div className="recordTableWrap">
+            <table className="recordTable">
+              <thead>
+                <tr>
+                  <th>Staff</th>
+                  <th>Branch</th>
+                  <th>Open cases</th>
+                  <th>Needing attention</th>
+                  <th>Open tasks</th>
+                  <th>Overdue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {workload.map((person) => (
+                  <tr key={person.staffId}>
+                    <td>{person.name || "—"}</td>
+                    <td>{person.branch || "—"}</td>
+                    <td>{person.openCases}</td>
+                    <td>{person.needingAttention}</td>
+                    <td>{person.openTasks}</td>
+                    <td>{person.overdueTasks}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </article>
+
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">BRANCHES</span>
+            <h2>Performance</h2>
+          </div>
+        </div>
+        {branches.length === 0 ? (
+          <p className="caseWorkEmpty">No branches to report on.</p>
+        ) : (
+          <div className="recordTableWrap">
+            <table className="recordTable">
+              <thead>
+                <tr>
+                  <th>Branch</th>
+                  <th>Cases</th>
+                  <th>Open</th>
+                  <th>Completed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {branches.map((branch) => (
+                  <tr key={branch.branchId}>
+                    <td>{branch.name || "—"}</td>
+                    <td>{branch.cases}</td>
+                    <td>{branch.open}</td>
+                    <td>{branch.completed}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </article>
+
+      {canSeeFinance && (
+        <article className="panel listPanel">
+          <div className="panelHead">
+            <div>
+              <span className="kicker">FINANCE</span>
+              <h2>Fees</h2>
+            </div>
+          </div>
+          <div className="miniStats inline">
+            <article>
+              <span>Invoiced</span>
+              <strong>{money(finance.invoiced)}</strong>
+              <small>All invoices</small>
+            </article>
+            <article>
+              <span>Collected</span>
+              <strong>{money(finance.collected)}</strong>
+              <small>Recorded payments</small>
+            </article>
+            <article>
+              <span>Outstanding</span>
+              <strong>{money(finance.outstanding)}</strong>
+              <small>{finance.overdueInvoices} invoices overdue</small>
+            </article>
+          </div>
+        </article>
+      )}
+
+      <p className="reportFooter">
+        Scoped to what your account may see. Built{" "}
+        {new Date(report.generatedAt).toLocaleString()}.
+      </p>
     </>
   );
 }
+
 function GoogleWorkspaceView() {
   const [settings, setSettings] = useStored("maximus.googleWorkspace", {
       domain: "maximuseducation.com.au",
@@ -5584,12 +5953,7 @@ export default function Home() {
     );
   else if (active === "reports")
     content = (
-      <ReportsView
-        cases={serviceMode === "study" ? education : visa}
-        invoices={invoices}
-        exportData={exportData}
-        openModal={open}
-      />
+      <ReportsView exportData={exportData} canSeeFinance={canManageFinance} />
     );
   else if (active === "ai")
     content = (

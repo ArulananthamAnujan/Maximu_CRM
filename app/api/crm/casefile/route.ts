@@ -246,33 +246,41 @@ export async function POST(request: Request) {
         token,
       );
       const before = existing[0];
-      const value: Json = {
-        destination_country: required(
-          body.destinationCountry,
-          "Destination country",
-        ).toUpperCase(),
-        visa_subclass: optional(body.subclass),
-        visa_stream: optional(body.stream),
-        lodgement_reference: optional(body.lodgementReference),
-        trn: optional(body.trn),
-        status: optional(body.status) || "assessment",
-        responsible_agent_marn: optional(body.marn),
-        bridging_visa: optional(body.bridgingVisa),
-        bridging_visa_granted_on: optionalDay(body.bridgingVisaGrantedOn),
-        current_visa_expiry: optionalDay(body.currentVisaExpiry),
-        health_examination_status: checkStatus(body.healthExamination),
-        biometrics_status: checkStatus(body.biometrics),
-        police_clearance_status: checkStatus(body.policeClearance),
-        skills_assessment_status: checkStatus(body.skillsAssessment),
-        information_requested_at: optionalDate(body.informationRequestedAt),
-        information_due_at: optionalDate(body.informationDueAt),
-        information_provided_at: optionalDate(body.informationProvidedAt),
-        lodged_at: optionalDate(body.lodgedAt),
-        decision_at: optionalDate(body.decisionAt),
-        outcome: optional(body.outcome),
-        refusal_reason: optional(body.refusalReason),
-        visa_conditions: stringList(body.conditions),
+      // Only write what the caller actually sent. Building the whole row every
+      // time meant a partial save silently cleared the fields it omitted -- a
+      // lodgement date or a TRN could disappear without anyone touching it.
+      const value: Json = {};
+      const setIf = (key: string, field: string, convert: (raw: unknown) => unknown) => {
+        if (body[field] !== undefined) value[key] = convert(body[field]);
       };
+      setIf("visa_subclass", "subclass", optional);
+      setIf("visa_stream", "stream", optional);
+      setIf("lodgement_reference", "lodgementReference", optional);
+      setIf("trn", "trn", optional);
+      setIf("responsible_agent_marn", "marn", optional);
+      setIf("bridging_visa", "bridgingVisa", optional);
+      setIf("bridging_visa_granted_on", "bridgingVisaGrantedOn", optionalDay);
+      setIf("current_visa_expiry", "currentVisaExpiry", optionalDay);
+      setIf("health_examination_status", "healthExamination", checkStatus);
+      setIf("biometrics_status", "biometrics", checkStatus);
+      setIf("police_clearance_status", "policeClearance", checkStatus);
+      setIf("skills_assessment_status", "skillsAssessment", checkStatus);
+      setIf("information_requested_at", "informationRequestedAt", optionalDate);
+      setIf("information_due_at", "informationDueAt", optionalDate);
+      setIf("information_provided_at", "informationProvidedAt", optionalDate);
+      setIf("lodged_at", "lodgedAt", optionalDate);
+      setIf("decision_at", "decisionAt", optionalDate);
+      setIf("outcome", "outcome", optional);
+      setIf("refusal_reason", "refusalReason", optional);
+      if (body.conditions !== undefined)
+        value.visa_conditions = stringList(body.conditions);
+      if (body.status !== undefined) value.status = optional(body.status) ?? "assessment";
+      value.destination_country = required(
+        body.destinationCountry,
+        "Destination country",
+      ).toUpperCase();
+      if (!before && value.status === undefined) value.status = "assessment";
+
       if (before) await patch("visa_matters", String(before.id), value, token);
       else
         await insert(
@@ -283,8 +291,12 @@ export async function POST(request: Request) {
 
       // An outcome or a lodgement is a milestone; record it as its own event so
       // the timeline shows what changed rather than only that something did.
-      const outcomeChanged = (before?.outcome ?? null) !== (value.outcome ?? null);
-      const lodgementChanged = (before?.lodged_at ?? null) !== (value.lodged_at ?? null);
+      const outcomeChanged =
+        value.outcome !== undefined &&
+        (before?.outcome ?? null) !== (value.outcome ?? null);
+      const lodgementChanged =
+        value.lodged_at !== undefined &&
+        (before?.lodged_at ?? null) !== (value.lodged_at ?? null);
       const action_ = outcomeChanged
         ? "visa.outcome_changed"
         : lodgementChanged
@@ -297,8 +309,12 @@ export async function POST(request: Request) {
         summary: outcomeChanged
           ? `Visa outcome set to ${value.outcome ?? "none"}`
           : lodgementChanged
-            ? `Visa lodged${value.lodgement_reference ? ` (${value.lodgement_reference})` : ""}`
-            : `Updated the visa matter${value.visa_subclass ? ` (subclass ${value.visa_subclass})` : ""}`,
+            ? `Visa lodged${value.lodgement_reference ? ` (${String(value.lodgement_reference)})` : ""}`
+            : `Updated the visa matter${
+                value.visa_subclass ?? before?.visa_subclass
+                  ? ` (subclass ${String(value.visa_subclass ?? before?.visa_subclass)})`
+                  : ""
+              }`,
         before: before
           ? {
               outcome: before.outcome,
@@ -308,10 +324,11 @@ export async function POST(request: Request) {
             }
           : undefined,
         after: {
-          outcome: value.outcome,
-          status: value.status,
-          lodged_at: value.lodged_at,
-          information_due_at: value.information_due_at,
+          outcome: value.outcome ?? before?.outcome ?? null,
+          status: value.status ?? before?.status ?? null,
+          lodged_at: value.lodged_at ?? before?.lodged_at ?? null,
+          information_due_at:
+            value.information_due_at ?? before?.information_due_at ?? null,
         },
       });
     } else if (action === "dependant_create") {
