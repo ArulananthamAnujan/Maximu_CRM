@@ -118,6 +118,7 @@ type CaseRecord = {
   status: "active" | "waiting" | "completed";
   lifecycleStage: LifecycleStage;
   visaExpiry: string;
+  deferredApplications: number;
   completedAt: string;
   reopenedAt: string;
   createdAt: string;
@@ -2329,6 +2330,8 @@ type AgencyReport = {
     offerRate: number;
     coes: number;
     coeRate: number;
+    deferred: number;
+    deferralRate: number;
   };
   visas: {
     matters: number;
@@ -2593,6 +2596,11 @@ function ReportsView({
               ["Applications submitted", conversion.applicationsSubmitted, ""],
               ["Offers received", conversion.offers, `${conversion.offerRate}% of submitted`],
               ["CoEs received", conversion.coes, `${conversion.coeRate}% of offers`],
+              [
+                "Deferred to a later intake",
+                conversion.deferred,
+                `${conversion.deferralRate}% of submitted`,
+              ],
             ] as [string, number, string][]
           ).map(([label, value, note]) => (
             <li key={label}>
@@ -6036,7 +6044,9 @@ export default function Home() {
                 : active === "case_complete"
                   ? atStage("completed")
                   : active === "defer"
-                    ? cases.filter((c) => /defer/i.test(c.stage))
+                    ? // A case is deferred when one of its applications has
+                      // been moved to a later intake.
+                      cases.filter((c) => c.deferredApplications > 0)
                     : serviceMode === "direct_visa"
                       ? visa
                       : education;

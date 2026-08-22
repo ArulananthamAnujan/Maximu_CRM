@@ -9,6 +9,32 @@ export function studentFolderName(fullName: string, crmId: string) {
   return `${fullName.trim()} - ${crmId.trim()}`.replace(/[\\/:*?"<>|]/g, "-");
 }
 
+/**
+ * Chooses the folder a document belongs in from the type recorded against it.
+ * A document whose type matches nothing recognisable stays at the client's
+ * root rather than being filed somewhere misleading.
+ */
+export function folderForDocumentType(documentType: string): string | null {
+  const wanted = documentType.trim().toLowerCase();
+  if (!wanted) return null;
+  const exact = STUDENT_FOLDER_TEMPLATE.find(
+    (folder) => folder.toLowerCase() === wanted,
+  );
+  if (exact) return exact;
+  // "passport", "02", "academic" and so on.
+  return (
+    STUDENT_FOLDER_TEMPLATE.find((folder) => {
+      const withoutNumber = folder.replace(/^\d+\s+/, "").toLowerCase();
+      return (
+        folder.toLowerCase().startsWith(`${wanted} `) ||
+        withoutNumber === wanted ||
+        withoutNumber.includes(wanted) ||
+        wanted.includes(withoutNumber)
+      );
+    }) ?? null
+  );
+}
+
 export type DriveJob = {
   operation: "provision_student" | "upload" | "move" | "archive" | "reconcile";
   organisationId: string; clientId: string; documentId?: string; payload: Record<string, unknown>;

@@ -59,6 +59,7 @@ export async function GET(request: Request) {
     // A case still sitting at "enquiry" has not converted yet.
     const converted = cases.filter((row) => row.lifecycle_stage !== "enquiry").length;
     const submitted = liveApplications.filter((row) => row.submitted_at).length;
+    const deferred = liveApplications.filter((row) => row.status === "deferred").length;
     const offers = liveApplications.filter((row) => row.offer_received_at).length;
     const coes = liveApplications.filter((row) => row.coe_received_at).length;
     const lodged = visas.filter((row) => row.lodged_at).length;
@@ -90,6 +91,8 @@ export async function GET(request: Request) {
         offerRate: rate(offers, submitted),
         coes,
         coeRate: rate(coes, offers),
+        deferred,
+        deferralRate: rate(deferred, submitted),
       },
       visas: {
         matters: visas.length,

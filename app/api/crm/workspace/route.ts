@@ -58,6 +58,7 @@ export async function GET(request: Request) {
       branches,
       profiles,
       roles,
+      applications,
     ] = await Promise.all([
       safeRest(
         "clients?select=*&archived_at=is.null&order=updated_at.desc&limit=200",
@@ -114,7 +115,22 @@ export async function GET(request: Request) {
         token,
         degraded,
       ),
+      safeRest(
+        "education_applications?select=id,case_id,status,intake,archived_at&limit=2000",
+        token,
+        degraded,
+      ),
     ]);
+
+    // A deferral is an application moved to a later intake, not a phrase typed
+    // into a status box. Count them per case so the interface can stop matching
+    // the word "defer" against free text.
+    const deferredByCase = new Map<string, number>();
+    for (const row of applications) {
+      if (row.archived_at || row.status !== "deferred") continue;
+      const key = String(row.case_id);
+      deferredByCase.set(key, (deferredByCase.get(key) ?? 0) + 1);
+    }
 
     const clientById = new Map(clients.map((row) => [String(row.id), row]));
     const stageById = new Map(stages.map((row) => [String(row.id), row]));
@@ -184,6 +200,7 @@ export async function GET(request: Request) {
               : row.health === "attention"
                 ? "waiting"
                 : "active",
+          deferredApplications: deferredByCase.get(String(row.id)) ?? 0,
           completedAt: dateOnly(row.completed_at),
           reopenedAt: dateOnly(row.reopened_at),
           createdAt: row.opened_at,

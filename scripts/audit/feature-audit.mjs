@@ -370,6 +370,43 @@ expect("an application is withdrawn with a reason, not deleted",
   (await casefile({ action: "application_archive", id: firstApp?.id,
     outcome: "withdrawn", reason: "Offer declined" })).status === 200);
 
+section("Deferral");
+// A student defers to a later intake. That is an application status with a new
+// intake, not a phrase typed into a free-text box.
+const deferTarget = withApps.json?.applications?.find(
+  (a) => a.institution === "RMIT University");
+const deferred = await casefile({ action: "application_update", id: deferTarget?.id,
+  status: "deferred", intake: "July 2027" });
+expect("an application can be deferred to a later intake", deferred.status === 200,
+  JSON.stringify(deferred.json));
+const deferFile = await call(`/api/crm/casefile?caseId=${newCaseId}`, { cookie: officer.cookie });
+const deferredRow = deferFile.json?.applications?.find((a) => a.id === deferTarget?.id);
+expect("the deferral keeps the application on the file with its new intake",
+  deferredRow?.status === "deferred" && deferredRow?.intake === "July 2027" &&
+    !deferredRow?.archived_at,
+  JSON.stringify(deferredRow)?.slice(0, 220));
+const deferWs = await call("/api/crm/workspace", { cookie: officer.cookie });
+const deferCase = deferWs.json?.cases?.find((c) => c.dbId === newCaseId);
+expect("the case is reported as deferred without matching text",
+  deferCase?.deferredApplications === 1,
+  `deferredApplications=${deferCase?.deferredApplications}`);
+const deferReport = await call("/api/crm/reports", { cookie: owner.cookie });
+expect("deferrals are counted in reporting",
+  deferReport.json?.report?.conversion?.deferred >= 1,
+  JSON.stringify(deferReport.json?.report?.conversion));
+const deferTimeline = (deferFile.json?.timeline ?? []).find(
+  (e) => e.kind === "application.status_changed" && /deferred/i.test(e.title ?? ""));
+expect("the deferral is recorded on the timeline", Boolean(deferTimeline),
+  JSON.stringify(deferFile.json?.timeline?.slice(0, 3)));
+// The student later resumes.
+const resumed = await casefile({ action: "application_update", id: deferTarget?.id,
+  status: "submitted" });
+expect("a deferred application can be resumed", resumed.status === 200, JSON.stringify(resumed.json));
+const resumedWs = await call("/api/crm/workspace", { cookie: officer.cookie });
+expect("the case leaves the deferred list once resumed",
+  resumedWs.json?.cases?.find((c) => c.dbId === newCaseId)?.deferredApplications === 0,
+  JSON.stringify(resumedWs.json?.cases?.find((c) => c.dbId === newCaseId))?.slice(0, 200));
+
 section("Visa matter workspace");
 const visaSave = await casefile({ action: "visa_matter_save", caseId: newCaseId,
   destinationCountry: "AU", subclass: "482", stream: "Core Skills", status: "lodged",
@@ -509,10 +546,13 @@ expect("a file can be stored in the Shared Drive", stored.status === 200,
   JSON.stringify(stored.json ?? stored.text)?.slice(0, 240));
 
 const driveState = await (await fetch(`${DRIVE_STUB}/__state`)).json();
-expect("the client's folder tree was provisioned in the drive",
+expect("the client's folder was created and the document filed under the plan",
   driveState.folders.some((f) => f.name.includes("Arun Kumar")) &&
     driveState.folders.some((f) => f.name === "01 Personal and Identity"),
   JSON.stringify(driveState.folders.map((f) => f.name)).slice(0, 240));
+expect("only the folders actually used are created",
+  driveState.folders.length <= 3,
+  `${driveState.folders.length} folders: ${JSON.stringify(driveState.folders.map((f) => f.name))}`);
 expect("the file reached the drive with its bytes intact",
   driveState.files.length === 1 && driveState.files[0].size === PDF_BYTES.length,
   JSON.stringify(driveState.files));
@@ -561,6 +601,42 @@ expect("an unaccepted file type is refused", wrongType.status === 400,
 const portalUpload = await upload(passport?.id, PDF_BYTES, "p.pdf", "application/pdf", student.cookie);
 expect("a portal account cannot store files", portalUpload.status === 403,
   `${portalUpload.status} ${JSON.stringify(portalUpload.json)}`);
+// The negative case below proves isolation. This proves the feature actually
+// works: a client supplies a document that was requested of them, and staff
+// then see it stored.
+const ownCases = await call("/api/crm/workspace", { cookie: student.cookie });
+const ownCase = ownCases.json?.cases?.[0];
+const askedOfClient = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "document", title: "Your passport bio page",
+          clientId: ownCase?.clientId, caseId: ownCase?.dbId, folder: "01 Personal and Identity" } });
+expect("staff can request a document from a client", askedOfClient.status === 200,
+  JSON.stringify(askedOfClient.json));
+const ownFile = await call(`/api/crm/casefile?caseId=${ownCase?.dbId}`, { cookie: officer.cookie });
+const askedDoc = (ownFile.json?.documents ?? []).find(
+  (d) => d.display_name === "Your passport bio page");
+const clientUpload = await upload(askedDoc?.id, PDF_BYTES, "my-passport.pdf",
+  "application/pdf", student.cookie);
+expect("a client can supply a document requested of them",
+  clientUpload.status === 200, `${clientUpload.status} ${JSON.stringify(clientUpload.json ?? clientUpload.text)?.slice(0, 220)}`);
+const afterClientUpload = await call(`/api/crm/casefile?caseId=${ownCase?.dbId}`, { cookie: officer.cookie });
+const suppliedDoc = (afterClientUpload.json?.documents ?? []).find((d) => d.id === askedDoc?.id);
+const clientTimeline = (afterClientUpload.json?.timeline ?? []).map((e) => e.kind);
+expect("the client's upload is recorded on the case timeline",
+  clientTimeline.includes("document.uploaded"),
+  JSON.stringify([...new Set(clientTimeline)]).slice(0, 200));
+expect("staff see the client's document as stored",
+  suppliedDoc?.state === "uploaded" && Boolean(suppliedDoc?.drive_file_id) &&
+    Number(suppliedDoc?.size_bytes) === PDF_BYTES.length,
+  JSON.stringify(suppliedDoc)?.slice(0, 240));
+const clientDownload = await worker.fetch(
+  new Request(`https://crm.test/api/crm/documents?documentId=${askedDoc?.id}`, {
+    headers: { cookie: student.cookie } }), env, ctx);
+expect("the client can download back what they supplied", clientDownload.status === 200,
+  `status ${clientDownload.status}`);
+const reUpload = await upload(askedDoc?.id, PDF_BYTES, "again.pdf", "application/pdf", student.cookie);
+expect("a client cannot replace a document already provided", reUpload.status === 403,
+  `${reUpload.status} ${JSON.stringify(reUpload.json)}`);
+
 const crossBranchDownload = await worker.fetch(
   new Request(`https://crm.test/api/crm/documents?documentId=${passport?.id}`, {
     headers: { cookie: (await login("colombo@maximus.test")).cookie } }), env, ctx);
@@ -639,6 +715,11 @@ const requested = await call("/api/crm/workspace", { method: "POST", cookie: stu
           title: "Question about my visa", date: "2027-01-15", time: "10:00" } });
 expect("a client can request an appointment", requested.status === 200,
   JSON.stringify(requested.json));
+// The point of a request is that someone is told about it.
+const ownerAlerts = await call("/api/crm/operations?view=notifications", { cookie: officer.cookie });
+expect("the case owner is notified of a client's appointment request",
+  (ownerAlerts.json?.data ?? []).some((n) => n.kind === "appointment_requested"),
+  JSON.stringify((ownerAlerts.json?.data ?? []).map((n) => n.kind)).slice(0, 200));
 const pastRequest = await call("/api/crm/workspace", { method: "POST", cookie: student.cookie,
   body: { action: "appointment_request", caseId: portalCase?.dbId, title: "x", date: "2020-01-01" } });
 expect("a request in the past is refused", pastRequest.status === 400,

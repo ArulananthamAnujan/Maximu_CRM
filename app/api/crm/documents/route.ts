@@ -10,12 +10,13 @@ import {
   driveConfigured,
   DriveError,
   DriveNotConfiguredError,
-  ensureClientFolders,
+  ensureClientFolder,
+  ensureFolder,
   trashFile,
   uploadFile,
 } from "@/server/google-drive";
 import {
-  STUDENT_FOLDER_TEMPLATE,
+  folderForDocumentType,
   studentFolderName,
 } from "@/lib/google-drive-plan";
 
@@ -130,7 +131,7 @@ export async function POST(request: Request) {
       );
 
     const documents = await rest<Json[]>(
-      `documents?select=id,client_id,document_type,display_name,version,drive_file_id,state&id=eq.${documentId}&limit=1`,
+      `documents?select=id,client_id,case_id,document_type,display_name,version,drive_file_id,state&id=eq.${documentId}&limit=1`,
       token,
     );
     const document = documents[0];
@@ -155,23 +156,31 @@ export async function POST(request: Request) {
     if (!client)
       throw new LiveAccessError(403, "That client is not available to you.");
 
-    // Provision the client's folder tree the first time something is stored.
-    let folderId = client.drive_folder_id ? String(client.drive_folder_id) : "";
-    if (!folderId) {
-      folderId = await ensureClientFolders(
+    // The client's own folder, created on first use.
+    let rootId = client.drive_folder_id ? String(client.drive_folder_id) : "";
+    if (!rootId) {
+      rootId = await ensureClientFolder(
         studentFolderName(
           `${client.first_name ?? ""} ${client.last_name ?? ""}`,
           String(client.crm_id ?? ""),
         ),
-        STUDENT_FOLDER_TEMPLATE,
       );
+      // A portal account cannot write to the client row, so this may not
+      // persist. The folder lookup is idempotent, so the next staff upload
+      // stores it; nothing is lost either way.
       await patch(
         "clients",
         String(client.id),
-        { drive_folder_id: folderId, drive_sync_state: "ready" },
+        { drive_folder_id: rootId, drive_sync_state: "ready" },
         token,
+      ).catch((error) =>
+        console.error("Could not store the client's Drive folder", error),
       );
     }
+    // File it under the matching folder from the plan, or at the client's root
+    // when the type matches nothing recognisable.
+    const planned = folderForDocumentType(String(document.document_type ?? ""));
+    const folderId = planned ? await ensureFolder(planned, rootId) : rootId;
 
     const content = await file.arrayBuffer();
     const stored = await uploadFile({
@@ -217,10 +226,15 @@ export async function POST(request: Request) {
         action: document.drive_file_id ? "document.replaced" : "document.uploaded",
         resource_type: "document",
         resource_id: String(document.id),
+        case_id: document.case_id ?? null,
         summary: `Stored ${file.name} for ${String(document.display_name ?? "a document")}`,
       },
       token,
-    );
+    ).catch((error) => {
+      // The file is already in the drive and the document row is updated;
+      // losing the audit row must not undo that, but it must be visible.
+      console.error("Could not record the document upload in the audit trail", error);
+    });
 
     return appendRefreshCookies(
       Response.json({ ok: true, driveFileId: stored.id, size: stored.size }),

@@ -35,7 +35,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
+command -v openssl >/dev/null || { echo "openssl is required." >&2; exit 69; }
+
 pg_setup "${work}" "${port}"
+
+# The Drive stub verifies the RS256 assertion the application signs, so it needs
+# a keypair. Generate a throwaway one per run rather than committing a private
+# key: it exists only inside the run directory and grants access to nothing.
+mkdir -p "${work}/keys"
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+  -out "${work}/keys/service.pem" 2>/dev/null
+openssl pkey -in "${work}/keys/service.pem" -pubout \
+  -out "${work}/keys/service.pub" 2>/dev/null
+chmod 600 "${work}/keys/service.pem"
 pg_stage_sql "${work}" "${root}"/supabase/migrations/*.sql \
   "${root}/scripts/rls/00_supabase_shim.sql" "${root}/scripts/audit/seed.sql"
 
@@ -54,7 +66,7 @@ sleep 2
 kill -0 "${shim_pid}" 2>/dev/null || { echo "The PostgREST shim failed to start:"; cat "${work}/shim.log"; exit 70; }
 
 DRIVE_STUB_PORT="${drive_port}" \
-  DRIVE_STUB_PUBLIC_KEY="${root}/scripts/audit/keys/test-service-account.pub" \
+  DRIVE_STUB_PUBLIC_KEY="${work}/keys/service.pub" \
   DRIVE_STUB_SHARED_DRIVE_ID="shared-drive-root" \
   node "${root}/scripts/audit/google-drive-stub.mjs" >"${work}/drive.log" 2>&1 &
 drive_pid=$!
@@ -67,7 +79,7 @@ SHIM_URL="http://127.0.0.1:${shim_port}" \
   GOOGLE_TOKEN_BASE="http://127.0.0.1:${drive_port}" \
   GOOGLE_SERVICE_ACCOUNT_EMAIL="crm@maximus-test.iam.gserviceaccount.com" \
   GOOGLE_SHARED_DRIVE_ID="shared-drive-root" \
-  GOOGLE_PRIVATE_KEY_FILE="${root}/scripts/audit/keys/test-service-account.pem" \
+  GOOGLE_PRIVATE_KEY_FILE="${work}/keys/service.pem" \
   DRIVE_STUB_URL="http://127.0.0.1:${drive_port}" \
   MAX_UPLOAD_MB="0.5" \
   FIELD_ENCRYPTION_KEY="$(head -c 32 /dev/urandom | base64)" \

@@ -225,15 +225,14 @@ export async function ensureFolder(
   return ((await created.json()) as { id: string }).id;
 }
 
-/** Creates the client's folder and its standard subfolders, once. */
-export async function ensureClientFolders(
-  folderName: string,
-  subfolders: readonly string[],
-): Promise<string> {
+/**
+ * The client's own folder in the Shared Drive. Subfolders are created when a
+ * document is first filed into one: provisioning the whole plan up front cost
+ * about twenty-six Drive calls on every upload whose folder was not yet stored.
+ */
+export async function ensureClientFolder(folderName: string): Promise<string> {
   const { sharedDriveId } = driveConfig();
-  const rootId = await ensureFolder(folderName, sharedDriveId);
-  for (const subfolder of subfolders) await ensureFolder(subfolder, rootId);
-  return rootId;
+  return ensureFolder(folderName, sharedDriveId);
 }
 
 export type UploadedFile = {
