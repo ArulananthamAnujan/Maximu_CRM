@@ -180,3 +180,26 @@ test("the schema checker covers every migration that adds objects", async () => 
   // It must stay read-only: it is meant to be pasted into a live database.
   assert.doesNotMatch(checker, /\b(insert|update|delete|drop|alter|create)\s/i);
 });
+
+test("the browser suite is wired into CI and needs no committed key", async () => {
+  const workflow = await read(".github/workflows/ci.yml");
+  const harness = await read("scripts/verify-features.sh");
+  const ui = await read("scripts/verify-ui.sh");
+  // The audit previously needed a private key that .gitignore excluded, so the
+  // job failed on every clean checkout.
+  for (const script of [harness, ui]) {
+    assert.match(script, /openssl genpkey/, "the harness must make its own key");
+    assert.doesNotMatch(script, /scripts\/audit\/keys/, "no committed key path");
+  }
+  assert.match(workflow, /Browser end-to-end/);
+  assert.match(workflow, /playwright install/);
+});
+
+test("the README says how to make CI an actual merge gate", async () => {
+  const readme = (await read("README.md")).replace(/\s+/g, " ");
+  assert.match(readme, /Require status checks to pass/i);
+  assert.match(readme, /Browser end-to-end/);
+  // And is honest about what is not built.
+  assert.match(readme, /What is and is not built/i);
+  assert.match(readme, /No mail provider is connected/i);
+});

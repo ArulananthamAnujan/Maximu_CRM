@@ -49,3 +49,6 @@ tsconfig.tsbuildinfo
 # Scratch directories used by the verification scripts
 /.crm-audit/
 /.rls-verify/
+/.crm-ui/
+/playwright-report/
+/test-results/

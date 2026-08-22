@@ -27,11 +27,27 @@ async function sql(text, uid, asAuth = true) {
     : "";
   const args = ["-h", HOST, "-p", PORT, "-U", user, "-d", process.env.PGDATABASE || "postgres",
                 "-tA", "-v", "ON_ERROR_STOP=1", "-c", prelude + text];
-  const { stdout } = USE_SU
-    ? await run("su", ["postgres", "-c",
-        `psql ${args.map((a) => (a.startsWith("-") ? a : JSON.stringify(a))).join(" ")}`],
-        { maxBuffer: 32 * 1024 * 1024 })
-    : await run("psql", args, { maxBuffer: 32 * 1024 * 1024, env: process.env });
+  const invoke = () =>
+    USE_SU
+      ? run("su", ["postgres", "-c",
+          `psql ${args.map((a) => (a.startsWith("-") ? a : JSON.stringify(a))).join(" ")}`],
+          { maxBuffer: 32 * 1024 * 1024 })
+      : run("psql", args, { maxBuffer: 32 * 1024 * 1024, env: process.env });
+
+  // Every query is a process spawn, and a browser driving the application fires
+  // dozens per page. A spawn that fails for want of resources is retried; a
+  // statement the database rejected is not, so a real error is never masked.
+  let stdout;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      ({ stdout } = await invoke());
+      break;
+    } catch (error) {
+      const detail = String(error.stderr || error.message || error);
+      if (attempt >= 2 || /ERROR:/.test(detail)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
+    }
+  }
   // The `set role` / `set test.uid` prelude echoes "SET" lines; the result is
   // the final line.
   // json_agg pretty-prints across lines, and the `set` prelude echoes "SET".
@@ -224,6 +240,14 @@ const server = http.createServer((req, res) => {
       const text = String(error.stderr || error.message || error);
       if (process.env.SHIM_DEBUG)
         console.error(`\n--- ${req.method} ${req.url}\n    uid=${uid}\n    body=${raw}\n    err=${text.split("\n").slice(0,3).join(" ")}`);
+      // A database that could not be reached is not a rejected statement.
+      // PostgREST would answer 503 there, and the difference matters: the
+      // login route turns a 400 into "the password is incorrect", which is a
+      // lie when the real cause is that psql could not start.
+      if (!/ERROR:/.test(text)) {
+        console.error(`shim: database unreachable -- ${text.split("\n")[0]}`);
+        return send(503, { code: "PGRST001", message: text.trim(), details: null, hint: null });
+      }
       const match = text.match(/ERROR:\s*(.+)/);
       const message = match ? match[1].trim() : text.trim();
       const missing = /does not exist|schema cache/i.test(message);

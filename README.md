@@ -68,6 +68,41 @@ cp .env.example .env.local
 npm run dev
 ```
 
+## Making CI a real gate
+
+The workflow in `.github/workflows/ci.yml` runs on every push and pull request:
+lint, types, build and unit tests; then every migration applied to a PostgreSQL
+service with the row-level security checks and the full feature audit; then the
+end-to-end tests in a real browser.
+
+None of that prevents a merge until the branch is protected. On GitHub, under
+**Settings -> Branches -> Add branch ruleset** (or **Add rule** for `main`):
+
+1. Target `main`.
+2. Require a pull request before merging.
+3. Require status checks to pass, and select **Lint, types, build and unit
+   tests**, **Row-level security and feature audit** and **Browser end-to-end**.
+4. Require branches to be up to date before merging.
+5. Block force pushes.
+
+Until that is set, CI reports but does not gate.
+
+## What is and is not built
+
+Working and covered by the checks above: the case pipeline, the case file,
+applications, visa matters, dependants, documents in the Shared Drive, the
+client portal, administration, reporting, imports and retention.
+
+Not built, and labelled as such in the interface rather than implied:
+
+| Area | State |
+|---|---|
+| Sending email | Drafts are recorded against the case. No mail provider is connected, so nothing is sent from the CRM. |
+| WhatsApp | Not implemented. |
+| Campaigns | Not implemented. Templates are reusable wording, not a campaign engine. |
+| Google sign-in | Sign-in is Supabase email and password. The Google button is not wired to an OAuth flow. |
+| AI assistant | A placeholder screen. No provider is connected. |
+
 ## Database migrations
 
 The schema lives in Supabase and is migrated separately from this code, so a

@@ -4,6 +4,7 @@ import {
   FormEvent,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -275,7 +276,7 @@ const staffToolGroups = [
     label: "Case tools",
     items: [
       ["documents", "File Manager", FolderOpen],
-      ["communications", "Email & WhatsApp", Mail],
+      ["communications", "Messages", Mail],
     ],
   },
 ] as const;
@@ -292,8 +293,8 @@ const adminToolGroups = [
   {
     label: "Communication",
     items: [
-      ["communications", "Email & WhatsApp", Mail],
-      ["templates", "Campaigns & Templates", FileCheck2],
+      ["communications", "Messages", Mail],
+      ["templates", "Templates", FileCheck2],
     ],
   },
   {
@@ -564,14 +565,14 @@ const meta: Record<ModuleKey, [string, string, string]> = {
     "Manage standard documents and client documents.",
   ],
   communications: [
-    "Email & WhatsApp",
+    "Messages",
     "Communication",
-    "Case-linked email, templates, campaigns and WhatsApp communication.",
+    "Case-linked message drafts. Sending is not connected yet.",
   ],
   templates: [
-    "Campaigns & templates",
-    "Automation",
-    "Manage email, SMS and WhatsApp templates and campaigns.",
+    "Templates",
+    "Reusable content",
+    "Approved wording for messages and document requests.",
   ],
   finance: [
     "Accounts",
@@ -1697,14 +1698,20 @@ function MessagesView({
     <article className="panel listPanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">LOCAL OUTBOX</span>
-          <h2>Messages & drafts</h2>
+          <span className="kicker">CASE MESSAGES</span>
+          <h2>Drafts</h2>
         </div>
         <button className="primaryButton" onClick={() => openModal("message")}>
           <Plus size={16} />
           Compose
         </button>
       </div>
+      <p className="modalNotice">
+        <AlertTriangle size={14} />
+        Drafts are recorded against the case. No mail provider is connected, so
+        nothing is sent from here yet -- send it from your mailbox and mark the
+        draft ready.
+      </p>
       {items.length === 0 ? (
         <EmptyState
           icon={Mail}
@@ -5444,6 +5451,16 @@ export default function Home() {
     [branches, setBranches] = useState<BranchRecord[]>([]),
     [schemaWarning, setSchemaWarning] = useState<string>(""),
     [storageConnected, setStorageConnected] = useState(false);
+  // The module a role lands on is chosen once per sign-in. The workspace loads
+  // in two steps -- the session first, then the records -- and the navigation is
+  // already usable between them, so re-applying the default on the second step
+  // would throw away a screen the person had already opened.
+  const landedAs = useRef<AppRole | null>(null);
+  const landOn = (nextRole: AppRole) => {
+    if (landedAs.current === nextRole) return;
+    landedAs.current = nextRole;
+    setActive(roleConfig[nextRole].modules[0]);
+  };
   const [identity, setIdentity] = useState<LiveIdentity | null>(null),
     [sessionReady, setSessionReady] = useState(false),
     [serviceMode, setServiceMode] = useStored<ServiceMode>(
@@ -5499,7 +5516,7 @@ export default function Home() {
         throw new Error(sessionResult.error || "Sign in is required.");
       authenticatedIdentity = sessionResult.identity as LiveIdentity;
       setIdentity(authenticatedIdentity);
-      setActive(roleConfig[authenticatedIdentity.role].modules[0]);
+      landOn(authenticatedIdentity.role);
 
       const response = await fetch("/api/crm/workspace", { cache: "no-store" });
       const result = await response.json();
@@ -5528,7 +5545,7 @@ export default function Home() {
       );
       setStorageConnected(result.capabilities?.documentStorage === true);
       setBranches((result.branches || []) as BranchRecord[]);
-      setActive(roleConfig[result.identity.role as AppRole].modules[0]);
+      landOn(result.identity.role as AppRole);
       void loadAlerts(result.identity.role as AppRole);
     } catch (reason) {
       if (!authenticatedIdentity) setIdentity(null);
@@ -5845,6 +5862,8 @@ export default function Home() {
   const signOut = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     setIdentity(null);
+    // The next person to sign in gets their own landing screen.
+    landedAs.current = null;
     setCases([]);
     setTasks([]);
     setAppointments([]);
