@@ -78,6 +78,7 @@ const worker = {
     headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
     headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
     headers.set("Cross-Origin-Opener-Policy", "same-origin");
+    headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     headers.set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
     if (url.pathname.startsWith("/api/")) {
       headers.set("Cache-Control", "no-store, max-age=0");

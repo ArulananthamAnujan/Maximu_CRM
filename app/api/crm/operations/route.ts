@@ -18,6 +18,9 @@ export async function GET(request: Request) {
     } else if (view === "checklist") {
       const caseId = uuid(url.searchParams.get("caseId"), "Case");
       data = await rest(`case_checklist_items?select=*&case_id=eq.${caseId}&order=created_at.asc`, token);
+    } else if (view === "notes") {
+      const caseId = uuid(url.searchParams.get("caseId"), "Case");
+      data = await rest(`case_notes?select=*&case_id=eq.${caseId}&order=created_at.desc&limit=100`, token);
     } else if (view === "integrations") {
       data = await rest("integration_connections?select=id,profile_id,provider,connection_scope,external_account,status,scopes,last_synced_at,last_error,updated_at&order=provider.asc", token);
     } else if (view === "report") {

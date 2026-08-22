@@ -272,6 +272,14 @@ const queue = await opsPost({ action: "queue_integration", provider: "google_dri
   operation: "create_folder", caseId: newCaseId, idempotencyKey: `audit-${Date.now()}` }, owner.cookie);
 expect("an integration job can be queued", queue.status === 200, JSON.stringify(queue.json));
 
+const notesView = await call(`/api/crm/operations?view=notes&caseId=${newCaseId}`, { cookie: officer.cookie });
+expect("case notes can be read back",
+  notesView.status === 200 && (notesView.json?.data?.length ?? 0) > 0,
+  JSON.stringify(notesView.json)?.slice(0, 200));
+const portalNotes = await call(`/api/crm/operations?view=notes&caseId=${newCaseId}`, { cookie: student.cookie });
+expect("the client portal cannot read case notes", portalNotes.status === 403,
+  `${portalNotes.status} ${JSON.stringify(portalNotes.json)}`);
+
 section("Client intake");
 const intake = await call(`/api/crm/intake?clientId=${created.json?.clientId}`, { cookie: officer.cookie });
 expect("the intake record loads", intake.status === 200, JSON.stringify(intake.json)?.slice(0, 200));

@@ -119,3 +119,22 @@ test("the case lifecycle is enforced in the database, not only the interface", a
   // sitting in an active stage.
   assert.match(sql, /reopened_at/);
 });
+
+test("both deployment targets send the same security headers", async () => {
+  const worker = await read("worker/index.ts");
+  const netlify = await read("netlify.toml");
+  // worker/index.ts only runs on Cloudflare, so anything set there alone would
+  // silently not apply to the Netlify deployment.
+  for (const header of [
+    "Content-Security-Policy",
+    "X-Content-Type-Options",
+    "X-Frame-Options",
+    "Referrer-Policy",
+    "Permissions-Policy",
+    "Cross-Origin-Opener-Policy",
+    "Strict-Transport-Security",
+  ]) {
+    assert.match(worker, new RegExp(header), `worker is missing ${header}`);
+    assert.match(netlify, new RegExp(header), `netlify.toml is missing ${header}`);
+  }
+});

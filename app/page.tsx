@@ -1,6 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Activity,
   AlertTriangle,
@@ -22,10 +27,7 @@ import {
   FileText,
   Filter,
   FolderOpen,
-  Gauge,
   GraduationCap,
-  Inbox,
-  LayoutDashboard,
   LockKeyhole,
   LogOut,
   Mail,
@@ -173,6 +175,20 @@ type WorkflowRecord = {
   active: boolean;
 };
 type AuditRecord = { id: string; text: string; at: string };
+type ChecklistItem = {
+  id: string;
+  title: string;
+  status: string;
+  required: boolean;
+  due_at: string | null;
+};
+type CaseNote = {
+  id: string;
+  body: string;
+  visibility: string;
+  created_at: string;
+  author_id: string | null;
+};
 type StaffRecord = {
   id: string;
   display_name: string;
@@ -1004,340 +1020,6 @@ function DailyTopNav({
         </button>
       ))}
     </nav>
-  );
-}
-
-function TopModuleNav({
-  active,
-  setActive,
-  role,
-}: {
-  active: ModuleKey;
-  setActive: (x: ModuleKey) => void;
-  role: AppRole;
-}) {
-  const allowed = roleConfig[role].modules,
-    groups = [
-      {
-        label: "Operations",
-        icon: BriefcaseBusiness,
-        items: [
-          ["finance", "Accounts", CircleDollarSign],
-          ["reports", "Reports", BarChart3],
-          ["documents", "File Manager", FolderOpen],
-        ],
-      },
-      {
-        label: "Communication",
-        icon: Mail,
-        items: [
-          ["communications", "Email & WhatsApp", Mail],
-          ["templates", "Campaigns & Templates", FileCheck2],
-        ],
-      },
-      {
-        label: "Management",
-        icon: Settings,
-        items: [
-          ["administration", "Master's", Settings],
-          ["integrations", "Integrations", Workflow],
-          ["compliance", "Activity & Compliance", LockKeyhole],
-        ],
-      },
-    ] as const;
-  return (
-    <nav className="topModuleNav" aria-label="Business tools">
-      {groups.map((group) => {
-        const visible = group.items.filter(([key]) =>
-          allowed.includes(key as ModuleKey),
-        );
-        if (!visible.length) return null;
-        const activeGroup = visible.some(([key]) => key === active);
-        const Icon = group.icon;
-        return (
-          <details key={group.label} className={activeGroup ? "active" : ""}>
-            <summary>
-              <Icon size={17} />
-              <span>{group.label}</span>
-              <ChevronDown size={15} />
-            </summary>
-            <div className="topNavMenu">
-              {visible.map(([key, label, ItemIcon]) => (
-                <button
-                  key={key}
-                  className={active === key ? "active" : ""}
-                  onClick={(e) => {
-                    setActive(key as ModuleKey);
-                    const details = e.currentTarget.closest(
-                      "details",
-                    ) as HTMLDetailsElement | null;
-                    if (details) details.open = false;
-                  }}
-                >
-                  <ItemIcon size={17} />
-                  <span>{label}</span>
-                  {active === key ? (
-                    <Check size={15} />
-                  ) : (
-                    <ArrowRight size={15} />
-                  )}
-                </button>
-              ))}
-            </div>
-          </details>
-        );
-      })}
-    </nav>
-  );
-}
-
-function Dashboard({
-  cases,
-  tasks,
-  documents,
-  openModal,
-  setActive,
-}: {
-  cases: CaseRecord[];
-  tasks: TaskRecord[];
-  documents: DocumentRecord[];
-  openModal: (x: ModalType) => void;
-  setActive: (x: ModuleKey) => void;
-}) {
-  const attention = cases.filter((c) => c.health !== "healthy").length,
-    waiting = cases.filter((c) => c.status === "waiting").length,
-    completed = cases.filter((c) => c.status === "completed").length;
-  return (
-    <>
-      <section className="welcomeHero">
-        <div className="welcomeCopy">
-          <span>WELCOME TO YOUR WORKSPACE</span>
-          <h2>
-            Build better journeys,
-            <br />
-            one client at a time.
-          </h2>
-          <p>
-            Start by creating your first enquiry, student or migration matter.
-            No demonstration records have been added.
-          </p>
-          <div className="welcomeActions">
-            <button className="heroPrimary" onClick={() => openModal("case")}>
-              <Plus size={16} />
-              Create first case
-            </button>
-            <button className="heroSecondary" onClick={() => openModal("task")}>
-              <Check size={16} />
-              Add a task
-            </button>
-          </div>
-        </div>
-        <div className="journeyVisual">
-          <i className="sunDot" />
-          <i className="orbit one" />
-          <i className="orbit two" />
-          <div className="journeyCard">
-            <div className="journeyIcon">
-              <GraduationCap size={25} />
-            </div>
-            <span>ACTIVE JOURNEYS</span>
-            <strong>
-              {cases.filter((c) => c.status !== "completed").length}
-            </strong>
-            <small>Created in this workspace</small>
-          </div>
-          <div className="journeyStep stepOne">
-            <b>01</b>
-            <span>Discover</span>
-          </div>
-          <div className="journeyStep stepTwo">
-            <b>02</b>
-            <span>Apply</span>
-          </div>
-          <div className="journeyStep stepThree">
-            <b>03</b>
-            <span>Arrive</span>
-          </div>
-        </div>
-      </section>
-      <section className="journeyFlow">
-        <header>
-          <span className="kicker">ONE CLEAR JOURNEY</span>
-          <strong>Every case follows a visible path</strong>
-        </header>
-        <div>
-          <article className="active">
-            <b>01</b>
-            <span>Enquiry</span>
-            <small>Capture and qualify</small>
-          </article>
-          <ArrowRight size={17} />
-          <article>
-            <b>02</b>
-            <span>Counselling</span>
-            <small>Goals and eligibility</small>
-          </article>
-          <ArrowRight size={17} />
-          <article>
-            <b>03</b>
-            <span>Documents</span>
-            <small>Request and verify</small>
-          </article>
-          <ArrowRight size={17} />
-          <article>
-            <b>04</b>
-            <span>Apply / Lodge</span>
-            <small>Education or visa</small>
-          </article>
-          <ArrowRight size={17} />
-          <article>
-            <b>05</b>
-            <span>Outcome</span>
-            <small>Offer, grant or next step</small>
-          </article>
-        </div>
-      </section>
-      <section className="signalGrid">
-        <article className="signal coral">
-          <div>
-            <span>Open cases</span>
-            <strong>
-              {cases.filter((c) => c.status !== "completed").length}
-            </strong>
-            <small>{cases.length} total records</small>
-          </div>
-          <div className="signalIcon">
-            <BriefcaseBusiness size={22} />
-          </div>
-        </article>
-        <article className="signal sunshine">
-          <div>
-            <span>Need attention</span>
-            <strong>{attention}</strong>
-            <small>Based on case health</small>
-          </div>
-          <div className="signalIcon amber">
-            <AlertTriangle size={22} />
-          </div>
-        </article>
-        <article className="signal ocean">
-          <div>
-            <span>Waiting</span>
-            <strong>{waiting}</strong>
-            <small>Client or third-party action</small>
-          </div>
-          <div className="signalIcon blue">
-            <Clock3 size={22} />
-          </div>
-        </article>
-        <article className="signal mint">
-          <div>
-            <span>Completed</span>
-            <strong>{completed}</strong>
-            <small>Closed journeys</small>
-          </div>
-          <div className="signalIcon green">
-            <Gauge size={22} />
-          </div>
-        </article>
-      </section>
-      <section className="dashboardGrid">
-        <article className="panel pipelinePanel">
-          <div className="panelHead">
-            <div>
-              <span className="kicker">LIVE WORKSPACE</span>
-              <h2>Recent cases</h2>
-            </div>
-            <button
-              className="ghostButton"
-              onClick={() => setActive("students")}
-            >
-              View all <ArrowRight size={15} />
-            </button>
-          </div>
-          {cases.length === 0 ? (
-            <EmptyState
-              icon={BriefcaseBusiness}
-              title="No cases yet"
-              copy="Create your first record to begin tracking the client journey."
-              action="Create case"
-              onAction={() => openModal("case")}
-            />
-          ) : (
-            <div className="caseTable">
-              {cases.slice(0, 5).map((c) => (
-                <button
-                  className="caseRow compactRecord"
-                  key={c.id}
-                  onClick={() =>
-                    setActive(
-                      c.type.toLowerCase().includes("visa")
-                        ? "visas"
-                        : "students",
-                    )
-                  }
-                >
-                  <span className="clientCell">
-                    <b>{c.name}</b>
-                    <small>
-                      {c.id} · {c.type}
-                    </small>
-                  </span>
-                  <span>
-                    <b>{c.stage}</b>
-                    <small>{c.target || "No target added"}</small>
-                  </span>
-                  <span>
-                    <Status value={c.health} />
-                  </span>
-                  <span>{c.due || "No due date"}</span>
-                  <ArrowRight size={16} />
-                </button>
-              ))}
-            </div>
-          )}
-        </article>
-        <aside className="rightRail">
-          <article className="panel attentionPanel">
-            <div className="panelHead">
-              <div>
-                <span className="kicker">ACTION CENTRE</span>
-                <h2>Today&apos;s workload</h2>
-              </div>
-              <Activity size={19} />
-            </div>
-            <button
-              className="radarItem actionRow"
-              onClick={() => setActive("work")}
-            >
-              <div className="radarIcon amber">
-                <Check size={17} />
-              </div>
-              <div>
-                <strong>
-                  {tasks.filter((t) => !t.completed).length} open tasks
-                </strong>
-                <span>View and update assignments</span>
-              </div>
-              <ArrowRight size={15} />
-            </button>
-            <button
-              className="radarItem actionRow"
-              onClick={() => setActive("documents")}
-            >
-              <div className="radarIcon blue">
-                <FileCheck2 size={17} />
-              </div>
-              <div>
-                <strong>{documents.length} documents</strong>
-                <span>Open document centre</span>
-              </div>
-              <ArrowRight size={15} />
-            </button>
-          </article>
-        </aside>
-      </section>
-    </>
   );
 }
 
@@ -2930,6 +2612,84 @@ function FeatureCoverage() {
     </article>
   );
 }
+function ReadinessPanel() {
+  const [state, setState] = useState<{
+    status?: string;
+    latencyMs?: number;
+    readiness?: Record<string, unknown>;
+    error?: string;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/crm/health", { cache: "no-store" });
+        const result = await response.json();
+        if (!cancelled)
+          setState(
+            response.ok
+              ? result
+              : { error: result.error || "Readiness is unavailable." },
+          );
+      } catch {
+        if (!cancelled) setState({ error: "Readiness is unavailable." });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const labels: Record<string, string> = {
+    active_branches: "Active branches",
+    active_internal_users: "Internal users",
+    workflow_templates: "Active workflows",
+    retention_rules: "Retention rules",
+    open_incidents: "Open incidents",
+    pending_import_rows: "Import rows to resolve",
+  };
+  return (
+    <article className="panel listPanel">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">PRODUCTION READINESS</span>
+          <h2>Live service check</h2>
+        </div>
+        {state?.status && (
+          <Status value={state.status === "healthy" ? "Healthy" : "Degraded"} />
+        )}
+      </div>
+      {!state ? (
+        <p className="coverageIntro">Checking the database…</p>
+      ) : state.error ? (
+        <p className="coverageIntro">{state.error}</p>
+      ) : (
+        <>
+          <p className="coverageIntro">
+            Database responded in {state.latencyMs ?? 0}ms.
+          </p>
+          <div className="miniStats">
+            {Object.entries(labels).map(([key, label]) => (
+              <article key={key}>
+                <span>{label}</span>
+                <strong>
+                  {String(
+                    (state.readiness as Record<string, unknown>)?.[key] ?? 0,
+                  )}
+                </strong>
+                <small>
+                  {key === "open_incidents" || key === "pending_import_rows"
+                    ? "Lower is better"
+                    : "Configured"}
+                </small>
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+    </article>
+  );
+}
+
 function AdminView({
   openModal,
   clearData,
@@ -3172,6 +2932,89 @@ function CaseDrawerBody({
   const [moving, setMoving] = useState<LifecycleStage | "">("");
   const [owner, setOwner] = useState(item.ownerId);
   const [assigning, setAssigning] = useState(false);
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [notes, setNotes] = useState<CaseNote[]>([]);
+  const [newItem, setNewItem] = useState("");
+  const [newNote, setNewNote] = useState("");
+  const [working, setWorking] = useState(false);
+  const [caseError, setCaseError] = useState("");
+  const caseId = item.dbId;
+
+  // Reads the case's checklist and notes. Kept free of state updates so the
+  // mount effect can discard a response that arrives after the drawer closes.
+  const fetchCaseWork = async (id: string) => {
+    const [checklistResponse, notesResponse] = await Promise.all([
+      fetch(`/api/crm/operations?view=checklist&caseId=${id}`, {
+        cache: "no-store",
+      }),
+      fetch(`/api/crm/operations?view=notes&caseId=${id}`, {
+        cache: "no-store",
+      }),
+    ]);
+    const checklistResult = await checklistResponse.json();
+    const notesResult = await notesResponse.json();
+    return {
+      checklist: checklistResponse.ok
+        ? ((checklistResult.data ?? []) as ChecklistItem[])
+        : [],
+      notes: notesResponse.ok ? ((notesResult.data ?? []) as CaseNote[]) : [],
+    };
+  };
+
+  useEffect(() => {
+    if (!caseId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const work = await fetchCaseWork(caseId);
+        if (cancelled) return;
+        setChecklist(work.checklist);
+        setNotes(work.notes);
+        setCaseError("");
+      } catch {
+        if (!cancelled)
+          setCaseError("The checklist and notes could not be loaded.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [caseId]);
+
+  const reloadCaseWork = async () => {
+    if (!caseId) return;
+    try {
+      const work = await fetchCaseWork(caseId);
+      setChecklist(work.checklist);
+      setNotes(work.notes);
+      setCaseError("");
+    } catch {
+      setCaseError("The checklist and notes could not be loaded.");
+    }
+  };
+
+  const operation = async (body: Record<string, unknown>) => {
+    setWorking(true);
+    try {
+      const response = await fetch("/api/crm/operations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "That did not save.");
+      setCaseError("");
+      await reloadCaseWork();
+      return true;
+    } catch (reason_) {
+      setCaseError(
+        reason_ instanceof Error ? reason_.message : "That did not save.",
+      );
+      return false;
+    } finally {
+      setWorking(false);
+    }
+  };
   const stage = item.lifecycleStage;
   const moves = allowedStageMoves(stage);
   const run = async (next: LifecycleStage) => {
@@ -3364,6 +3207,141 @@ function CaseDrawerBody({
               stage.
             </p>
           )}
+        </section>
+        <section className="caseWorkPanel">
+          <span className="kicker">DOCUMENT CHECKLIST</span>
+          {checklist.length === 0 ? (
+            <p className="caseWorkEmpty">
+              Nothing on the checklist yet. Add the documents this case needs.
+            </p>
+          ) : (
+            <ul className="checklist">
+              {checklist.map((entry) => {
+                const settled =
+                  entry.status === "completed" || entry.status === "waived";
+                return (
+                  <li key={entry.id} className={settled ? "settled" : ""}>
+                    <span>
+                      <b>{entry.title}</b>
+                      <small>
+                        {entry.required ? "Required" : "Optional"}
+                        {entry.due_at
+                          ? ` · due ${String(entry.due_at).slice(0, 10)}`
+                          : ""}
+                        {settled ? ` · ${entry.status}` : ""}
+                      </small>
+                    </span>
+                    {!settled && (
+                      <span className="checklistActions">
+                        <button
+                          type="button"
+                          className="ghostButton"
+                          disabled={working}
+                          onClick={() =>
+                            void operation({
+                              action: "complete_checklist_item",
+                              id: entry.id,
+                            })
+                          }
+                        >
+                          <Check size={14} />
+                          Done
+                        </button>
+                        <button
+                          type="button"
+                          className="ghostButton"
+                          disabled={working}
+                          onClick={() =>
+                            void operation({
+                              action: "complete_checklist_item",
+                              id: entry.id,
+                              waived: true,
+                            })
+                          }
+                        >
+                          Waive
+                        </button>
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <form
+            className="inlineAdd"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!newItem.trim()) return;
+              if (
+                await operation({
+                  action: "checklist_item",
+                  caseId,
+                  title: newItem.trim(),
+                })
+              )
+                setNewItem("");
+            }}
+          >
+            <input
+              value={newItem}
+              onChange={(event) => setNewItem(event.target.value)}
+              placeholder="Add a required document"
+              aria-label="Add a checklist item"
+            />
+            <button className="ghostButton" disabled={working || !newItem.trim()}>
+              <Plus size={14} />
+              Add
+            </button>
+          </form>
+        </section>
+        <section className="caseWorkPanel">
+          <span className="kicker">CASE NOTES</span>
+          {notes.length === 0 ? (
+            <p className="caseWorkEmpty">
+              No notes yet. Notes stay internal and are never shown in the
+              client portal.
+            </p>
+          ) : (
+            <ul className="caseNotes">
+              {notes.map((note) => (
+                <li key={note.id}>
+                  <p>{note.body}</p>
+                  <small>
+                    {new Date(note.created_at).toLocaleString()}
+                    {note.visibility === "private" ? " · private" : ""}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          )}
+          <form
+            className="inlineAdd"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              if (!newNote.trim()) return;
+              if (
+                await operation({
+                  action: "case_note",
+                  caseId,
+                  body: newNote.trim(),
+                })
+              )
+                setNewNote("");
+            }}
+          >
+            <input
+              value={newNote}
+              onChange={(event) => setNewNote(event.target.value)}
+              placeholder="Add an internal note"
+              aria-label="Add a case note"
+            />
+            <button className="ghostButton" disabled={working || !newNote.trim()}>
+              <Plus size={14} />
+              Add
+            </button>
+          </form>
+          {caseError && <p className="caseWorkError">{caseError}</p>}
         </section>
         <div className="drawerFooter">
           <button className="ghostButton" onClick={() => edit(item)}>
@@ -4117,7 +4095,10 @@ export default function Home() {
     [formError, setFormError] = useState(""),
     [saving, setSaving] = useState(false),
     [quickOpen, setQuickOpen] = useState(false),
-    [notifications, setNotifications] = useState(false);
+    [notifications, setNotifications] = useState(false),
+    [alerts, setAlerts] = useState<
+      { id: string; title: string; body: string | null; read_at: string | null }[]
+    >([]);
   const [cases, setCases] = useState<CaseRecord[]>([]),
     [tasks, setTasks] = useState<TaskRecord[]>([]),
     [appointments, setAppointments] = useState<AppointmentRecord[]>([]),
@@ -4149,6 +4130,33 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [toast]);
   const say = (text: string) => setToast(text);
+  // Real notifications, including the ones raised when a case is reassigned.
+  const loadAlerts = async (nextRole: AppRole) => {
+    if (nextRole === "client") return;
+    try {
+      const response = await fetch("/api/crm/operations?view=notifications", {
+        cache: "no-store",
+      });
+      const result = await response.json();
+      setAlerts(response.ok ? (result.data ?? []) : []);
+    } catch {
+      setAlerts([]);
+    }
+  };
+  const markAlertRead = async (id: string) => {
+    setAlerts((current) =>
+      current.map((alert) =>
+        alert.id === id
+          ? { ...alert, read_at: new Date().toISOString() }
+          : alert,
+      ),
+    );
+    await fetch("/api/crm/operations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "read_notification", id }),
+    }).catch(() => undefined);
+  };
   const loadWorkspace = async () => {
     let authenticatedIdentity: LiveIdentity | null = null;
     try {
@@ -4188,6 +4196,7 @@ export default function Home() {
         typeof result.schemaWarning === "string" ? result.schemaWarning : "",
       );
       setActive(roleConfig[result.identity.role as AppRole].modules[0]);
+      void loadAlerts(result.identity.role as AppRole);
     } catch (reason) {
       if (!authenticatedIdentity) setIdentity(null);
       else
@@ -4510,6 +4519,7 @@ export default function Home() {
     setAudits([]);
     setStaff([]);
     setSchemaWarning("");
+    setAlerts([]);
   };
   if (!sessionReady)
     return (
@@ -4530,6 +4540,7 @@ export default function Home() {
         c.type.toLowerCase().includes("visa") ||
         c.type.toLowerCase().includes("migration"),
     );
+  const unreadAlerts = alerts.filter((alert) => !alert.read_at);
   let content: React.ReactNode;
   if (role === "client")
     content =
@@ -4680,6 +4691,7 @@ export default function Home() {
           setActive={setActive}
           roles={roles}
         />
+        <ReadinessPanel />
         <FeatureCoverage />
       </>
     );
@@ -4819,16 +4831,34 @@ export default function Home() {
                   aria-label="Notifications"
                 >
                   <Bell size={19} />
-                  {tasks.some((t) => !t.completed) && <i />}
+                  {(unreadAlerts.length > 0 ||
+                    tasks.some((t) => !t.completed)) && <i />}
                 </button>
                 {notifications && (
-                  <div className="smallPopover">
+                  <div className="smallPopover notificationPopover">
                     <strong>Notifications</strong>
-                    <span>
-                      {role === "client"
-                        ? "Only your linked updates are shown"
-                        : `${tasks.filter((t) => !t.completed).length} open tasks`}
-                    </span>
+                    {role === "client" ? (
+                      <span>Only your linked updates are shown</span>
+                    ) : unreadAlerts.length === 0 ? (
+                      <span>
+                        Nothing new ·{" "}
+                        {tasks.filter((t) => !t.completed).length} open tasks
+                      </span>
+                    ) : (
+                      <ul className="alertList">
+                        {unreadAlerts.slice(0, 6).map((alert) => (
+                          <li key={alert.id}>
+                            <button onClick={() => void markAlertRead(alert.id)}>
+                              <span>
+                                <b>{alert.title}</b>
+                                {alert.body ? <small>{alert.body}</small> : null}
+                              </span>
+                              <Check size={14} />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {role !== "client" ? (
                       <button
                         onClick={() => {
