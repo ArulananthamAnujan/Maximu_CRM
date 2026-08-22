@@ -138,3 +138,26 @@ test("both deployment targets send the same security headers", async () => {
     assert.match(netlify, new RegExp(header), `netlify.toml is missing ${header}`);
   }
 });
+
+test("the migration printer emits SQL, never its own source", async () => {
+  // A previous instruction led to the bash script being pasted into the SQL
+  // editor, which fails with: syntax error at or near "#!/".
+  const { execFileSync } = await import("node:child_process");
+  const root = new URL("..", import.meta.url).pathname;
+  const printed = execFileSync("bash", [`${root}scripts/print-migrations.sh`, "0010"], {
+    encoding: "utf8",
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  assert.doesNotMatch(printed, /^#!/, "the script printed its own shebang");
+  assert.doesNotMatch(printed, /set -euo pipefail/, "the script printed its own source");
+  assert.match(printed.split("\n")[0], /^--/, "output should open as a SQL comment");
+  assert.match(printed, /0010_case_file\.sql/);
+  assert.match(printed, /begin;/);
+});
+
+test("the README tells people to copy the SQL file, not run a script", async () => {
+  // The README is hard-wrapped, so collapse whitespace before matching.
+  const readme = (await read("README.md")).replace(/\s+/g, " ");
+  assert.match(readme, /are plain SQL/);
+  assert.match(readme, /Copy the SQL file itself, not any script/i);
+});

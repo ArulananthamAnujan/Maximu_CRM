@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# Prints migrations to stdout as one script, ready to paste into the Supabase
-# SQL editor (Dashboard -> SQL Editor -> New query).
+# PRINTS migration SQL to stdout. This file is a bash program, not SQL: run it,
+# and paste its OUTPUT into the Supabase SQL editor. Pasting this file itself
+# fails with: syntax error at or near "#!/".
 #
-# Every migration is written to be safe to run more than once, so applying the
-# whole set against a database that already has some of it is not harmful.
+# You do not need this to apply a migration. The files in supabase/migrations/
+# are plain SQL and can be copied straight into the editor, in number order.
+# This only exists to join several of them into one script.
+#
+# 0008 onwards are written to be safe to run more than once. 0001 to 0007 are
+# first-run only and will report that objects already exist if repeated, so pass
+# a starting migration rather than printing the whole set onto a live database.
 #
 #   scripts/print-migrations.sh             # every migration
 #   scripts/print-migrations.sh 0008        # 0008 and everything after it

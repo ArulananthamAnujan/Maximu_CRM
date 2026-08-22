@@ -75,17 +75,22 @@ deployment can be ahead of the database. When that happens the CRM shows a
 banner naming the migration to apply rather than failing with a PostgREST
 error, and case creation keeps working.
 
-**Applying migrations to a hosted Supabase project.** Generate the SQL and paste
-it into the Supabase dashboard under SQL Editor -> New query:
+**Applying migrations to a hosted Supabase project.** The files in
+`supabase/migrations/` are plain SQL. Open the ones you have not applied yet, in
+number order, and for each: copy the file's contents, and in the Supabase
+dashboard go to SQL Editor -> New query, paste, and Run.
 
-```bash
-scripts/print-migrations.sh          # every migration
-scripts/print-migrations.sh 0008     # 0008 and everything after it
-```
+Nothing needs to be generated or executed first. Copy the SQL file itself, not
+any script.
 
-Every migration is written to be safe to run more than once, so re-applying the
-whole set against a database that already has part of it is harmless. Running
-them in order is what matters.
+Order is what matters. `0008` onwards are written to be safe to run more than
+once, so re-applying one you are unsure about is harmless; `0001` to `0007` are
+first-run only and will report that objects already exist if repeated.
+
+If you have a terminal, `scripts/print-migrations.sh 0010` prints `0010` and
+everything after it as one script you can redirect to a file
+(`scripts/print-migrations.sh 0010 > pending.sql`). It is a program that prints
+SQL -- do not paste the script itself into the SQL editor.
 
 **Locally**, with Docker Desktop and the Supabase CLI:
 
