@@ -101,6 +101,10 @@ supabase db reset
 
 Copy the local Supabase URL and keys into `.env.local`.
 
+**Checking what the database has.** `scripts/checks/verify-schema.sql` is a
+read-only query: paste it into the SQL editor and every row should read OK.
+Anything reading MISSING names the migration that has not been applied yet.
+
 **Checking every feature.** `scripts/verify-features.sh` builds a throwaway
 PostgreSQL database, applies every migration, seeds a two-branch agency and
 drives the built Worker through the whole CRM as an owner, a branch manager, a

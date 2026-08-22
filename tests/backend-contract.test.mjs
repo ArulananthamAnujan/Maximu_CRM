@@ -161,3 +161,22 @@ test("the README tells people to copy the SQL file, not run a script", async () 
   assert.match(readme, /are plain SQL/);
   assert.match(readme, /Copy the SQL file itself, not any script/i);
 });
+
+test("the schema checker covers every migration that adds objects", async () => {
+  const checker = await read("scripts/checks/verify-schema.sql");
+  // A checker that has not kept up with the migrations quietly reports OK for
+  // things it never looks at.
+  for (const expected of [
+    "cases.lifecycle_stage",
+    "move_case_lifecycle",
+    "cases.matter_type",
+    "visa_matters.information_due_at",
+    "clients.passport_masked",
+    "education_applications.archived_at",
+    "documents_client_attach",
+    "audit_case_read",
+  ])
+    assert.match(checker, new RegExp(expected.replace(".", "\\.")));
+  // It must stay read-only: it is meant to be pasted into a live database.
+  assert.doesNotMatch(checker, /\b(insert|update|delete|drop|alter|create)\s/i);
+});
