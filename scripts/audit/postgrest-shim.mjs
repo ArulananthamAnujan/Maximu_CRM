@@ -6,8 +6,13 @@ import http from "node:http";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
-const SOCK = process.env.PGSOCK || "/var/lib/postgresql/crm-audit/run";
-const PORT = process.env.PGPORT || "5440";
+// Local runs talk to a throwaway cluster over a unix socket owned by the
+// `postgres` system user; CI talks to a service container over TCP. PG_SU=1
+// selects the former.
+const SOCK = process.env.PGSOCK || "";
+const PORT = process.env.PGPORT || "5432";
+const HOST = process.env.PGHOST || SOCK;
+const USE_SU = process.env.PG_SU === "1";
 
 const lit = (v) => (v === null || v === undefined ? "null" : `'${String(v).replace(/'/g, "''")}'`);
 const ident = (v) => `"${String(v).replace(/"/g, '""')}"`;
@@ -16,16 +21,17 @@ const ident = (v) => `"${String(v).replace(/"/g, '""')}"`;
 // that Supabase itself would serve. Everything else runs as `authenticated`
 // with auth.uid() set, so row-level security is genuinely exercised.
 async function sql(text, uid, asAuth = true) {
-  const user = asAuth ? "app_user" : "postgres";
+  const user = asAuth ? "app_user" : (process.env.PGUSER || "postgres");
   const prelude = asAuth
     ? `set role authenticated; set test.uid = ${lit(uid || "")};`
     : "";
-  const { stdout } = await run(
-    "su",
-    ["postgres", "-c",
-     `psql -h ${SOCK} -p ${PORT} -U ${user} -d postgres -tA -v ON_ERROR_STOP=1 -c ${JSON.stringify(prelude + text)}`],
-    { maxBuffer: 32 * 1024 * 1024 },
-  );
+  const args = ["-h", HOST, "-p", PORT, "-U", user, "-d", process.env.PGDATABASE || "postgres",
+                "-tA", "-v", "ON_ERROR_STOP=1", "-c", prelude + text];
+  const { stdout } = USE_SU
+    ? await run("su", ["postgres", "-c",
+        `psql ${args.map((a) => (a.startsWith("-") ? a : JSON.stringify(a))).join(" ")}`],
+        { maxBuffer: 32 * 1024 * 1024 })
+    : await run("psql", args, { maxBuffer: 32 * 1024 * 1024, env: process.env });
   // The `set role` / `set test.uid` prelude echoes "SET" lines; the result is
   // the final line.
   // json_agg pretty-prints across lines, and the `set` prelude echoes "SET".

@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Lint, types, build and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint
+        run: npx eslint . --ignore-pattern dist --ignore-pattern .next --max-warnings 5
+      - name: Typecheck
+        run: npx tsc --noEmit
+      # `npm test` builds the Worker first, so this covers the build too.
+      - name: Build and unit tests
+        run: npm test
+      - name: Keep the built Worker for the database job
+        uses: actions/upload-artifact@v4
+        with:
+          name: worker
+          path: dist
+          retention-days: 1
+
+  database:
+    name: Row-level security and feature audit
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install the PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y postgresql-client
+      - uses: actions/download-artifact@v4
+        with:
+          name: worker
+          path: dist
+      # Both scripts apply every migration to a fresh database, so a migration
+      # that does not apply, or a policy that stops denying, fails the build.
+      - name: Row-level security
+        run: scripts/verify-rls.sh
+      - name: Feature audit
+        run: scripts/verify-features.sh
