@@ -53,3 +53,20 @@ select lifecycle_stage from public.move_case_lifecycle('00000000-0000-4000-8000-
 set test.uid = '00000000-0000-4000-8000-000000000002';
 select coalesce(from_stage::text,'(new)') || ' -> ' || to_stage || ' :: ' || coalesce(reason,'-')
   from public.case_lifecycle_events order by id;
+
+\echo '--- 12. application -> deferred (parks the case, keeps its progress) ---'
+select 'stage=' || lifecycle_stage || ' progress=' || progress || ' health=' || health
+  from public.move_case_lifecycle('00000000-0000-4000-8000-00000000dddd','deferred','Student deferred to July intake');
+
+\echo '--- 13. deferred -> completed (must fail: resume it first) ---'
+select lifecycle_stage from public.move_case_lifecycle('00000000-0000-4000-8000-00000000dddd','completed');
+
+\echo '--- 14. deferred -> application (resumes where the work restarts) ---'
+select 'stage=' || lifecycle_stage || ' progress=' || progress
+  from public.move_case_lifecycle('00000000-0000-4000-8000-00000000dddd','application','Enrolled for July');
+
+\echo '--- 15. the deferral is in the history like any other move ---'
+select coalesce(from_stage::text,'(new)') || ' => ' || to_stage || ' :: ' || coalesce(reason,'-')
+  from public.case_lifecycle_events
+  where to_stage = 'deferred' or from_stage = 'deferred'
+  order by id;

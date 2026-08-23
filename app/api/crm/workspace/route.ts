@@ -13,23 +13,29 @@ type Json = Record<string, unknown>;
 
 // The pipeline an agency works: an enquiry becomes a student, a student gets
 // applications, an application leads to a visa, and an approved visa completes
-// the case. A completed case can be reopened into any active stage.
+// the case. A case can be deferred from any stage it is being worked at and
+// resumes into whichever stage the work restarts at; a completed case reopens
+// the same way.
 const LIFECYCLE_STAGES = [
   "enquiry",
   "student",
   "application",
   "visa",
+  "deferred",
   "completed",
 ] as const;
 type LifecycleStage = (typeof LIFECYCLE_STAGES)[number];
-const ACTIVE_STAGES = LIFECYCLE_STAGES.filter((stage) => stage !== "completed");
+const WORKING_STAGES = LIFECYCLE_STAGES.filter(
+  (stage) => stage !== "completed" && stage !== "deferred",
+);
 
 // Mirrors the rules enforced by public.move_case_lifecycle so the interface can
 // only offer transitions the database will accept. The database remains the
 // authority; this exists to keep the buttons honest.
 export function allowedLifecycleMoves(from: LifecycleStage): LifecycleStage[] {
-  if (from === "completed") return [...ACTIVE_STAGES];
-  const moves: LifecycleStage[] = ACTIVE_STAGES.filter((stage) => stage !== from);
+  if (from === "completed" || from === "deferred") return [...WORKING_STAGES];
+  const moves: LifecycleStage[] = WORKING_STAGES.filter((stage) => stage !== from);
+  moves.push("deferred");
   if (from === "visa") moves.push("completed");
   return moves;
 }
@@ -59,6 +65,8 @@ export async function GET(request: Request) {
       profiles,
       roles,
       applications,
+      visaMatters,
+      visaHistory,
     ] = await Promise.all([
       safeRest(
         "clients?select=*&archived_at=is.null&order=updated_at.desc&limit=200",
@@ -116,7 +124,18 @@ export async function GET(request: Request) {
         degraded,
       ),
       safeRest(
-        "education_applications?select=id,case_id,status,intake,archived_at&limit=2000",
+        "education_applications?select=*&order=created_at.desc&limit=2000",
+        token,
+        degraded,
+      ),
+      safeRest(
+        "visa_matters?select=*&order=lodged_at.desc.nullslast&limit=2000",
+        token,
+        degraded,
+      ),
+      // The visa the client holds now, which is not the one being applied for.
+      safeRest(
+        "visa_history?select=client_id,visa_type,status,expires_on,granted_on&order=granted_on.desc.nullslast&limit=2000",
         token,
         degraded,
       ),
@@ -133,6 +152,14 @@ export async function GET(request: Request) {
     }
 
     const clientById = new Map(clients.map((row) => [String(row.id), row]));
+    const caseById = new Map(cases.map((row) => [String(row.id), row]));
+    // Ordered newest first above, so the first entry seen for a client is the
+    // most recently granted visa they hold.
+    const heldVisaByClient = new Map<string, Json>();
+    for (const row of visaHistory) {
+      const key = String(row.client_id);
+      if (!heldVisaByClient.has(key)) heldVisaByClient.set(key, row);
+    }
     const stageById = new Map(stages.map((row) => [String(row.id), row]));
     const branchById = new Map(branches.map((row) => [String(row.id), row]));
     const profileById = new Map(profiles.map((row) => [String(row.id), row]));
@@ -243,7 +270,10 @@ export async function GET(request: Request) {
           body: row.body_preview ?? "",
           caseId: thread.case_id ?? "",
           status: row.delivery_state ?? "Draft",
-          createdAt: row.created_at,
+          // A draft has no sent date. Both are carried so the interface can say
+          // which it is instead of rendering an unparseable date.
+          createdAt: row.created_at ?? null,
+          sentAt: row.sent_at ?? null,
         };
       }),
       invoices: invoices.map((row) => ({
@@ -273,6 +303,64 @@ export async function GET(request: Request) {
         text: row.summary || `${row.action} · ${row.resource_type}`,
         at: row.occurred_at,
       })),
+      // One student can hold several offers at once, so the Applications screen
+      // lists the applications themselves rather than the cases holding them.
+      applications: applications.map((row) => {
+        const parent = caseById.get(String(row.case_id)) ?? {};
+        const client = clientById.get(String(parent.client_id)) ?? {};
+        return {
+          id: String(row.id),
+          caseId: String(row.case_id),
+          caseNumber: parent.case_number ?? "",
+          client: fullClientName(client),
+          institution: row.institution ?? "",
+          course: row.course ?? "",
+          campus: row.campus ?? "",
+          intake: row.intake ?? "",
+          reference: row.application_reference ?? "",
+          status: row.status ?? "draft",
+          submittedOn: dateOnly(row.submitted_at),
+          offerOn: dateOnly(row.offer_received_at),
+          coeOn: dateOnly(row.coe_received_at),
+          deadlineOn: dateOnly(row.deadline_at),
+          owner: profileById.get(String(parent.owner_id))?.display_name ?? "",
+          branch: branchById.get(String(parent.branch_id))?.name ?? "",
+          archived: Boolean(row.archived_at),
+        };
+      }),
+      // The visa screen is worked from the matter, not from the case row: the
+      // subclass, the reference the department knows it by, and the dates a
+      // missed deadline is measured against.
+      visaMatters: visaMatters.map((row) => {
+        const parent = caseById.get(String(row.case_id)) ?? {};
+        const client = clientById.get(String(parent.client_id)) ?? {};
+        return {
+          id: String(row.id),
+          caseId: String(row.case_id),
+          caseNumber: parent.case_number ?? "",
+          client: fullClientName(client),
+          matterType: parent.matter_type ?? "",
+          currentVisa: String(
+            heldVisaByClient.get(String(parent.client_id))?.visa_type ?? "",
+          ),
+          subclass: row.visa_subclass ?? "",
+          stream: row.visa_stream ?? "",
+          destination: row.destination_country ?? "",
+          currentVisaExpiry: dateOnly(row.current_visa_expiry),
+          bridgingVisa: row.bridging_visa ?? "",
+          lodgedOn: dateOnly(row.lodged_at),
+          trn: row.trn ?? "",
+          reference: row.lodgement_reference ?? "",
+          agent: profileById.get(String(row.agent_id))?.display_name ?? "",
+          marn: row.responsible_agent_marn ?? "",
+          status: row.status ?? "assessment",
+          informationDueOn: dateOnly(row.information_due_at),
+          informationProvidedOn: dateOnly(row.information_provided_at),
+          decisionOn: dateOnly(row.decision_at),
+          outcome: row.outcome ?? "",
+          owner: profileById.get(String(parent.owner_id))?.display_name ?? "",
+        };
+      }),
     };
     return appendRefreshCookies(
       Response.json({ ok: true, ...payload }),
@@ -407,6 +495,28 @@ export async function POST(request: Request) {
       );
     }
 
+    // The visa stage cannot be entered without the expiry date it is worked
+    // against. Rather than sending staff to another screen to supply it, the
+    // pipeline control asks for it where the requirement appears.
+    if (action === "set_visa_expiry") {
+      const caseId = required(body.caseId, "Case");
+      const visaExpiry = requiredDay(body.visaExpiry, "Visa expiry date");
+      if (!(await lifecycleReady(token)))
+        throw new InputError(LIFECYCLE_MIGRATION_HINT);
+      await patchRow("cases", caseId, { visa_expiry_on: visaExpiry }, token);
+      await auditEvent(
+        org,
+        actor,
+        "case.visa_expiry_recorded",
+        "case",
+        caseId,
+        session.identity.branchId,
+        `Recorded visa expiry ${visaExpiry}`,
+        token,
+      );
+      return Response.json({ ok: true, visaExpiry });
+    }
+
     if (action === "update_case") {
       const displayName = required(body.name, "Client name");
       const emailAddress = requiredEmail(body.email);
@@ -472,7 +582,19 @@ export async function POST(request: Request) {
         session.identity.sourceLevel,
         token,
       );
-      const clientId = crypto.randomUUID();
+      // A second case for somebody already on file. The duplicate check offers
+      // this so that a returning client keeps one record, one document folder
+      // and one history instead of gaining a second of each.
+      const existingClientId = nullable(body.existingClientId);
+      if (existingClientId) {
+        const found = await rest<Json[]>(
+          `clients?select=id,branch_id&id=eq.${encodeURIComponent(existingClientId)}&limit=1`,
+          token,
+        );
+        if (!found[0])
+          throw new InputError("That client is not available to you.");
+      }
+      const clientId = existingClientId || crypto.randomUUID();
       const caseId = crypto.randomUUID();
       const now = new Date().toISOString();
       const matterType = nullable(body.matterType ?? body.type);
@@ -497,7 +619,7 @@ export async function POST(request: Request) {
         ]),
         updated_at: now,
       };
-      await insert("clients", client, token);
+      if (!existingClientId) await insert("clients", client, token);
       try {
         await insert(
           "cases",
@@ -531,11 +653,14 @@ export async function POST(request: Request) {
           token,
         );
       } catch (error) {
-        await supabaseRequest(
-          `/rest/v1/clients?id=eq.${clientId}`,
-          { method: "DELETE" },
-          token,
-        ).catch(() => undefined);
+        // Only undo a client this request created. An existing client keeps
+        // their record and their other cases.
+        if (!existingClientId)
+          await supabaseRequest(
+            `/rest/v1/clients?id=eq.${clientId}`,
+            { method: "DELETE" },
+            token,
+          ).catch(() => undefined);
         throw error;
       }
       await auditEvent(
@@ -545,7 +670,9 @@ export async function POST(request: Request) {
         "case",
         caseId,
         branchId,
-        `Created ${kind === "study_abroad" ? "student" : "migration"} case for ${displayName}`,
+        `Created ${kind === "study_abroad" ? "student" : "migration"} case for ${displayName}${
+          existingClientId ? " (added to their existing client record)" : ""
+        }`,
         token,
       );
       return Response.json({ ok: true, clientId, caseId });

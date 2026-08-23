@@ -181,6 +181,55 @@ test("the schema checker covers every migration that adds objects", async () => 
   assert.doesNotMatch(checker, /\b(insert|update|delete|drop|alter|create)\s/i);
 });
 
+test("the deferral stage is split so PostgreSQL will accept it", async () => {
+  const enumFile = await read("supabase/migrations/0013_defer_stage_enum.sql");
+  const rest = await read("supabase/migrations/0014_defer_stage.sql");
+  // ALTER TYPE ... ADD VALUE cannot be used by other statements in the same
+  // transaction, so the value must arrive on its own and without a BEGIN.
+  assert.match(enumFile, /add value if not exists 'deferred'/i);
+  assert.doesNotMatch(enumFile, /^\s*begin;/im);
+  assert.doesNotMatch(enumFile, /create (or replace )?function/i);
+  assert.match(rest, /^begin;/im);
+  assert.match(rest, /move_case_lifecycle/);
+  // Deferral parks a case; it does not throw away the work already recorded.
+  assert.match(rest, /when deferring then current_case\.progress/);
+  // And a deferred case is still finished from the visa stage, not directly.
+  assert.match(
+    rest,
+    /target_stage = 'completed' and current_case\.lifecycle_stage <> 'visa'/,
+  );
+  const readme = await read("README.md");
+  assert.match(readme, /on its own, before `0014`/i);
+});
+
+test("the duplicate search runs as the caller, not above them", async () => {
+  const sql = await read("supabase/migrations/0015_duplicate_clients.sql");
+  assert.match(sql, /create or replace function public\.find_duplicate_clients/i);
+  // SECURITY DEFINER here would let a branch officer discover clients in
+  // another branch, which is exactly what row-level security is stopping.
+  assert.match(sql, /security invoker/i);
+  assert.doesNotMatch(sql, /security definer/i);
+  // Matching has to survive the ways a number and an address get written.
+  assert.match(sql, /normalise_contact_number/);
+  assert.match(sql, /lower\(c\.email\) = lower\(trim\(p_email\)\)/);
+  // The passport is encrypted, so the mask is what is compared.
+  assert.match(sql, /passport_masked = trim\(p_passport_masked\)/);
+});
+
+test("a message has a date to show before it is ever sent", async () => {
+  const sql = await read("supabase/migrations/0016_message_created_at.sql");
+  assert.match(sql, /alter table public\.email_messages/i);
+  assert.match(sql, /add column if not exists created_at/i);
+  const route = await read("app/api/crm/workspace/route.ts");
+  // Both are carried so a draft can say it is a draft rather than render an
+  // unparseable date.
+  assert.match(route, /createdAt: row\.created_at \?\? null/);
+  assert.match(route, /sentAt: row\.sent_at \?\? null/);
+  const page = await read("app/page.tsx");
+  assert.match(page, /function messageWhen/);
+  assert.match(page, /return "Not sent"/);
+});
+
 test("the browser suite is wired into CI and needs no committed key", async () => {
   const workflow = await read(".github/workflows/ci.yml");
   const harness = await read("scripts/verify-features.sh");

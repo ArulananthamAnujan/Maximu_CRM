@@ -24,7 +24,17 @@ with expected(area, kind, name, detail) as (values
   ('Integrity (0011)',      'column',   'dependants.archived_at',           'Removed, not deleted'),
   ('Integrity (0011)',      'policy',   'documents.documents_client_attach','A client may supply a requested document'),
   ('Integrity (0011)',      'policy',   'appointments.appointments_client_request', 'A client may request an appointment'),
-  ('Integrity (0011)',      'policy',   'audit_events.audit_case_read',     'A case officer can read their case history')
+  ('Integrity (0011)',      'policy',   'audit_events.audit_case_read',     'A case officer can read their case history'),
+  ('Portal actions (0012)', 'policy',   'audit_events.audit_client_insert', 'A client action is recorded on their own case'),
+  ('Portal actions (0012)', 'policy',   'audit_events.audit_client_read',   'A client can see their own case history'),
+  ('Portal actions (0012)', 'policy',   'notifications.notifications_client_insert', 'Staff are told when a client asks for something'),
+  ('Deferral (0013)',       'enum',     'case_lifecycle_stage.deferred',    'Defer is a pipeline stage, not a guess from text'),
+  ('Deferral (0014)',       'function', 'move_case_lifecycle',              'Knows how a case is deferred and resumed'),
+  ('Duplicates (0015)',     'index',    'clients_duplicate_email_idx',      'Finds an existing client by email before a second one is made'),
+  ('Duplicates (0015)',     'index',    'clients_duplicate_mobile_idx',     'Finds an existing client by mobile'),
+  ('Duplicates (0015)',     'index',    'clients_duplicate_passport_idx',   'Finds an existing client by masked passport'),
+  ('Duplicates (0015)',     'function', 'find_duplicate_clients',           'The search the intake form runs before it makes anybody'),
+  ('Messages (0016)',       'column',   'email_messages.created_at',        'A draft has a date to show before it is sent')
 )
 select
   e.area,
@@ -47,6 +57,13 @@ select
         where schemaname = 'public'
           and tablename = split_part(e.name, '.', 1)
           and policyname = split_part(e.name, '.', 2))
+      when 'enum' then exists (
+        select 1 from pg_enum en join pg_type t on t.oid = en.enumtypid
+        where t.typname = split_part(e.name, '.', 1)
+          and en.enumlabel = split_part(e.name, '.', 2))
+      when 'index' then exists (
+        select 1 from pg_indexes
+        where schemaname = 'public' and indexname = e.name)
     end) then 'OK' else 'MISSING' end as status,
   e.detail
 from expected e

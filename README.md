@@ -103,6 +103,13 @@ Not built, and labelled as such in the interface rather than implied:
 | Google sign-in | Sign-in is Supabase email and password. The Google button is not wired to an OAuth flow. |
 | AI assistant | A placeholder screen. No provider is connected. |
 
+**Integrations** (owner and branch manager) reports this from the running
+deployment rather than from this table: the Shared Drive is probed for real --
+an assertion is signed, exchanged for a token and used to read the drive back --
+so credentials that are present but wrong show as broken there instead of at the
+moment somebody tries to upload a passport. Anything marked *Not built* is
+absent from the code: no configuration turns it on.
+
 ## Database migrations
 
 The schema lives in Supabase and is migrated separately from this code, so a
@@ -121,6 +128,12 @@ any script.
 Order is what matters. `0008` onwards are written to be safe to run more than
 once, so re-applying one you are unsure about is harmless; `0001` to `0007` are
 first-run only and will report that objects already exist if repeated.
+
+`0013_defer_stage_enum.sql` must be run **on its own, before `0014`**. It adds
+one value to the case-stage type, and PostgreSQL will not let a new enum value
+be used by other statements in the same transaction -- which is why everything
+that uses it is in `0014` instead. Running them together in one paste fails
+with "unsafe use of new value".
 
 If you have a terminal, `scripts/print-migrations.sh 0010` prints `0010` and
 everything after it as one script you can redirect to a file
@@ -155,8 +168,18 @@ mocked. Run `npm run build` first.
 **Checking row-level security.** `scripts/verify-rls.sh` applies every migration
 to a throwaway PostgreSQL cluster and asserts that a client portal account
 cannot read or write another client's records, that the case lifecycle rules
-hold, and that case reassignment notifies only the new owner. It needs
-`postgresql-16` and a `postgres` system user.
+hold (including deferral and resumption), that the duplicate-client search
+reports nothing a portal account may not already see, and that case reassignment
+notifies only the new owner. It needs `postgresql-16` and a `postgres` system
+user.
+
+**Checking the interface.** `scripts/verify-ui.sh` brings up the same throwaway
+stack, serves the built Worker with its static assets in front of it the way
+Cloudflare does, and drives it in a real browser: sign-in, intake and its
+validation, duplicate protection, the case file and its tabs, the pipeline
+including deferral, the Applications and Visa record screens, what each of the
+four roles is offered, reporting, integration status, the phone layout and the
+accessible name of every button on every screen at both widths.
 
 ## Reporting
 

@@ -94,6 +94,15 @@ const server = http.createServer((req, res) => {
     const authorised = (req.headers.authorization || "").includes("stub-access-token");
     if (!authorised) return send(401, { error: { message: "missing token" } });
 
+    // The Shared Drive itself, which the connection probe reads back to prove
+    // the credentials work and the account was added to the drive.
+    const driveMatch = /^\/drive\/v3\/drives\/([^/?]+)$/.exec(url.pathname);
+    if (req.method === "GET" && driveMatch) {
+      if (driveMatch[1] !== SHARED_DRIVE_ID)
+        return send(404, { error: { message: "shared drive not found" } });
+      return send(200, { id: SHARED_DRIVE_ID, name: "Maximus Client Files" });
+    }
+
     // Folder search.
     if (req.method === "GET" && url.pathname === "/drive/v3/files") {
       const query = url.searchParams.get("q") || "";

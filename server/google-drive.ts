@@ -316,6 +316,44 @@ export async function trashFile(fileId: string): Promise<void> {
 }
 
 /** SHA-256 of the uploaded bytes, so a stored document can be shown to be intact. */
+/**
+ * Proves the connection rather than asserting it: signs an assertion, exchanges
+ * it for a token and reads the Shared Drive back. Configuration that is present
+ * but wrong -- a key that does not match the service account, a drive the
+ * account was never added to -- fails here rather than on the first upload.
+ */
+export async function driveProbe(): Promise<{
+  connected: boolean;
+  detail: string;
+}> {
+  try {
+    const { sharedDriveId, clientEmail } = driveConfig();
+    const response = await driveFetch(
+      `/drive/v3/drives/${encodeURIComponent(sharedDriveId)}?fields=id,name`,
+    );
+    const drive = (await response.json()) as { name?: string };
+    return {
+      connected: true,
+      detail: `Reading and writing "${drive.name ?? sharedDriveId}" as ${clientEmail}.`,
+    };
+  } catch (error) {
+    if (error instanceof DriveNotConfiguredError)
+      return { connected: false, detail: error.message };
+    if (error instanceof DriveError)
+      return {
+        connected: false,
+        detail: `Google Drive answered ${error.status}: ${error.message.slice(0, 300)}`,
+      };
+    return {
+      connected: false,
+      detail:
+        error instanceof Error
+          ? error.message.slice(0, 300)
+          : "The Shared Drive could not be reached.",
+    };
+  }
+}
+
 export async function checksum(content: ArrayBuffer): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", content);
   return Array.from(new Uint8Array(digest))

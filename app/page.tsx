@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  FormEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -48,12 +42,9 @@ import {
   X,
   CalendarCheck2,
   Cloud,
-  Copy,
   Link2,
-  MailCheck,
   RefreshCw,
   Sparkles,
-  Video,
 } from "lucide-react";
 
 type ModuleKey =
@@ -84,6 +75,7 @@ type LifecycleStage =
   | "student"
   | "application"
   | "visa"
+  | "deferred"
   | "completed";
 type ServiceMode = "study" | "direct_visa";
 type ModalType =
@@ -124,6 +116,65 @@ type CaseRecord = {
   reopenedAt: string;
   createdAt: string;
 };
+// One student can hold several offers at once, so an application is a record in
+// its own right rather than something inferred from the case it belongs to.
+type ApplicationRow = {
+  id: string;
+  caseId: string;
+  caseNumber: string;
+  client: string;
+  institution: string;
+  course: string;
+  campus: string;
+  intake: string;
+  reference: string;
+  status: string;
+  submittedOn: string;
+  offerOn: string;
+  coeOn: string;
+  deadlineOn: string;
+  owner: string;
+  branch: string;
+  archived: boolean;
+};
+type VisaMatterRow = {
+  id: string;
+  caseId: string;
+  caseNumber: string;
+  client: string;
+  matterType: string;
+  currentVisa: string;
+  subclass: string;
+  stream: string;
+  destination: string;
+  currentVisaExpiry: string;
+  bridgingVisa: string;
+  lodgedOn: string;
+  trn: string;
+  reference: string;
+  agent: string;
+  marn: string;
+  status: string;
+  informationDueOn: string;
+  informationProvidedOn: string;
+  decisionOn: string;
+  outcome: string;
+  owner: string;
+};
+// A client who already looks like the person being entered, and why they
+// matched. Shown before a second record is created for one human being.
+type DuplicateMatch = {
+  id: string;
+  reference: string;
+  name: string;
+  email: string;
+  phone: string;
+  passport: string;
+  dateOfBirth: string;
+  stage: string;
+  caseCount: number;
+  reasons: string[];
+};
 type TaskRecord = {
   id: string;
   title: string;
@@ -156,7 +207,8 @@ type MessageRecord = {
   body: string;
   caseId: string;
   status: string;
-  createdAt: string;
+  createdAt: string | null;
+  sentAt: string | null;
 };
 type InvoiceRecord = {
   id: string;
@@ -323,14 +375,24 @@ const LIFECYCLE_STAGES: LifecycleStage[] = [
   "student",
   "application",
   "visa",
+  "deferred",
   "completed",
 ];
-const ACTIVE_STAGES = LIFECYCLE_STAGES.filter((stage) => stage !== "completed");
+// The stages a case is actively worked at. Deferred is a real pipeline
+// position, but it is a case put down rather than a step forward, so it is not
+// part of the straight line.
+const WORKING_STAGES: LifecycleStage[] = [
+  "enquiry",
+  "student",
+  "application",
+  "visa",
+];
 const stageLabels: Record<LifecycleStage, string> = {
   enquiry: "Enquiry",
   student: "Student",
   application: "Application",
   visa: "Visa",
+  deferred: "Deferred",
   completed: "Completed",
 };
 const stageModule: Record<LifecycleStage, ModuleKey> = {
@@ -338,15 +400,33 @@ const stageModule: Record<LifecycleStage, ModuleKey> = {
   student: "students",
   application: "applications",
   visa: "visas",
+  deferred: "defer",
   completed: "case_complete",
 };
 function allowedStageMoves(from: LifecycleStage): LifecycleStage[] {
-  if (from === "completed") return [...ACTIVE_STAGES];
-  const moves: LifecycleStage[] = ACTIVE_STAGES.filter(
+  // A completed case reopens, and a deferred case resumes, into whichever
+  // stage the work actually restarts at.
+  if (from === "completed" || from === "deferred") return [...WORKING_STAGES];
+  const moves: LifecycleStage[] = WORKING_STAGES.filter(
     (stage) => stage !== from,
   );
+  moves.push("deferred");
   if (from === "visa") moves.push("completed");
   return moves;
+}
+
+/**
+ * How each chip on the pipeline track is drawn. A deferred case is parked: the
+ * record does not say which stage it was parked at, so nothing behind it is
+ * claimed as done rather than guessed at.
+ */
+function stageChipState(step: LifecycleStage, stage: LifecycleStage): string {
+  if (step === stage) return "current";
+  if (stage === "deferred" || step === "deferred") return "";
+  if (stage === "completed") return "done";
+  const at = WORKING_STAGES.indexOf(stage);
+  const here = WORKING_STAGES.indexOf(step);
+  return here >= 0 && at >= 0 && here < at ? "done" : "";
 }
 
 const roleConfig: Record<
@@ -550,9 +630,9 @@ const meta: Record<ModuleKey, [string, string, string]> = {
     "Manage migration clients independently from the education pathway.",
   ],
   defer: [
-    "Deferred students",
+    "Deferred",
     "Study Abroad",
-    "Track deferrals, revised intakes and institution follow-up.",
+    "Cases parked at the deferred stage, and applications moved to a later intake.",
   ],
   case_complete: [
     "Completed cases",
@@ -605,6 +685,23 @@ const meta: Record<ModuleKey, [string, string, string]> = {
     "Manage Google Workspace, WhatsApp, email and external service connections.",
   ],
 };
+
+/**
+ * True on a phone-sized screen. Used where the layout has to change rather than
+ * just reflow -- nine tabs across a 390px drawer is a scroll bar, not a
+ * navigation.
+ */
+function useCompactScreen() {
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 760px)");
+    const apply = () => setCompact(query.matches);
+    apply();
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, []);
+  return compact;
+}
 
 function useStored<T>(key: string, initial: T) {
   const [value, setValue] = useState<T>(() => {
@@ -809,8 +906,9 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
                   type="button"
                   className="passwordVisibility"
                   aria-label={showPassword ? "Hide password" : "Show password"}
+                  title={showPassword ? "Hide password" : "Show password"}
                   aria-pressed={showPassword}
-                  onClick={() => setShowPassword(value => !value)}
+                  onClick={() => setShowPassword((value) => !value)}
                 >
                   {showPassword ? <EyeOff size={21} /> : <Eye size={21} />}
                 </button>
@@ -897,6 +995,7 @@ function Sidebar({
             setOpen(false);
           }}
           aria-label={role === "client" ? "Open my journey" : "Open dashboard"}
+          title={role === "client" ? "Open my journey" : "Open dashboard"}
         >
           M
         </button>
@@ -908,6 +1007,7 @@ function Sidebar({
           className="mobileClose"
           onClick={() => setOpen(false)}
           aria-label="Close menu"
+          title="Close menu"
         >
           <X size={20} />
         </button>
@@ -959,6 +1059,7 @@ function Sidebar({
             className="iconButton"
             onClick={() => setActive("administration")}
             aria-label="Open settings"
+            title="Open settings"
           >
             <MoreHorizontal size={18} />
           </button>
@@ -990,6 +1091,8 @@ function ProfileServiceSwitch({
       <button
         className={serviceMode === "study" ? "active" : ""}
         onClick={() => switchMode("study")}
+        aria-label="Study Abroad workspace"
+        title="Study Abroad workspace"
       >
         <GraduationCap size={16} />
         <span>Study Abroad</span>
@@ -997,6 +1100,8 @@ function ProfileServiceSwitch({
       <button
         className={serviceMode === "direct_visa" ? "active" : ""}
         onClick={() => switchMode("direct_visa")}
+        aria-label="Direct Visa workspace"
+        title="Direct Visa workspace"
       >
         <ShieldCheck size={16} />
         <span>Direct Visa</span>
@@ -1019,6 +1124,8 @@ function DailyTopNav({
           key={key}
           className={active === key ? "active" : ""}
           onClick={() => setActive(key)}
+          aria-label={label}
+          title={label}
         >
           <Icon size={17} />
           <span>{label}</span>
@@ -1047,7 +1154,9 @@ function WorkspaceDashboard({
     // Classify by the recorded service stream, never by the matter label: a
     // "Student visa" matter belongs to study abroad, not migration.
     workspaceCases = cases.filter((c) =>
-      direct ? c.serviceType === "direct_visa" : c.serviceType !== "direct_visa",
+      direct
+        ? c.serviceType === "direct_visa"
+        : c.serviceType !== "direct_visa",
     ),
     attention = workspaceCases.filter((c) => c.health !== "healthy").length,
     waiting = workspaceCases.filter((c) => c.status === "waiting").length,
@@ -1387,6 +1496,197 @@ function CaseWorkspace({
   );
 }
 
+/**
+ * Applications and visa matters are records in their own right: a student can
+ * hold three offers at once, and a visa matter carries the references and
+ * deadlines the case row knows nothing about. These two screens list those
+ * records; selecting one opens the case it belongs to.
+ */
+const overdue = (date: string) =>
+  Boolean(date) && date < new Date().toISOString().slice(0, 10);
+
+function BoardEmpty({ what }: { what: string }) {
+  return <p className="boardEmpty">No {what} recorded yet.</p>;
+}
+
+function ApplicationsBoard({
+  rows,
+  onOpen,
+}: {
+  rows: ApplicationRow[];
+  onOpen: (caseId: string) => void;
+}) {
+  const [showArchived, setShowArchived] = useState(false);
+  const archivedCount = rows.filter((row) => row.archived).length;
+  const shown = showArchived ? rows : rows.filter((row) => !row.archived);
+  return (
+    <article className="panel listPanel">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">EVERY APPLICATION</span>
+          <h2>Institution applications</h2>
+        </div>
+        {archivedCount > 0 && (
+          <button
+            className="ghostButton"
+            onClick={() => setShowArchived(!showArchived)}
+          >
+            {showArchived
+              ? "Hide withdrawn"
+              : `Show ${archivedCount} withdrawn`}
+          </button>
+        )}
+      </div>
+      {shown.length === 0 ? (
+        <BoardEmpty what="applications" />
+      ) : (
+        <div className="recordTableWrap">
+          <table className="recordTable boardTable">
+            <thead>
+              <tr>
+                <th scope="col">Student</th>
+                <th scope="col">Institution</th>
+                <th scope="col">Course</th>
+                <th scope="col">Campus</th>
+                <th scope="col">Intake</th>
+                <th scope="col">Reference</th>
+                <th scope="col">Status</th>
+                <th scope="col">Submitted</th>
+                <th scope="col">Offer</th>
+                <th scope="col">CoE</th>
+                <th scope="col">Deadline</th>
+                <th scope="col">Owner</th>
+                <th scope="col">Case</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((row) => (
+                <tr key={row.id} className={row.archived ? "archivedRow" : ""}>
+                  <td>{row.client || "—"}</td>
+                  <td>{row.institution || "—"}</td>
+                  <td>{row.course || "—"}</td>
+                  <td>{row.campus || "—"}</td>
+                  <td>{row.intake || "—"}</td>
+                  <td>{row.reference || "—"}</td>
+                  <td>
+                    {humanise(row.status)}
+                    {row.archived ? " · withdrawn" : ""}
+                  </td>
+                  <td>{row.submittedOn || "—"}</td>
+                  <td>{row.offerOn || "—"}</td>
+                  <td>{row.coeOn || "—"}</td>
+                  <td className={overdue(row.deadlineOn) ? "overdueCell" : ""}>
+                    {row.deadlineOn || "—"}
+                  </td>
+                  <td>{row.owner || "Unassigned"}</td>
+                  <td>
+                    <button
+                      className="linkButton"
+                      onClick={() => onOpen(row.caseId)}
+                    >
+                      {row.caseNumber || "Open case"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function VisaMattersBoard({
+  rows,
+  onOpen,
+}: {
+  rows: VisaMatterRow[];
+  onOpen: (caseId: string) => void;
+}) {
+  return (
+    <article className="panel listPanel">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">EVERY VISA MATTER</span>
+          <h2>Visa matters</h2>
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <BoardEmpty what="visa matters" />
+      ) : (
+        <div className="recordTableWrap">
+          <table className="recordTable boardTable">
+            <thead>
+              <tr>
+                <th scope="col">Client</th>
+                <th scope="col">Subclass</th>
+                <th scope="col">Destination</th>
+                <th scope="col">Current visa</th>
+                <th scope="col">Expiry</th>
+                <th scope="col">Lodged</th>
+                <th scope="col">TRN</th>
+                <th scope="col">Agent</th>
+                <th scope="col">MARN</th>
+                <th scope="col">Status</th>
+                <th scope="col">s56 due</th>
+                <th scope="col">Outcome</th>
+                <th scope="col">Case</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.id}>
+                  <td>{row.client || "—"}</td>
+                  <td>{row.subclass || row.matterType || "—"}</td>
+                  <td>{row.destination || "—"}</td>
+                  <td>{row.currentVisa || "—"}</td>
+                  <td
+                    className={
+                      overdue(row.currentVisaExpiry) ? "overdueCell" : ""
+                    }
+                  >
+                    {row.currentVisaExpiry || "—"}
+                  </td>
+                  <td>{row.lodgedOn || "Not lodged"}</td>
+                  <td>{row.trn || row.reference || "—"}</td>
+                  <td>{row.agent || row.owner || "Unassigned"}</td>
+                  <td>{row.marn || "—"}</td>
+                  <td>{humanise(row.status)}</td>
+                  <td
+                    className={
+                      row.informationDueOn &&
+                      !row.informationProvidedOn &&
+                      overdue(row.informationDueOn)
+                        ? "overdueCell"
+                        : ""
+                    }
+                  >
+                    {row.informationDueOn
+                      ? row.informationProvidedOn
+                        ? `${row.informationDueOn} · answered`
+                        : row.informationDueOn
+                      : "—"}
+                  </td>
+                  <td>{row.outcome ? humanise(row.outcome) : "—"}</td>
+                  <td>
+                    <button
+                      className="linkButton"
+                      onClick={() => onOpen(row.caseId)}
+                    >
+                      {row.caseNumber || "Open case"}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </article>
+  );
+}
+
 function TasksView({
   tasks,
   cases,
@@ -1445,6 +1745,7 @@ function TasksView({
               className="iconButton"
               onClick={() => setTasks(tasks.filter((x) => x.id !== t.id))}
               aria-label="Delete task"
+              title="Delete task"
             >
               <Trash2 size={16} />
             </button>
@@ -1595,6 +1896,7 @@ function CalendarView({
                   className="iconButton"
                   onClick={() => setItems(items.filter((x) => x.id !== a.id))}
                   aria-label="Delete appointment"
+                  title="Delete appointment"
                 >
                   <Trash2 size={15} />
                 </button>
@@ -1610,37 +1912,66 @@ function DocumentsView({
   items,
   openModal,
   setItems,
+  storageConnected,
 }: {
   items: DocumentRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: DocumentRecord[]) => void;
+  storageConnected: boolean;
 }) {
+  // An archived document is kept for the retention period but is not part of
+  // the working file, so it is out of the way until it is asked for.
+  const [showArchived, setShowArchived] = useState(false);
+  const archivedCount = items.filter((d) => d.status === "archived").length;
+  const shown = showArchived
+    ? items
+    : items.filter((d) => d.status !== "archived");
   return (
     <section className="moduleGrid">
       <article className="panel widePanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">LOCAL DOCUMENT INDEX</span>
+            <span className="kicker">DOCUMENT INDEX</span>
             <h2>Documents</h2>
           </div>
-          <button
-            className="primaryButton"
-            onClick={() => openModal("document")}
-          >
-            <Plus size={16} />
-            Request document
-          </button>
+          <div className="panelHeadActions">
+            {archivedCount > 0 && (
+              <button
+                className="ghostButton"
+                onClick={() => setShowArchived(!showArchived)}
+              >
+                {showArchived
+                  ? "Hide archived"
+                  : `Show ${archivedCount} archived`}
+              </button>
+            )}
+            <button
+              className="primaryButton"
+              onClick={() => openModal("document")}
+            >
+              <Plus size={16} />
+              Request document
+            </button>
+          </div>
         </div>
-        {items.length === 0 ? (
+        {shown.length === 0 ? (
           <EmptyState
             icon={FolderOpen}
-            title="No documents requested"
-            copy="Request the documents this case needs and track whether they have arrived. File storage is not connected yet."
+            title={
+              archivedCount > 0
+                ? "Nothing in the working file"
+                : "No documents requested"
+            }
+            copy={
+              storageConnected
+                ? "Request the documents this case needs and track whether they have arrived. Files are stored on the organisation's Shared Drive."
+                : "Request the documents this case needs and track whether they have arrived. Shared Drive storage is not configured, so files cannot be uploaded yet."
+            }
             action="Request document"
             onAction={() => openModal("document")}
           />
         ) : (
-          items.map((d) => (
+          shown.map((d) => (
             <div className="functionalRow" key={d.id}>
               <div className="docIcon">
                 <FileText size={18} />
@@ -1657,6 +1988,7 @@ function DocumentsView({
                 className="iconButton"
                 onClick={() => setItems(items.filter((x) => x.id !== d.id))}
                 aria-label="Remove document"
+                title="Remove document"
               >
                 <Trash2 size={16} />
               </button>
@@ -1666,25 +1998,36 @@ function DocumentsView({
       </article>
       <aside className="panel drivePanel">
         <FolderOpen size={27} />
-        <h2>Google Drive not connected</h2>
+        <h2>
+          {storageConnected
+            ? "Shared Drive connected"
+            : "Shared Drive not configured"}
+        </h2>
         <p>
-          Document requests and metadata are stored in Supabase. Connect Google
-          Workspace to upload and organise the actual files in Drive.
+          {storageConnected
+            ? "Files are uploaded to the organisation's Google Shared Drive, filed under each client, and downloaded back through this CRM."
+            : "Requests and metadata are stored in Supabase, but no file can be uploaded until the Shared Drive service account is configured."}
         </p>
-        <button
-          className="ghostButton full"
-          onClick={() =>
-            alert(
-              "Open Integrations to complete the Google Workspace administrator setup.",
-            )
-          }
-        >
-          Connection instructions
-        </button>
+        <p className="drivePanelHint">
+          {storageConnected
+            ? "Configured through the Shared Drive service account."
+            : "An administrator connects it under Integrations."}
+        </p>
       </aside>
     </section>
   );
 }
+/** A draft has never been sent, so it is dated by when it was written. */
+function messageWhen(message: MessageRecord): string {
+  const when = message.sentAt ?? message.createdAt;
+  if (!when) return "Not sent";
+  const stamp = new Date(when);
+  if (Number.isNaN(stamp.getTime())) return "Not sent";
+  return message.sentAt
+    ? `Sent ${stamp.toLocaleString()}`
+    : `Drafted ${stamp.toLocaleString()}`;
+}
+
 function MessagesView({
   items,
   openModal,
@@ -1694,6 +2037,12 @@ function MessagesView({
   openModal: (x: ModalType) => void;
   setItems: (x: MessageRecord[]) => void;
 }) {
+  // A discarded draft is kept for the record but is not part of the outbox.
+  const [showDiscarded, setShowDiscarded] = useState(false);
+  const discarded = (message: MessageRecord) =>
+    message.status.toLowerCase() === "discarded";
+  const discardedCount = items.filter(discarded).length;
+  const shown = showDiscarded ? items : items.filter((m) => !discarded(m));
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -1701,10 +2050,25 @@ function MessagesView({
           <span className="kicker">CASE MESSAGES</span>
           <h2>Drafts</h2>
         </div>
-        <button className="primaryButton" onClick={() => openModal("message")}>
-          <Plus size={16} />
-          Compose
-        </button>
+        <div className="panelHeadActions">
+          {discardedCount > 0 && (
+            <button
+              className="ghostButton"
+              onClick={() => setShowDiscarded(!showDiscarded)}
+            >
+              {showDiscarded
+                ? "Hide discarded"
+                : `Show ${discardedCount} discarded`}
+            </button>
+          )}
+          <button
+            className="primaryButton"
+            onClick={() => openModal("message")}
+          >
+            <Plus size={16} />
+            Compose
+          </button>
+        </div>
       </div>
       <p className="modalNotice">
         <AlertTriangle size={14} />
@@ -1712,16 +2076,16 @@ function MessagesView({
         nothing is sent from here yet -- send it from your mailbox and mark the
         draft ready.
       </p>
-      {items.length === 0 ? (
+      {shown.length === 0 ? (
         <EmptyState
           icon={Mail}
-          title="No messages"
-          copy="Compose and save case-linked drafts before Gmail is connected."
+          title={discardedCount > 0 ? "Nothing in the outbox" : "No messages"}
+          copy="Compose and save case-linked drafts. Sending is done from your own mailbox."
           action="Compose message"
           onAction={() => openModal("message")}
         />
       ) : (
-        items.map((m) => (
+        shown.map((m) => (
           <div className="functionalRow" key={m.id}>
             <div className="docIcon">
               <Mail size={17} />
@@ -1729,7 +2093,7 @@ function MessagesView({
             <div>
               <strong>{m.subject}</strong>
               <span>
-                To {m.to} · {new Date(m.createdAt).toLocaleString()}
+                To {m.to} · {messageWhen(m)}
               </span>
             </div>
             <Status value={m.status} />
@@ -1754,6 +2118,7 @@ function MessagesView({
               className="iconButton"
               onClick={() => setItems(items.filter((x) => x.id !== m.id))}
               aria-label="Delete message"
+              title="Delete message"
             >
               <Trash2 size={16} />
             </button>
@@ -1867,6 +2232,7 @@ function FinanceView({
                     className="iconButton"
                     onClick={() => setItems(items.filter((x) => x.id !== i.id))}
                     aria-label="Delete invoice"
+                    title="Delete invoice"
                   >
                     <Trash2 size={16} />
                   </button>
@@ -1949,6 +2315,7 @@ function TemplatesView({
                 className="iconButton"
                 onClick={() => setItems(items.filter((x) => x.id !== t.id))}
                 aria-label="Delete template"
+                title="Delete template"
               >
                 <Trash2 size={16} />
               </button>
@@ -2147,9 +2514,13 @@ function ClientModuleView({
       const body = new FormData();
       body.append("documentId", documentId);
       body.append("file", chosen);
-      const response = await fetch("/api/crm/documents", { method: "POST", body });
+      const response = await fetch("/api/crm/documents", {
+        method: "POST",
+        body,
+      });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "The file was not sent.");
+      if (!response.ok)
+        throw new Error(result.error || "The file was not sent.");
       window.location.reload();
     } catch (reason) {
       setPortalError(
@@ -2277,7 +2648,7 @@ function ClientModuleView({
               <Mail size={18} />
               <div>
                 <strong>{m.subject}</strong>
-                <span>{new Date(m.createdAt).toLocaleString()}</span>
+                <span>{messageWhen(m)}</span>
               </div>
               <Status value={m.status} />
             </div>
@@ -2349,7 +2720,11 @@ type AgencyReport = {
     awaitingDecision: number;
   };
   deadlines: {
-    informationRequests: { caseId: string; dueAt: string; daysRemaining: number | null }[];
+    informationRequests: {
+      caseId: string;
+      dueAt: string;
+      daysRemaining: number | null;
+    }[];
     informationOverdue: number;
     visaExpiry: { in30: number; in60: number; in90: number; expired: number };
     applicationDeadlines: number;
@@ -2403,11 +2778,7 @@ function Attention({
   const shown = settled ? "calm" : level;
   return (
     <div className={`attentionRow level-${shown}`}>
-      {shown === "calm" ? (
-        <Check size={16} />
-      ) : (
-        <AlertTriangle size={16} />
-      )}
+      {shown === "calm" ? <Check size={16} /> : <AlertTriangle size={16} />}
       <div>
         <b>{label}</b>
         <small>{settled ? "Nothing outstanding" : detail}</small>
@@ -2460,13 +2831,47 @@ function ReportsView({
     );
   if (!report)
     return (
-      <article className="panel listPanel">
-        <p className="coverageIntro">Building the report…</p>
-      </article>
+      <>
+        <div className="miniStats" aria-hidden="true">
+          {[0, 1, 2, 3].map((slot) => (
+            <article key={slot} className="skeletonStat">
+              <span className="skeletonBar short" />
+              <span className="skeletonBar tall" />
+              <span className="skeletonBar" />
+            </article>
+          ))}
+        </div>
+        <article className="panel listPanel" aria-busy="true">
+          <div className="panelHead">
+            <div>
+              <span className="kicker">NEEDS ATTENTION</span>
+              <h2>Building the report</h2>
+            </div>
+          </div>
+          <p className="reportProgress">
+            Reading the pipeline, applications, visa matters, deadlines and
+            invoices across every case you can see. This takes a moment on a
+            large workspace.
+          </p>
+          {[0, 1, 2, 3, 4].map((slot) => (
+            <div className="skeletonRow" key={slot}>
+              <span className="skeletonBar" />
+              <span className="skeletonBar short" />
+            </div>
+          ))}
+        </article>
+      </>
     );
 
-  const { pipeline, conversion, visas, deadlines, workload, branches, finance } =
-    report;
+  const {
+    pipeline,
+    conversion,
+    visas,
+    deadlines,
+    workload,
+    branches,
+    finance,
+  } = report;
   const money = (value: number) =>
     `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -2601,8 +3006,16 @@ function ReportsView({
                 `${conversion.conversionRate}% of enquiries`,
               ],
               ["Applications submitted", conversion.applicationsSubmitted, ""],
-              ["Offers received", conversion.offers, `${conversion.offerRate}% of submitted`],
-              ["CoEs received", conversion.coes, `${conversion.coeRate}% of offers`],
+              [
+                "Offers received",
+                conversion.offers,
+                `${conversion.offerRate}% of submitted`,
+              ],
+              [
+                "CoEs received",
+                conversion.coes,
+                `${conversion.coeRate}% of offers`,
+              ],
               [
                 "Deferred to a later intake",
                 conversion.deferred,
@@ -2762,242 +3175,156 @@ function ReportsView({
   );
 }
 
+type IntegrationStatus = {
+  key: string;
+  name: string;
+  purpose: string;
+  state: "connected" | "not_configured" | "not_built";
+  detail: string;
+  setup: string[];
+};
+
+const integrationLabels: Record<IntegrationStatus["state"], string> = {
+  connected: "Connected",
+  not_configured: "Not configured",
+  not_built: "Not built",
+};
+
+/**
+ * What is actually connected. The server probes Google Drive for real rather
+ * than reporting that some environment variables are present, so a key that
+ * does not match the service account shows as broken here instead of at the
+ * moment somebody tries to upload a passport.
+ */
 function GoogleWorkspaceView() {
-  const [settings, setSettings] = useStored("maximus.googleWorkspace", {
-      domain: "maximuseducation.com.au",
-      calendarSync: true,
-      gmailSync: true,
-      driveSync: true,
-      configured: false,
-    }),
-    [editing, setEditing] = useState(false),
-    [copied, setCopied] = useState(false);
-  const save = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const f = new FormData(e.currentTarget),
-      domain = String(f.get("domain") || "")
-        .trim()
-        .replace(/^@/, "");
-    setSettings({ ...settings, domain, configured: true });
-    setEditing(false);
+  const [integrations, setIntegrations] = useState<IntegrationStatus[] | null>(
+    null,
+  );
+  const [error, setError] = useState("");
+  const [checkedAt, setCheckedAt] = useState("");
+  const [checking, setChecking] = useState(false);
+
+  // Reads the status without touching React state, so the mount effect and the
+  // button can each decide what to do with the answer.
+  const read = async () => {
+    const response = await fetch("/api/crm/integrations", {
+      cache: "no-store",
+    });
+    const result = await response.json();
+    if (!response.ok)
+      throw new Error(result.error || "The status could not be read.");
+    return result as { integrations: IntegrationStatus[]; checkedAt: string };
   };
-  const copyRedirect = async () => {
-    await navigator.clipboard.writeText(
-      "https://maximus-crm-next.anujan2721.chatgpt.site/api/auth/google/callback",
-    );
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
+
+  const check = async () => {
+    setChecking(true);
+    try {
+      const result = await read();
+      setIntegrations(result.integrations);
+      setCheckedAt(String(result.checkedAt || ""));
+      setError("");
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "The status could not be read.",
+      );
+    } finally {
+      setChecking(false);
+    }
   };
-  const services = [
-    [
-      "Identity",
-      UserCog,
-      "Staff sign in with their Maximus email",
-      "Google OAuth + Supabase Auth",
-    ],
-    [
-      "Gmail",
-      MailCheck,
-      "Send and track case-linked staff email",
-      "gmail.send and gmail.readonly",
-    ],
-    [
-      "Calendar",
-      CalendarCheck2,
-      "Show meetings, deadlines and staff availability",
-      "calendar.events",
-    ],
-    [
-      "Drive",
-      FolderOpen,
-      "Create student folders and organised subfolders",
-      "drive.file",
-    ],
-  ] as const;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await read();
+        if (cancelled) return;
+        setIntegrations(result.integrations);
+        setCheckedAt(String(result.checkedAt || ""));
+      } catch (reason) {
+        if (!cancelled)
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "The status could not be read.",
+          );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const connected = (integrations ?? []).filter(
+    (row) => row.state === "connected",
+  ).length;
+  const configurable = (integrations ?? []).filter(
+    (row) => row.state !== "not_built",
+  ).length;
+
   return (
     <section className="workspaceHub">
-      <article className="googleHero">
-        <div>
-          <div className="googleHeroLabel">
-            <div className="googleG">G</div>
-            <span>GOOGLE WORKSPACE FOR MAXIMUS</span>
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">CHECKED, NOT ASSUMED</span>
+            <h2>Integration status</h2>
           </div>
-          <h2>One identity. One calendar. Every case connected.</h2>
-          <p>
-            Staff will sign in with their company Google account, work from
-            their own Gmail and Calendar, and keep every client action visible
-            inside the CRM.
-          </p>
-          <div className="welcomeActions">
-            <button
-              className="heroPrimary"
-              onClick={() => setEditing(!editing)}
-            >
-              <Settings size={16} />
-              {editing ? "Close setup" : "Start administrator setup"}
-            </button>
-            <button className="heroSecondary" onClick={copyRedirect}>
-              <Copy size={15} />
-              {copied ? "Redirect URI copied" : "Copy redirect URI"}
-            </button>
-          </div>
+          <button
+            className="ghostButton"
+            onClick={() => void check()}
+            disabled={checking}
+          >
+            <RefreshCw size={15} />
+            {checking ? "Checking…" : "Check again"}
+          </button>
         </div>
-        <div className="connectionOrb">
-          <Cloud size={31} />
-          <strong>Foundation ready</strong>
-          <span>Credentials required</span>
-          <small>Restricted to @{settings.domain}</small>
-        </div>
-      </article>
-      {editing ? (
-        <form className="panel workspaceSetupForm" onSubmit={save}>
-          <div className="panelHead">
-            <div>
-              <span className="kicker">STEP 1 OF 2</span>
-              <h2>Workspace configuration</h2>
-            </div>
-            <Status value={settings.configured ? "Saved" : "Draft"} />
+        {error && <p className="caseWorkError">{error}</p>}
+        {!integrations && !error ? (
+          <div className="skeletonRow">
+            <span className="skeletonBar" />
+            <span className="skeletonBar short" />
           </div>
-          <div className="setupFields">
-            <label>
-              Allowed Google Workspace domain
-              <input name="domain" defaultValue={settings.domain} required />
-            </label>
-            <label>
-              Login policy
-              <select name="policy" defaultValue="domain">
-                <option value="domain">Only approved Maximus domain</option>
-                <option value="invited">Invited staff only</option>
-              </select>
-            </label>
-          </div>
-          <div className="permissionChecks">
-            <label>
-              <input type="checkbox" defaultChecked={settings.gmailSync} />
-              Gmail case communication
-            </label>
-            <label>
-              <input type="checkbox" defaultChecked={settings.calendarSync} />
-              Calendar event sync
-            </label>
-            <label>
-              <input type="checkbox" defaultChecked={settings.driveSync} />
-              Drive folder management
-            </label>
-          </div>
-          <footer>
-            <p>
-              Saving prepares the CRM policy. Real Google sign-in begins after
-              the OAuth Client ID, secret and Supabase publishable key are
-              securely added.
+        ) : null}
+        {integrations && (
+          <>
+            <p className="coverageIntro">
+              {connected} of {configurable} configurable integrations are
+              working. Everything marked <b>Not built</b> is absent from this
+              CRM: no amount of configuration turns it on, and nothing in the
+              interface pretends otherwise.
             </p>
-            <button className="primaryButton" type="submit">
-              <Check size={15} />
-              Save Workspace policy
-            </button>
-          </footer>
-        </form>
-      ) : null}
-      <section className="workspaceServiceGrid">
-        {services.map(([name, Icon, copy, scope], index) => (
-          <article className="panel workspaceService" key={name}>
-            <div className={`serviceGlyph s${index}`}>
-              <Icon size={21} />
-            </div>
-            <span>{name}</span>
-            <h3>{copy}</h3>
-            <small>{scope}</small>
-            <div>
-              <Status
-                value={index === 0 ? "OAuth pending" : "Awaiting connection"}
-              />
-            </div>
-          </article>
-        ))}
-      </section>
-      <section className="workspaceOpsGrid">
-        <article className="panel setupChecklist">
-          <div className="panelHead">
-            <div>
-              <span className="kicker">PRODUCTION CONNECTION</span>
-              <h2>Administrator checklist</h2>
-            </div>
-            <span className="progressPill">1 / 4 prepared</span>
-          </div>
-          {[
-            [
-              true,
-              "Workspace domain policy",
-              "Restricted to the Maximus company domain",
-            ],
-            [
-              false,
-              "Google OAuth credentials",
-              "Client ID and secret from Google Cloud",
-            ],
-            [
-              false,
-              "Supabase Google provider",
-              "Enable Google sign-in and callback URL",
-            ],
-            [
-              false,
-              "Admin consent",
-              "Approve Gmail, Calendar and Drive scopes",
-            ],
-          ].map(([done, title, copy], index) => (
-            <div className="checkLine" key={String(title)}>
-              <i className={done ? "done" : ""}>
-                {done ? <Check size={14} /> : index + 1}
-              </i>
-              <div>
-                <strong>{title}</strong>
-                <span>{copy}</span>
+            {integrations.map((row) => (
+              <div className="integrationRow" key={row.key}>
+                <div>
+                  <strong>{row.name}</strong>
+                  <span>{row.purpose}</span>
+                  <small>{row.detail}</small>
+                  {row.setup.length > 0 && row.state !== "connected" ? (
+                    <small className="integrationSetup">
+                      Set {row.setup.join(", ")} in the deployment environment.
+                    </small>
+                  ) : null}
+                </div>
+                <span className={`integrationState ${row.state}`}>
+                  {row.state === "connected" ? (
+                    <Check size={13} />
+                  ) : (
+                    <AlertTriangle size={13} />
+                  )}
+                  {integrationLabels[row.state]}
+                </span>
               </div>
-              <Status value={done ? "Prepared" : "Required"} />
-            </div>
-          ))}
-        </article>
-        <aside className="panel trackingPreview">
-          <div className="panelHead">
-            <div>
-              <span className="kicker">CONNECTED WORKFLOW</span>
-              <h2>What staff will see</h2>
-            </div>
-            <RefreshCw size={18} />
-          </div>
-          <div className="trackingFlow">
-            <div>
-              <MailCheck size={17} />
-              <span>
-                <b>Email sent</b>
-                <small>Recorded on the client timeline</small>
-              </span>
-            </div>
-            <div>
-              <Video size={17} />
-              <span>
-                <b>Meeting booked</b>
-                <small>Staff and CRM calendars updated</small>
-              </span>
-            </div>
-            <div>
-              <FolderOpen size={17} />
-              <span>
-                <b>Document received</b>
-                <small>Filed under the student&apos;s Drive folder</small>
-              </span>
-            </div>
-            <div>
-              <Bell size={17} />
-              <span>
-                <b>Follow-up due</b>
-                <small>CRM reminder created automatically</small>
-              </span>
-            </div>
-          </div>
-        </aside>
-      </section>
+            ))}
+            {checkedAt ? (
+              <p className="reportFooter">
+                Checked {new Date(checkedAt).toLocaleString()}.
+              </p>
+            ) : null}
+          </>
+        )}
+      </article>
     </section>
   );
 }
@@ -3287,6 +3614,7 @@ function CaseDrawer({
   remove,
   moveStage,
   assign,
+  refresh,
   staff,
   canAssign,
   lifecycleReady,
@@ -3303,6 +3631,7 @@ function CaseDrawer({
     reason: string,
   ) => Promise<void>;
   assign: (record: CaseRecord, ownerId: string) => Promise<void>;
+  refresh: () => Promise<void>;
   staff: StaffRecord[];
   canAssign: boolean;
   lifecycleReady: boolean;
@@ -3317,6 +3646,7 @@ function CaseDrawer({
       remove={remove}
       moveStage={moveStage}
       assign={assign}
+      refresh={refresh}
       staff={staff}
       canAssign={canAssign}
       lifecycleReady={lifecycleReady}
@@ -3442,6 +3772,7 @@ function CaseDrawerBody({
   remove,
   moveStage,
   assign,
+  refresh,
   staff,
   canAssign,
   lifecycleReady,
@@ -3458,6 +3789,7 @@ function CaseDrawerBody({
     reason: string,
   ) => Promise<void>;
   assign: (record: CaseRecord, ownerId: string) => Promise<void>;
+  refresh: () => Promise<void>;
   staff: StaffRecord[];
   canAssign: boolean;
   lifecycleReady: boolean;
@@ -3467,6 +3799,11 @@ function CaseDrawerBody({
   const [tab, setTab] = useState<CaseTab>("overview");
   const [reason, setReason] = useState("");
   const [moving, setMoving] = useState<LifecycleStage | "">("");
+  // The visa stage cannot be entered without an expiry date. It is asked for
+  // beside the action that needs it rather than on another screen.
+  const [expiry, setExpiry] = useState(item.visaExpiry || "");
+  const [recordedExpiry, setRecordedExpiry] = useState(item.visaExpiry || "");
+  const [savingExpiry, setSavingExpiry] = useState(false);
   const [owner, setOwner] = useState(item.ownerId);
   const [assigning, setAssigning] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
@@ -3478,6 +3815,23 @@ function CaseDrawerBody({
   const caseId = item.dbId;
   const stage = item.lifecycleStage;
   const moves = allowedStageMoves(stage);
+  const needsExpiry = !recordedExpiry;
+  // Nine tabs do not fit a phone. The four that carry the day's work stay in
+  // view -- with the visa matter taking the place of applications on a
+  // migration file -- and the rest move behind one control.
+  const compact = useCompactScreen();
+  const primaryTabs: CaseTab[] =
+    item.serviceType === "direct_visa"
+      ? ["overview", "visa", "documents", "finance"]
+      : ["overview", "applications", "documents", "finance"];
+  const shownTabs = compact
+    ? caseTabs.filter(([key]) => primaryTabs.includes(key) || key === tab)
+    : caseTabs;
+  const moreTabs = compact
+    ? caseTabs.filter(([key]) => !shownTabs.some(([shown]) => shown === key))
+    : [];
+  const needsExpiryFor = (next: LifecycleStage) =>
+    needsExpiry && (next === "visa" || next === "completed");
 
   // Reads the whole case file. Kept free of state updates so the mount effect
   // can discard a response that arrives after the drawer has closed.
@@ -3577,6 +3931,35 @@ function CaseDrawerBody({
     }
   };
 
+  const saveExpiry = async () => {
+    setSavingExpiry(true);
+    try {
+      const response = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "set_visa_expiry",
+          caseId,
+          visaExpiry: expiry,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "The date could not be saved.");
+      setRecordedExpiry(expiry);
+      setCaseError("");
+      await refresh();
+    } catch (reason_) {
+      setCaseError(
+        reason_ instanceof Error
+          ? reason_.message
+          : "The date could not be saved.",
+      );
+    } finally {
+      setSavingExpiry(false);
+    }
+  };
+
   const client = file?.client ?? {};
   const clientId = String(item.clientId ?? "");
   const visa = file?.visaMatter ?? null;
@@ -3590,17 +3973,24 @@ function CaseDrawerBody({
             <h2>{item.name}</h2>
             <p>
               {item.matterType || item.type} ·{" "}
-              {item.serviceType === "direct_visa" ? "Migration" : "Study abroad"}
+              {item.serviceType === "direct_visa"
+                ? "Migration"
+                : "Study abroad"}
               {item.target ? ` · ${item.target}` : ""}
             </p>
           </div>
-          <button className="iconButton" onClick={close} aria-label="Close case">
+          <button
+            className="iconButton"
+            onClick={close}
+            aria-label="Close case"
+            title="Close case"
+          >
             <X size={20} />
           </button>
         </div>
 
         <nav className="caseTabs" role="tablist">
-          {caseTabs.map(([key, label]) => (
+          {shownTabs.map(([key, label]) => (
             <button
               key={key}
               role="tab"
@@ -3617,6 +4007,24 @@ function CaseDrawerBody({
                 : ""}
             </button>
           ))}
+          {moreTabs.length > 0 && (
+            <select
+              className="caseTabsMore"
+              aria-label="More case sections"
+              title="More case sections"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) setTab(e.target.value as CaseTab);
+              }}
+            >
+              <option value="">More…</option>
+              {moreTabs.map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          )}
         </nav>
 
         {caseError && <p className="caseWorkError">{caseError}</p>}
@@ -3703,14 +4111,9 @@ function CaseDrawerBody({
                 {LIFECYCLE_STAGES.map((step) => (
                   <li
                     key={step}
-                    className={
-                      step === stage
-                        ? "current"
-                        : LIFECYCLE_STAGES.indexOf(step) <
-                            LIFECYCLE_STAGES.indexOf(stage)
-                          ? "done"
-                          : ""
-                    }
+                    className={`${stageChipState(step, stage)}${
+                      step === "deferred" ? " parked" : ""
+                    }`}
                   >
                     <span>{stageLabels[step]}</span>
                   </li>
@@ -3722,6 +4125,36 @@ function CaseDrawerBody({
                   {schemaWarning}
                 </p>
               )}
+              {needsExpiry && (
+                <div className="lifecycleBlocker">
+                  <p>
+                    <AlertTriangle size={14} />
+                    The visa stage is worked against the client&apos;s current
+                    visa expiry, so it has to be recorded before this case can
+                    move to visa or be completed.
+                  </p>
+                  <div className="lifecycleBlockerRow">
+                    <label htmlFor="lifecycleVisaExpiry">
+                      Visa expiry date
+                    </label>
+                    <input
+                      id="lifecycleVisaExpiry"
+                      name="lifecycleVisaExpiry"
+                      type="date"
+                      value={expiry}
+                      onChange={(e) => setExpiry(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="ghostButton"
+                      disabled={savingExpiry || !expiry}
+                      onClick={() => void saveExpiry()}
+                    >
+                      {savingExpiry ? "Saving…" : "Record expiry"}
+                    </button>
+                  </div>
+                </div>
+              )}
               <label className="lifecycleReason">
                 Reason (optional)
                 <input
@@ -3730,7 +4163,9 @@ function CaseDrawerBody({
                   placeholder={
                     stage === "visa"
                       ? "e.g. Visa approved"
-                      : "e.g. Documents received"
+                      : stage === "deferred"
+                        ? "e.g. Enrolled for the July intake"
+                        : "e.g. Documents received"
                   }
                 />
               </label>
@@ -3742,7 +4177,14 @@ function CaseDrawerBody({
                     className={
                       next === "completed" ? "primaryButton" : "ghostButton"
                     }
-                    disabled={moving !== "" || !lifecycleReady}
+                    disabled={
+                      moving !== "" || !lifecycleReady || needsExpiryFor(next)
+                    }
+                    title={
+                      needsExpiryFor(next)
+                        ? "Record the visa expiry date above first"
+                        : undefined
+                    }
                     onClick={() => void run(next)}
                   >
                     {next === "completed" ? (
@@ -3750,10 +4192,20 @@ function CaseDrawerBody({
                         <Check size={15} />
                         Mark visa approved &amp; complete
                       </>
+                    ) : next === "deferred" ? (
+                      <>
+                        <Clock3 size={15} />
+                        Defer this case
+                      </>
                     ) : stage === "completed" ? (
                       <>
                         <RefreshCw size={15} />
                         Reopen in {stageLabels[next].toLowerCase()}
+                      </>
+                    ) : stage === "deferred" ? (
+                      <>
+                        <RefreshCw size={15} />
+                        Resume in {stageLabels[next].toLowerCase()}
                       </>
                     ) : (
                       <>
@@ -3795,7 +4247,9 @@ function CaseDrawerBody({
                 [
                   "Privacy consent",
                   client.privacy_consent_at
-                    ? new Date(String(client.privacy_consent_at)).toLocaleDateString()
+                    ? new Date(
+                        String(client.privacy_consent_at),
+                      ).toLocaleDateString()
                     : "",
                 ],
                 ["Marketing consent", client.marketing_consent ? "Yes" : "No"],
@@ -3807,15 +4261,21 @@ function CaseDrawerBody({
                 rows={[
                   [
                     "Destinations",
-                    (file.intake.preferences.destination_countries as string[])?.join(", "),
+                    (
+                      file.intake.preferences.destination_countries as string[]
+                    )?.join(", "),
                   ],
                   [
                     "Levels",
-                    (file.intake.preferences.study_levels as string[])?.join(", "),
+                    (file.intake.preferences.study_levels as string[])?.join(
+                      ", ",
+                    ),
                   ],
                   [
                     "Fields",
-                    (file.intake.preferences.fields_of_study as string[])?.join(", "),
+                    (file.intake.preferences.fields_of_study as string[])?.join(
+                      ", ",
+                    ),
                   ],
                   ["Budget", file.intake.preferences.annual_budget],
                   ["Funding", file.intake.preferences.funding_source],
@@ -4312,7 +4772,8 @@ function DocumentsPanel({
         body,
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "The file was not stored.");
+      if (!response.ok)
+        throw new Error(result.error || "The file was not stored.");
       await onChanged();
     } catch (reason) {
       setError(
@@ -4353,9 +4814,7 @@ function DocumentsPanel({
                   <b>{text(row.display_name)}</b>
                   <small>
                     {humanise(row.document_type)} · {humanise(row.state)}
-                    {stored && size
-                      ? ` · ${(size / 1024).toFixed(0)} KB`
-                      : ""}
+                    {stored && size ? ` · ${(size / 1024).toFixed(0)} KB` : ""}
                   </small>
                 </div>
                 {stored ? (
@@ -4693,11 +5152,17 @@ function VisaMatterTab({
         </label>
         <label>
           Status
-          <input name="status" defaultValue={text(value.status) || "assessment"} />
+          <input
+            name="status"
+            defaultValue={text(value.status) || "assessment"}
+          />
         </label>
         <label>
           Responsible agent (MARN)
-          <input name="marn" defaultValue={text(value.responsible_agent_marn)} />
+          <input
+            name="marn"
+            defaultValue={text(value.responsible_agent_marn)}
+          />
         </label>
         <label>
           Lodgement reference
@@ -4732,15 +5197,26 @@ function VisaMatterTab({
         </label>
         {(
           [
-            ["healthExamination", "Health examination", "health_examination_status"],
+            [
+              "healthExamination",
+              "Health examination",
+              "health_examination_status",
+            ],
             ["biometrics", "Biometrics", "biometrics_status"],
             ["policeClearance", "Police clearance", "police_clearance_status"],
-            ["skillsAssessment", "Skills assessment", "skills_assessment_status"],
+            [
+              "skillsAssessment",
+              "Skills assessment",
+              "skills_assessment_status",
+            ],
           ] as [string, string, string][]
         ).map(([name, label, key]) => (
           <label key={name}>
             {label}
-            <select name={name} defaultValue={text(value[key]) || "not_started"}>
+            <select
+              name={name}
+              defaultValue={text(value[key]) || "not_started"}
+            >
               {CHECK_STATUS_OPTIONS.map((option) => (
                 <option key={option} value={option}>
                   {humanise(option)}
@@ -4751,7 +5227,11 @@ function VisaMatterTab({
         ))}
         <label>
           Lodged
-          <input name="lodgedAt" type="date" defaultValue={day(value.lodged_at)} />
+          <input
+            name="lodgedAt"
+            type="date"
+            defaultValue={day(value.lodged_at)}
+          />
         </label>
         <label>
           Further information requested (s56)
@@ -4791,7 +5271,10 @@ function VisaMatterTab({
         </label>
         <label className="wide">
           Refusal reason
-          <input name="refusalReason" defaultValue={text(value.refusal_reason)} />
+          <input
+            name="refusalReason"
+            defaultValue={text(value.refusal_reason)}
+          />
         </label>
         <label className="wide">
           Visa conditions (comma separated)
@@ -4982,6 +5465,10 @@ function RecordModal({
   staff,
   saving,
   error,
+  duplicates,
+  onOpenExisting,
+  onAddCase,
+  onDifferentPerson,
 }: {
   type: ModalType;
   close: () => void;
@@ -4992,6 +5479,10 @@ function RecordModal({
   staff: StaffRecord[];
   saving: boolean;
   error: string;
+  duplicates: DuplicateMatch[] | null;
+  onOpenExisting: (clientId: string) => void;
+  onAddCase: (clientId: string) => void;
+  onDifferentPerson: () => void;
 }) {
   if (!type) return null;
   const titles: Record<Exclude<ModalType, null>, string> = {
@@ -5026,10 +5517,70 @@ function RecordModal({
             className="iconButton"
             onClick={close}
             aria-label="Close form"
+            title="Close form"
           >
             <X size={20} />
           </button>
         </header>
+        {duplicates && duplicates.length > 0 && (
+          <section className="duplicateGate">
+            <h3>
+              <AlertTriangle size={16} />
+              This looks like somebody you already have
+            </h3>
+            <p>
+              Nothing has been created yet. Two files for one person split their
+              documents, invoices and history, so choose what this is.
+            </p>
+            {duplicates.map((match) => (
+              <div className="duplicateMatch" key={match.id}>
+                <div>
+                  <strong>{match.name || "Unnamed client"}</strong>
+                  <small>
+                    {[
+                      match.reference,
+                      match.email,
+                      match.phone,
+                      match.passport ? `Passport ${match.passport}` : "",
+                      match.dateOfBirth ? `Born ${match.dateOfBirth}` : "",
+                      `${match.caseCount} case${match.caseCount === 1 ? "" : "s"}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </small>
+                  <small className="duplicateReason">
+                    Matched on {match.reasons.join(", ")}
+                  </small>
+                </div>
+                <div className="duplicateActions">
+                  <button
+                    type="button"
+                    className="ghostButton"
+                    onClick={() => onOpenExisting(match.id)}
+                  >
+                    Open existing client
+                  </button>
+                  <button
+                    type="button"
+                    className="primaryButton"
+                    disabled={saving}
+                    onClick={() => onAddCase(match.id)}
+                  >
+                    Add another case to this client
+                  </button>
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="ghostButton duplicateContinue"
+              disabled={saving}
+              onClick={onDifferentPerson}
+            >
+              This is a genuinely different person — create the record
+            </button>
+          </section>
+        )}
         <div className="formGrid">
           {type === "case" && (
             <div className="legacyIntake full">
@@ -5127,7 +5678,10 @@ function RecordModal({
                 </label>
                 <label>
                   Branch
-                  <select name="branchId" defaultValue={editing?.branchId ?? ""}>
+                  <select
+                    name="branchId"
+                    defaultValue={editing?.branchId ?? ""}
+                  >
                     <option value="">Your own branch</option>
                     {branches.map((branch) => (
                       <option key={branch.id} value={branch.id}>
@@ -5189,7 +5743,10 @@ function RecordModal({
                 </label>
                 <label className="wide">
                   Remarks
-                  <input name="remarks" placeholder="Anything worth noting now" />
+                  <input
+                    name="remarks"
+                    placeholder="Anything worth noting now"
+                  />
                 </label>
               </div>
             </div>
@@ -5404,7 +5961,11 @@ function RecordModal({
             </>
           )}
         </div>
-        {error ? <p className="formError" role="alert">{error}</p> : null}
+        {error ? (
+          <p className="formError" role="alert">
+            {error}
+          </p>
+        ) : null}
         <footer>
           <button type="button" className="ghostButton" onClick={close}>
             Cancel
@@ -5431,9 +5992,22 @@ export default function Home() {
     [formError, setFormError] = useState(""),
     [saving, setSaving] = useState(false),
     [quickOpen, setQuickOpen] = useState(false),
+    // Set when an intake looks like somebody already on file. The record is
+    // held back until the person entering it says which of the three cases
+    // this is.
+    [duplicates, setDuplicates] = useState<DuplicateMatch[] | null>(null),
+    [pendingIntake, setPendingIntake] = useState<Record<
+      string,
+      unknown
+    > | null>(null),
     [notifications, setNotifications] = useState(false),
     [alerts, setAlerts] = useState<
-      { id: string; title: string; body: string | null; read_at: string | null }[]
+      {
+        id: string;
+        title: string;
+        body: string | null;
+        read_at: string | null;
+      }[]
     >([]);
   const [cases, setCases] = useState<CaseRecord[]>([]),
     [tasks, setTasks] = useState<TaskRecord[]>([]),
@@ -5444,6 +6018,8 @@ export default function Home() {
     [templates, setTemplates] = useState<TemplateRecord[]>([]),
     [workflows, setWorkflows] = useState<WorkflowRecord[]>([]),
     [audits, setAudits] = useState<AuditRecord[]>([]),
+    [applicationRows, setApplicationRows] = useState<ApplicationRow[]>([]),
+    [visaMatterRows, setVisaMatterRows] = useState<VisaMatterRow[]>([]),
     [roles, setRoles] = useState<{ id: string; name: string; scope: string }[]>(
       [],
     ),
@@ -5534,6 +6110,8 @@ export default function Home() {
       setTemplates(result.templates || []);
       setWorkflows(result.workflows || []);
       setAudits(result.audits || []);
+      setApplicationRows((result.applications || []) as ApplicationRow[]);
+      setVisaMatterRows((result.visaMatters || []) as VisaMatterRow[]);
       setRoles(result.roles || []);
       setStaff(
         ((result.profiles || []) as StaffRecord[]).filter(
@@ -5578,6 +6156,61 @@ export default function Home() {
     setModal(x);
     setQuickOpen(false);
   };
+  // Sends a completed form to the workspace and refreshes what is on screen.
+  const submitRecord = async (
+    kind: Exclude<ModalType, null>,
+    payload: Record<string, unknown>,
+  ) => {
+    setSaving(true);
+    try {
+      const response = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(result.error || "The record could not be saved.");
+      setModal(null);
+      setEditing(null);
+      setDuplicates(null);
+      setPendingIntake(null);
+      await loadWorkspace();
+      say(`${kind[0].toUpperCase() + kind.slice(1)} saved to Supabase`);
+      return true;
+    } catch (reason) {
+      const message =
+        reason instanceof Error
+          ? reason.message
+          : "The record could not be saved.";
+      setFormError(message);
+      say(message);
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Asks the database whether this person is already on file. A check that
+  // cannot run does not silently pass: that is the answer that creates the
+  // duplicate.
+  const findDuplicates = async (payload: Record<string, unknown>) => {
+    const response = await fetch("/api/crm/duplicates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: payload.name,
+        email: payload.email,
+        phone: payload.phone,
+        dateOfBirth: payload.dob,
+      }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok)
+      throw new Error(result.error || "The duplicate check could not be run.");
+    return (result.matches ?? []) as DuplicateMatch[];
+  };
+
   const save = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!modal || saving) return;
@@ -5603,28 +6236,49 @@ export default function Home() {
       const linked = cases.find((c) => (c.dbId || c.id) === payload.caseId);
       payload.clientId = linked?.clientId || null;
     }
-    try {
-      const response = await fetch("/api/crm/workspace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok)
-        throw new Error(result.error || "The record could not be saved.");
-      setModal(null);
-      setEditing(null);
-      await loadWorkspace();
-      say(`${modal[0].toUpperCase() + modal.slice(1)} saved to Supabase`);
-    } catch (reason) {
-      const message = reason instanceof Error
-        ? reason.message
-        : "The record could not be saved.";
-      setFormError(message);
-      say(message);
-    } finally {
-      setSaving(false);
+    // A new client, not an edit and not a portal account: look for them first.
+    if (modal === "case" && !editing && role !== "client") {
+      try {
+        const found = await findDuplicates(payload);
+        if (found.length) {
+          setPendingIntake(payload);
+          setDuplicates(found);
+          setSaving(false);
+          return;
+        }
+      } catch (reason) {
+        const message =
+          reason instanceof Error
+            ? reason.message
+            : "The duplicate check could not be run.";
+        setFormError(message);
+        setSaving(false);
+        return;
+      }
     }
+    await submitRecord(modal, payload);
+  };
+
+  // The three honest answers to "this looks like somebody you already have".
+  const openExistingClient = (clientId: string) => {
+    const existing = cases.find((c) => c.clientId === clientId);
+    setModal(null);
+    setEditing(null);
+    setDuplicates(null);
+    setPendingIntake(null);
+    if (existing) setSelected(existing);
+    else say("That client has no case on file yet.");
+  };
+  const addCaseToExistingClient = async (clientId: string) => {
+    if (!pendingIntake) return;
+    await submitRecord("case", {
+      ...pendingIntake,
+      existingClientId: clientId,
+    });
+  };
+  const createAsNewPerson = async () => {
+    if (!pendingIntake) return;
+    await submitRecord("case", pendingIntake);
   };
   const editCase = (c: CaseRecord) => {
       setSelected(null);
@@ -5733,9 +6387,13 @@ export default function Home() {
       say(
         stage === "completed"
           ? `${record.name} marked as completed`
-          : record.lifecycleStage === "completed"
-            ? `${record.name} reopened in ${stageLabels[stage].toLowerCase()}`
-            : `${record.name} moved to ${stageLabels[stage].toLowerCase()}`,
+          : stage === "deferred"
+            ? `${record.name} deferred`
+            : record.lifecycleStage === "completed"
+              ? `${record.name} reopened in ${stageLabels[stage].toLowerCase()}`
+              : record.lifecycleStage === "deferred"
+                ? `${record.name} resumed in ${stageLabels[stage].toLowerCase()}`
+                : `${record.name} moved to ${stageLabels[stage].toLowerCase()}`,
       );
     } catch (reason_) {
       say(
@@ -5872,6 +6530,8 @@ export default function Home() {
     setInvoices([]);
     setTemplates([]);
     setWorkflows([]);
+    setApplicationRows([]);
+    setVisaMatterRows([]);
     setAudits([]);
     setStaff([]);
     setBranches([]);
@@ -5945,6 +6605,7 @@ export default function Home() {
         items={documents}
         openModal={open}
         setItems={syncDocuments}
+        storageConnected={storageConnected}
       />
     );
   else if (active === "communications")
@@ -6045,6 +6706,12 @@ export default function Home() {
     );
   else if (active === "integrations") content = <GoogleWorkspaceView />;
   else {
+    // Opens the case an application or visa matter belongs to.
+    const openCase = (id: string) => {
+      const found = cases.find((c) => c.dbId === id);
+      if (found) setSelected(found);
+      else say("That case is not in your workspace.");
+    };
     // Each pipeline module shows the cases actually sitting at that stage, so
     // moving a case between stages moves it between these lists.
     const atStage = (stage: LifecycleStage) =>
@@ -6063,15 +6730,26 @@ export default function Home() {
                 : active === "case_complete"
                   ? atStage("completed")
                   : active === "defer"
-                    ? // A case is deferred when one of its applications has
-                      // been moved to a later intake.
-                      cases.filter((c) => c.deferredApplications > 0)
+                    ? // Two things an agency calls a deferral: the case itself
+                      // parked at the deferred stage, and a case still being
+                      // worked whose application moved to a later intake.
+                      cases.filter(
+                        (c) =>
+                          c.lifecycleStage === "deferred" ||
+                          c.deferredApplications > 0,
+                      )
                     : serviceMode === "direct_visa"
                       ? visa
                       : education;
-    content = (
+    const caseList = (
       <CaseWorkspace
-        title={meta[active][0]}
+        title={
+          active === "applications"
+            ? "Cases at the application stage"
+            : active === "visas" || active === "direct_visas"
+              ? "Cases at the visa stage"
+              : meta[active][0]
+        }
         cases={list}
         filter={filter}
         setFilter={setFilter}
@@ -6079,6 +6757,36 @@ export default function Home() {
         onSelect={setSelected}
       />
     );
+    // These two screens lead with the records themselves. The case list stays
+    // underneath, because a case can sit at the stage before anything has been
+    // lodged and must not disappear from view.
+    content =
+      active === "applications" ? (
+        <>
+          <ApplicationsBoard rows={applicationRows} onOpen={openCase} />
+          {caseList}
+        </>
+      ) : active === "visas" || active === "direct_visas" ? (
+        <>
+          <VisaMattersBoard
+            rows={
+              active === "direct_visas"
+                ? visaMatterRows.filter((row) =>
+                    cases.some(
+                      (c) =>
+                        c.dbId === row.caseId &&
+                        c.serviceType === "direct_visa",
+                    ),
+                  )
+                : visaMatterRows
+            }
+            onOpen={openCase}
+          />
+          {caseList}
+        </>
+      ) : (
+        caseList
+      );
   }
   return (
     <div className={`appShell mode-${serviceMode}`}>
@@ -6103,6 +6811,7 @@ export default function Home() {
               className="menuButton"
               onClick={() => setMenuOpen(true)}
               aria-label="Open case navigation"
+              title="Open case navigation"
             >
               <Menu size={21} />
             </button>
@@ -6170,6 +6879,7 @@ export default function Home() {
                   className="iconButton"
                   onClick={() => void signOut()}
                   aria-label="Sign out"
+                  title="Sign out"
                 >
                   <LogOut size={17} />
                 </button>
@@ -6179,6 +6889,7 @@ export default function Home() {
                   className="iconButton alert"
                   onClick={() => setNotifications(!notifications)}
                   aria-label="Notifications"
+                  title="Notifications"
                 >
                   <Bell size={19} />
                   {(unreadAlerts.length > 0 ||
@@ -6191,17 +6902,21 @@ export default function Home() {
                       <span>Only your linked updates are shown</span>
                     ) : unreadAlerts.length === 0 ? (
                       <span>
-                        Nothing new ·{" "}
-                        {tasks.filter((t) => !t.completed).length} open tasks
+                        Nothing new · {tasks.filter((t) => !t.completed).length}{" "}
+                        open tasks
                       </span>
                     ) : (
                       <ul className="alertList">
                         {unreadAlerts.slice(0, 6).map((alert) => (
                           <li key={alert.id}>
-                            <button onClick={() => void markAlertRead(alert.id)}>
+                            <button
+                              onClick={() => void markAlertRead(alert.id)}
+                            >
                               <span>
                                 <b>{alert.title}</b>
-                                {alert.body ? <small>{alert.body}</small> : null}
+                                {alert.body ? (
+                                  <small>{alert.body}</small>
+                                ) : null}
                               </span>
                               <Check size={14} />
                             </button>
@@ -6227,6 +6942,8 @@ export default function Home() {
                   <button
                     className="quickButton"
                     onClick={() => setQuickOpen(!quickOpen)}
+                    aria-label="Quick create"
+                    title="Quick create"
                   >
                     <Plus size={17} />
                     <span>Quick create</span>
@@ -6318,6 +7035,7 @@ export default function Home() {
         <CaseDrawer
           moveStage={moveCaseStage}
           assign={assignCase}
+          refresh={loadWorkspace}
           staff={staff}
           lifecycleReady={!schemaWarning}
           schemaWarning={schemaWarning}
@@ -6335,8 +7053,14 @@ export default function Home() {
           setModal(null);
           setEditing(null);
           setFormError("");
+          setDuplicates(null);
+          setPendingIntake(null);
         }}
         submit={save}
+        duplicates={duplicates}
+        onOpenExisting={openExistingClient}
+        onAddCase={(id) => void addCaseToExistingClient(id)}
+        onDifferentPerson={() => void createAsNewPerson()}
         cases={cases}
         editing={editing}
         branches={branches}

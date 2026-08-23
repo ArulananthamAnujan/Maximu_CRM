@@ -902,6 +902,158 @@ expect("an unknown branch code still falls back to the importer's branch",
   noBranch.status === 200 && noBranch.json?.valid === 1,
   JSON.stringify(noBranch.json)?.slice(0, 240));
 
+// ---------------------------------------------------------------------------
+section("Deferral as a pipeline stage");
+const deferMove = await move("deferred", officer.cookie, newCaseId, "Student deferred to July");
+expect("a case can be deferred from the stage it is worked at",
+  deferMove.status === 200, JSON.stringify(deferMove.json)?.slice(0, 240));
+const wsDefer = await call("/api/crm/workspace", { cookie: officer.cookie });
+const parked = wsDefer.json?.cases?.find((c) => c.dbId === newCaseId);
+expect("a deferred case reports the deferred stage",
+  parked?.lifecycleStage === "deferred", `stage=${parked?.lifecycleStage}`);
+expect("deferring keeps the progress already recorded",
+  Number(parked?.progress) > 0, `progress=${parked?.progress}`);
+const deferComplete = await move("completed", officer.cookie, newCaseId);
+expect("a deferred case cannot be completed without being resumed",
+  deferComplete.status === 400, JSON.stringify(deferComplete.json)?.slice(0, 240));
+expect("a deferred case resumes into an active stage",
+  (await move("visa", officer.cookie, newCaseId, "Enrolled for July")).status === 200);
+const wsResumed = await call("/api/crm/workspace", { cookie: officer.cookie });
+expect("a resumed case is no longer deferred",
+  wsResumed.json?.cases?.find((c) => c.dbId === newCaseId)?.lifecycleStage === "visa");
+
+// ---------------------------------------------------------------------------
+section("Visa expiry beside the action that needs it");
+const expiryCase = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "case", name: "Expiry Needed", phone: "+61400000777",
+          email: "expiry.needed@example.test", visaExpiry: "2028-01-31",
+          type: "Student visa" } });
+const expiryCaseId = expiryCase.json?.caseId;
+const clearExpiry = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "set_visa_expiry", caseId: expiryCaseId, visaExpiry: "2029-06-30" } });
+expect("the visa expiry can be recorded on its own",
+  clearExpiry.status === 200, JSON.stringify(clearExpiry.json)?.slice(0, 240));
+const wsExpiry = await call("/api/crm/workspace", { cookie: officer.cookie });
+expect("the recorded expiry is what the case reports",
+  wsExpiry.json?.cases?.find((c) => c.dbId === expiryCaseId)?.visaExpiry === "2029-06-30");
+const badExpiryWrite = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "set_visa_expiry", caseId: expiryCaseId } });
+expect("recording no date at all is refused", badExpiryWrite.status === 400);
+const portalExpiry = await call("/api/crm/workspace", { method: "POST", cookie: student.cookie,
+  body: { action: "set_visa_expiry", caseId: expiryCaseId, visaExpiry: "2030-01-01" } });
+expect("a portal account cannot record a visa expiry", portalExpiry.status === 403);
+
+// ---------------------------------------------------------------------------
+section("Applications and visa matters as records");
+const wsBoards = await call("/api/crm/workspace", { cookie: officer.cookie });
+const appRows = wsBoards.json?.applications ?? [];
+expect("the workspace lists applications as records of their own",
+  Array.isArray(appRows) && appRows.length > 0, `applications=${appRows.length}`);
+const anyApp = appRows[0];
+expect("an application row carries the institution, course and its case",
+  Boolean(anyApp?.institution && anyApp?.course && anyApp?.caseId),
+  JSON.stringify(anyApp)?.slice(0, 240));
+const visaRows = wsBoards.json?.visaMatters ?? [];
+expect("the workspace lists visa matters as records of their own",
+  Array.isArray(visaRows) && visaRows.length > 0, `visaMatters=${visaRows.length}`);
+const anyVisa = visaRows[0];
+expect("a visa matter row carries the columns an agent works from",
+  anyVisa !== undefined &&
+    ["subclass", "destination", "currentVisa", "trn", "marn", "informationDueOn", "outcome"]
+      .every((key) => key in anyVisa),
+  JSON.stringify(anyVisa)?.slice(0, 300));
+const portalBoards = await call("/api/crm/workspace", { cookie: student.cookie });
+expect("a portal account sees only its own applications",
+  (portalBoards.json?.applications ?? []).every((row) => row.client === "Priya Sharma"),
+  JSON.stringify((portalBoards.json?.applications ?? []).map((r) => r.client)));
+
+// ---------------------------------------------------------------------------
+section("Duplicate clients");
+const dupCheck = (body, cookie = officer.cookie) =>
+  call("/api/crm/duplicates", { method: "POST", cookie, body });
+const dupSeed = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "case", name: "Nadia Fernando", phone: "+61 400 555 123",
+          email: "nadia@example.test", visaExpiry: "2028-05-31", type: "Student visa" } });
+expect("a first record is created normally", dupSeed.status === 200);
+const byEmail = await dupCheck({ name: "Different Name", email: "NADIA@example.test" });
+expect("the same email address is reported as a duplicate",
+  byEmail.status === 200 && (byEmail.json?.matches ?? []).some((m) => m.reasons.includes("email")),
+  JSON.stringify(byEmail.json)?.slice(0, 300));
+const byMobile = await dupCheck({ name: "Different Name", phone: "0400555123" });
+expect("the same mobile written differently is reported as a duplicate",
+  (byMobile.json?.matches ?? []).some((m) => m.reasons.includes("mobile")),
+  JSON.stringify(byMobile.json)?.slice(0, 300));
+const byName = await dupCheck({ name: "  nadia   FERNANDO " });
+expect("the same name is reported as a duplicate",
+  (byName.json?.matches ?? []).some((m) => m.reasons.includes("name")),
+  JSON.stringify(byName.json)?.slice(0, 300));
+const notADuplicate = await dupCheck({ name: "Someone Else Entirely",
+  email: "nobody-at-all@example.test", phone: "+61 499 111 222" });
+expect("somebody genuinely new is not reported as a duplicate",
+  (notADuplicate.json?.matches ?? []).length === 0,
+  JSON.stringify(notADuplicate.json)?.slice(0, 300));
+const dupPortal = await dupCheck({ email: "nadia@example.test" }, student.cookie);
+expect("a portal account cannot run the duplicate check", dupPortal.status === 403);
+const dupMatch = (byEmail.json?.matches ?? [])[0];
+expect("the duplicate names how many cases that client already has",
+  Number(dupMatch?.caseCount) >= 1, JSON.stringify(dupMatch)?.slice(0, 240));
+const secondCase = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "case", name: "Nadia Fernando", phone: "+61 400 555 123",
+          email: "nadia@example.test", visaExpiry: "2029-05-31", type: "485 Visa",
+          existingClientId: dupMatch?.id } });
+expect("a second case can be added to the existing client",
+  secondCase.status === 200 && secondCase.json?.clientId === dupMatch?.id,
+  JSON.stringify(secondCase.json)?.slice(0, 240));
+const afterSecond = await dupCheck({ email: "nadia@example.test" });
+expect("the second case joins the same client rather than making another",
+  (afterSecond.json?.matches ?? []).length === 1 &&
+    Number((afterSecond.json?.matches ?? [])[0]?.caseCount) === 2,
+  JSON.stringify(afterSecond.json)?.slice(0, 300));
+const bogusAttach = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "case", name: "Ghost Client", phone: "+61400111000",
+          email: "ghost@example.test", visaExpiry: "2029-01-31",
+          existingClientId: "00000000-0000-4000-8000-0000000000ff" } });
+expect("a case cannot be attached to a client that is not yours",
+  bogusAttach.status === 400, JSON.stringify(bogusAttach.json)?.slice(0, 240));
+
+// ---------------------------------------------------------------------------
+section("Integration status");
+const integrations = await call("/api/crm/integrations", { cookie: owner.cookie });
+expect("an owner can read the integration status", integrations.status === 200,
+  JSON.stringify(integrations.json)?.slice(0, 240));
+const byKey = Object.fromEntries(
+  (integrations.json?.integrations ?? []).map((row) => [row.key, row]));
+expect("the Shared Drive is probed rather than assumed",
+  byKey.drive?.state === "connected" && /Maximus Client Files/.test(byKey.drive?.detail ?? ""),
+  JSON.stringify(byKey.drive)?.slice(0, 300));
+expect("passport encryption reports as configured",
+  byKey.field_encryption?.state === "connected", JSON.stringify(byKey.field_encryption));
+expect("what is not built says so rather than saying not configured",
+  ["gmail", "calendar", "whatsapp", "google_signin", "ai"]
+    .every((key) => byKey[key]?.state === "not_built"),
+  JSON.stringify(Object.entries(byKey).map(([k, v]) => `${k}=${v.state}`)));
+const officerIntegrations = await call("/api/crm/integrations", { cookie: officer.cookie });
+expect("a case officer cannot read the integration status",
+  officerIntegrations.status === 403);
+
+// ---------------------------------------------------------------------------
+section("Archived and discarded records stay identifiable");
+const wsHidden = await call("/api/crm/workspace", { cookie: officer.cookie });
+const discardable = wsHidden.json?.messages?.[0];
+expect("a message carries a date the interface can render",
+  discardable !== undefined &&
+    "createdAt" in discardable && "sentAt" in discardable &&
+    (discardable.createdAt === null || !Number.isNaN(Date.parse(discardable.createdAt))),
+  JSON.stringify(discardable)?.slice(0, 240));
+if (discardable) {
+  await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+    body: { action: "mutate", resource: "message", operation: "delete", id: discardable.id } });
+  const afterDiscard = await call("/api/crm/workspace", { cookie: officer.cookie });
+  const found = afterDiscard.json?.messages?.find((m) => m.id === discardable.id);
+  expect("a discarded draft is marked discarded rather than deleted",
+    found?.status === "discarded", JSON.stringify(found)?.slice(0, 240));
+}
+
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });
 expect("sign out succeeds", out.status === 200);

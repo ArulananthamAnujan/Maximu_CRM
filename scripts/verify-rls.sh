@@ -73,6 +73,22 @@ expect_in "a case completes from outside the visa stage" "A case can only be com
 expect_in "a visa case does not complete" "stage=completed progress=100 closed=true"
 expect_in "a completed case does not reopen" "closed=false reopened=true"
 expect_in "a portal account can move a case" "You do not have access to this case"
+expect_in "deferring a case throws away its progress" "stage=deferred progress=60 health=attention"
+expect_in "a deferred case completes without being resumed" "A case can only be completed from the visa stage"
+expect_in "a deferral is not recorded in the history" "application => deferred :: Student deferred to July intake"
+expect_in "resuming from a deferral is not recorded" "deferred => application :: Enrolled for July"
+
+echo
+echo "== Duplicate clients are found before a second record is made =="
+duplicates="$(probe 08_probe_duplicates.sql 2>&1 | grep -v '^SET$\|Output format\|^UPDATE')"
+echo "${duplicates}"
+expect_dup() { grep -qF "$2" <<< "${duplicates}" || fail "$1"; }
+expect_dup "an existing client is not found by email" "email:MAX-2026-0001:email"
+expect_dup "an existing client is not found by mobile" "mobile:MAX-2026-0001:mobile"
+expect_dup "an existing client is not found by passport" "passport:MAX-2026-0001:passport"
+expect_dup "an existing client is not found by name" "name:MAX-2026-0001:name:cases=1"
+expect_dup "a genuinely new person is reported as a duplicate" "new:0"
+expect_dup "a portal account is shown another client through the duplicate check" "portal:0"
 
 echo
 echo "== Case reassignment and owner notification =="
