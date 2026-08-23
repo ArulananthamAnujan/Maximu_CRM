@@ -34,7 +34,9 @@ with expected(area, kind, name, detail) as (values
   ('Duplicates (0015)',     'index',    'clients_duplicate_mobile_idx',     'Finds an existing client by mobile'),
   ('Duplicates (0015)',     'index',    'clients_duplicate_passport_idx',   'Finds an existing client by masked passport'),
   ('Duplicates (0015)',     'function', 'find_duplicate_clients',           'The search the intake form runs before it makes anybody'),
-  ('Messages (0016)',       'column',   'email_messages.created_at',        'A draft has a date to show before it is sent')
+  ('Messages (0016)',       'column',   'email_messages.created_at',        'A draft has a date to show before it is sent'),
+  ('Staff onboarding (0017)','column',   'staff_invitations.display_name',   'The name an invited person is added under'),
+  ('Staff onboarding (0017)','function', 'claim_staff_invitation',           'Turns an invitation into a real account on first sign-in')
 )
 select
   e.area,

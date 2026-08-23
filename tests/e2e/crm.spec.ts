@@ -597,3 +597,92 @@ test("the case drawer keeps four tabs on a phone and the rest under More", async
   await expect(drawer.getByRole("tab", { name: "Timeline" })).toBeVisible();
   await expect(drawer.getByPlaceholder(/record a call/i)).toBeVisible();
 });
+
+/* ------------------------------------------------------------------ *
+ * Adding somebody to the team, which the screen never used to do.
+ * ------------------------------------------------------------------ */
+
+test("the staff screen shows the team rather than role artwork", async ({
+  page,
+}) => {
+  await signIn(page, OWNER);
+  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await expect(page.getByText(/staff accounts/i)).toBeVisible({
+    timeout: 25_000,
+  });
+  const table = page.locator(".boardTable").first();
+  await expect(table).toBeVisible();
+  for (const column of ["Name", "Email", "Level", "Branch", "Status"])
+    await expect(
+      table.getByRole("columnheader", { name: column, exact: true }),
+    ).toBeVisible();
+  // The people who are actually in the database.
+  await expect(table).toContainText("owner@maximus.test");
+  await expect(table).toContainText("officer@maximus.test");
+});
+
+test("an owner creates a staff account and is given the password to hand over", async ({
+  page,
+}) => {
+  await signIn(page, OWNER);
+  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.getByRole("button", { name: /add staff member/i }).click();
+
+  const form = page.locator(".stackedForm");
+  await form.locator('input[name="displayName"]').fill("Browser Made Officer");
+  await form
+    .locator('input[name="email"]')
+    .fill("browser.officer@maximus.test");
+  await form.locator('select[name="level"]').selectOption("staff");
+  await form.locator('input[name="department"]').fill("Admissions");
+  await form.getByRole("button", { name: /create staff account/i }).click();
+
+  const handover = page.locator(".handoverPanel");
+  await expect(handover).toBeVisible({ timeout: 25_000 });
+  await expect(handover.locator("code")).not.toBeEmpty();
+  await expect(page.locator(".boardTable").first()).toContainText(
+    "browser.officer@maximus.test",
+  );
+});
+
+test("a branch manager is not offered administrator levels", async ({
+  page,
+}) => {
+  await signIn(page, MANAGER);
+  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.getByRole("button", { name: /add staff member/i }).click();
+  const levels = await page
+    .locator('.stackedForm select[name="level"] option')
+    .allInnerTexts();
+  expect(levels.join(" | ").toLowerCase()).not.toContain("super admin");
+  expect(levels.join(" | ").toLowerCase()).not.toContain("branch manager");
+  expect(levels.join(" | ").toLowerCase()).toContain("staff");
+});
+
+test("a staff account can be deactivated and brought back", async ({
+  page,
+}) => {
+  await signIn(page, OWNER);
+  await page.getByRole("button", { name: /staff & masters/i }).click();
+  const row = page
+    .locator(".boardTable tbody tr")
+    .filter({ hasText: "colombo@maximus.test" })
+    .first();
+  await expect(row).toBeVisible({ timeout: 25_000 });
+  await row.getByRole("button", { name: /deactivate/i }).click();
+  await expect(row).toContainText("Deactivated", { timeout: 25_000 });
+  await row.getByRole("button", { name: /reactivate/i }).click();
+  await expect(row).toContainText("Active", { timeout: 25_000 });
+});
+
+test("a branch can be added from the masters screen", async ({ page }) => {
+  await signIn(page, OWNER);
+  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.getByRole("button", { name: /add branch/i }).click();
+  const form = page.locator(".stackedForm");
+  await form.locator('input[name="name"]').fill("Kandy");
+  await form.locator('input[name="code"]').fill("KAN");
+  await form.locator('input[name="countryCode"]').fill("LK");
+  await form.getByRole("button", { name: /^Add branch$/ }).click();
+  await expect(page.getByText("Kandy (KAN)")).toBeVisible({ timeout: 25_000 });
+});

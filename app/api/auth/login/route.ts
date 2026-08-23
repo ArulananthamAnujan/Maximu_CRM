@@ -6,6 +6,7 @@ import {
   supabaseRequest,
   type SupabaseSession,
 } from "@/server/supabase";
+import { profileForUser } from "@/server/supabase-session";
 
 export const dynamic = "force-dynamic";
 
@@ -36,17 +37,25 @@ export async function POST(request: Request) {
       "/auth/v1/token?grant_type=password",
       { method: "POST", body: JSON.stringify({ email, password }) },
     );
-    const profiles = await supabaseRequest<Array<{ active: boolean }>>(
-      `/rest/v1/profiles?select=active&id=eq.${encodeURIComponent(session.user.id)}&limit=1`,
-      { method: "GET" },
-      session.access_token,
-    );
-    if (!profiles[0]?.active)
+    // Creates the profile from an invitation if this is their first sign-in,
+    // which is the only moment it can be created: a profile's id has to be the
+    // id of this Supabase login.
+    const profile = await profileForUser(session.access_token, session.user.id);
+    if (!profile)
       return Response.json(
         {
           ok: false,
           error:
-            "Your login exists, but it is not linked to an active CRM account. Contact a Maximus administrator.",
+            "Your login exists, but it is not linked to a Maximus CRM account, and there is no invitation for it. Ask an administrator to add you under Staff & Masters.",
+        },
+        { status: 403 },
+      );
+    if (!profile.active)
+      return Response.json(
+        {
+          ok: false,
+          error:
+            "Your Maximus CRM account has been deactivated. Contact a Maximus administrator.",
         },
         { status: 403 },
       );

@@ -165,6 +165,35 @@ const server = http.createServer((req, res) => {
       }
       if (url.pathname === "/auth/v1/logout") return send(204, undefined);
 
+      // The Supabase admin API, which the CRM uses on exactly one path: an
+      // administrator creating the login for a member of staff. Real Supabase
+      // requires the service-role key here, so the shim does too.
+      const adminUser = /^\/auth\/v1\/admin\/users\/?([^/?]*)$/.exec(url.pathname);
+      if (adminUser) {
+        const key = req.headers.apikey || "";
+        if (!process.env.SHIM_SERVICE_ROLE_KEY || key !== process.env.SHIM_SERVICE_ROLE_KEY)
+          return send(401, { message: "service role key required" });
+        if (req.method === "POST") {
+          const { email } = JSON.parse(raw || "{}");
+          const taken = await sql(
+            `select id::text from auth.users where lower(email) = lower(${lit(email)})`, null, false);
+          if (taken) return send(422, { msg: "email address already registered" });
+          // Wrapped so psql prints the value alone: a bare INSERT ... RETURNING
+          // also prints its "INSERT 0 1" tag, which would be read as part of it.
+          const id = await sql(
+            `with made as (insert into auth.users (id, email)` +
+            ` values (gen_random_uuid(), lower(${lit(email)})) returning id)` +
+            ` select id::text from made`,
+            null, false);
+          return send(200, { id, email });
+        }
+        if (req.method === "DELETE" && adminUser[1]) {
+          await sql(`delete from auth.users where id = ${lit(adminUser[1])}`, null, false);
+          return send(200, {});
+        }
+        return send(405, { message: "method not allowed" });
+      }
+
       if (url.pathname.startsWith("/rest/v1/rpc/")) {
         const fn = url.pathname.replace("/rest/v1/rpc/", "");
         const args = JSON.parse(raw || "{}");

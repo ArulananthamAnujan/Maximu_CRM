@@ -6,7 +6,11 @@ export type SupabaseSession = {
   user: { id: string; email?: string };
 };
 
-type SupabaseRuntime = { url: string; publishableKey: string };
+type SupabaseRuntime = {
+  url: string;
+  publishableKey: string;
+  serviceRoleKey?: string;
+};
 
 declare global {
   // Populated by the Cloudflare Worker entry point at request time.
@@ -24,6 +28,40 @@ export function supabaseConfig(): SupabaseRuntime {
   if (!url || !publishableKey)
     throw new Error("Supabase runtime configuration is missing.");
   return { url: url.replace(/\/$/, ""), publishableKey };
+}
+
+/**
+ * The service-role key, if this deployment has one. It bypasses row-level
+ * security entirely, so it is used on exactly one path -- creating the Supabase
+ * login for a member of staff an administrator is adding -- and never with any
+ * value a request supplied as a filter.
+ */
+export function serviceRoleKey(): string {
+  return (
+    globalThis.__MAXIMUS_SUPABASE__?.serviceRoleKey ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    ""
+  );
+}
+
+/** A request made with the service-role key rather than as the signed-in user. */
+export async function supabaseAdminRequest<T>(
+  path: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const key = serviceRoleKey();
+  if (!key) throw new SupabaseError(501, "No service-role key is configured.");
+  const { url } = supabaseConfig();
+  const headers = new Headers(init.headers);
+  headers.set("apikey", key);
+  headers.set("Authorization", `Bearer ${key}`);
+  if (init.body && !headers.has("Content-Type"))
+    headers.set("Content-Type", "application/json");
+  const response = await fetch(`${url}${path}`, { ...init, headers });
+  const body = await response.text();
+  if (!response.ok)
+    throw new SupabaseError(response.status, body || response.statusText);
+  return (body.trim() ? JSON.parse(body) : undefined) as T;
 }
 
 export async function supabaseRequest<T>(

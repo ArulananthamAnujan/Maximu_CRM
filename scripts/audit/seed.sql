@@ -46,5 +46,12 @@ insert into public.visa_history
   ('a0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000001','AU','485','granted','2024-07-01','2027-06-30'),
   ('a0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000002','AU','482','granted','2023-03-15','2027-12-31');
 
+-- Two Supabase logins with no CRM profile: one an administrator will invite,
+-- one nobody invited. Both are how a real deployment looks the moment before
+-- somebody is added to the team.
+insert into auth.users (id,email) values
+  ('c0000000-0000-4000-8000-000000000006','invited@maximus.test'),
+  ('c0000000-0000-4000-8000-000000000007','stranger@maximus.test');
+
 grant all on all tables in schema public to authenticated;
 grant usage, select on all sequences in schema public to authenticated;

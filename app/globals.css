@@ -8140,6 +8140,43 @@ body {
   background: color-mix(in srgb, var(--line) 45%, #fff);
   color: var(--muted);
 }
+/* The one-time password handed over when a staff account is created. */
+.handoverPanel {
+  border: 1px solid #a7d3b6;
+  background: #f1faf4;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.handoverPanel strong {
+  display: block;
+  font-size: 13px;
+  color: #14532d;
+  margin-bottom: 8px;
+}
+.handoverPanel code {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 17px;
+  letter-spacing: 0.06em;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  user-select: all;
+  overflow-wrap: anywhere;
+}
+.handoverPanel small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin: 7px 0 10px;
+  line-height: 1.45;
+}
+.mutedCell {
+  color: var(--muted);
+  font-size: 11px;
+}
 .panelHeadActions {
   display: flex;
   flex-wrap: wrap;

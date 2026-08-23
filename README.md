@@ -110,6 +110,31 @@ so credentials that are present but wrong show as broken there instead of at the
 moment somebody tries to upload a passport. Anything marked *Not built* is
 absent from the code: no configuration turns it on.
 
+## Adding a member of staff
+
+**Staff & Masters** (Super Admin, or a branch manager for their own team) lists
+everyone on the team and adds new people. A profile's id has to be the id of
+that person's Supabase login, which does not exist until somebody makes it, so
+there are two routes and the deployment decides which one that screen uses:
+
+- **With `SUPABASE_SERVICE_ROLE_KEY` set**, *Add staff member* creates the
+  login and the CRM account together and shows a one-time password to hand
+  over. That is the whole job.
+- **Without it**, the same form records an invitation. Create the Supabase
+  login for that address yourself (Authentication -> Users -> Add user), and
+  their CRM account is built from the invitation the first time they sign in.
+
+Which one is in force is stated on the **Integrations** screen. The
+service-role key bypasses row-level security completely, so it is used on that
+one path and nowhere else; without it the CRM still works, it just needs the
+extra step above.
+
+A branch manager can create Staff and Partner accounts. Only a Super Admin can
+create or promote to an administrator level, in the interface and in the API.
+
+Accounts are deactivated, never deleted: the case record has to say who did
+what for seven years. A deactivated account cannot sign in and is told why.
+
 ## Database migrations
 
 The schema lives in Supabase and is migrated separately from this code, so a

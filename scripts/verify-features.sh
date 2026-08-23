@@ -60,7 +60,12 @@ done
 echo "Seeding a two-branch agency..."
 pg_run "${work}/sql/seed.sql"
 
-SHIM_DEBUG="${SHIM_DEBUG:-}" SHIM_PORT="${shim_port}" node "${root}/scripts/audit/postgrest-shim.mjs" >"${work}/shim.log" 2>&1 &
+# The shim requires this on the Supabase admin endpoints exactly as Supabase
+# does, so the service-role path of staff creation is genuinely exercised.
+service_role_key="audit-service-role-$(head -c 12 /dev/urandom | base64 | tr -d '/+=')"
+SHIM_DEBUG="${SHIM_DEBUG:-}" SHIM_PORT="${shim_port}" \
+  SHIM_SERVICE_ROLE_KEY="${service_role_key}" \
+  node "${root}/scripts/audit/postgrest-shim.mjs" >"${work}/shim.log" 2>&1 &
 shim_pid=$!
 sleep 2
 kill -0 "${shim_pid}" 2>/dev/null || { echo "The PostgREST shim failed to start:"; cat "${work}/shim.log"; exit 70; }
@@ -83,4 +88,5 @@ SHIM_URL="http://127.0.0.1:${shim_port}" \
   DRIVE_STUB_URL="http://127.0.0.1:${drive_port}" \
   MAX_UPLOAD_MB="0.5" \
   FIELD_ENCRYPTION_KEY="$(head -c 32 /dev/urandom | base64)" \
+  SUPABASE_SERVICE_ROLE_KEY="${service_role_key}" \
   node "${root}/scripts/audit/feature-audit.mjs"

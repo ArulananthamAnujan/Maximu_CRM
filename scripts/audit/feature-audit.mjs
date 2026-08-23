@@ -15,6 +15,9 @@ const env = {
     : undefined,
   GOOGLE_SHARED_DRIVE_ID: process.env.GOOGLE_SHARED_DRIVE_ID,
   FIELD_ENCRYPTION_KEY: process.env.FIELD_ENCRYPTION_KEY,
+  // Present so the service-role path of staff creation is exercised. The shim
+  // requires it on the admin endpoints exactly as Supabase does.
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   ASSETS: { fetch: async () => new Response("", { status: 404 }) },
 };
 const DRIVE_STUB = process.env.DRIVE_STUB_URL;
@@ -1053,6 +1056,89 @@ if (discardable) {
   expect("a discarded draft is marked discarded rather than deleted",
     found?.status === "discarded", JSON.stringify(found)?.slice(0, 240));
 }
+
+// ---------------------------------------------------------------------------
+section("Adding a member of staff");
+const adminPost = (body, cookie = owner.cookie) =>
+  call("/api/crm/admin", { method: "POST", cookie, body });
+const newStaff = await adminPost({
+  action: "create_staff", displayName: "Sanjay Officer",
+  email: "sanjay@maximus.test", level: "staff", department: "Admissions" });
+expect("an owner can create a staff account",
+  newStaff.status === 200 && newStaff.json?.created === "account",
+  JSON.stringify(newStaff.json)?.slice(0, 300));
+expect("a one-time password is handed back to give to them",
+  typeof newStaff.json?.temporaryPassword === "string" &&
+    newStaff.json.temporaryPassword.length >= 16);
+const adminAfter = await call("/api/crm/admin", { cookie: owner.cookie });
+expect("the new person is on the team",
+  (adminAfter.json?.profiles ?? []).some((p) => p.email === "sanjay@maximus.test"),
+  JSON.stringify((adminAfter.json?.profiles ?? []).map((p) => p.email)));
+
+// The account they were given actually works, which is the whole point.
+const sanjay = await login("sanjay@maximus.test");
+expect("the new member of staff can sign in", sanjay.ok, JSON.stringify(sanjay.body));
+const sanjayWorkspace = await call("/api/crm/workspace", { cookie: sanjay.cookie });
+expect("the new member of staff reaches the workspace as staff",
+  sanjayWorkspace.status === 200 && sanjayWorkspace.json?.identity?.role === "staff",
+  JSON.stringify(sanjayWorkspace.json?.identity));
+expect("the new member of staff cannot open administration",
+  (await call("/api/crm/admin", { cookie: sanjay.cookie })).status === 403);
+
+const duplicateStaff = await adminPost({
+  action: "create_staff", displayName: "Sanjay Again",
+  email: "sanjay@maximus.test", level: "staff" });
+expect("the same person cannot be added twice", duplicateStaff.status === 400,
+  JSON.stringify(duplicateStaff.json)?.slice(0, 240));
+
+const managerMakesStaff = await adminPost({
+  action: "create_staff", displayName: "Rhea Officer",
+  email: "rhea@maximus.test", level: "staff" }, manager.cookie);
+expect("a branch manager can build their own team",
+  managerMakesStaff.status === 200, JSON.stringify(managerMakesStaff.json)?.slice(0, 240));
+const managerMakesAdmin = await adminPost({
+  action: "create_staff", displayName: "Rogue Admin",
+  email: "rogue@maximus.test", level: "super_admin" }, manager.cookie);
+expect("a branch manager cannot create an administrator",
+  managerMakesAdmin.status === 403, JSON.stringify(managerMakesAdmin.json)?.slice(0, 240));
+const officerMakesStaff = await adminPost({
+  action: "create_staff", displayName: "Nope", email: "nope@maximus.test" },
+  officer.cookie);
+expect("a case officer cannot create staff at all", officerMakesStaff.status === 403);
+
+// Deactivating stops the sign-in without deleting the history.
+expect("a staff account can be deactivated",
+  (await adminPost({ action: "update_profile",
+    profileId: (adminAfter.json?.profiles ?? []).find((p) => p.email === "sanjay@maximus.test")?.id,
+    active: false })).status === 200);
+const afterDeactivation = await call("/api/crm/workspace", { cookie: sanjay.cookie });
+expect("a deactivated account cannot use the CRM", afterDeactivation.status === 403,
+  JSON.stringify(afterDeactivation.json)?.slice(0, 240));
+
+// ---------------------------------------------------------------------------
+section("Inviting somebody who already has a login");
+const invited = await adminPost({ action: "create_invitation",
+  email: "invited@maximus.test",
+  roleId: (adminAfter.json?.roles ?? []).find((r) => r.level === "staff")?.id });
+expect("an invitation can be recorded", invited.status === 200,
+  JSON.stringify(invited.json)?.slice(0, 240));
+// The invitation is claimed the first time that person signs in, which is what
+// used to be missing: the row was written and nothing ever read it.
+const invitedLogin = await login("invited@maximus.test");
+expect("an invited person signs in", invitedLogin.ok, JSON.stringify(invitedLogin.body));
+const invitedWorkspace = await call("/api/crm/workspace", { cookie: invitedLogin.cookie });
+expect("signing in creates the invited person's profile",
+  invitedWorkspace.status === 200 && invitedWorkspace.json?.identity?.role === "staff",
+  JSON.stringify(invitedWorkspace.json?.identity ?? invitedWorkspace.json)?.slice(0, 300));
+const adminFinal = await call("/api/crm/admin", { cookie: owner.cookie });
+expect("the claimed invitation is marked accepted",
+  (adminFinal.json?.invitations ?? []).some(
+    (row) => row.email === "invited@maximus.test" && row.status === "accepted"),
+  JSON.stringify((adminFinal.json?.invitations ?? []).map((r) => `${r.email}=${r.status}`)));
+// Somebody with a login but no invitation is told so plainly.
+const stranger = await login("stranger@maximus.test");
+expect("a login with no invitation gets no profile",
+  !stranger.ok || (await call("/api/crm/workspace", { cookie: stranger.cookie })).status === 403);
 
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });

@@ -72,18 +72,62 @@ export async function liveSession(
     );
   }
 
+  // Somebody an administrator invited, signing in for the first time, has no
+  // profile until now: its id has to be the id of the Supabase login they have
+  // only just been given. profileForUser creates it from their invitation.
+  const profile = await profileForUser(accessToken, user.id);
+
+  if (!profile)
+    throw new LiveAccessError(
+      403,
+      "This account is not linked to a Maximus CRM profile, and there is no invitation for it. Ask an administrator to add you under Staff & Masters.",
+    );
+  if (!profile.active)
+    throw new LiveAccessError(
+      403,
+      "This Maximus CRM account has been deactivated. Ask an administrator to reactivate it.",
+    );
+  return { accessToken, identity: mapIdentity(profile), refreshed };
+}
+
+/**
+ * The caller's CRM profile, creating it from an invitation if this is the first
+ * time they have signed in. Both the sign-in route and every authenticated
+ * request go through here, so an invited person is set up whichever they reach
+ * first.
+ */
+export async function profileForUser(
+  accessToken: string,
+  userId: string,
+): Promise<ProfileRow | undefined> {
   const rows = await supabaseRequest<ProfileRow[]>(
-    `/rest/v1/profiles?select=id,organisation_id,branch_id,display_name,email,level,department,active&id=eq.${encodeURIComponent(user.id)}&limit=1`,
+    `/rest/v1/profiles?select=id,organisation_id,branch_id,display_name,email,level,department,active&id=eq.${encodeURIComponent(userId)}&limit=1`,
     { method: "GET" },
     accessToken,
   );
-  const profile = rows[0];
-  if (!profile?.active)
-    throw new LiveAccessError(
-      403,
-      "This account is not linked to an active Maximus CRM profile.",
+  return rows[0] ?? (await claimInvitation(accessToken));
+}
+
+/**
+ * Returns the profile created from a pending invitation, or undefined when
+ * there is none. A database that has not had the migration applied yet, or any
+ * other failure, is treated the same way: no profile, and the caller reports
+ * that plainly rather than crashing on a sign-in.
+ */
+async function claimInvitation(
+  accessToken: string,
+): Promise<ProfileRow | undefined> {
+  try {
+    const claimed = await supabaseRequest<ProfileRow | ProfileRow[]>(
+      "/rest/v1/rpc/claim_staff_invitation",
+      { method: "POST", body: "{}" },
+      accessToken,
     );
-  return { accessToken, identity: mapIdentity(profile), refreshed };
+    const row = Array.isArray(claimed) ? claimed[0] : claimed;
+    return row?.id ? row : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function appendRefreshCookies(

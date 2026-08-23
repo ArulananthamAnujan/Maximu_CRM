@@ -4,6 +4,7 @@ import {
   liveSession,
 } from "@/server/supabase-session";
 import { driveProbe } from "@/server/google-drive";
+import { serviceRoleKey } from "@/server/supabase";
 import { protectionConfigured } from "@/server/protected-fields";
 
 /**
@@ -49,6 +50,16 @@ export async function GET(request: Request) {
           ? "Passport numbers are encrypted with the configured key."
           : "FIELD_ENCRYPTION_KEY is not set, so passport numbers cannot be stored. Generate one with: openssl rand -base64 32",
         setup: ["FIELD_ENCRYPTION_KEY"],
+      },
+      {
+        key: "staff_logins",
+        name: "Creating staff logins",
+        purpose: "Adding a member of staff from inside the CRM.",
+        state: serviceRoleKey() ? "connected" : "not_configured",
+        detail: serviceRoleKey()
+          ? "Staff & Masters creates the login and the CRM account together, and hands you a one-time password."
+          : "Staff & Masters records the invitation instead. Create the Supabase login for that address yourself (Authentication -> Users -> Add user); their CRM account is set up the first time they sign in.",
+        setup: ["SUPABASE_SERVICE_ROLE_KEY"],
       },
       {
         key: "gmail",

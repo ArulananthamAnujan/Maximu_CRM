@@ -15,6 +15,7 @@ interface Env {
   GOOGLE_PRIVATE_KEY?: string;
   GOOGLE_SHARED_DRIVE_ID?: string;
   FIELD_ENCRYPTION_KEY?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -49,11 +50,18 @@ const worker = {
     ).__MAXIMUS_DB__ = env.DB;
     (
       globalThis as typeof globalThis & {
-        __MAXIMUS_SUPABASE__?: { url: string; publishableKey: string };
+        __MAXIMUS_SUPABASE__?: {
+          url: string;
+          publishableKey: string;
+          serviceRoleKey: string;
+        };
       }
     ).__MAXIMUS_SUPABASE__ = {
       url: env.SUPABASE_URL ?? "",
       publishableKey: env.SUPABASE_PUBLISHABLE_KEY ?? "",
+      // Optional. Present only so an administrator can create a staff login
+      // from inside the CRM; it is used on that one path and nowhere else.
+      serviceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY ?? "",
     };
     // Documents live in the organisation's Shared Drive; the service account
     // credentials never leave the Worker.

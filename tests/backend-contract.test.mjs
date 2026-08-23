@@ -230,6 +230,45 @@ test("a message has a date to show before it is ever sent", async () => {
   assert.match(page, /return "Not sent"/);
 });
 
+test("an invited person can actually become a staff account", async () => {
+  const sql = await read("supabase/migrations/0017_staff_onboarding.sql");
+  // The invitation used to be written and read by nothing at all.
+  assert.match(sql, /create or replace function public\.claim_staff_invitation/i);
+  assert.match(sql, /security definer/i);
+  // Bounded: the email comes from auth.users for auth.uid(), never from an
+  // argument, so nobody can claim an invitation addressed to someone else.
+  assert.match(sql, /select email into caller_email from auth\.users where id = caller/);
+  assert.doesNotMatch(sql, /claim_staff_invitation\(\s*\w+\s+text/i);
+  assert.match(sql, /status = 'pending'/);
+  assert.match(sql, /expires_at > now\(\)/);
+  assert.match(sql, /grant execute on function public\.claim_staff_invitation\(\) to authenticated/i);
+
+  // Both the sign-in route and every authenticated request go through the same
+  // lookup, so it does not matter which one an invited person reaches first.
+  const session = await read("server/supabase-session.ts");
+  assert.match(session, /export async function profileForUser/);
+  assert.match(session, /rpc\/claim_staff_invitation/);
+  const login = await read("app/api/auth/login/route.ts");
+  assert.match(login, /profileForUser\(session\.access_token, session\.user\.id\)/);
+});
+
+test("the service-role key is used on one path and never as a filter", async () => {
+  const supabase = await read("server/supabase.ts");
+  assert.match(supabase, /export async function supabaseAdminRequest/);
+  const admin = await read("app/api/crm/admin/route.ts");
+  // Exactly the two admin calls that create and undo a login.
+  const uses = admin.match(/supabaseAdminRequest/g) ?? [];
+  assert.equal(uses.length, 3, "service-role calls beyond creating a login");
+  assert.match(admin, /supabaseAdminRequest<\{ id\?: string \}>\("\/auth\/v1\/admin\/users"/);
+  // Only a Super Admin makes another administrator.
+  assert.match(admin, /Only a Super Admin can create an administrator account/);
+  const readme = await read("README.md");
+  assert.match(readme, /Adding a member of staff/i);
+  assert.match(readme, /SUPABASE_SERVICE_ROLE_KEY/);
+  const example = await read(".env.example");
+  assert.match(example, /SUPABASE_SERVICE_ROLE_KEY=/);
+});
+
 test("the browser suite is wired into CI and needs no committed key", async () => {
   const workflow = await read(".github/workflows/ci.yml");
   const harness = await read("scripts/verify-features.sh");

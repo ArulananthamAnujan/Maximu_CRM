@@ -3439,85 +3439,530 @@ function ReadinessPanel() {
   );
 }
 
+const STAFF_LEVELS: [string, string][] = [
+  ["staff", "Staff — assigned clients in their branch"],
+  ["partner", "Partner — external agent, assigned clients only"],
+  ["manager", "Manager — their branch's cases and finance"],
+  ["branch_admin", "Branch Manager — their branch, staff and finance"],
+  ["super_admin", "Super Admin — everything, every branch"],
+];
+const levelLabel = (level: string) =>
+  STAFF_LEVELS.find(([key]) => key === level)?.[1].split(" — ")[0] ??
+  humanise(level);
+
+type AdminProfile = {
+  id: string;
+  display_name: string;
+  email: string;
+  level: string;
+  department: string | null;
+  branch_id: string | null;
+  active: boolean;
+  created_at: string;
+};
+type AdminInvitation = {
+  id: string;
+  email: string;
+  display_name: string | null;
+  level: string | null;
+  branch_id: string | null;
+  status: string;
+  expires_at: string;
+  created_at: string;
+};
+type AdminBranch = {
+  id: string;
+  name: string;
+  code: string;
+  country_code: string;
+  active: boolean;
+};
+
+/**
+ * Staff & Masters. This is where an agency owner adds a person to the team,
+ * which is the one thing the screen never used to do: it showed role artwork
+ * and a permission table, and the invitation the API could write was read by
+ * nothing.
+ */
 function AdminView({
   openModal,
-  clearData,
-  setActive,
   roles,
+  isOwner,
+  currentProfileId,
 }: {
   openModal: (x: ModalType) => void;
-  clearData: () => void;
-  setActive: (x: ModuleKey) => void;
   roles: { id: string; name: string; scope: string }[];
+  isOwner: boolean;
+  currentProfileId: string;
 }) {
+  const [profiles, setProfiles] = useState<AdminProfile[]>([]);
+  const [invitations, setInvitations] = useState<AdminInvitation[]>([]);
+  const [adminBranches, setAdminBranches] = useState<AdminBranch[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [working, setWorking] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addingBranch, setAddingBranch] = useState(false);
+  const [handover, setHandover] = useState<{
+    message: string;
+    password?: string;
+  } | null>(null);
+
+  const read = async () => {
+    const response = await fetch("/api/crm/admin", { cache: "no-store" });
+    const result = await response.json();
+    if (!response.ok)
+      throw new Error(result.error || "Administration could not be loaded.");
+    return result as {
+      profiles: AdminProfile[];
+      invitations: AdminInvitation[];
+      branches: AdminBranch[];
+    };
+  };
+  const apply = (result: {
+    profiles: AdminProfile[];
+    invitations: AdminInvitation[];
+    branches: AdminBranch[];
+  }) => {
+    setProfiles(result.profiles ?? []);
+    setInvitations(result.invitations ?? []);
+    setAdminBranches(result.branches ?? []);
+  };
+  const reload = async () => {
+    try {
+      apply(await read());
+      setError("");
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "That could not be loaded.",
+      );
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await read();
+        if (!cancelled) {
+          apply(result);
+          setLoading(false);
+        }
+      } catch (reason) {
+        if (!cancelled) {
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "Administration could not be loaded.",
+          );
+          setLoading(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Posts an administration action and refreshes the screen. */
+  const send = async (body: Record<string, unknown>) => {
+    setWorking(true);
+    try {
+      const response = await fetch("/api/crm/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "That did not save.");
+      await reload();
+      setError("");
+      return result as { message?: string; temporaryPassword?: string };
+    } catch (reason) {
+      const message =
+        reason instanceof Error ? reason.message : "That did not save.";
+      setError(message);
+      return null;
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const branchName = (id: string | null) =>
+    adminBranches.find((branch) => branch.id === id)?.name ?? "No branch";
+  const pending = invitations.filter((row) => row.status === "pending");
+
   return (
     <section className="adminStack">
-      <article className="panel roleHero">
-        <div>
-          <span className="kicker">LEGACY-COMPATIBLE ACCESS</span>
-          <h2>Four protected account experiences</h2>
-          <p>
-            The former Employee account is represented as Staff. Client /
-            Student is a separate login and no longer appears as a normal Admin
-            navigation module.
-          </p>
-        </div>
-        <button
-          className="heroPrimary"
-          onClick={() =>
-            alert(
-              "Client access is shown automatically when a linked client account signs in.",
-            )
-          }
-        >
-          <Eye size={16} />
-          How client access works
-        </button>
-      </article>
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">SYSTEM ROLES</span>
-            <h2>Roles and data scope</h2>
+            <span className="kicker">YOUR TEAM</span>
+            <h2>Staff accounts</h2>
           </div>
-          <button className="primaryButton" onClick={() => openModal("role")}>
+          <div className="panelHeadActions">
+            <button className="ghostButton" onClick={() => openModal("role")}>
+              <ShieldCheck size={15} />
+              Create staff role
+            </button>
+            <button
+              className="primaryButton"
+              onClick={() => {
+                setAdding(!adding);
+                setHandover(null);
+              }}
+            >
+              <Plus size={16} />
+              {adding ? "Close" : "Add staff member"}
+            </button>
+          </div>
+        </div>
+        {error && <p className="caseWorkError">{error}</p>}
+
+        {handover && (
+          <div className="handoverPanel">
+            <strong>{handover.message}</strong>
+            {handover.password && (
+              <>
+                <code>{handover.password}</code>
+                <small>
+                  This is shown once and is not stored anywhere you can read it
+                  again. If it is lost, reset the password in Supabase.
+                </small>
+              </>
+            )}
+            <button className="ghostButton" onClick={() => setHandover(null)}>
+              Done
+            </button>
+          </div>
+        )}
+
+        {adding && (
+          <form
+            className="stackedForm"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const result = await send({
+                action: "create_staff",
+                displayName: data.get("displayName"),
+                email: data.get("email"),
+                level: data.get("level"),
+                branchId: data.get("branchId") || null,
+                department: data.get("department"),
+              });
+              if (result) {
+                setAdding(false);
+                setHandover({
+                  message: result.message ?? "Staff account created.",
+                  password: result.temporaryPassword,
+                });
+              }
+            }}
+          >
+            <label>
+              Full name *<input name="displayName" required />
+            </label>
+            <label>
+              Work email *
+              <input name="email" type="email" required />
+              <small className="fieldHint">
+                This is the address they sign in with.
+              </small>
+            </label>
+            <label>
+              Account level *
+              <select name="level" defaultValue="staff">
+                {STAFF_LEVELS.filter(
+                  ([key]) => isOwner || key === "staff" || key === "partner",
+                ).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              {!isOwner && (
+                <small className="fieldHint">
+                  Only a Super Admin can create an administrator account.
+                </small>
+              )}
+            </label>
+            <label>
+              Branch
+              <select name="branchId" defaultValue="">
+                <option value="">Your own branch</option>
+                {adminBranches
+                  .filter((branch) => branch.active)
+                  .map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name} ({branch.code})
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Department
+              <input name="department" placeholder="e.g. Admissions" />
+            </label>
+            <div className="formActions">
+              <button className="primaryButton" disabled={working}>
+                <Check size={15} />
+                {working ? "Creating…" : "Create staff account"}
+              </button>
+              <button
+                type="button"
+                className="ghostButton"
+                onClick={() => setAdding(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+
+        {loading ? (
+          <div className="skeletonRow">
+            <span className="skeletonBar" />
+            <span className="skeletonBar short" />
+          </div>
+        ) : profiles.length === 0 ? (
+          <p className="boardEmpty">Nobody is on the team yet.</p>
+        ) : (
+          <div className="recordTableWrap">
+            <table className="recordTable boardTable">
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Email</th>
+                  <th scope="col">Level</th>
+                  <th scope="col">Branch</th>
+                  <th scope="col">Department</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {profiles.map((person) => (
+                  <tr
+                    key={person.id}
+                    className={person.active ? "" : "archivedRow"}
+                  >
+                    <td>{person.display_name}</td>
+                    <td>{person.email}</td>
+                    <td>
+                      {isOwner && person.level !== "student" ? (
+                        <select
+                          aria-label={`Account level for ${person.display_name}`}
+                          value={person.level}
+                          disabled={working}
+                          onChange={(event) =>
+                            void send({
+                              action: "update_profile",
+                              profileId: person.id,
+                              level: event.target.value,
+                            })
+                          }
+                        >
+                          {STAFF_LEVELS.map(([key]) => (
+                            <option key={key} value={key}>
+                              {levelLabel(key)}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        levelLabel(person.level)
+                      )}
+                    </td>
+                    <td>
+                      <select
+                        aria-label={`Branch for ${person.display_name}`}
+                        value={person.branch_id ?? ""}
+                        disabled={working}
+                        onChange={(event) =>
+                          void send({
+                            action: "update_profile",
+                            profileId: person.id,
+                            branchId: event.target.value || null,
+                          })
+                        }
+                      >
+                        <option value="">No branch</option>
+                        {adminBranches.map((branch) => (
+                          <option key={branch.id} value={branch.id}>
+                            {branch.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>{person.department || "—"}</td>
+                    <td>{person.active ? "Active" : "Deactivated"}</td>
+                    <td>
+                      {person.id === currentProfileId ? (
+                        <span className="mutedCell">This is you</span>
+                      ) : (
+                        <button
+                          className="linkButton"
+                          disabled={working}
+                          onClick={() =>
+                            void send({
+                              action: "update_profile",
+                              profileId: person.id,
+                              active: !person.active,
+                            })
+                          }
+                        >
+                          {person.active ? "Deactivate" : "Reactivate"}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="coverageIntro">
+          Deactivating somebody keeps their history and stops them signing in.
+          Accounts are not deleted, because the case record has to say who did
+          what for seven years.
+        </p>
+      </article>
+
+      {pending.length > 0 && (
+        <article className="panel listPanel">
+          <div className="panelHead">
+            <div>
+              <span className="kicker">WAITING TO SIGN IN</span>
+              <h2>Invitations</h2>
+            </div>
+          </div>
+          <p className="coverageIntro">
+            Their CRM account is created the first time they sign in with the
+            Supabase login for that address.
+          </p>
+          {pending.map((invitation) => (
+            <div className="functionalRow" key={invitation.id}>
+              <UserCog size={18} />
+              <div>
+                <strong>{invitation.display_name || invitation.email}</strong>
+                <span>
+                  {invitation.email} · {levelLabel(invitation.level ?? "staff")}{" "}
+                  · {branchName(invitation.branch_id)} · expires{" "}
+                  {invitation.expires_at.slice(0, 10)}
+                </span>
+              </div>
+              <button
+                className="linkButton"
+                disabled={working}
+                onClick={() =>
+                  void send({
+                    action: "revoke_invitation",
+                    invitationId: invitation.id,
+                  })
+                }
+              >
+                Revoke
+              </button>
+            </div>
+          ))}
+        </article>
+      )}
+
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">MASTERS</span>
+            <h2>Branches</h2>
+          </div>
+          <button
+            className="primaryButton"
+            onClick={() => setAddingBranch(!addingBranch)}
+          >
             <Plus size={16} />
-            Create staff role
+            {addingBranch ? "Close" : "Add branch"}
           </button>
         </div>
-        <div className="systemRoleGrid">
-          {(
-            Object.entries(roleConfig) as [
-              AppRole,
-              (typeof roleConfig)[AppRole],
-            ][]
-          ).map(([key, r]) => (
-            <button key={key} onClick={() => alert(`${r.label}: ${r.scope}`)}>
-              <div className={`roleGlyph ${key}`}>{r.initials}</div>
-              <strong>{r.label}</strong>
-              <small>Earlier portal: {r.legacy}</small>
-              <span>{r.scope}</span>
-              <b>
-                View permission scope <ArrowRight size={14} />
-              </b>
-            </button>
-          ))}
-        </div>
-        {roles.length ? (
-          <div className="customRoles">
-            <span className="kicker">CUSTOM STAFF ROLES</span>
-            {roles.map((r) => (
-              <div className="functionalRow" key={r.id}>
-                <UserCog size={18} />
-                <div>
-                  <strong>{r.name}</strong>
-                  <span>{r.scope} · inherits Staff permissions</span>
-                </div>
+        {addingBranch && (
+          <form
+            className="stackedForm"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const data = new FormData(event.currentTarget);
+              const result = await send({
+                action: "create_branch",
+                name: data.get("name"),
+                code: data.get("code"),
+                countryCode: data.get("countryCode"),
+              });
+              if (result) setAddingBranch(false);
+            }}
+          >
+            <label>
+              Branch name *<input name="name" required />
+            </label>
+            <label>
+              Code *
+              <input name="code" required maxLength={8} placeholder="MEL" />
+            </label>
+            <label>
+              Country *
+              <input
+                name="countryCode"
+                required
+                maxLength={2}
+                placeholder="AU"
+              />
+            </label>
+            <div className="formActions">
+              <button className="primaryButton" disabled={working}>
+                <Check size={15} />
+                Add branch
+              </button>
+              <button
+                type="button"
+                className="ghostButton"
+                onClick={() => setAddingBranch(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        )}
+        {adminBranches.length === 0 ? (
+          <p className="boardEmpty">No branches yet.</p>
+        ) : (
+          adminBranches.map((branch) => (
+            <div className="functionalRow" key={branch.id}>
+              <Building2 size={18} />
+              <div>
+                <strong>
+                  {branch.name} ({branch.code})
+                </strong>
+                <span>
+                  {branch.country_code} ·{" "}
+                  {profiles.filter((p) => p.branch_id === branch.id).length}{" "}
+                  staff
+                </span>
               </div>
-            ))}
-          </div>
-        ) : null}
+              <Status value={branch.active ? "Active" : "Closed"} />
+              <button
+                className="linkButton"
+                disabled={working}
+                onClick={() =>
+                  void send({
+                    action: "update_branch",
+                    branchId: branch.id,
+                    active: !branch.active,
+                  })
+                }
+              >
+                {branch.active ? "Close" : "Reopen"}
+              </button>
+            </div>
+          ))
+        )}
       </article>
+
       <article className="panel permissionPanel">
         <div className="panelHead">
           <div>
@@ -3551,58 +3996,21 @@ function AdminView({
             </div>
           ))}
         </div>
-      </article>
-      <section className="adminLayout">
-        <article className="panel listPanel">
-          <div className="settingsCards">
-            <button onClick={() => openModal("role")}>
-              <ShieldCheck size={20} />
-              <strong>Roles & permissions</strong>
-              <span>Add specialised staff roles</span>
-            </button>
-            <button
-              onClick={() =>
-                alert(
-                  "Supabase project created. Schema and secure role policies are being deployed.",
-                )
-              }
-            >
-              <Building2 size={20} />
-              <strong>Supabase backend</strong>
-              <span>Project ready in Sydney</span>
-            </button>
-            <button onClick={() => setActive("documents")}>
-              <FolderOpen size={20} />
-              <strong>Google Workspace</strong>
-              <span>Prepare Drive and Gmail</span>
-            </button>
-            <button className="dangerSetting" onClick={clearData}>
-              <Trash2 size={20} />
-              <strong>Data retention controls</strong>
-              <span>Archive records through authorised workflows</span>
-            </button>
+        {roles.length > 0 && (
+          <div className="customRoles">
+            <span className="kicker">CUSTOM STAFF ROLES</span>
+            {roles.map((r) => (
+              <div className="functionalRow" key={r.id}>
+                <UserCog size={18} />
+                <div>
+                  <strong>{r.name}</strong>
+                  <span>{r.scope} · inherits Staff permissions</span>
+                </div>
+              </div>
+            ))}
           </div>
-        </article>
-        <aside className="panel integrationCard">
-          <span className="kicker">CLIENT PORTAL SEPARATION</span>
-          <h2>Corrected</h2>
-          <p>
-            Admin and Staff no longer see the Client portal in normal
-            navigation. A linked client account automatically opens the
-            restricted personal journey experience.
-          </p>
-          <button
-            className="ghostButton full"
-            onClick={() =>
-              alert(
-                "Create or link a student profile in Supabase, then sign in with that account.",
-              )
-            }
-          >
-            View client access instructions
-          </button>
-        </aside>
-      </section>
+        )}
+      </article>
     </section>
   );
 }
@@ -6294,10 +6702,6 @@ export default function Home() {
         void mutateRemote("case", "archive", record.dbId);
       }
     },
-    clearData = () =>
-      say(
-        "Live CRM records cannot be cleared from a browser. Use authorised archive actions.",
-      ),
     exportData = () => {
       const blob = new Blob(
           [
@@ -6696,9 +7100,9 @@ export default function Home() {
       <>
         <AdminView
           openModal={open}
-          clearData={clearData}
-          setActive={setActive}
           roles={roles}
+          isOwner={role === "super_admin"}
+          currentProfileId={identity?.profileId ?? ""}
         />
         <ReadinessPanel />
         <FeatureCoverage />

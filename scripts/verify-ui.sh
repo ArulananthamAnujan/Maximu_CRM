@@ -55,7 +55,10 @@ done
 echo "Seeding a two-branch agency..."
 pg_run "${work}/sql/seed.sql"
 
-SHIM_DEBUG="${SHIM_DEBUG:-}" SHIM_PORT="${shim_port}" node "${root}/scripts/audit/postgrest-shim.mjs" \
+service_role_key="ui-service-role-$(head -c 12 /dev/urandom | base64 | tr -d '/+=')"
+SHIM_DEBUG="${SHIM_DEBUG:-}" SHIM_PORT="${shim_port}" \
+  SHIM_SERVICE_ROLE_KEY="${service_role_key}" \
+  node "${root}/scripts/audit/postgrest-shim.mjs" \
   >"${work}/shim.log" 2>&1 &
 shim_pid=$!
 DRIVE_STUB_PORT="${drive_port}" \
@@ -72,6 +75,7 @@ SUPABASE_URL="http://127.0.0.1:${shim_port}" \
   GOOGLE_SHARED_DRIVE_ID="shared-drive-root" \
   GOOGLE_PRIVATE_KEY_FILE="${work}/keys/service.pem" \
   FIELD_ENCRYPTION_KEY="$(head -c 32 /dev/urandom | base64)" \
+  SUPABASE_SERVICE_ROLE_KEY="${service_role_key}" \
   WORKER_PORT="${worker_port}" \
   node "${root}/scripts/audit/worker-server.mjs" >"${work}/worker.log" 2>&1 &
 worker_pid=$!
