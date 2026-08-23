@@ -46,6 +46,20 @@ insert into public.visa_history
   ('a0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000001','AU','485','granted','2024-07-01','2027-06-30'),
   ('a0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000002','AU','482','granted','2023-03-15','2027-12-31');
 
+-- A second case officer in the same branch, who owns neither the client nor
+-- the case: the colleague whose reach the staff scope is about.
+insert into auth.users (id,email) values
+  ('c0000000-0000-4000-8000-000000000008','second.officer@maximus.test');
+insert into public.profiles (id,organisation_id,branch_id,display_name,email,level,department) values
+  ('c0000000-0000-4000-8000-000000000008','a0000000-0000-4000-8000-000000000001','b0000000-0000-4000-8000-000000000001','Nuwan Officer','second.officer@maximus.test','staff','Admissions');
+
+-- A commission claim raised as an invoice. It is agency income from a partner
+-- and must never appear in the client's portal.
+insert into public.invoices
+  (id,organisation_id,client_id,case_id,invoice_number,invoice_type,total,paid,state,issued_on,due_on) values
+  ('f3000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000001','e0000000-0000-4000-8000-000000000001','INV-2026-0900','professional_fee',2200,700,'issued','2026-07-01','2026-08-01'),
+  ('f3000000-0000-4000-8000-000000000002','a0000000-0000-4000-8000-000000000001','d0000000-0000-4000-8000-000000000001','e0000000-0000-4000-8000-000000000001','COM-2026-0900','commission',9000,0,'issued','2026-07-01','2026-09-01');
+
 -- Two Supabase logins with no CRM profile: one an administrator will invite,
 -- one nobody invited. Both are how a real deployment looks the moment before
 -- somebody is added to the team.

@@ -102,6 +102,7 @@ Not built, and labelled as such in the interface rather than implied:
 | Campaigns | Not implemented. Templates are reusable wording, not a campaign engine. |
 | Google sign-in | Sign-in is Supabase email and password. The Google button is not wired to an OAuth flow. |
 | AI assistant | A placeholder screen. No provider is connected. |
+| Lead scoring, follow-up SLA automation, structured lost-lead reasons, campaign performance, Course Finder | Not implemented. |
 
 **Integrations** (owner and branch manager) reports this from the running
 deployment rather than from this table: the Shared Drive is probed for real --
@@ -109,6 +110,33 @@ an assertion is signed, exchanged for a token and used to read the drive back --
 so credentials that are present but wrong show as broken there instead of at the
 moment somebody tries to upload a passport. Anything marked *Not built* is
 absent from the code: no configuration turns it on.
+
+## Who can do what
+
+Reading and writing are separate questions, and the difference matters most for
+a case officer.
+
+| | Super Admin | Branch Manager | Case officer | Client |
+|---|---|---|---|---|
+| See every branch | Yes | No | No | No |
+| See their branch's cases | Yes | Yes | Yes, read-only unless assigned | No |
+| Work a case (edit, move, defer, case file) | Yes | Their branch | **Only cases assigned to them** | No |
+| Reassign a case | Yes | Yes | No | No |
+| Archive a case | Yes | Yes | Request only — managers are notified | No |
+| Client fees | All | Their branch | Only their own clients' fees | Their own invoices |
+| Commissions and partner claims | Yes | Yes | Never | Never |
+| Export | Everything they can see | Their branch | Only their own cases | No export |
+| Staff, branches, integrations | Yes | Staff and branches | No | No |
+
+Every export writes an audit entry naming who exported what.
+
+A case officer can still *see* a colleague's case, because cover and handover
+depend on it. What they cannot do is change it: the database refuses, and the
+refusal says to ask a manager for a reassignment rather than failing silently.
+Reassigning a case is what grants access, and taking it away removes it.
+
+This is enforced in PostgreSQL by `public.can_modify_client`, not in the
+interface, so it holds for anything that talks to the database.
 
 ## Adding a member of staff
 

@@ -8173,6 +8173,10 @@ body {
   margin: 7px 0 10px;
   line-height: 1.45;
 }
+.unlinkedHint {
+  color: #b45309 !important;
+  font-weight: 600;
+}
 .mutedCell {
   color: var(--muted);
   font-size: 11px;

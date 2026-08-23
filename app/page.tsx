@@ -214,6 +214,10 @@ type InvoiceRecord = {
   id: string;
   client: string;
   amount: number;
+  paid: number;
+  balance: number;
+  type: string;
+  issued: string;
   due: string;
   status: string;
 };
@@ -578,6 +582,39 @@ const featureCoverage = [
   ],
 ] as const;
 
+/**
+ * What each screen is called in the client portal. The staff labels name
+ * commissions, partner claims and internal drafts; a client must never see any
+ * of that, so their screens are titled separately rather than reworded.
+ */
+const clientMeta: Partial<Record<ModuleKey, [string, string, string]>> = {
+  portal: [
+    "My journey",
+    "Maximus",
+    "Where your application has got to, and what we need from you next.",
+  ],
+  calendar: [
+    "My appointments",
+    "Maximus",
+    "Consultations and reviews booked with your case team.",
+  ],
+  documents: [
+    "My documents",
+    "Maximus",
+    "The documents we have asked you for, and the ones you have sent us.",
+  ],
+  communications: [
+    "My messages",
+    "Maximus",
+    "Messages between you and your case team.",
+  ],
+  finance: [
+    "My invoices",
+    "Maximus",
+    "What you have been invoiced, what you have paid and what is outstanding.",
+  ],
+};
+
 const meta: Record<ModuleKey, [string, string, string]> = {
   dashboard: [
     "Operations dashboard",
@@ -656,8 +693,8 @@ const meta: Record<ModuleKey, [string, string, string]> = {
   ],
   finance: [
     "Accounts",
-    "Invoices & commissions",
-    "Client invoices, partner claims and institution commission invoices.",
+    "Client fees",
+    "Client invoices, payments and outstanding balances.",
   ],
   reports: [
     "Reports",
@@ -2535,10 +2572,11 @@ function ClientModuleView({
     return (
       <article className="panel clientEmpty">
         <LockKeyhole size={28} />
-        <h2>No linked client record</h2>
+        <h2>Your file is not connected to this login yet</h2>
         <p>
-          Supabase will resolve the signed-in account through client_user_links
-          before returning any data.
+          Your Maximus case team needs to connect your file to this account
+          before your journey, documents, appointments and invoices appear here.
+          Contact your case officer and they can do it in a moment.
         </p>
       </article>
     );
@@ -2661,33 +2699,70 @@ function ClientModuleView({
       </article>
     );
   }
-  const own = invoices.filter((x) => x.client === client.name);
+  // Only what this client has been billed. A commission claim raised against a
+  // partner or an institution is never a client's business and never appears
+  // here, whatever else the finance module holds.
+  const own = invoices.filter(
+    (x) => x.client === client.name && CLIENT_INVOICE_TYPES.includes(x.type),
+  );
+  const billed = own.reduce((sum, i) => sum + i.amount, 0);
+  const paid = own.reduce((sum, i) => sum + i.paid, 0);
+  const outstanding = own.reduce((sum, i) => sum + i.balance, 0);
+  const money = (value: number) =>
+    `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   return (
-    <article className="panel listPanel">
-      <div className="panelHead">
-        <div>
-          <span className="kicker">MY ACCOUNT</span>
-          <h2>Invoices and receipts</h2>
-        </div>
-        <LockKeyhole size={18} />
+    <>
+      <div className="miniStats">
+        <article>
+          <span>Invoiced</span>
+          <strong>{money(billed)}</strong>
+          <small>
+            {own.length} invoice{own.length === 1 ? "" : "s"}
+          </small>
+        </article>
+        <article>
+          <span>Paid</span>
+          <strong>{money(paid)}</strong>
+          <small>Thank you</small>
+        </article>
+        <article>
+          <span>Outstanding</span>
+          <strong>{money(outstanding)}</strong>
+          <small>
+            {outstanding > 0 ? "Balance still to pay" : "Nothing outstanding"}
+          </small>
+        </article>
       </div>
-      {own.length ? (
-        own.map((i) => (
-          <div className="functionalRow" key={i.id}>
-            <CircleDollarSign size={18} />
-            <div>
-              <strong>${i.amount.toLocaleString()}</strong>
-              <span>Due {i.due || "not set"}</span>
-            </div>
-            <Status value={i.status} />
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">MY ACCOUNT</span>
+            <h2>Invoices and receipts</h2>
           </div>
-        ))
-      ) : (
-        <p className="restrictedEmpty">
-          No invoices are linked to your account.
-        </p>
-      )}
-    </article>
+          <LockKeyhole size={18} />
+        </div>
+        {own.length ? (
+          own.map((i) => (
+            <div className="functionalRow" key={i.id}>
+              <CircleDollarSign size={18} />
+              <div>
+                <strong>{money(i.amount)}</strong>
+                <span>
+                  {i.issued ? `Issued ${i.issued} · ` : ""}Due{" "}
+                  {i.due || "not set"} · Paid {money(i.paid)} · Balance{" "}
+                  {money(i.balance)}
+                </span>
+              </div>
+              <Status value={i.status} />
+            </div>
+          ))
+        ) : (
+          <p className="restrictedEmpty">
+            You have not been invoiced for anything yet.
+          </p>
+        )}
+      </article>
+    </>
   );
 }
 type AgencyReport = {
@@ -3440,11 +3515,12 @@ function ReadinessPanel() {
 }
 
 const STAFF_LEVELS: [string, string][] = [
-  ["staff", "Staff — assigned clients in their branch"],
-  ["partner", "Partner — external agent, assigned clients only"],
+  ["staff", "Staff — the cases assigned to them"],
+  ["partner", "Partner — external agent, assigned cases only"],
   ["manager", "Manager — their branch's cases and finance"],
   ["branch_admin", "Branch Manager — their branch, staff and finance"],
   ["super_admin", "Super Admin — everything, every branch"],
+  ["student", "Client / Student — their own file only"],
 ];
 const levelLabel = (level: string) =>
   STAFF_LEVELS.find(([key]) => key === level)?.[1].split(" — ")[0] ??
@@ -3489,15 +3565,20 @@ function AdminView({
   roles,
   isOwner,
   currentProfileId,
+  clients,
 }: {
   openModal: (x: ModalType) => void;
   roles: { id: string; name: string; scope: string }[];
   isOwner: boolean;
   currentProfileId: string;
+  clients: { id: string; name: string }[];
 }) {
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
   const [invitations, setInvitations] = useState<AdminInvitation[]>([]);
   const [adminBranches, setAdminBranches] = useState<AdminBranch[]>([]);
+  const [clientLinks, setClientLinks] = useState<
+    { profile_id: string; client_id: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
@@ -3517,16 +3598,19 @@ function AdminView({
       profiles: AdminProfile[];
       invitations: AdminInvitation[];
       branches: AdminBranch[];
+      clientLinks: { profile_id: string; client_id: string }[];
     };
   };
   const apply = (result: {
     profiles: AdminProfile[];
     invitations: AdminInvitation[];
     branches: AdminBranch[];
+    clientLinks: { profile_id: string; client_id: string }[];
   }) => {
     setProfiles(result.profiles ?? []);
     setInvitations(result.invitations ?? []);
     setAdminBranches(result.branches ?? []);
+    setClientLinks(result.clientLinks ?? []);
   };
   const reload = async () => {
     try {
@@ -3568,11 +3652,17 @@ function AdminView({
   const send = async (body: Record<string, unknown>) => {
     setWorking(true);
     try {
-      const response = await fetch("/api/crm/admin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      // Connecting a portal login lives with the other case operations, so the
+      // caller says which endpoint the action belongs to.
+      const { endpoint, ...payload } = body as { endpoint?: string };
+      const response = await fetch(
+        endpoint === "operations" ? "/api/crm/operations" : "/api/crm/admin",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "That did not save.");
       await reload();
@@ -3591,6 +3681,7 @@ function AdminView({
   const branchName = (id: string | null) =>
     adminBranches.find((branch) => branch.id === id)?.name ?? "No branch";
   const pending = invitations.filter((row) => row.status === "pending");
+  const portalAccounts = profiles.filter((row) => row.level === "student");
 
   return (
     <section className="adminStack">
@@ -3871,6 +3962,69 @@ function AdminView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
+            <span className="kicker">CLIENT PORTAL</span>
+            <h2>Portal logins</h2>
+          </div>
+        </div>
+        <p className="coverageIntro">
+          A client sees nothing until their login is connected to their file.
+          Until then their portal says so and asks them to contact you.
+        </p>
+        {portalAccounts.length === 0 ? (
+          <p className="boardEmpty">
+            No client logins yet. Create one under Add staff member with the
+            Client / Student level, or invite them.
+          </p>
+        ) : (
+          portalAccounts.map((person) => {
+            const linked = clientLinks.find(
+              (link) => link.profile_id === person.id,
+            );
+            return (
+              <div className="functionalRow" key={person.id}>
+                <GraduationCap size={18} />
+                <div>
+                  <strong>{person.display_name}</strong>
+                  <span>{person.email}</span>
+                  <small className={linked ? "" : "unlinkedHint"}>
+                    {linked
+                      ? `Connected to ${
+                          clients.find((c) => c.id === linked.client_id)
+                            ?.name ?? "a client record"
+                        }`
+                      : "Not connected to a client record yet"}
+                  </small>
+                </div>
+                <select
+                  aria-label={`Client record for ${person.display_name}`}
+                  value={linked?.client_id ?? ""}
+                  disabled={working}
+                  onChange={(event) => {
+                    if (!event.target.value) return;
+                    void send({
+                      action: "link_client_account",
+                      profileId: person.id,
+                      clientId: event.target.value,
+                      endpoint: "operations",
+                    });
+                  }}
+                >
+                  <option value="">Connect to a client…</option>
+                  {clients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            );
+          })
+        )}
+      </article>
+
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
             <span className="kicker">MASTERS</span>
             <h2>Branches</h2>
           </div>
@@ -4112,6 +4266,17 @@ type CaseFile = {
     detail: string | null;
   }[];
 };
+
+// What a client may be billed for. Anything else in the finance module -- a
+// commission claim against a partner or an institution -- is internal.
+const CLIENT_INVOICE_TYPES = [
+  "professional_fee",
+  "service_fee",
+  "tuition",
+  "application_fee",
+  "visa_fee",
+  "disbursement",
+];
 
 const APPLICATION_STATUS_OPTIONS = [
   "draft",
@@ -6697,26 +6862,67 @@ export default function Home() {
       const record = cases.find((item) => item.id === id);
       if (!record?.dbId)
         return say("The selected case could not be identified.");
-      if (confirm("Archive this case? Its history will be preserved.")) {
+      // A case officer asks; a manager decides. The prompt says which of the
+      // two is about to happen.
+      const asking = role === "staff";
+      const prompt = asking
+        ? "Ask a manager to archive this case? They will be notified and the request goes on the case history."
+        : "Archive this case? Its history will be preserved.";
+      if (confirm(prompt)) {
         setSelected(null);
         void mutateRemote("case", "archive", record.dbId);
       }
     },
     exportData = () => {
+      // A case officer exports the cases assigned to them, not everything they
+      // can see for cover. Visibility is the real boundary -- what is on screen
+      // is on screen -- but a one-click dump of a colleague's clients is not
+      // something the CRM should hand out, and every export is recorded.
+      const mine =
+        role === "staff"
+          ? cases.filter((c) => c.ownerId === identity?.profileId)
+          : cases;
+      const ids = new Set(mine.map((c) => c.dbId || c.id));
+      const scope =
+        role === "staff"
+          ? "own cases"
+          : role === "admin"
+            ? "branch"
+            : "organisation";
+      void fetch("/api/crm/operations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "record_export",
+          scope,
+          count: mine.length,
+        }),
+      }).catch(() => undefined);
       const blob = new Blob(
           [
             JSON.stringify(
               {
-                cases,
-                tasks,
+                exportedBy: identity?.email ?? "",
+                scope,
+                cases: mine,
+                tasks: tasks.filter((t) => !t.caseId || ids.has(t.caseId)),
                 appointments,
                 documents,
-                messages,
-                invoices,
+                messages: messages.filter(
+                  (m) => !m.caseId || ids.has(m.caseId),
+                ),
+                // Commission claims and partner invoices are management
+                // finance; a case officer's export carries neither.
+                invoices:
+                  role === "staff"
+                    ? invoices.filter((i) =>
+                        mine.some((c) => c.name === i.client),
+                      )
+                    : invoices,
                 templates,
                 workflows,
-                roles,
-                audits,
+                roles: role === "staff" ? [] : roles,
+                audits: role === "staff" ? [] : audits,
               },
               null,
               2,
@@ -6730,7 +6936,11 @@ export default function Home() {
       a.download = "maximus-crm-export.json";
       a.click();
       URL.revokeObjectURL(url);
-      say("Live data exported");
+      say(
+        role === "staff"
+          ? `Exported ${mine.length} of your cases. The export is on the audit trail.`
+          : "Live data exported. The export is on the audit trail.",
+      );
     };
   const assignCase = async (record: CaseRecord, ownerId: string) => {
     if (!record.dbId) {
@@ -6829,7 +7039,13 @@ export default function Home() {
       if (!response.ok)
         throw new Error(result.error || "The update was rejected.");
       await loadWorkspace();
-      say("Live record updated");
+      // Some actions are a request rather than the thing itself, and the
+      // person needs to know which happened.
+      say(
+        typeof result.message === "string"
+          ? result.message
+          : "Live record updated",
+      );
     } catch (reason) {
       await loadWorkspace();
       say(
@@ -6957,6 +7173,36 @@ export default function Home() {
   const education = cases.filter((c) => c.serviceType !== "direct_visa"),
     visa = cases.filter((c) => c.serviceType === "direct_visa");
   const unreadAlerts = alerts.filter((alert) => !alert.read_at);
+  // The portal is titled from its own labels: the staff ones name commissions,
+  // partner claims and internal drafts, none of which is a client's business.
+  // Every client on file once, for connecting a portal login to their record.
+  const clientDirectory = Array.from(
+    new Map(
+      cases
+        .filter((c) => c.clientId)
+        .map((c) => [
+          String(c.clientId),
+          { id: String(c.clientId), name: c.name },
+        ]),
+    ).values(),
+  ).sort((a, b) => a.name.localeCompare(b.name));
+
+  // A case officer's ledger is the fees for the clients they are accountable
+  // for. Commission claims against partners and institutions are management
+  // finance and are not part of it.
+  const visibleInvoices =
+    role === "staff"
+      ? invoices.filter(
+          (invoice) =>
+            CLIENT_INVOICE_TYPES.includes(invoice.type) &&
+            cases.some(
+              (c) =>
+                c.name === invoice.client && c.ownerId === identity?.profileId,
+            ),
+        )
+      : invoices;
+  const screenMeta =
+    (role === "client" ? clientMeta[active] : undefined) ?? meta[active];
   let content: React.ReactNode;
   if (role === "client")
     content =
@@ -7019,7 +7265,7 @@ export default function Home() {
   else if (active === "finance")
     content = (
       <FinanceView
-        items={invoices}
+        items={visibleInvoices}
         openModal={open}
         setItems={syncInvoices}
         canManage={canManageFinance}
@@ -7103,6 +7349,7 @@ export default function Home() {
           roles={roles}
           isOwner={role === "super_admin"}
           currentProfileId={identity?.profileId ?? ""}
+          clients={clientDirectory}
         />
         <ReadinessPanel />
         <FeatureCoverage />
@@ -7408,16 +7655,16 @@ export default function Home() {
                   ? serviceMode === "study"
                     ? "Study Abroad"
                     : "Direct Visa"
-                  : meta[active][1]}
+                  : screenMeta[1]}
               </span>
               <h1>
                 {active === "dashboard"
                   ? serviceMode === "study"
                     ? "Study Abroad dashboard"
                     : "Direct Visa dashboard"
-                  : meta[active][0]}
+                  : screenMeta[0]}
               </h1>
-              <p>{meta[active][2]}</p>
+              <p>{screenMeta[2]}</p>
             </div>
             {role !== "client" ? (
               <div className="titleActions">

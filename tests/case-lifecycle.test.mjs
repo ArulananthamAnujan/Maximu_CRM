@@ -34,6 +34,7 @@ async function startStub({
   level = "staff",
   targetOverride = null,
   lifecycleMigrationApplied = true,
+  patchBlocked = false,
 } = {}) {
   const target = targetOverride ?? TARGET_STAFF;
   const requests = [];
@@ -81,6 +82,13 @@ async function startStub({
           return send(400, { code: "22023", message: rpcFailure, hint: null });
         return send(200, [{ id: CASE_ID, lifecycle_stage: "visa" }]);
       }
+      // PostgREST returns the rows an update actually touched when the caller
+      // asks for a representation, and an empty array when row-level security
+      // hid every one of them. The route relies on that to tell a refused
+      // write from a successful one, so the stand-in has to answer the same
+      // way. `patchBlocked` is how a test asks for the refusal.
+      if (req.method === "PATCH")
+        return send(200, patchBlocked ? [] : [{ id: url.searchParams.get("id")?.replace("eq.", "") ?? CASE_ID }]);
       return send(200, []);
     });
   });
@@ -249,6 +257,24 @@ test("reassignment is recorded in the audit trail", async () => {
   const audit = result.requests.find((r) => r.path === "/rest/v1/audit_events");
   assert.equal(audit.body.action, "case.reassigned");
   assert.match(String(audit.body.summary), /Ravi Kumar/);
+});
+
+test("a write row-level security refused is reported, not reported as saved", async () => {
+  // PostgREST answers 204/[] when the filter matched nothing the caller was
+  // allowed to see. That used to come back to the person as a saved record.
+  const result = await post(
+    {
+      action: "update_case",
+      caseId: CASE_ID,
+      clientId: "66666666-6666-4666-8666-666666666666",
+      name: "Someone Else's Client",
+      email: "someone@example.test",
+      visaExpiry: "2030-01-01",
+    },
+    { level: "staff", patchBlocked: true },
+  );
+  assert.equal(result.status, 403);
+  assert.match(result.body.error, /not yours to change/i);
 });
 
 test("a staff account cannot reassign a case", async () => {

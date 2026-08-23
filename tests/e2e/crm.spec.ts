@@ -686,3 +686,96 @@ test("a branch can be added from the masters screen", async ({ page }) => {
   await form.getByRole("button", { name: /^Add branch$/ }).click();
   await expect(page.getByText("Kandy (KAN)")).toBeVisible({ timeout: 25_000 });
 });
+
+/* ------------------------------------------------------------------ *
+ * What each role may actually do, not only what they can see.
+ * ------------------------------------------------------------------ */
+
+const COLLEAGUE = "second.officer@maximus.test";
+
+test("a case officer sees a colleague's case but cannot change it", async ({
+  page,
+}) => {
+  await signIn(page, COLLEAGUE);
+  await openEnquiries(page);
+  const row = caseRow(page, "Priya Sharma");
+  // Visible, because cover and handover depend on it.
+  await expect(row).toBeVisible({ timeout: 25_000 });
+  await row.click();
+
+  const drawer = page.locator(".caseDrawer");
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("button", { name: /move to student/i }).click();
+  // The database refuses, and the refusal says what to do about it.
+  await expect(page.locator(".toast, .caseWorkError").first()).toContainText(
+    /assigned to somebody else/i,
+    { timeout: 25_000 },
+  );
+});
+
+test("a case officer's ledger holds no commission invoices", async ({
+  page,
+}) => {
+  await signIn(page, OFFICER);
+  // Accounts is manager-only, so a case officer has no ledger screen at all.
+  await expect(page.getByRole("button", { name: /^Accounts$/ })).toHaveCount(0);
+  const body = await page.locator("body").innerText();
+  expect(body.toLowerCase()).not.toContain("commission");
+});
+
+test("the client portal never uses internal finance language", async ({
+  page,
+}) => {
+  await signIn(page, CLIENT);
+  for (const screen of ["Invoices", "Messages", "Documents", "Journey"]) {
+    await page.getByRole("button", { name: screen, exact: true }).click();
+    const body = (await page.locator("body").innerText()).toLowerCase();
+    for (const forbidden of [
+      "commission",
+      "partner claim",
+      "drafts",
+      "client_user_links",
+      "supabase",
+    ])
+      expect(
+        body,
+        `${forbidden} on the client's ${screen} screen`,
+      ).not.toContain(forbidden);
+  }
+});
+
+test("the client invoices screen shows paid and outstanding", async ({
+  page,
+}) => {
+  await signIn(page, CLIENT);
+  await page.getByRole("button", { name: "Invoices", exact: true }).click();
+  await expect(page.getByText(/^Invoiced$/)).toBeVisible({ timeout: 25_000 });
+  await expect(page.getByText(/^Paid$/)).toBeVisible();
+  await expect(page.getByText(/^Outstanding$/)).toBeVisible();
+});
+
+test("an administrator can connect a portal login to a client file", async ({
+  page,
+}) => {
+  await signIn(page, OWNER);
+  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await expect(page.getByText(/portal logins/i)).toBeVisible({
+    timeout: 25_000,
+  });
+  const link = page.getByLabel(/client record for/i).first();
+  await expect(link).toBeVisible();
+  const options = await link.locator("option").allInnerTexts();
+  expect(options.join(" | ")).toContain("Priya Sharma");
+});
+
+test("integration status names the production settings still to do", async ({
+  page,
+}) => {
+  await signIn(page, OWNER);
+  await page.getByRole("button", { name: /^Integrations$/ }).click();
+  await expect(page.getByText(/passport encryption/i)).toBeVisible({
+    timeout: 25_000,
+  });
+  await expect(page.getByText(/record retention/i)).toBeVisible();
+  await expect(page.getByText(/creating staff logins/i)).toBeVisible();
+});

@@ -4,7 +4,7 @@ import {
   liveSession,
 } from "@/server/supabase-session";
 import { driveProbe } from "@/server/google-drive";
-import { serviceRoleKey } from "@/server/supabase";
+import { serviceRoleKey, supabaseRequest } from "@/server/supabase";
 import { protectionConfigured } from "@/server/protected-fields";
 
 /**
@@ -27,6 +27,15 @@ export async function GET(request: Request) {
       throw new LiveAccessError(403, "Administrator access is required.");
 
     const drive = await driveProbe();
+    // Retention is a compliance obligation, not a feature: a migration seeds
+    // seven-year rules, and this reports whether they are actually there.
+    const retention = await supabaseRequest<
+      { resource_type: string; retain_days: number }[]
+    >(
+      "/rest/v1/data_retention_rules?select=resource_type,retain_days",
+      { method: "GET" },
+      session.accessToken,
+    ).catch(() => []);
     const integrations = [
       {
         key: "drive",
@@ -50,6 +59,24 @@ export async function GET(request: Request) {
           ? "Passport numbers are encrypted with the configured key."
           : "FIELD_ENCRYPTION_KEY is not set, so passport numbers cannot be stored. Generate one with: openssl rand -base64 32",
         setup: ["FIELD_ENCRYPTION_KEY"],
+      },
+      {
+        key: "retention",
+        name: "Record retention",
+        purpose: "How long each kind of record is kept before review.",
+        state: retention.length > 0 ? "connected" : "not_configured",
+        detail:
+          retention.length > 0
+            ? retention
+                .map(
+                  (rule) =>
+                    `${rule.resource_type.replace(/_/g, " ")}: ${Math.round(
+                      rule.retain_days / 365,
+                    )} years`,
+                )
+                .join(" · ")
+            : "No retention rules are recorded. Apply supabase/migrations/0010_case_file.sql, which seeds seven-year rules for client files, case notes, communications and invoices.",
+        setup: [],
       },
       {
         key: "staff_logins",

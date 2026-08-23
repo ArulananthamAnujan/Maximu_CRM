@@ -269,6 +269,46 @@ test("the service-role key is used on one path and never as a filter", async () 
   assert.match(example, /SUPABASE_SERVICE_ROLE_KEY=/);
 });
 
+test("a case officer writes only to the cases assigned to them", async () => {
+  const sql = await read("supabase/migrations/0018_staff_scope.sql");
+  assert.match(sql, /create or replace function public\.can_modify_client/i);
+  // Managers keep their branch; staff and partners are narrowed to ownership.
+  assert.match(sql, /c\.owner_id = auth\.uid\(\)/);
+  assert.match(sql, /k\.client_id = c\.id and k\.owner_id = auth\.uid\(\)/);
+  // Reads are deliberately left alone, so a colleague's case is read-only
+  // rather than invisible.
+  assert.doesNotMatch(sql, /cases_scoped_select/);
+  // The stage machine asks the same question.
+  assert.match(sql, /if not public\.can_modify_client\(current_case\.client_id\)/);
+  // Archiving is a management decision with a request path for everyone else.
+  assert.match(sql, /create or replace function public\.request_case_archive/i);
+  assert.match(sql, /kind = 'archive_request'|'archive_request'/);
+});
+
+test("a write that row-level security refused is reported as refused", async () => {
+  const route = await read("app/api/crm/workspace/route.ts");
+  // PostgREST answers 204 when the filter matched nothing it was allowed to
+  // see, which used to come back to the person as a successful save.
+  assert.match(route, /Prefer: "return=representation"/);
+  assert.match(route, /updated\.length === 0/);
+  assert.match(route, /not yours to change/i);
+});
+
+test("the client portal is titled from its own words", async () => {
+  const page = await read("app/page.tsx");
+  assert.match(page, /const clientMeta/);
+  // The staff labels name commissions and partner claims; the portal's do not.
+  const portalBlock = page.slice(
+    page.indexOf("const clientMeta"),
+    page.indexOf("const meta: Record<ModuleKey"),
+  );
+  assert.doesNotMatch(portalBlock, /commission|partner claim|draft/i);
+  assert.match(page, /const CLIENT_INVOICE_TYPES/);
+  assert.match(page, /CLIENT_INVOICE_TYPES\.includes\(x\.type\)/);
+  // And no developer language where a client can read it.
+  assert.doesNotMatch(page, /client_user_links\s*$/m);
+});
+
 test("the browser suite is wired into CI and needs no committed key", async () => {
   const workflow = await read(".github/workflows/ci.yml");
   const harness = await read("scripts/verify-features.sh");

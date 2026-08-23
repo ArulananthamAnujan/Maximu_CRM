@@ -166,9 +166,11 @@ export async function POST(request: Request) {
 // administrator. The database enforces the same rule on the level column.
 function staffLevel(value: unknown, actor: string) {
   const level = optional(value) ?? "staff";
-  if (!["super_admin", "branch_admin", "manager", "staff", "partner"].includes(level))
+  if (!["super_admin", "branch_admin", "manager", "staff", "partner", "student"].includes(level))
     throw new InputError("Account level is invalid.");
-  if (actor !== "super_admin" && !["staff", "partner"].includes(level))
+  // A client portal login is not an administrator account, so a branch manager
+  // can create one for their own client.
+  if (actor !== "super_admin" && !["staff", "partner", "student"].includes(level))
     throw new LiveAccessError(403, "Only a Super Admin can create an administrator account.");
   return level;
 }

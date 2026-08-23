@@ -276,13 +276,24 @@ export async function GET(request: Request) {
           sentAt: row.sent_at ?? null,
         };
       }),
-      invoices: invoices.map((row) => ({
-        id: row.id,
-        client: fullClientName(clientById.get(String(row.client_id))),
-        amount: Number(row.total ?? 0),
-        due: String(row.due_on ?? ""),
-        status: row.state === "paid" ? "Paid" : "Unpaid",
-      })),
+      invoices: invoices.map((row) => {
+        const total = Number(row.total ?? 0);
+        const paid = Number(row.paid ?? 0);
+        return {
+          id: row.id,
+          client: fullClientName(clientById.get(String(row.client_id))),
+          amount: total,
+          paid,
+          balance: Math.max(0, total - paid),
+          // The portal shows only what the client is billed. Anything else --
+          // a commission claim raised against a partner, for instance -- is
+          // never a client's business and is filtered out on the way to them.
+          type: String(row.invoice_type ?? "professional_fee"),
+          issued: String(row.issued_on ?? ""),
+          due: String(row.due_on ?? ""),
+          status: row.state === "paid" ? "Paid" : "Unpaid",
+        };
+      }),
       templates: templates.map((row) => ({
         id: row.id,
         name: row.name,
@@ -1074,6 +1085,27 @@ export async function POST(request: Request) {
           token,
         );
       } else if (resource === "case" && operation === "archive") {
+        // Archiving ends the work on a case, so it is a management decision. A
+        // case officer asks, and the managers who can approve are notified.
+        if (session.identity.role === "staff") {
+          await supabaseRequest(
+            "/rest/v1/rpc/request_case_archive",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                target_case: id,
+                request_reason: nullable(body.reason),
+              }),
+            },
+            token,
+          );
+          return Response.json({
+            ok: true,
+            requested: true,
+            message:
+              "Archiving needs a manager. They have been asked, and the request is on the case history.",
+          });
+        }
         await patchRow(
           "cases",
           id,
@@ -1179,16 +1211,29 @@ async function insert(table: string, value: Json, token: string) {
     token,
   );
 }
+/**
+ * Updates one row and insists that it actually happened.
+ *
+ * PostgREST answers 204 when row-level security hid every row the filter
+ * matched, so a write somebody was not allowed to make came back as success
+ * and silently changed nothing. Asking for the row back turns that into the
+ * refusal it always was.
+ */
 async function patchRow(table: string, id: string, value: Json, token: string) {
-  await supabaseRequest(
-    `/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`,
+  const updated = await supabaseRequest<Json[]>(
+    `/rest/v1/${table}?id=eq.${encodeURIComponent(id)}&select=id`,
     {
       method: "PATCH",
-      headers: { Prefer: "return=minimal" },
+      headers: { Prefer: "return=representation" },
       body: JSON.stringify(value),
     },
     token,
   );
+  if (!Array.isArray(updated) || updated.length === 0)
+    throw new LiveAccessError(
+      403,
+      "That record is not yours to change. If it should be, ask a manager to reassign it to you.",
+    );
 }
 async function deleteRow(table: string, id: string, token: string) {
   await supabaseRequest(

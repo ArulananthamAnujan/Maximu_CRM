@@ -36,7 +36,11 @@ with expected(area, kind, name, detail) as (values
   ('Duplicates (0015)',     'function', 'find_duplicate_clients',           'The search the intake form runs before it makes anybody'),
   ('Messages (0016)',       'column',   'email_messages.created_at',        'A draft has a date to show before it is sent'),
   ('Staff onboarding (0017)','column',   'staff_invitations.display_name',   'The name an invited person is added under'),
-  ('Staff onboarding (0017)','function', 'claim_staff_invitation',           'Turns an invitation into a real account on first sign-in')
+  ('Staff onboarding (0017)','function', 'claim_staff_invitation',           'Turns an invitation into a real account on first sign-in'),
+  ('Staff scope (0018)',    'function', 'can_modify_client',                'A case officer writes only to the cases assigned to them'),
+  ('Staff scope (0018)',    'function', 'request_case_archive',             'A case officer asks; a manager archives'),
+  ('Staff scope (0018)',    'policy',   'cases.cases_scoped_write',         'Rebuilt on can_modify_client'),
+  ('Staff scope (0018)',    'policy',   'clients.clients_scoped_write',     'Rebuilt on can_modify_client')
 )
 select
   e.area,

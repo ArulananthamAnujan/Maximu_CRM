@@ -83,6 +83,12 @@ export async function POST(request: Request) {
     } else if (action === "link_client_account") {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can link client accounts.");
       await insert("client_user_links", { profile_id: uuid(body.profileId, "Profile"), client_id: uuid(body.clientId, "Client") }, token, "resolution=merge-duplicates,return=minimal");
+    } else if (action === "record_export") {
+      // Exporting client records is a disclosure. It is recorded against the
+      // person who did it, with what they took, before the file is produced.
+      const scope = optional(body.scope) || "unknown";
+      const count = Number(body.count ?? 0);
+      await insert("audit_events", { organisation_id: org, actor_id: actor, action: "records.exported", resource_type: "export", resource_id: scope, summary: `Exported ${Number.isFinite(count) ? count : 0} case records (${scope})`, after_data: { scope, count: Number.isFinite(count) ? count : 0 } }, token);
     } else if (action === "queue_integration") {
       const provider = required(body.provider, "Provider").toLowerCase();
       if (!["google_drive", "gmail", "google_calendar", "whatsapp", "payments"].includes(provider)) throw new InputError("Unsupported integration provider.");

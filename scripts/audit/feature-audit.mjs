@@ -1140,6 +1140,96 @@ const stranger = await login("stranger@maximus.test");
 expect("a login with no invitation gets no profile",
   !stranger.ok || (await call("/api/crm/workspace", { cookie: stranger.cookie })).status === 403);
 
+// ---------------------------------------------------------------------------
+section("A case officer works only their own cases");
+const colleague = await login("second.officer@maximus.test");
+expect("a second officer in the same branch signs in", colleague.ok,
+  JSON.stringify(colleague.body));
+const colleagueWorkspace = await call("/api/crm/workspace", { cookie: colleague.cookie });
+const priya = (colleagueWorkspace.json?.cases ?? []).find((c) => c.name === "Priya Sharma");
+expect("a colleague's case is still visible, for cover and handover",
+  priya !== undefined, JSON.stringify((colleagueWorkspace.json?.cases ?? []).map((c) => c.name)));
+const colleagueEdit = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
+  body: { action: "update_case", caseId: priya?.dbId, clientId: priya?.clientId,
+          name: "Hijacked Name", email: "hijack@example.test", visaExpiry: "2030-01-01" } });
+expect("but a colleague cannot edit it",
+  colleagueEdit.status >= 400, `${colleagueEdit.status} ${JSON.stringify(colleagueEdit.json)?.slice(0, 200)}`);
+const colleagueMove = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
+  body: { action: "lifecycle", caseId: priya?.dbId, stage: "student" } });
+expect("nor move it through the pipeline",
+  colleagueMove.status >= 400 &&
+    /assigned to somebody else/i.test(JSON.stringify(colleagueMove.json ?? "")),
+  `${colleagueMove.status} ${JSON.stringify(colleagueMove.json)?.slice(0, 240)}`);
+const colleagueApp = await call("/api/crm/casefile", { method: "POST", cookie: colleague.cookie,
+  body: { action: "application_create", caseId: priya?.dbId,
+          institution: "Sneaky University", course: "Sneaky Course" } });
+expect("nor add anything to its case file", colleagueApp.status >= 400,
+  `${colleagueApp.status} ${JSON.stringify(colleagueApp.json)?.slice(0, 200)}`);
+const stillIntact = await call(`/api/crm/casefile?caseId=${priya?.dbId}`, { cookie: officer.cookie });
+expect("and the case is untouched",
+  !(stillIntact.json?.applications ?? []).some((a) => a.institution === "Sneaky University"));
+
+// Reassignment is what grants access, and it works.
+expect("an administrator reassigns the case to the colleague",
+  (await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+    body: { action: "assign", caseId: priya?.dbId,
+            ownerId: "c0000000-0000-4000-8000-000000000008" } })).status === 200);
+const afterAssign = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
+  body: { action: "set_visa_expiry", caseId: priya?.dbId, visaExpiry: "2029-12-31" } });
+expect("once it is theirs they can work it", afterAssign.status === 200,
+  JSON.stringify(afterAssign.json)?.slice(0, 240));
+
+// ---------------------------------------------------------------------------
+section("Archiving is a management decision");
+const officerArchive = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
+  body: { action: "mutate", resource: "case", operation: "archive", id: priya?.dbId,
+          reason: "Client stopped responding" } });
+expect("a case officer's archive is taken as a request",
+  officerArchive.status === 200 && officerArchive.json?.requested === true,
+  JSON.stringify(officerArchive.json)?.slice(0, 240));
+const notStillOpen = await call("/api/crm/workspace", { cookie: officer.cookie });
+expect("the case is not archived by the request",
+  notStillOpen.json?.cases?.find((c) => c.dbId === priya?.dbId)?.status !== "completed");
+const managerAlerts = await call("/api/crm/operations?view=notifications", { cookie: owner.cookie });
+expect("a manager is told about the request",
+  (managerAlerts.json?.data ?? []).some((n) => n.title?.includes("Archive requested")),
+  JSON.stringify((managerAlerts.json?.data ?? []).map((n) => n.title))?.slice(0, 240));
+const managerArchive = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "mutate", resource: "case", operation: "archive", id: priya?.dbId } });
+expect("a manager can archive it", managerArchive.status === 200 && !managerArchive.json?.requested,
+  JSON.stringify(managerArchive.json)?.slice(0, 240));
+
+// ---------------------------------------------------------------------------
+section("Exports are recorded");
+const exportCall = await call("/api/crm/operations", { method: "POST", cookie: officer.cookie,
+  body: { action: "record_export", scope: "own cases", count: 3 } });
+expect("an export writes an audit entry", exportCall.status === 200,
+  JSON.stringify(exportCall.json)?.slice(0, 240));
+const exportAudit = await call("/api/crm/workspace", { cookie: owner.cookie });
+expect("the export is on the audit trail",
+  (exportAudit.json?.audits ?? []).some((a) => /Exported \d+ case records/.test(a.text ?? "")),
+  JSON.stringify((exportAudit.json?.audits ?? []).slice(0, 4).map((a) => a.text)));
+const portalExport = await call("/api/crm/operations", { method: "POST", cookie: student.cookie,
+  body: { action: "record_export", scope: "own cases", count: 1 } });
+expect("a portal account cannot record an export", portalExport.status === 403);
+
+// ---------------------------------------------------------------------------
+section("The client portal shows a client only their own money");
+const portalMoney = await call("/api/crm/workspace", { cookie: student.cookie });
+const portalInvoices = portalMoney.json?.invoices ?? [];
+expect("the portal payload carries what a client is billed",
+  portalInvoices.some((i) => i.type === "professional_fee"),
+  JSON.stringify(portalInvoices.map((i) => `${i.type}=${i.amount}`)));
+expect("an invoice carries what has been paid and what is left",
+  portalInvoices.every((i) => "paid" in i && "balance" in i),
+  JSON.stringify(portalInvoices[0]));
+// The commission claim is agency income from a partner. Whether or not the
+// portal renders it, it must not be described to a client as theirs.
+const page = await call("/", { cookie: student.cookie });
+expect("no client-facing screen names commissions or partner claims",
+  !/partner claims|institution commission/i.test(page.text ?? ""),
+  (page.text ?? "").slice(0, 120));
+
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });
 expect("sign out succeeds", out.status === 200);

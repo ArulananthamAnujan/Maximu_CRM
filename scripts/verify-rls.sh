@@ -79,6 +79,22 @@ expect_in "a deferral is not recorded in the history" "application => deferred :
 expect_in "resuming from a deferral is not recorded" "deferred => application :: Enrolled for July"
 
 echo
+echo "== A case officer may work only the cases assigned to them =="
+pg_run "${work}/sql/09_seed_third_staff.sql"
+scope="$(probe 10_probe_staff_scope.sql 2>&1 | grep -v '^SET$\|Output format\|^UPDATE\|^INSERT')"
+echo "${scope}"
+expect_scope() { grep -qF "$2" <<< "${scope}" || fail "$1"; }
+expect_scope "a colleague's case is hidden instead of read-only" "visible=1"
+expect_scope "a case officer can edit a case that is not theirs" "edited=0"
+expect_scope "a case officer can move a case that is not theirs" "This case is assigned to somebody else"
+expect_scope "a case officer can edit another officer's client" "client_edited=0"
+expect_scope "a case officer can add an application to another officer's case" "application_added=0"
+expect_scope "reassignment does not grant access" "after_reassignment=1"
+expect_scope "an administrator lost access" "admin_edited=1"
+expect_scope "an archive request is not recorded" "archive_requests=1"
+expect_scope "managers are not told about an archive request" "managers_notified=1"
+
+echo
 echo "== Duplicate clients are found before a second record is made =="
 duplicates="$(probe 08_probe_duplicates.sql 2>&1 | grep -v '^SET$\|Output format\|^UPDATE')"
 echo "${duplicates}"
