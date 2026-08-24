@@ -102,6 +102,9 @@ export async function POST(request: Request) {
     } else if (action === "link_client_account") {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can link client accounts.");
       await insert("client_user_links", { profile_id: uuid(body.profileId, "Profile"), client_id: uuid(body.clientId, "Client") }, token, "resolution=merge-duplicates,return=minimal");
+    } else if (action === "unlink_client_account") {
+      if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can unlink client accounts.");
+      await remove("client_user_links", `profile_id=eq.${uuid(body.profileId, "Profile")}`, token);
     } else if (action === "record_export") {
       // Exporting client records is a disclosure. It is recorded against the
       // person who did it, with what they took, before the file is produced.
@@ -123,6 +126,7 @@ export async function POST(request: Request) {
 async function rest<T = unknown>(query: string, token: string): Promise<T> { return supabaseRequest<T>(`/rest/v1/${query}`, { method: "GET" }, token); }
 async function insert(table: string, value: Json, token: string, prefer = "return=minimal") { await supabaseRequest(`/rest/v1/${table}`, { method: "POST", headers: { Prefer: prefer }, body: JSON.stringify(value) }, token); }
 async function patch(table: string, id: string, value: Json, token: string) { await supabaseRequest(`/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(value) }, token); }
+async function remove(table: string, filter: string, token: string) { await supabaseRequest(`/rest/v1/${table}?${filter}`, { method: "DELETE" }, token); }
 function group(rows: Json[], key: string) { return rows.reduce<Record<string, number>>((acc, row) => { const value = String(row[key] ?? "unknown"); acc[value] = (acc[value] ?? 0) + 1; return acc; }, {}); }
 function required(value: unknown, label: string) { const parsed = optional(value); if (!parsed) throw new InputError(`${label} is required.`); return parsed; }
 function optional(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : null; }

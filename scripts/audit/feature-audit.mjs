@@ -1618,6 +1618,240 @@ const sanityCheck = await call("/api/auth/login", { method: "POST",
 expect("a single failed sign-in through the real endpoint still behaves normally",
   sanityCheck.status === 401, JSON.stringify(sanityCheck.json));
 
+// ---------------------------------------------------------------------------
+section("Connecting and disconnecting a client's portal login");
+const linkCase = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "case", name: "Link Test Client", phone: "+61400000777",
+          email: "link.test@example.test", visaExpiry: "2028-05-31",
+          type: "Student visa", target: "Diploma of Business" } });
+expect("a client exists for the link/unlink round trip", linkCase.status === 200);
+const linkClientId = linkCase.json?.clientId;
+
+const linkStamp = Date.now();
+const linkLoginEmail = `link.test.${linkStamp}@maximus.test`;
+const createdLinkLogin = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
+  body: { action: "create_staff", displayName: "Link Test Login", email: linkLoginEmail, level: "student" } });
+expect("a portal login can be created for the link test", createdLinkLogin.status === 200,
+  JSON.stringify(createdLinkLogin.json));
+const linkAdminList = await call("/api/crm/admin", { cookie: owner.cookie });
+const linkProfileId = (linkAdminList.json?.profiles ?? [])
+  .find((p) => p.email === linkLoginEmail)?.id;
+expect("the new portal login is on the profile list", Boolean(linkProfileId));
+
+const linkAccount = await call("/api/crm/operations", { method: "POST", cookie: owner.cookie,
+  body: { action: "link_client_account", profileId: linkProfileId, clientId: linkClientId } });
+expect("an administrator can actually link a portal account -- the write policy exists now",
+  linkAccount.status === 200, JSON.stringify(linkAccount.json));
+const afterLink = await call("/api/crm/admin", { cookie: owner.cookie });
+expect("the link is visible on the admin screen",
+  (afterLink.json?.clientLinks ?? []).some(
+    (l) => l.profile_id === linkProfileId && l.client_id === linkClientId),
+  JSON.stringify(afterLink.json?.clientLinks));
+
+const staffUnlink = await call("/api/crm/operations", { method: "POST", cookie: officer.cookie,
+  body: { action: "unlink_client_account", profileId: linkProfileId } });
+expect("a case officer cannot disconnect a portal login", staffUnlink.status === 403);
+
+const unlinkAccount = await call("/api/crm/operations", { method: "POST", cookie: owner.cookie,
+  body: { action: "unlink_client_account", profileId: linkProfileId } });
+expect("an administrator can disconnect a portal login", unlinkAccount.status === 200,
+  JSON.stringify(unlinkAccount.json));
+const afterUnlink = await call("/api/crm/admin", { cookie: owner.cookie });
+expect("the link no longer appears once disconnected",
+  !(afterUnlink.json?.clientLinks ?? []).some((l) => l.profile_id === linkProfileId),
+  JSON.stringify(afterUnlink.json?.clientLinks));
+
+const invitationEmail = `resend.test.${linkStamp}@maximus.test`;
+const staffRoleId = (await call("/api/crm/admin", { cookie: owner.cookie }))
+  .json?.roles?.find((r) => r.level === "staff")?.id;
+const createInvitation = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
+  body: { action: "create_invitation", email: invitationEmail, roleId: staffRoleId } });
+expect("an invitation can be created directly", createInvitation.status === 200,
+  JSON.stringify(createInvitation.json));
+const invitationsAfterCreate = await call("/api/crm/admin", { cookie: owner.cookie });
+const invitationRow = (invitationsAfterCreate.json?.invitations ?? [])
+  .find((i) => i.email === invitationEmail);
+expect("the invitation is on the list, pending", invitationRow?.status === "pending",
+  JSON.stringify(invitationRow));
+
+const revoked = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
+  body: { action: "revoke_invitation", invitationId: invitationRow?.id } });
+expect("the invitation can be revoked", revoked.status === 200);
+const resend = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
+  body: { action: "resend_invitation", invitationId: invitationRow?.id } });
+expect("a revoked invitation can be resent", resend.status === 200, JSON.stringify(resend.json));
+const invitationsAfterResend = await call("/api/crm/admin", { cookie: owner.cookie });
+const resentRow = (invitationsAfterResend.json?.invitations ?? [])
+  .find((i) => i.id === invitationRow?.id);
+expect("resending puts it back to pending with a fresh expiry",
+  resentRow?.status === "pending" && resentRow?.expires_at > (invitationRow?.expires_at ?? ""),
+  JSON.stringify(resentRow));
+
+// ---------------------------------------------------------------------------
+section("Merging duplicate client records");
+const keepCase = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "case", name: "Merge Keep", phone: "+61400000778",
+          email: "merge.keep@example.test", visaExpiry: "2028-05-31",
+          type: "Student visa", target: "Diploma of IT" } });
+const awayCase = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "case", name: "Merge Away", phone: "+61400000779",
+          email: "merge.away@example.test", visaExpiry: "2028-05-31",
+          type: "Student visa", target: "Diploma of IT" } });
+expect("both records exist for the merge", keepCase.status === 200 && awayCase.status === 200);
+const keepClientId = keepCase.json?.clientId;
+const awayClientId = awayCase.json?.clientId;
+const awayCaseId = awayCase.json?.caseId;
+
+const mergeSelf = await call("/api/crm/duplicates", { method: "POST", cookie: owner.cookie,
+  body: { action: "merge", keepClientId, mergeClientId: keepClientId } });
+expect("a client record cannot be merged into itself", mergeSelf.status === 400,
+  JSON.stringify(mergeSelf.json));
+
+const staffMerge = await call("/api/crm/duplicates", { method: "POST", cookie: officer.cookie,
+  body: { action: "merge", keepClientId, mergeClientId: awayClientId } });
+expect("a case officer cannot merge duplicate clients", staffMerge.status === 403);
+
+const merge = await call("/api/crm/duplicates", { method: "POST", cookie: owner.cookie,
+  body: { action: "merge", keepClientId, mergeClientId: awayClientId } });
+expect("an administrator can merge two duplicate client records",
+  merge.status === 200, JSON.stringify(merge.json));
+
+const mergedWorkspace = await call("/api/crm/workspace", { cookie: owner.cookie });
+const mergedCase = (mergedWorkspace.json?.cases ?? []).find((row) => row.dbId === awayCaseId);
+expect("the merged-away case now belongs to the surviving client",
+  mergedCase?.name === "Merge Keep", JSON.stringify(mergedCase));
+
+// ---------------------------------------------------------------------------
+section("Credit notes reduce a balance without a refund");
+const creditCase = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "case", name: "Credit Note Client", phone: "+61400000780",
+          email: "credit.note@example.test", visaExpiry: "2028-05-31",
+          type: "Student visa", target: "Diploma of IT" } });
+const creditCaseId = creditCase.json?.caseId;
+const creditClientId = creditCase.json?.clientId;
+const creditInvoice = await mk({ action: "invoice", clientId: creditClientId, caseId: creditCaseId,
+  amount: "1000", due: "2026-11-30" }, owner.cookie);
+expect("an invoice exists for the credit note", creditInvoice.status === 200,
+  JSON.stringify(creditInvoice.json));
+const beforeCreditWorkspace = await call("/api/crm/workspace", { cookie: owner.cookie });
+const creditInvoiceRow = (beforeCreditWorkspace.json?.invoices ?? [])
+  .find((row) => row.client === "Credit Note Client");
+expect("the invoice's balance starts at the full amount",
+  creditInvoiceRow?.balance === 1000, JSON.stringify(creditInvoiceRow));
+
+const staffCredit = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "mutate", resource: "invoice", operation: "credit", id: creditInvoiceRow?.id,
+          amount: 200, reason: "Goodwill" } });
+expect("a case officer cannot issue a credit note", staffCredit.status === 403);
+
+const credit = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "mutate", resource: "invoice", operation: "credit", id: creditInvoiceRow?.id,
+          amount: 200, reason: "Goodwill" } });
+expect("a manager can issue a credit note", credit.status === 200, JSON.stringify(credit.json));
+
+const afterCreditWorkspace = await call("/api/crm/workspace", { cookie: owner.cookie });
+const afterCreditRow = (afterCreditWorkspace.json?.invoices ?? [])
+  .find((row) => row.id === creditInvoiceRow?.id);
+expect("the credited amount reduces the balance without counting as paid",
+  afterCreditRow?.credited === 200 && afterCreditRow?.paid === 0 && afterCreditRow?.balance === 800,
+  JSON.stringify(afterCreditRow));
+
+// ---------------------------------------------------------------------------
+section("Bulk-reassigning cases");
+const bulkCaseA = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "case", name: "Bulk Assign A", phone: "+61400000781",
+          email: "bulk.a@example.test", visaExpiry: "2028-05-31",
+          type: "Student visa", target: "Diploma of IT" } });
+const bulkCaseB = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "case", name: "Bulk Assign B", phone: "+61400000782",
+          email: "bulk.b@example.test", visaExpiry: "2028-05-31",
+          type: "Student visa", target: "Diploma of IT" } });
+const bulkCaseIds = [bulkCaseA.json?.caseId, bulkCaseB.json?.caseId];
+expect("both cases exist for the bulk assignment", Boolean(bulkCaseIds[0]) && Boolean(bulkCaseIds[1]));
+
+const staffBulkAssign = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "bulk_assign", caseIds: bulkCaseIds, ownerId: officer.profileId } });
+expect("a case officer cannot bulk-reassign cases", staffBulkAssign.status === 403);
+
+const secondOfficerId = (await call("/api/crm/admin", { cookie: owner.cookie })).json?.profiles
+  ?.find((p) => p.email === "second.officer@maximus.test")?.id;
+const bulkAssign = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "bulk_assign", caseIds: bulkCaseIds, ownerId: secondOfficerId } });
+expect("an administrator can bulk-reassign cases", bulkAssign.status === 200 && bulkAssign.json?.succeeded === 2,
+  JSON.stringify(bulkAssign.json));
+const afterBulkWorkspace = await call("/api/crm/workspace", { cookie: owner.cookie });
+const bulkOwners = bulkCaseIds.map(
+  (id) => (afterBulkWorkspace.json?.cases ?? []).find((row) => row.dbId === id)?.owner);
+expect("both cases now show the new owner",
+  bulkOwners.every((name) => name === "Nuwan Officer"), JSON.stringify(bulkOwners));
+
+// ---------------------------------------------------------------------------
+section("Saved views");
+const savedViewsBefore = await call("/api/crm/saved-views?module=enquiries", { cookie: officer.cookie });
+expect("saved views start empty for a fresh module",
+  savedViewsBefore.status === 200 && (savedViewsBefore.json?.views ?? []).length === 0,
+  JSON.stringify(savedViewsBefore.json));
+const createView = await call("/api/crm/saved-views", { method: "POST", cookie: officer.cookie,
+  body: { action: "create", module: "enquiries", name: "My waiting cases", filters: { filter: "waiting" } } });
+expect("a saved view can be created", createView.status === 200 &&
+  (createView.json?.views ?? []).some((v) => v.name === "My waiting cases"),
+  JSON.stringify(createView.json));
+const otherOfficerViews = await call("/api/crm/saved-views?module=enquiries", { cookie: manager.cookie });
+expect("a saved view is private to whoever saved it",
+  !(otherOfficerViews.json?.views ?? []).some((v) => v.name === "My waiting cases"),
+  JSON.stringify(otherOfficerViews.json));
+const savedViewId = (createView.json?.views ?? []).find((v) => v.name === "My waiting cases")?.id;
+const deleteViewResult = await call("/api/crm/saved-views", { method: "POST", cookie: officer.cookie,
+  body: { action: "delete", id: savedViewId, module: "enquiries" } });
+expect("a saved view can be deleted",
+  deleteViewResult.status === 200 &&
+    !(deleteViewResult.json?.views ?? []).some((v) => v.id === savedViewId),
+  JSON.stringify(deleteViewResult.json));
+
+// ---------------------------------------------------------------------------
+section("Client self-service: contact details and consent");
+const selfServiceCase = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "case", name: "Portal Self Service", phone: "+61400000783",
+          email: "portal.selfservice@example.test", visaExpiry: "2028-05-31",
+          type: "Student visa", target: "Diploma of IT" } });
+const portalClientId = selfServiceCase.json?.clientId;
+const selfServiceEmail = `selfservice.${linkStamp}@maximus.test`;
+await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
+  body: { action: "create_staff", displayName: "Portal Self Service", email: selfServiceEmail, level: "student" } });
+const selfServiceProfileId = (await call("/api/crm/admin", { cookie: owner.cookie }))
+  .json?.profiles?.find((p) => p.email === selfServiceEmail)?.id;
+await call("/api/crm/operations", { method: "POST", cookie: owner.cookie,
+  body: { action: "link_client_account", profileId: selfServiceProfileId, clientId: portalClientId } });
+const selfServiceLogin = await login(selfServiceEmail);
+expect("the portal self-service account signs in", selfServiceLogin.ok, JSON.stringify(selfServiceLogin.body));
+
+const updateContact = await call("/api/crm/workspace", { method: "POST", cookie: selfServiceLogin.cookie,
+  body: { action: "update_own_contact", email: "updated.contact@example.test", mobile: "+61400099999" } });
+expect("a client can update their own contact details", updateContact.status === 200,
+  JSON.stringify(updateContact.json));
+const afterContactUpdate = await call("/api/crm/workspace", { cookie: owner.cookie });
+const updatedClientCase = (afterContactUpdate.json?.cases ?? []).find(
+  (row) => row.clientId === portalClientId);
+expect("the updated contact details are reflected on the case",
+  updatedClientCase?.email === "updated.contact@example.test", JSON.stringify(updatedClientCase));
+
+const staffContactUpdate = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "update_own_contact", email: "not.allowed@example.test" } });
+// A staff account has no client_user_links row of its own, so the RPC
+// refuses for want of a linked client -- a plain 400, not a role check.
+expect("staff cannot use the client's own-contact action",
+  staffContactUpdate.status === 400, JSON.stringify(staffContactUpdate.json));
+
+const acknowledge = await call("/api/crm/workspace", { method: "POST", cookie: selfServiceLogin.cookie,
+  body: { action: "acknowledge_consent", declarationType: "privacy_policy", response: true } });
+expect("a client can acknowledge a consent declaration", acknowledge.status === 200,
+  JSON.stringify(acknowledge.json));
+const afterConsentWorkspace = await call("/api/crm/workspace", { cookie: selfServiceLogin.cookie });
+const ownDeclaration = (afterConsentWorkspace.json?.declarations ?? []).find(
+  (row) => row.clientId === portalClientId && row.type === "privacy_policy");
+expect("the acknowledgement is recorded and visible to the client",
+  ownDeclaration?.response === true, JSON.stringify(ownDeclaration));
+
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });
 expect("sign out succeeds", out.status === 200);

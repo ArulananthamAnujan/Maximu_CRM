@@ -225,6 +225,7 @@ type InvoiceRecord = {
   client: string;
   amount: number;
   paid: number;
+  credited: number;
   balance: number;
   type: string;
   issued: string;
@@ -240,6 +241,25 @@ type CommissionClaimRecord = {
   receivedAmount: number;
   status: string;
   dueOn: string;
+};
+type JourneyMilestone = {
+  caseId: string;
+  fromStage: string;
+  toStage: string;
+  at: string;
+  reason: string;
+};
+type ClientDeclaration = {
+  id: string;
+  clientId: string;
+  type: string;
+  response: boolean | null;
+  declaredAt: string | null;
+};
+type SavedView = {
+  id: string;
+  name: string;
+  filters: Record<string, unknown>;
 };
 type TemplateRecord = {
   id: string;
@@ -1466,21 +1486,108 @@ function WorkspaceDashboard({
 
 function CaseWorkspace({
   title,
+  module,
   cases,
   filter,
   setFilter,
   openModal,
   onSelect,
+  staff,
+  canBulkAssign,
+  onBulkAssign,
 }: {
   title: string;
+  // Which screen this is, so a saved view is offered back only on the same
+  // screen it was saved from.
+  module: string;
   cases: CaseRecord[];
   filter: string;
   setFilter: (x: string) => void;
   openModal: (x: ModalType) => void;
   onSelect: (x: CaseRecord) => void;
+  staff: StaffRecord[];
+  canBulkAssign: boolean;
+  onBulkAssign: (records: CaseRecord[], ownerId: string) => Promise<void>;
 }) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [assigning, setAssigning] = useState(false);
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  // A screen switch must not carry a selection from one case list into the
+  // next; adjusted here, during render, rather than in an effect.
+  const [selectionModule, setSelectionModule] = useState(module);
+  if (selectionModule !== module) {
+    setSelectionModule(module);
+    setSelectedIds(new Set());
+  }
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/crm/saved-views?module=${encodeURIComponent(module)}`,
+          { cache: "no-store" },
+        );
+        const result = await response.json();
+        if (!cancelled && response.ok) setSavedViews(result.views ?? []);
+      } catch {
+        // A saved view is a convenience; its absence is not worth an error.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [module]);
+
   const shown =
     filter === "all" ? cases : cases.filter((c) => c.status === filter);
+  const toggleOne = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelectedIds((prev) =>
+      prev.size === shown.length ? new Set() : new Set(shown.map((c) => c.id)),
+    );
+  const selectedRecords = shown.filter((c) => selectedIds.has(c.id));
+
+  const saveCurrentView = async () => {
+    const name = window.prompt("Name this view (for example, \"My waiting cases\")");
+    if (!name?.trim()) return;
+    try {
+      const response = await fetch("/api/crm/saved-views", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          module,
+          name: name.trim(),
+          filters: { filter },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The view could not be saved.");
+      setSavedViews(result.views ?? []);
+    } catch {
+      // Non-critical; the filter tab itself still works.
+    }
+  };
+  const deleteView = async (id: string) => {
+    try {
+      const response = await fetch("/api/crm/saved-views", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", id, module }),
+      });
+      const result = await response.json();
+      if (response.ok) setSavedViews(result.views ?? []);
+    } catch {
+      // Non-critical.
+    }
+  };
+
   return (
     <article className="panel listPanel">
       <div className="toolbar">
@@ -1514,6 +1621,29 @@ function CaseWorkspace({
           </button>
         </div>
       </div>
+      <div className="savedViewsBar">
+        {savedViews.map((view) => (
+            <span className="savedViewChip" key={view.id}>
+              <button
+                type="button"
+                onClick={() => setFilter(String(view.filters?.filter ?? "all"))}
+              >
+                {view.name}
+              </button>
+              <button
+                type="button"
+                aria-label={`Delete saved view ${view.name}`}
+                onClick={() => void deleteView(view.id)}
+              >
+                <X size={11} />
+              </button>
+            </span>
+          ))}
+        <button type="button" className="savedViewSave" onClick={() => void saveCurrentView()}>
+          <Plus size={11} />
+          Save this view
+        </button>
+      </div>
       {shown.length === 0 ? (
         <EmptyState
           icon={Users}
@@ -1523,46 +1653,103 @@ function CaseWorkspace({
           onAction={() => openModal("case")}
         />
       ) : (
-        <div className="richTable">
-          <div className="richHeader">
-            <span>Client</span>
-            <span>Matter</span>
-            <span>Stage</span>
-            <span>Owner</span>
-            <span>Health</span>
-            <span>Due</span>
+        <>
+          {canBulkAssign && selectedIds.size > 0 && (
+            <div className="bulkActionBar">
+              <span>{selectedIds.size} selected</span>
+              <select
+                aria-label="Assign selected cases to"
+                disabled={assigning}
+                defaultValue=""
+                onChange={async (event) => {
+                  const ownerId = event.target.value;
+                  if (!ownerId) return;
+                  setAssigning(true);
+                  await onBulkAssign(selectedRecords, ownerId);
+                  setAssigning(false);
+                  setSelectedIds(new Set());
+                  event.target.value = "";
+                }}
+              >
+                <option value="">Assign to…</option>
+                {staff
+                  .filter((person) => person.active && person.level !== "student")
+                  .map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {person.display_name}
+                    </option>
+                  ))}
+              </select>
+              <button className="linkButton" onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </button>
+            </div>
+          )}
+          <div className="richTable">
+            <div className="richHeaderWrap">
+              {canBulkAssign && (
+                <span className="rowCheckboxCell">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all shown cases"
+                    checked={selectedIds.size > 0 && selectedIds.size === shown.length}
+                    onChange={toggleAll}
+                  />
+                </span>
+              )}
+              <div className="richHeader">
+                <span>Client</span>
+                <span>Matter</span>
+                <span>Stage</span>
+                <span>Owner</span>
+                <span>Health</span>
+                <span>Due</span>
+              </div>
+            </div>
+            {shown.map((c) => (
+              <div className="richRowWrap" key={c.id}>
+                {canBulkAssign && (
+                  <span className="rowCheckboxCell">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${c.name}`}
+                      checked={selectedIds.has(c.id)}
+                      onChange={() => toggleOne(c.id)}
+                    />
+                  </span>
+                )}
+                <button className="richRow" onClick={() => onSelect(c)}>
+                  <span className="clientCell">
+                    <b>{c.name}</b>
+                    <small>
+                      {c.id} · {c.branch || "No branch"}
+                    </small>
+                  </span>
+                  <span>
+                    <b>{c.type}</b>
+                    <small>{c.target || "No target"}</small>
+                  </span>
+                  <span className="progressCell">
+                    <b>{c.stage}</b>
+                    <div>
+                      <i style={{ width: `${c.progress}%` }} />
+                    </div>
+                    <small>{c.progress}% complete</small>
+                  </span>
+                  <span>
+                    <b>{c.owner || "Unassigned"}</b>
+                  </span>
+                  <span>
+                    <Status value={c.health} />
+                  </span>
+                  <span>
+                    <b>{c.due || "Not set"}</b>
+                  </span>
+                </button>
+              </div>
+            ))}
           </div>
-          {shown.map((c) => (
-            <button className="richRow" key={c.id} onClick={() => onSelect(c)}>
-              <span className="clientCell">
-                <b>{c.name}</b>
-                <small>
-                  {c.id} · {c.branch || "No branch"}
-                </small>
-              </span>
-              <span>
-                <b>{c.type}</b>
-                <small>{c.target || "No target"}</small>
-              </span>
-              <span className="progressCell">
-                <b>{c.stage}</b>
-                <div>
-                  <i style={{ width: `${c.progress}%` }} />
-                </div>
-                <small>{c.progress}% complete</small>
-              </span>
-              <span>
-                <b>{c.owner || "Unassigned"}</b>
-              </span>
-              <span>
-                <Status value={c.health} />
-              </span>
-              <span>
-                <b>{c.due || "Not set"}</b>
-              </span>
-            </button>
-          ))}
-        </div>
+        </>
       )}
     </article>
   );
@@ -2447,6 +2634,7 @@ function FinanceView({
   setItems,
   canManage,
   onRefund,
+  onCreditNote,
 }: {
   items: InvoiceRecord[];
   openModal: (x: ModalType) => void;
@@ -2455,6 +2643,7 @@ function FinanceView({
   // sees the ledger without controls the database would refuse.
   canManage: boolean;
   onRefund: (invoice: InvoiceRecord) => void;
+  onCreditNote: (invoice: InvoiceRecord) => void;
 }) {
   const total = items.reduce((s, x) => s + x.amount, 0);
   return (
@@ -2546,6 +2735,11 @@ function FinanceView({
                   {i.status === "Paid" && (
                     <button className="ghostButton" onClick={() => onRefund(i)}>
                       Record refund
+                    </button>
+                  )}
+                  {i.status !== "Paid" && i.status !== "Void" && (
+                    <button className="ghostButton" onClick={() => onCreditNote(i)}>
+                      Credit note
                     </button>
                   )}
                   <button
@@ -2830,7 +3024,35 @@ function WorkflowView({
   );
 }
 
-function PortalView({ cases }: { cases: CaseRecord[] }) {
+const REQUIRED_CONSENTS: { type: string; label: string; detail: string }[] = [
+  {
+    type: "privacy_policy",
+    label: "Privacy policy",
+    detail: "How Maximus collects, stores and uses your personal information.",
+  },
+  {
+    type: "data_processing",
+    label: "Data processing consent",
+    detail:
+      "Sharing what your case needs with institutions, visa authorities and other parties involved in it.",
+  },
+];
+
+function PortalView({
+  cases,
+  journeyHistory,
+  declarations,
+}: {
+  cases: CaseRecord[];
+  journeyHistory: JourneyMilestone[];
+  declarations: ClientDeclaration[];
+}) {
+  const [editingContact, setEditingContact] = useState(false);
+  const [contactError, setContactError] = useState("");
+  const [savingContact, setSavingContact] = useState(false);
+  const [consentError, setConsentError] = useState("");
+  const [savingConsent, setSavingConsent] = useState("");
+
   const c = cases[0];
   if (!c)
     return (
@@ -2856,6 +3078,35 @@ function PortalView({ cases }: { cases: CaseRecord[] }) {
         </button>
       </article>
     );
+
+  const milestones = journeyHistory
+    .filter((row) => row.caseId === c.dbId)
+    .slice()
+    .reverse();
+  const ownDeclarations = declarations.filter((row) => row.clientId === c.clientId);
+  const acknowledge = async (type: string) => {
+    setSavingConsent(type);
+    setConsentError("");
+    try {
+      const response = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "acknowledge_consent",
+          declarationType: type,
+          response: true,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "That could not be recorded.");
+      window.location.reload();
+    } catch (reason) {
+      setConsentError(reason instanceof Error ? reason.message : "That could not be recorded.");
+    } finally {
+      setSavingConsent("");
+    }
+  };
+
   return (
     <section className="clientPortal">
       <article className="clientWelcome">
@@ -2902,6 +3153,125 @@ function PortalView({ cases }: { cases: CaseRecord[] }) {
             View next step
           </button>
         </div>
+        {milestones.length > 0 && (
+          <div className="journeyTimeline">
+            <span className="kicker">HOW YOU GOT HERE</span>
+            {milestones.map((m, index) => (
+              <div className="journeyStep" key={`${m.at}-${index}`}>
+                <div className="journeyDot" />
+                <div>
+                  <strong>{m.toStage}</strong>
+                  <small>
+                    {m.fromStage ? `from ${m.fromStage} · ` : ""}
+                    {orgDateTime(m.at)}
+                  </small>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </article>
+
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">MY DETAILS</span>
+            <h2>Contact information</h2>
+          </div>
+          <button className="ghostButton" onClick={() => setEditingContact(!editingContact)}>
+            {editingContact ? "Close" : "Edit"}
+          </button>
+        </div>
+        {editingContact ? (
+          <form
+            className="stackedForm"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setSavingContact(true);
+              setContactError("");
+              const data = new FormData(event.currentTarget);
+              try {
+                const response = await fetch("/api/crm/workspace", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    action: "update_own_contact",
+                    email: data.get("email"),
+                    mobile: data.get("mobile"),
+                    preferredName: data.get("preferredName"),
+                  }),
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || "Your details could not be updated.");
+                window.location.reload();
+              } catch (reason) {
+                setContactError(
+                  reason instanceof Error ? reason.message : "Your details could not be updated.",
+                );
+              } finally {
+                setSavingContact(false);
+              }
+            }}
+          >
+            <label>
+              Email
+              <input name="email" type="email" defaultValue={c.email} />
+            </label>
+            <label>
+              Mobile
+              <input name="mobile" type="tel" defaultValue={c.phone} />
+            </label>
+            <label>
+              Preferred name
+              <input name="preferredName" placeholder="What should we call you?" />
+            </label>
+            {contactError && <p className="caseWorkError">{contactError}</p>}
+            <button className="primaryButton" type="submit" disabled={savingContact}>
+              {savingContact ? "Saving…" : "Save changes"}
+            </button>
+          </form>
+        ) : (
+          <div className="functionalRow">
+            <div>
+              <strong>{c.email || "No email on file"}</strong>
+              <span>{c.phone || "No mobile on file"}</span>
+            </div>
+          </div>
+        )}
+      </article>
+
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">CONSENT</span>
+            <h2>Privacy and data acknowledgements</h2>
+          </div>
+        </div>
+        {consentError && <p className="caseWorkError">{consentError}</p>}
+        {REQUIRED_CONSENTS.map((item) => {
+          const given = ownDeclarations.find(
+            (row) => row.type === item.type && row.response === true,
+          );
+          return (
+            <div className="functionalRow" key={item.type}>
+              <div>
+                <strong>{item.label}</strong>
+                <span>{item.detail}</span>
+              </div>
+              {given ? (
+                <Status value="Acknowledged" />
+              ) : (
+                <button
+                  className="ghostButton"
+                  disabled={savingConsent === item.type}
+                  onClick={() => void acknowledge(item.type)}
+                >
+                  {savingConsent === item.type ? "Saving…" : "I acknowledge"}
+                </button>
+              )}
+            </div>
+          );
+        })}
       </article>
     </section>
   );
@@ -4537,6 +4907,164 @@ type AdminBranch = {
   active: boolean;
 };
 
+type ClientSearchResult = { id: string; title: string; subtitle: string };
+
+/** A live-search picker for one client record, used twice by MergeClientsPanel. */
+function ClientPicker({
+  label,
+  selected,
+  onSelect,
+}: {
+  label: string;
+  selected: ClientSearchResult | null;
+  onSelect: (x: ClientSearchResult | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<ClientSearchResult[]>([]);
+  const searchable = !selected && query.trim().length >= 2;
+  useEffect(() => {
+    if (!searchable) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch(`/api/crm/search?q=${encodeURIComponent(query)}`);
+          const result = await response.json();
+          if (cancelled || !response.ok) return;
+          setResults(
+            (result.results ?? [])
+              .filter((row: { type: string }) => row.type === "client")
+              .map((row: { id: string; title: string; subtitle: string }) => ({
+                id: row.id,
+                title: row.title,
+                subtitle: row.subtitle,
+              })),
+          );
+        } catch {
+          if (!cancelled) setResults([]);
+        }
+      })();
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, searchable]);
+
+  if (selected)
+    return (
+      <label>
+        {label}
+        <div className="pickedRecord">
+          <span>{selected.title}</span>
+          <button
+            type="button"
+            className="iconButton"
+            aria-label={`Change ${label.toLowerCase()}`}
+            onClick={() => onSelect(null)}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      </label>
+    );
+  return (
+    <label>
+      {label}
+      <input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search by name, email or mobile…"
+      />
+      {results.length > 0 && (
+        <div className="searchResults">
+          {results.map((row) => (
+            <button
+              type="button"
+              key={row.id}
+              onClick={() => {
+                onSelect(row);
+                setQuery("");
+              }}
+            >
+              <b>{row.title}</b>
+              <small>{row.subtitle}</small>
+            </button>
+          ))}
+        </div>
+      )}
+    </label>
+  );
+}
+
+/** Two duplicate client records that turned out to be the same person,
+ * merged into one -- everything on the duplicate moves to the survivor. */
+function MergeClientsPanel() {
+  const [keep, setKeep] = useState<ClientSearchResult | null>(null);
+  const [away, setAway] = useState<ClientSearchResult | null>(null);
+  const [working, setWorking] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const merge = async () => {
+    if (!keep || !away) return;
+    if (
+      !confirm(
+        `Merge "${away.title}" into "${keep.title}"? Everything on ${away.title}'s record -- cases, documents, invoices -- moves to ${keep.title}, and the duplicate record is then removed. This cannot be undone.`,
+      )
+    )
+      return;
+    setWorking(true);
+    setError("");
+    try {
+      const response = await fetch("/api/crm/duplicates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "merge", keepClientId: keep.id, mergeClientId: away.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The records could not be merged.");
+      setMessage(`Merged. "${away.title}" no longer exists as a separate record.`);
+      setKeep(null);
+      setAway(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The records could not be merged.");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <article className="panel listPanel">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">DATA QUALITY</span>
+          <h2>Merge duplicate clients</h2>
+        </div>
+      </div>
+      <p className="coverageIntro">
+        Two records that turned out to be the same person. Everything on the
+        duplicate -- cases, documents, invoices, messages -- moves onto the
+        one you keep, and the duplicate is removed.
+      </p>
+      <div className="stackedForm">
+        <ClientPicker label="Keep this record" selected={keep} onSelect={setKeep} />
+        <ClientPicker label="Merge this one away" selected={away} onSelect={setAway} />
+        {error && <p className="caseWorkError">{error}</p>}
+        {message && <p className="coverageIntro">{message}</p>}
+        <button
+          type="button"
+          className="primaryButton"
+          disabled={!keep || !away || keep.id === away.id || working}
+          onClick={() => void merge()}
+        >
+          {working ? "Merging…" : "Merge records"}
+        </button>
+      </div>
+    </article>
+  );
+}
+
 /**
  * Staff & Masters. This is where an agency owner adds a person to the team,
  * which is the one thing the screen never used to do: it showed role artwork
@@ -4661,7 +5189,9 @@ function AdminView({
 
   const branchName = (id: string | null) =>
     adminBranches.find((branch) => branch.id === id)?.name ?? "No branch";
-  const pending = invitations.filter((row) => row.status === "pending");
+  const actionableInvitations = invitations.filter(
+    (row) => row.status !== "accepted",
+  );
   const portalAccounts = profiles.filter((row) => row.level === "student");
 
   return (
@@ -4896,7 +5426,7 @@ function AdminView({
         </p>
       </article>
 
-      {pending.length > 0 && (
+      {actionableInvitations.length > 0 && (
         <article className="panel listPanel">
           <div className="panelHead">
             <div>
@@ -4908,7 +5438,7 @@ function AdminView({
             Their CRM account is created the first time they sign in with the
             Supabase login for that address.
           </p>
-          {pending.map((invitation) => (
+          {actionableInvitations.map((invitation) => (
             <div className="functionalRow" key={invitation.id}>
               <UserCog size={18} />
               <div>
@@ -4919,18 +5449,34 @@ function AdminView({
                   {invitation.expires_at.slice(0, 10)}
                 </span>
               </div>
-              <button
-                className="linkButton"
-                disabled={working}
-                onClick={() =>
-                  void send({
-                    action: "revoke_invitation",
-                    invitationId: invitation.id,
-                  })
-                }
-              >
-                Revoke
-              </button>
+              <Status value={invitation.status} />
+              {invitation.status === "pending" ? (
+                <button
+                  className="linkButton"
+                  disabled={working}
+                  onClick={() =>
+                    void send({
+                      action: "revoke_invitation",
+                      invitationId: invitation.id,
+                    })
+                  }
+                >
+                  Revoke
+                </button>
+              ) : (
+                <button
+                  className="linkButton"
+                  disabled={working}
+                  onClick={() =>
+                    void send({
+                      action: "resend_invitation",
+                      invitationId: invitation.id,
+                    })
+                  }
+                >
+                  Resend
+                </button>
+              )}
             </div>
           ))}
         </article>
@@ -4993,11 +5539,33 @@ function AdminView({
                     </option>
                   ))}
                 </select>
+                {linked && (
+                  <button
+                    className="linkButton"
+                    disabled={working}
+                    onClick={() => {
+                      if (
+                        confirm(
+                          `Disconnect ${person.display_name} from their client record? They can be reconnected at any time.`,
+                        )
+                      )
+                        void send({
+                          action: "unlink_client_account",
+                          profileId: person.id,
+                          endpoint: "operations",
+                        });
+                    }}
+                  >
+                    Disconnect
+                  </button>
+                )}
               </div>
             );
           })
         )}
       </article>
+
+      <MergeClientsPanel />
 
       <article className="panel listPanel">
         <div className="panelHead">
@@ -7725,6 +8293,8 @@ export default function Home() {
     [messages, setMessages] = useState<MessageRecord[]>([]),
     [invoices, setInvoices] = useState<InvoiceRecord[]>([]),
     [commissionClaims, setCommissionClaims] = useState<CommissionClaimRecord[]>([]),
+    [journeyHistory, setJourneyHistory] = useState<JourneyMilestone[]>([]),
+    [declarations, setDeclarations] = useState<ClientDeclaration[]>([]),
     [templates, setTemplates] = useState<TemplateRecord[]>([]),
     [workflows, setWorkflows] = useState<WorkflowRecord[]>([]),
     [audits, setAudits] = useState<AuditRecord[]>([]),
@@ -7736,6 +8306,7 @@ export default function Home() {
     [staff, setStaff] = useState<StaffRecord[]>([]),
     [branches, setBranches] = useState<BranchRecord[]>([]),
     [schemaWarning, setSchemaWarning] = useState<string>(""),
+    [truncated, setTruncated] = useState<string[]>([]),
     [storageConnected, setStorageConnected] = useState(false);
   // The module a role lands on is chosen once per sign-in. The workspace loads
   // in two steps -- the session first, then the records -- and the navigation is
@@ -7818,6 +8389,8 @@ export default function Home() {
       setMessages(result.messages || []);
       setInvoices(result.invoices || []);
       setCommissionClaims(result.commissionClaims || []);
+      setJourneyHistory(result.journeyHistory || []);
+      setDeclarations(result.declarations || []);
       setTemplates(result.templates || []);
       setWorkflows(result.workflows || []);
       setAudits(result.audits || []);
@@ -7832,6 +8405,7 @@ export default function Home() {
       setSchemaWarning(
         typeof result.schemaWarning === "string" ? result.schemaWarning : "",
       );
+      setTruncated(Array.isArray(result.truncated) ? result.truncated : []);
       setStorageConnected(result.capabilities?.documentStorage === true);
       setBranches((result.branches || []) as BranchRecord[]);
       landOn(result.identity.role as AppRole);
@@ -8110,6 +8684,36 @@ export default function Home() {
       );
     }
   };
+  const bulkAssignCases = async (records: CaseRecord[], ownerId: string) => {
+    const caseIds = records.map((record) => record.dbId).filter(Boolean) as string[];
+    if (caseIds.length === 0) {
+      say("None of the selected cases could be identified.");
+      return;
+    }
+    try {
+      const response = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "bulk_assign", caseIds, ownerId }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "The cases could not be reassigned.");
+      await loadWorkspace();
+      const owner = staff.find((person) => person.id === ownerId);
+      const failed = Number(result.failed ?? 0);
+      say(
+        `${result.succeeded ?? caseIds.length} case${(result.succeeded ?? caseIds.length) === 1 ? "" : "s"} assigned to ${owner?.display_name || "the new owner"}` +
+          (failed > 0 ? ` (${failed} could not be reassigned).` : "."),
+      );
+    } catch (reason) {
+      say(
+        reason instanceof Error
+          ? reason.message
+          : "The cases could not be reassigned.",
+      );
+    }
+  };
   const moveCaseStage = async (
     record: CaseRecord,
     stage: LifecycleStage,
@@ -8383,7 +8987,7 @@ export default function Home() {
   if (role === "client")
     content =
       active === "portal" ? (
-        <PortalView cases={cases} />
+        <PortalView cases={cases} journeyHistory={journeyHistory} declarations={declarations} />
       ) : (
         <ClientModuleView
           module={active}
@@ -8464,6 +9068,24 @@ export default function Home() {
               void mutateRemote("invoice", "refund", invoice.id, {
                 amount: invoice.paid,
               });
+          }}
+          onCreditNote={(invoice) => {
+            const remaining = invoice.balance;
+            const amount = window.prompt(
+              `How much of ${invoice.client}'s $${remaining.toLocaleString()} balance should be forgiven?`,
+              String(remaining),
+            );
+            if (amount === null) return;
+            const parsed = Number(amount);
+            if (!Number.isFinite(parsed) || parsed <= 0) {
+              say("Enter an amount greater than zero.");
+              return;
+            }
+            const reason = window.prompt("Reason for the credit note (optional)?") ?? "";
+            void mutateRemote("invoice", "credit", invoice.id, {
+              amount: parsed,
+              reason: reason || undefined,
+            });
           }}
         />
         <CommissionClaimsPanel
@@ -8646,11 +9268,15 @@ export default function Home() {
                 ? "Cases at the client stage"
                 : meta[active][0]
         }
+        module={active}
         cases={list}
         filter={filter}
         setFilter={setFilter}
         openModal={open}
         onSelect={setSelected}
+        staff={staff}
+        canBulkAssign={canManageFinance}
+        onBulkAssign={bulkAssignCases}
       />
     );
     // These two screens lead with the records themselves. The case list stays
@@ -8687,6 +9313,16 @@ export default function Home() {
         <div className="schemaBanner" role="status">
           <AlertTriangle size={15} />
           <span>{schemaWarning}</span>
+        </div>
+      )}
+      {truncated.length > 0 && (
+        <div className="truncationBanner" role="status">
+          <AlertTriangle size={15} />
+          <span>
+            Showing only the most recent records for {truncated.join(", ")} --
+            there may be more. Narrow a filter or ask an administrator if you
+            need to see further back.
+          </span>
         </div>
       )}
       <Sidebar
