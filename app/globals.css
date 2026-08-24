@@ -3577,6 +3577,19 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.institutionBlock {
+  border: 1px solid #eaf0f5;
+  border-radius: 10px;
+  padding: 4px 12px 8px;
+  margin-top: 12px;
+}
+.institutionBlock .functionalRow:first-of-type {
+  margin-top: 4px;
+}
+.courseRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-left: 16px;
+}
 .taskCheck {
   width: 25px;
   height: 25px;
