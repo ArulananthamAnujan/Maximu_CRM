@@ -81,9 +81,12 @@ export async function POST(request: Request) {
 
       if (!serviceRoleKey()) return await recordInvitation();
 
-      // A password they must change, generated here and shown once.
+      // A password they must change, generated here and shown once -- but only
+      // meaningful for a login created here. Connecting a pre-existing one
+      // (below) hands nothing over, because nobody here knows its password.
       const temporaryPassword = temporary();
       let created: { id?: string };
+      let connectedExisting = false;
       try {
         created = await supabaseAdminRequest<{ id?: string }>("/auth/v1/admin/users", {
           method: "POST",
@@ -92,13 +95,16 @@ export async function POST(request: Request) {
           }),
         });
       } catch (error) {
-        // That address already has a Supabase login -- exactly the shape of
-        // a client demo account that was never given a CRM profile. Recording
-        // the invitation is what actually connects it; erroring out here left
-        // the person with the same advice and nowhere to act on it.
-        if (error instanceof SupabaseError && error.status === 422)
-          return await recordInvitation();
-        throw error;
+        // That address already has a Supabase login -- exactly the shape of a
+        // client demo account that was never given a CRM profile. It is
+        // connected directly here rather than by recording an invitation and
+        // waiting for that login to sign itself in, which never happens if
+        // nobody holds its password -- exactly the dead end this replaces.
+        if (!(error instanceof SupabaseError) || error.status !== 422) throw error;
+        const existingId = await findAuthUserByEmail(address);
+        if (!existingId) return await recordInvitation();
+        created = { id: existingId };
+        connectedExisting = true;
       }
       if (!created?.id)
         throw new InputError("The login was not created, so no staff account was made.");
@@ -111,15 +117,26 @@ export async function POST(request: Request) {
         }, token);
       } catch (error) {
         // Leaving a login with no profile behind would block that person from
-        // ever being added again, so it is removed with the failure.
-        await supabaseAdminRequest(`/auth/v1/admin/users/${created.id}`, { method: "DELETE" })
-          .catch(() => undefined);
+        // ever being added again, so a login created here is removed with the
+        // failure. A pre-existing login is never touched -- it is not ours to
+        // delete.
+        if (!connectedExisting)
+          await supabaseAdminRequest(`/auth/v1/admin/users/${created.id}`, { method: "DELETE" })
+            .catch(() => undefined);
         throw error;
       }
       if (roleId)
         await insert("profile_roles", {
           profile_id: created.id, role_id: roleId, branch_id: branchId,
         }, token, "resolution=merge-duplicates,return=minimal").catch(() => undefined);
+
+      if (connectedExisting)
+        return appendRefreshCookies(Response.json({
+          ok: true,
+          created: "connected",
+          email: address,
+          message: `${displayName}'s existing login is now connected. They can sign in with the password they already have.`,
+        }), session.refreshed, request);
 
       return appendRefreshCookies(Response.json({
         ok: true,
@@ -194,6 +211,23 @@ async function defaultRoleId(level: string, org: string, token: string) {
     token,
   ) as Array<{ id: string }>;
   return rows[0]?.id ?? null;
+}
+
+/** An existing Supabase Auth login's id, found by email, or null if there is
+ * none -- used to connect a pre-existing account (a client demo login, most
+ * often) to a CRM profile directly, without it having to sign in first. */
+async function findAuthUserByEmail(address: string): Promise<string | null> {
+  try {
+    const result = await supabaseAdminRequest<{ users?: { id: string; email?: string }[] }>(
+      `/auth/v1/admin/users?email=${encodeURIComponent(address)}`,
+    );
+    const match = (result.users ?? []).find(
+      (row) => (row.email ?? "").toLowerCase() === address.toLowerCase(),
+    );
+    return match?.id ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** A one-time password: long, random, and shown to the administrator once. */

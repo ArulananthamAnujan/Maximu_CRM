@@ -191,6 +191,17 @@ const server = http.createServer((req, res) => {
           await sql(`delete from auth.users where id = ${lit(adminUser[1])}`, null, false);
           return send(200, {});
         }
+        if (req.method === "GET" && !adminUser[1]) {
+          // Looks up an existing login by email so a demo account that predates
+          // any CRM profile can be connected directly, without waiting for it
+          // to sign in itself.
+          const email = url.searchParams.get("email");
+          const rows = await sql(
+            `select json_agg(json_build_object('id', id::text, 'email', email)) from auth.users`
+              + (email ? ` where lower(email) = lower(${lit(email)})` : ""),
+            null, false);
+          return send(200, { users: rows ? JSON.parse(rows) : [] });
+        }
         return send(405, { message: "method not allowed" });
       }
 
