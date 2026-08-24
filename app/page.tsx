@@ -221,6 +221,16 @@ type InvoiceRecord = {
   due: string;
   status: string;
 };
+type CommissionClaimRecord = {
+  id: string;
+  partnerName: string;
+  institution: string;
+  currency: string;
+  expectedAmount: number;
+  receivedAmount: number;
+  status: string;
+  dueOn: string;
+};
 type TemplateRecord = {
   id: string;
   name: string;
@@ -2173,6 +2183,7 @@ function FinanceView({
   openModal,
   setItems,
   canManage,
+  onRefund,
 }: {
   items: InvoiceRecord[];
   openModal: (x: ModalType) => void;
@@ -2180,6 +2191,7 @@ function FinanceView({
   // Invoices are writable only by manager level and above, so a case officer
   // sees the ledger without controls the database would refuse.
   canManage: boolean;
+  onRefund: (invoice: InvoiceRecord) => void;
 }) {
   const total = items.reduce((s, x) => s + x.amount, 0);
   return (
@@ -2268,6 +2280,11 @@ function FinanceView({
                   >
                     {i.status === "Paid" ? "Mark unpaid" : "Record payment"}
                   </button>
+                  {i.status === "Paid" && (
+                    <button className="ghostButton" onClick={() => onRefund(i)}>
+                      Record refund
+                    </button>
+                  )}
                   <button
                     className="iconButton"
                     onClick={() => setItems(items.filter((x) => x.id !== i.id))}
@@ -2285,6 +2302,109 @@ function FinanceView({
         )}
       </article>
     </>
+  );
+}
+/** Commissions an institution or partner owes the agency -- a table that
+ * existed with no way in or out of it: raised nowhere, received nowhere. */
+function CommissionClaimsPanel({
+  items,
+  canManage,
+  onCreate,
+  onMarkReceived,
+}: {
+  items: CommissionClaimRecord[];
+  canManage: boolean;
+  onCreate: (data: { partnerName: string; institution: string; expectedAmount: number; dueOn: string }) => void;
+  onMarkReceived: (claim: CommissionClaimRecord) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  if (!canManage) return null;
+  return (
+    <article className="panel listPanel">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">COMMISSIONS</span>
+          <h2>Partner and institution claims</h2>
+        </div>
+        <button className="primaryButton" onClick={() => setAdding(!adding)}>
+          <Plus size={16} />
+          {adding ? "Close" : "New claim"}
+        </button>
+      </div>
+      {adding && (
+        <form
+          className="stackedForm"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            onCreate({
+              partnerName: String(data.get("partnerName") || ""),
+              institution: String(data.get("institution") || ""),
+              expectedAmount: Number(data.get("expectedAmount") || 0),
+              dueOn: String(data.get("dueOn") || ""),
+            });
+            setAdding(false);
+          }}
+        >
+          <label>
+            Partner *<input name="partnerName" required />
+          </label>
+          <label>
+            Institution
+            <input name="institution" />
+          </label>
+          <label>
+            Expected amount *
+            <input name="expectedAmount" type="number" min="0.01" step="0.01" required />
+          </label>
+          <label>
+            Due
+            <input name="dueOn" type="date" />
+          </label>
+          <div className="formActions">
+            <button className="primaryButton">
+              <Check size={15} />
+              Raise claim
+            </button>
+          </div>
+        </form>
+      )}
+      {items.length === 0 ? (
+        <EmptyState
+          icon={CircleDollarSign}
+          title="No commission claims"
+          copy="Raise a claim when a partner or institution owes the agency a commission."
+          action="New claim"
+          onAction={() => setAdding(true)}
+        />
+      ) : (
+        items.map((claim) => (
+          <div className="functionalRow" key={claim.id}>
+            <div>
+              <strong>{claim.partnerName}</strong>
+              <span>
+                {claim.institution || "No institution set"}
+                {claim.dueOn ? ` · Due ${claim.dueOn}` : ""}
+              </span>
+            </div>
+            <b>
+              ${claim.receivedAmount.toLocaleString()} / $
+              {claim.expectedAmount.toLocaleString()}
+            </b>
+            {claim.status === "received" ? (
+              <Status value="Received" />
+            ) : (
+              <button
+                className="ghostButton"
+                onClick={() => onMarkReceived(claim)}
+              >
+                Mark received
+              </button>
+            )}
+          </div>
+        ))
+      )}
+    </article>
   );
 }
 function TemplatesView({
@@ -6970,6 +7090,7 @@ export default function Home() {
     [documents, setDocuments] = useState<DocumentRecord[]>([]),
     [messages, setMessages] = useState<MessageRecord[]>([]),
     [invoices, setInvoices] = useState<InvoiceRecord[]>([]),
+    [commissionClaims, setCommissionClaims] = useState<CommissionClaimRecord[]>([]),
     [templates, setTemplates] = useState<TemplateRecord[]>([]),
     [workflows, setWorkflows] = useState<WorkflowRecord[]>([]),
     [audits, setAudits] = useState<AuditRecord[]>([]),
@@ -7062,6 +7183,7 @@ export default function Home() {
       setDocuments(result.documents || []);
       setMessages(result.messages || []);
       setInvoices(result.invoices || []);
+      setCommissionClaims(result.commissionClaims || []);
       setTemplates(result.templates || []);
       setWorkflows(result.workflows || []);
       setAudits(result.audits || []);
@@ -7451,6 +7573,30 @@ export default function Home() {
       );
     }
   }
+  async function postOperation(
+    action: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    try {
+      const response = await fetch("/api/crm/operations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...extra }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "The update was rejected.");
+      await loadWorkspace();
+      say("Live record updated");
+    } catch (reason) {
+      await loadWorkspace();
+      say(
+        reason instanceof Error
+          ? reason.message
+          : "The update could not be saved.",
+      );
+    }
+  }
   const syncTasks = (next: TaskRecord[]) => {
     const removed = tasks.find(
       (item) => !next.some((candidate) => candidate.id === item.id),
@@ -7660,12 +7806,52 @@ export default function Home() {
     );
   else if (active === "finance")
     content = (
-      <FinanceView
-        items={visibleInvoices}
-        openModal={open}
-        setItems={syncInvoices}
-        canManage={canManageFinance}
-      />
+      <>
+        <FinanceView
+          items={visibleInvoices}
+          openModal={open}
+          setItems={syncInvoices}
+          canManage={canManageFinance}
+          onRefund={(invoice) => {
+            if (
+              confirm(
+                `Refund $${invoice.paid.toLocaleString()} to ${invoice.client}? This is recorded against the invoice and cannot be undone here.`,
+              )
+            )
+              void mutateRemote("invoice", "refund", invoice.id, {
+                amount: invoice.paid,
+              });
+          }}
+        />
+        <CommissionClaimsPanel
+          items={commissionClaims}
+          canManage={canManageFinance}
+          onCreate={(data) =>
+            void postOperation("create_commission_claim", {
+              partnerName: data.partnerName,
+              institution: data.institution,
+              expectedAmount: data.expectedAmount,
+              dueOn: data.dueOn,
+            })
+          }
+          onMarkReceived={(claim) => {
+            const receivedAmount = window.prompt(
+              `Amount received from ${claim.partnerName}?`,
+              String(claim.expectedAmount),
+            );
+            if (receivedAmount === null) return;
+            const parsed = Number(receivedAmount);
+            if (!Number.isFinite(parsed) || parsed <= 0) {
+              say("Enter an amount greater than zero.");
+              return;
+            }
+            void postOperation("record_commission_received", {
+              claimId: claim.id,
+              receivedAmount: parsed,
+            });
+          }}
+        />
+      </>
     );
   else if (active === "templates")
     content = (

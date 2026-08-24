@@ -59,6 +59,7 @@ export async function GET(request: Request) {
       threads,
       messages,
       invoices,
+      commissionClaims,
       templates,
       workflowTemplates,
       audit,
@@ -94,6 +95,11 @@ export async function GET(request: Request) {
         degraded,
       ),
       safeRest("invoices?select=*&order=issued_on.desc&limit=300", token, degraded),
+      safeRest(
+        "commission_claims?select=*&order=due_on.asc.nullslast&limit=300",
+        token,
+        degraded,
+      ),
       safeRest(
         "content_templates?select=*&order=updated_at.desc&limit=200",
         token,
@@ -292,9 +298,29 @@ export async function GET(request: Request) {
           type: String(row.invoice_type ?? "professional_fee"),
           issued: String(row.issued_on ?? ""),
           due: String(row.due_on ?? ""),
-          status: row.state === "paid" ? "Paid" : "Unpaid",
+          status:
+            row.state === "paid"
+              ? "Paid"
+              : row.state === "refunded"
+                ? "Refunded"
+                : row.state === "void"
+                  ? "Void"
+                  : "Unpaid",
         };
       }),
+      // Row-level security already limits this to manager level and above --
+      // the same read scope commission_claims_internal has always had -- so
+      // it comes back empty rather than forbidden for anyone else.
+      commissionClaims: commissionClaims.map((row) => ({
+        id: row.id,
+        partnerName: String(row.partner_name ?? ""),
+        institution: String(row.institution ?? ""),
+        currency: String(row.currency ?? "AUD"),
+        expectedAmount: Number(row.expected_amount ?? 0),
+        receivedAmount: Number(row.received_amount ?? 0),
+        status: String(row.status ?? "expected"),
+        dueOn: row.due_on ? String(row.due_on) : "",
+      })),
       templates: templates.map((row) => ({
         id: row.id,
         name: row.name,
@@ -1144,6 +1170,24 @@ export async function POST(request: Request) {
           {
             state: body.completed ? "paid" : "issued",
             paid: body.completed ? Number(body.amount ?? 0) : 0,
+          },
+          token,
+        );
+      } else if (resource === "invoice" && operation === "refund") {
+        // What was collected stays on the record -- a refund reverses the
+        // money, not the history of what was actually paid.
+        await patchRow("invoices", id, { state: "refunded" }, token);
+        await insert(
+          "payments",
+          {
+            id: crypto.randomUUID(),
+            organisation_id: org,
+            invoice_id: id,
+            amount: -Math.abs(Number(body.amount ?? 0)),
+            currency: nullable(body.currency) || "AUD",
+            method: nullable(body.method),
+            reference: nullable(body.reason) ?? "Refund",
+            recorded_by: actor,
           },
           token,
         );

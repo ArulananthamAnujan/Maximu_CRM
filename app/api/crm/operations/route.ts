@@ -80,6 +80,25 @@ export async function POST(request: Request) {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can record payments.");
       const amount = positiveNumber(body.amount, "Amount");
       await insert("payments", { id: crypto.randomUUID(), organisation_id: org, invoice_id: uuid(body.invoiceId, "Invoice"), amount, currency: optional(body.currency) || "AUD", method: optional(body.method), reference: optional(body.reference), recorded_by: actor }, token);
+    } else if (action === "create_commission_claim") {
+      if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can raise a commission claim.");
+      await insert("commission_claims", {
+        id: crypto.randomUUID(),
+        organisation_id: org,
+        application_id: optionalUuid(body.applicationId),
+        partner_name: required(body.partnerName, "Partner"),
+        institution: optional(body.institution),
+        currency: optional(body.currency) || "AUD",
+        expected_amount: positiveNumber(body.expectedAmount, "Expected amount"),
+        due_on: optionalDate(body.dueOn),
+      }, token);
+    } else if (action === "record_commission_received") {
+      if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can record a commission receipt.");
+      const receivedAmount = positiveNumber(body.receivedAmount, "Received amount");
+      await patch("commission_claims", uuid(body.claimId, "Commission claim"), {
+        received_amount: receivedAmount,
+        status: "received",
+      }, token);
     } else if (action === "link_client_account") {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can link client accounts.");
       await insert("client_user_links", { profile_id: uuid(body.profileId, "Profile"), client_id: uuid(body.clientId, "Client") }, token, "resolution=merge-duplicates,return=minimal");

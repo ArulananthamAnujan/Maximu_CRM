@@ -213,6 +213,15 @@ expect("a manager can mark an invoice paid",
 const invoiceByStaff = await mutate("invoice", "toggle", invoice?.id, { completed: true });
 expect("a case officer cannot change an invoice", invoiceByStaff.status === 403,
   `${invoiceByStaff.status} ${JSON.stringify(invoiceByStaff.json)}`);
+const refundByStaff = await mutate("invoice", "refund", invoice?.id, { amount: 1500 });
+expect("a case officer cannot refund an invoice", refundByStaff.status === 403,
+  `${refundByStaff.status} ${JSON.stringify(refundByStaff.json)}`);
+expect("a manager can refund a paid invoice",
+  (await mutate("invoice", "refund", invoice?.id, { amount: 1500 }, owner.cookie)).status === 200);
+const ws6b = await call("/api/crm/workspace", { cookie: owner.cookie });
+const refunded = (ws6b.json?.invoices ?? []).find((row) => row.id === invoice?.id);
+expect("the refunded invoice shows as refunded, not unpaid",
+  refunded?.status === "Refunded", JSON.stringify(refunded));
 expect("a message draft can be marked ready", (await mutate("message", "toggle", message?.id, { completed: true })).status === 200);
 expect("a document can be archived", (await mutate("document", "delete", document?.id)).status === 200);
 expect("an appointment can be deleted", (await mutate("appointment", "delete", appointment?.id)).status === 200);
@@ -294,6 +303,24 @@ const payment = paidInvoice
   ? await opsPost({ action: "record_payment", invoiceId: paidInvoice.id, amount: 500, method: "bank_transfer" }, owner.cookie)
   : { status: 0, json: { error: "no invoice to pay" } };
 expect("a payment can be recorded", payment.status === 200, JSON.stringify(payment.json));
+const claimByStaff = await opsPost({ action: "create_commission_claim",
+  partnerName: "Rogue Partner", expectedAmount: 500 });
+expect("a case officer cannot raise a commission claim", claimByStaff.status === 403,
+  `${claimByStaff.status} ${JSON.stringify(claimByStaff.json)}`);
+const claim = await opsPost({ action: "create_commission_claim",
+  partnerName: "Study Partners Pty Ltd", institution: "Monash University", expectedAmount: 2200 }, owner.cookie);
+expect("a manager can raise a commission claim", claim.status === 200, JSON.stringify(claim.json));
+const wsClaims = await call("/api/crm/workspace", { cookie: owner.cookie });
+const raisedClaim = (wsClaims.json?.commissionClaims ?? [])
+  .find((row) => row.partnerName === "Study Partners Pty Ltd");
+expect("the raised claim is on the workspace", Boolean(raisedClaim), JSON.stringify(wsClaims.json?.commissionClaims)?.slice(0, 200));
+expect("a case officer cannot see commission claims",
+  (await call("/api/crm/workspace", { cookie: officer.cookie })).json?.commissionClaims?.length === 0);
+const receiveByStaff = await opsPost({ action: "record_commission_received", claimId: raisedClaim?.id, receivedAmount: 2200 });
+expect("a case officer cannot record a commission receipt", receiveByStaff.status === 403);
+const received = await opsPost({ action: "record_commission_received",
+  claimId: raisedClaim?.id, receivedAmount: 2200 }, owner.cookie);
+expect("a manager can record a commission receipt", received.status === 200, JSON.stringify(received.json));
 const queue = await opsPost({ action: "queue_integration", provider: "google_drive",
   operation: "create_folder", caseId: newCaseId, idempotencyKey: `audit-${Date.now()}` }, owner.cookie);
 expect("an integration job can be queued", queue.status === 200, JSON.stringify(queue.json));
