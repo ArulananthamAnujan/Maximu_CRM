@@ -170,6 +170,26 @@ export async function POST(request: Request) {
         if (!["super_admin","branch_admin","manager","staff","partner","student"].includes(level)) throw new InputError("Account level is invalid.");
         changes.level = level;
       }
+      // Deactivating or demoting the organisation's last active Super Admin
+      // would lock everyone out of administration -- nobody left who could
+      // undo it. Checked here, against the row as it stands right now, rather
+      // than left to whoever notices the organisation has gone unmanageable.
+      if (changes.active === false || (changes.level && changes.level !== "super_admin")) {
+        const [targetRow] = await get(
+          `profiles?select=level,active&id=eq.${target}&limit=1`,
+          token,
+        ) as { level: string; active: boolean }[];
+        if (targetRow?.level === "super_admin" && targetRow.active) {
+          const remaining = await get(
+            `profiles?select=id&organisation_id=eq.${org}&level=eq.super_admin&active=eq.true&id=neq.${target}`,
+            token,
+          ) as { id: string }[];
+          if (remaining.length === 0)
+            throw new InputError(
+              "This is the organisation's last Super Admin. Promote someone else to Super Admin first.",
+            );
+        }
+      }
       await patch("profiles", target, changes, token);
     } else if (action === "assign_role") {
       if (session.identity.role !== "super_admin") throw new LiveAccessError(403, "Only a Super Admin can assign roles.");
