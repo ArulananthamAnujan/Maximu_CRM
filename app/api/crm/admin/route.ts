@@ -150,6 +150,14 @@ export async function POST(request: Request) {
     if (action === "revoke_invitation") {
       await patch("staff_invitations", uuid(body.invitationId, "Invitation"),
         { status: "revoked" }, token);
+    } else if (action === "resend_invitation") {
+      // Whatever state it was in -- still pending, revoked, or expired -- a
+      // resend puts it back in front of that person with a fresh week to
+      // accept it.
+      await patch("staff_invitations", uuid(body.invitationId, "Invitation"), {
+        status: "pending",
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      }, token);
     } else if (action === "create_invitation") {
       const roleId = uuid(body.roleId, "Role");
       // Defaults to the inviter's own branch, so an invited person lands

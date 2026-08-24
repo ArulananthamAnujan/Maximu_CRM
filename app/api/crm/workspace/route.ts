@@ -42,6 +42,14 @@ export function allowedLifecycleMoves(from: LifecycleStage): LifecycleStage[] {
   return moves;
 }
 
+// Raised well past what a single agency realistically holds, but a limit is
+// still a limit: RECORD_LIMIT rows fetched exactly at the cap means there may
+// be more the interface never asked for, so that is reported rather than
+// silently dropped. Real pagination -- fetching further pages on request --
+// is a larger, separate change to how every screen loads its data; this is
+// the honest stopgap for it.
+const RECORD_LIMIT = 800;
+
 export async function GET(request: Request) {
   try {
     const session = await liveSession(request);
@@ -61,6 +69,9 @@ export async function GET(request: Request) {
       messages,
       invoices,
       commissionClaims,
+      creditNotes,
+      stageHistory,
+      declarations,
       templates,
       workflowTemplates,
       audit,
@@ -72,32 +83,45 @@ export async function GET(request: Request) {
       visaHistory,
     ] = await Promise.all([
       safeRest(
-        "clients?select=*&archived_at=is.null&order=updated_at.desc&limit=200",
+        `clients?select=*&archived_at=is.null&order=updated_at.desc&limit=${RECORD_LIMIT}`,
         token,
         degraded,
       ),
-      safeRest("cases?select=*&order=opened_at.desc&limit=200", token, degraded),
+      safeRest(`cases?select=*&order=opened_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
       safeRest("workflow_stages?select=*&order=position.asc", token, degraded),
-      safeRest("tasks?select=*&order=created_at.desc&limit=300", token, degraded),
+      safeRest(`tasks?select=*&order=created_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
       safeRest(
-        "appointments?select=*&order=starts_at.asc&limit=300",
+        `appointments?select=*&order=starts_at.asc&limit=${RECORD_LIMIT}`,
         token,
         degraded,
       ),
-      safeRest("documents?select=*&order=created_at.desc&limit=300", token, degraded),
+      safeRest(`documents?select=*&order=created_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
       safeRest(
-        "email_threads?select=*&order=last_message_at.desc&limit=200",
+        `email_threads?select=*&order=last_message_at.desc&limit=${RECORD_LIMIT}`,
         token,
         degraded,
       ),
       safeRest(
-        "email_messages?select=*&order=sent_at.desc.nullslast&limit=300",
+        `email_messages?select=*&order=sent_at.desc.nullslast&limit=${RECORD_LIMIT}`,
         token,
         degraded,
       ),
-      safeRest("invoices?select=*&order=issued_on.desc&limit=300", token, degraded),
+      safeRest(`invoices?select=*&order=issued_on.desc&limit=${RECORD_LIMIT}`, token, degraded),
       safeRest(
-        "commission_claims?select=*&order=due_on.asc.nullslast&limit=300",
+        `commission_claims?select=*&order=due_on.asc.nullslast&limit=${RECORD_LIMIT}`,
+        token,
+        degraded,
+      ),
+      safeRest("credit_notes?select=*&order=issued_at.desc&limit=2000", token, degraded),
+      // The journey a client's case has actually taken, for the portal's
+      // milestone timeline -- not just where it is now, but how it got there.
+      safeRest(
+        "case_stage_history?select=case_id,from_stage_id,to_stage_id,entered_at,reason&order=entered_at.asc&limit=5000",
+        token,
+        degraded,
+      ),
+      safeRest(
+        "client_declarations?select=id,client_id,declaration_type,response,declared_at&limit=2000",
         token,
         degraded,
       ),
@@ -149,6 +173,21 @@ export async function GET(request: Request) {
       ),
     ]);
 
+    // A dataset fetched exactly up to its cap may have more rows the
+    // interface never saw -- flagged rather than silently short.
+    const truncated = (
+      [
+        ["clients", clients],
+        ["cases", cases],
+        ["tasks", tasks],
+        ["appointments", appointments],
+        ["documents", documents],
+        ["invoices", invoices],
+      ] as const
+    )
+      .filter(([, rows]) => rows.length === RECORD_LIMIT)
+      .map(([name]) => name);
+
     // A deferral is an application moved to a later intake, not a phrase typed
     // into a status box. Count them per case so the interface can stop matching
     // the word "defer" against free text.
@@ -169,6 +208,11 @@ export async function GET(request: Request) {
       if (!heldVisaByClient.has(key)) heldVisaByClient.set(key, row);
     }
     const stageById = new Map(stages.map((row) => [String(row.id), row]));
+    const creditedByInvoice = new Map<string, number>();
+    for (const row of creditNotes) {
+      const key = String(row.invoice_id);
+      creditedByInvoice.set(key, (creditedByInvoice.get(key) ?? 0) + Number(row.amount ?? 0));
+    }
     const branchById = new Map(branches.map((row) => [String(row.id), row]));
     const profileById = new Map(profiles.map((row) => [String(row.id), row]));
     const threadById = new Map(threads.map((row) => [String(row.id), row]));
@@ -181,6 +225,7 @@ export async function GET(request: Request) {
     const payload = {
       identity: session.identity,
       degraded,
+      truncated,
       capabilities: {
         lifecycle: lifecycleEnabled,
         documentStorage: driveConfigured(),
@@ -287,12 +332,14 @@ export async function GET(request: Request) {
       invoices: invoices.map((row) => {
         const total = Number(row.total ?? 0);
         const paid = Number(row.paid ?? 0);
+        const credited = creditedByInvoice.get(String(row.id)) ?? 0;
         return {
           id: row.id,
           client: fullClientName(clientById.get(String(row.client_id))),
           amount: total,
           paid,
-          balance: Math.max(0, total - paid),
+          credited,
+          balance: Math.max(0, total - paid - credited),
           // The portal shows only what the client is billed. Anything else --
           // a commission claim raised against a partner, for instance -- is
           // never a client's business and is filtered out on the way to them.
@@ -309,6 +356,34 @@ export async function GET(request: Request) {
                   : "Unpaid",
         };
       }),
+      // Management-only, same read scope as commission claims -- comes back
+      // empty rather than forbidden for anyone else.
+      creditNotes: creditNotes.map((row) => ({
+        id: row.id,
+        invoiceId: String(row.invoice_id),
+        amount: Number(row.amount ?? 0),
+        reason: row.reason ?? "",
+        issuedAt: row.issued_at,
+      })),
+      // The journey a client's case has actually taken. can_access_client
+      // already scopes this to a client's own case for the portal, and to
+      // whatever staff can see for everyone else.
+      journeyHistory: stageHistory.map((row) => ({
+        caseId: String(row.case_id),
+        fromStage: row.from_stage_id
+          ? String(stageById.get(String(row.from_stage_id))?.name ?? "")
+          : "",
+        toStage: String(stageById.get(String(row.to_stage_id))?.name ?? ""),
+        at: row.entered_at,
+        reason: row.reason ?? "",
+      })),
+      declarations: declarations.map((row) => ({
+        id: row.id,
+        clientId: String(row.client_id),
+        type: String(row.declaration_type),
+        response: row.response === null ? null : Boolean(row.response),
+        declaredAt: row.declared_at ?? null,
+      })),
       // Row-level security already limits this to manager level and above --
       // the same read scope commission_claims_internal has always had -- so
       // it comes back empty rather than forbidden for anyone else.
@@ -458,7 +533,12 @@ export async function POST(request: Request) {
     const org = session.identity.organisationId;
     const actor = session.identity.profileId;
     // A portal account may write only through the few actions built for it.
-    const PORTAL_ACTIONS = ["message", "appointment_request"];
+    const PORTAL_ACTIONS = [
+      "message",
+      "appointment_request",
+      "update_own_contact",
+      "acknowledge_consent",
+    ];
     if (
       session.identity.role === "client" &&
       !PORTAL_ACTIONS.includes(action)
@@ -467,6 +547,46 @@ export async function POST(request: Request) {
         403,
         "This action is not available in the client portal.",
       );
+
+    if (action === "update_own_contact") {
+      try {
+        await supabaseRequest(
+          "/rest/v1/rpc/update_own_contact_details",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              p_email: nullable(body.email),
+              p_mobile: nullable(body.mobile),
+              p_preferred_name: nullable(body.preferredName),
+            }),
+          },
+          token,
+        );
+      } catch (error) {
+        throw databaseError(error, "Your details could not be updated.");
+      }
+      return Response.json({ ok: true });
+    }
+
+    if (action === "acknowledge_consent") {
+      try {
+        await supabaseRequest(
+          "/rest/v1/rpc/acknowledge_own_consent",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              p_declaration_type: required(body.declarationType, "Declaration"),
+              p_response: Boolean(body.response),
+              p_details: nullable(body.details),
+            }),
+          },
+          token,
+        );
+      } catch (error) {
+        throw databaseError(error, "That could not be recorded.");
+      }
+      return Response.json({ ok: true });
+    }
 
     if (action === "appointment_request") {
       // The client asks; staff confirm. The request is attached to one of their
@@ -997,7 +1117,7 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
-    if (action === "assign") {
+    if (action === "assign" || action === "bulk_assign") {
       // Reassignment is a management action: it changes who is accountable for
       // the case and who sees it in their queue.
       if (
@@ -1006,9 +1126,8 @@ export async function POST(request: Request) {
       )
         throw new LiveAccessError(
           403,
-          "Only an administrator can reassign a case.",
+          `Only an administrator can reassign ${action === "bulk_assign" ? "cases" : "a case"}.`,
         );
-      const caseId = required(body.caseId, "Case");
       const ownerId = required(body.ownerId, "Staff member");
       const candidates = await rest<Json[]>(
         `profiles?select=id,display_name,level,active&id=eq.${encodeURIComponent(ownerId)}&limit=1`,
@@ -1021,37 +1140,62 @@ export async function POST(request: Request) {
         throw new InputError("That account is deactivated.");
       if (candidate.level === "student")
         throw new InputError("A case cannot be assigned to a portal account.");
+      const candidateName = String(candidate.display_name ?? "a colleague");
 
-      await patchRow("cases", caseId, { owner_id: ownerId }, token);
-      await auditEvent(
-        org,
-        actor,
-        "case.reassigned",
-        "case",
-        caseId,
-        session.identity.branchId,
-        `Reassigned case to ${String(candidate.display_name ?? "a colleague")}`,
-        token,
-      );
-      // Tell the new owner, unless an administrator assigned it to themselves.
-      if (ownerId !== actor)
-        await insert(
-          "notifications",
-          {
-            id: crypto.randomUUID(),
-            organisation_id: org,
-            recipient_id: ownerId,
-            case_id: caseId,
-            kind: "case_assigned",
-            title: "A case was assigned to you",
-            body: `${session.identity.displayName} assigned you a case.`,
-          },
+      const caseIds =
+        action === "bulk_assign"
+          ? (Array.isArray(body.caseIds) ? body.caseIds : []).map(String)
+          : [required(body.caseId, "Case")];
+      if (caseIds.length === 0) throw new InputError("Select at least one case.");
+      if (caseIds.length > 200) throw new InputError("Reassign at most 200 cases at a time.");
+
+      let succeeded = 0;
+      const failedCaseIds: string[] = [];
+      for (const caseId of caseIds) {
+        try {
+          await patchRow("cases", caseId, { owner_id: ownerId }, token);
+        } catch (error) {
+          // One case this actor cannot reassign -- not accessible to them, or
+          // already gone -- must not stop the rest of a bulk request.
+          if (action === "bulk_assign" && error instanceof LiveAccessError) {
+            failedCaseIds.push(caseId);
+            continue;
+          }
+          throw error;
+        }
+        succeeded += 1;
+        await auditEvent(
+          org,
+          actor,
+          "case.reassigned",
+          "case",
+          caseId,
+          session.identity.branchId,
+          `Reassigned case to ${candidateName}`,
           token,
-        ).catch((error) => {
-          // The assignment itself succeeded; a failed notification must not
-          // undo it, but it should not disappear either.
-          console.error("Could not notify the new case owner", error);
-        });
+        );
+        // Tell the new owner, unless an administrator assigned it to themselves.
+        if (ownerId !== actor)
+          await insert(
+            "notifications",
+            {
+              id: crypto.randomUUID(),
+              organisation_id: org,
+              recipient_id: ownerId,
+              case_id: caseId,
+              kind: "case_assigned",
+              title: "A case was assigned to you",
+              body: `${session.identity.displayName} assigned you a case.`,
+            },
+            token,
+          ).catch((error) => {
+            // The assignment itself succeeded; a failed notification must not
+            // undo it, but it should not disappear either.
+            console.error("Could not notify the new case owner", error);
+          });
+      }
+      if (action === "bulk_assign")
+        return Response.json({ ok: true, succeeded, failed: failedCaseIds.length });
       return Response.json({ ok: true });
     }
 
@@ -1207,6 +1351,22 @@ export async function POST(request: Request) {
             method: nullable(body.method),
             reference: nullable(body.reason) ?? "Refund",
             recorded_by: actor,
+          },
+          token,
+        );
+      } else if (resource === "invoice" && operation === "credit") {
+        // Forgiving part of what is owed, not a refund of money already
+        // collected -- its own ledger entry, checked against the invoice at
+        // read time rather than folded into the payments total.
+        await insert(
+          "credit_notes",
+          {
+            id: crypto.randomUUID(),
+            organisation_id: org,
+            invoice_id: id,
+            amount: Math.abs(Number(body.amount ?? 0)),
+            reason: nullable(body.reason),
+            issued_by: actor,
           },
           token,
         );
@@ -1549,6 +1709,15 @@ function databaseMessage(detail: string): string | null {
   } catch {
     return null;
   }
+}
+/** Turns a raised-exception SupabaseError into the InputError apiError shows
+ * the user, falling back to a generic message for anything else. */
+function databaseError(error: unknown, fallback: string): Error {
+  if (error instanceof SupabaseError) {
+    const message = databaseMessage(error.message);
+    if (message) return new InputError(message);
+  }
+  return error instanceof Error ? error : new Error(fallback);
 }
 function apiError(error: unknown): Response {
   if (error instanceof InputError)

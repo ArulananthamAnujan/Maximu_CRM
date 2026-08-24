@@ -42,6 +42,29 @@ export async function POST(request: Request) {
     const text = (value: unknown) =>
       typeof value === "string" && value.trim() ? value.trim() : null;
 
+    if (body.action === "merge") {
+      if (session.identity.role === "staff")
+        throw new LiveAccessError(403, "Only administrators can merge duplicate client records.");
+      const keepId = requireUuid(body.keepClientId, "Client to keep");
+      const mergeId = requireUuid(body.mergeClientId, "Duplicate client");
+      try {
+        await supabaseRequest(
+          "/rest/v1/rpc/merge_duplicate_clients",
+          { method: "POST", body: JSON.stringify({ p_keep_client_id: keepId, p_merge_client_id: mergeId }) },
+          session.accessToken,
+        );
+      } catch (error) {
+        // merge_duplicate_clients raises messages meant for the user -- the
+        // records not being in this organisation, or the same id twice.
+        if (error instanceof SupabaseError) {
+          const message = databaseMessage(error.message);
+          if (message) throw new InputError(message);
+        }
+        throw error;
+      }
+      return appendRefreshCookies(Response.json({ ok: true }), session.refreshed, request);
+    }
+
     // The stored passport number is encrypted, so it is the mask that is
     // compared. mask() is deterministic, which is what makes that possible.
     const passport = text(body.passport);
@@ -84,6 +107,8 @@ export async function POST(request: Request) {
       request,
     );
   } catch (error) {
+    if (error instanceof InputError)
+      return Response.json({ ok: false, error: error.message }, { status: 400 });
     if (error instanceof LiveAccessError)
       return Response.json(
         { ok: false, error: error.message },
@@ -96,7 +121,7 @@ export async function POST(request: Request) {
         {
           ok: false,
           error:
-            "The duplicate check is unavailable. Apply supabase/migrations/0015_duplicate_clients.sql to your Supabase project.",
+            "The duplicate check is unavailable. Apply supabase/migrations/0015_duplicate_clients.sql and 0024_tier2_tier3.sql to your Supabase project.",
         },
         { status: 503 },
       );
@@ -105,5 +130,23 @@ export async function POST(request: Request) {
       { ok: false, error: "The duplicate check could not be run." },
       { status: 500 },
     );
+  }
+}
+
+class InputError extends Error {}
+function requireUuid(value: unknown, label: string): string {
+  const parsed = typeof value === "string" ? value.trim() : "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed))
+    throw new InputError(`${label} is invalid.`);
+  return parsed;
+}
+function databaseMessage(detail: string): string | null {
+  try {
+    const parsed = JSON.parse(detail) as { message?: unknown };
+    return typeof parsed.message === "string" && parsed.message.trim()
+      ? parsed.message
+      : null;
+  } catch {
+    return null;
   }
 }
