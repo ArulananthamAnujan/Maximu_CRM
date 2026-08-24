@@ -112,11 +112,12 @@ export async function GET(request: Request) {
       {
         key: "calendar",
         name: "Google Calendar",
-        purpose: "Two-way sync of appointments and staff availability.",
-        state: "not_built",
-        detail:
-          "Appointments are stored in this CRM only. They do not appear in anyone's Google Calendar.",
-        setup: [],
+        purpose: "Push appointments onto a member of staff's own calendar.",
+        state: gmailReady ? "connected" : "not_configured",
+        detail: gmailReady
+          ? "Each member of staff connects their own Google Calendar from Calendar. One direction only: a CRM appointment is created and, on cancellation, removed on their calendar -- nothing is read back the other way."
+          : "GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are not set, so nobody can connect a calendar yet. Appointments are still stored in this CRM only until this is configured.",
+        setup: ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"],
       },
       {
         key: "whatsapp",

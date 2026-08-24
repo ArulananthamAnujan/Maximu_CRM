@@ -1,15 +1,16 @@
 /**
  * A stand-in for Google's token service, the Drive API and the slice of the
- * Gmail API this CRM calls: covers the service-account flow behind the
- * Shared Drive, and the per-staff OAuth code/refresh/send flow behind
- * connecting and sending from a personal Gmail account.
+ * Gmail and Calendar APIs this CRM calls: covers the service-account flow
+ * behind the Shared Drive, and the per-staff OAuth code/refresh flow behind
+ * connecting and sending from a personal Gmail account or pushing to a
+ * personal Google Calendar.
  *
  * The Drive service-account assertion is verified with RS256 against the
  * matching public key, so that signing path is genuinely exercised rather
- * than assumed. The Gmail flow needs no such key: a code or refresh token is
- * a deterministic function of its input, so nothing needs to be remembered
- * between the two -- the same behaviour a real OAuth exchange has, without a
- * browser to click through a consent screen.
+ * than assumed. The Gmail/Calendar flow needs no such key: a code or refresh
+ * token is a deterministic function of its input, so nothing needs to be
+ * remembered between the two -- the same behaviour a real OAuth exchange
+ * has, without a browser to click through a consent screen.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -21,6 +22,7 @@ const SHARED_DRIVE_ID = process.env.DRIVE_STUB_SHARED_DRIVE_ID || "shared-drive-
 const folders = new Map(); // id -> { name, parent }
 const files = new Map(); // id -> { name, mimeType, parents, content, trashed }
 const sentMessages = []; // { to, subject, raw }
+const calendarEvents = new Map(); // id -> { summary, start, end }
 let counter = 0;
 const nextId = (prefix) => `${prefix}-${++counter}`;
 
@@ -128,6 +130,26 @@ const server = http.createServer((req, res) => {
       return send(200, { id, threadId });
     }
 
+    if (req.method === "POST" && url.pathname === "/calendar/v3/calendars/primary/events") {
+      const bearer = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      if (!bearer.startsWith("gmail-access-")) return send(401, { error: { message: "missing token" } });
+      const body = JSON.parse(raw.toString("utf8"));
+      if (!body.summary) return send(400, { error: { message: "summary is required" } });
+      const id = nextId("calendar-event");
+      calendarEvents.set(id, { summary: body.summary, start: body.start, end: body.end });
+      return send(200, { id, summary: body.summary });
+    }
+
+    const eventMatch = /^\/calendar\/v3\/calendars\/primary\/events\/([^/?]+)$/.exec(url.pathname);
+    if (req.method === "DELETE" && eventMatch) {
+      const bearer = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      if (!bearer.startsWith("gmail-access-")) return send(401, { error: { message: "missing token" } });
+      const id = decodeURIComponent(eventMatch[1]);
+      if (!calendarEvents.has(id)) return send(404, { error: { message: "event not found" } });
+      calendarEvents.delete(id);
+      return send(204, undefined);
+    }
+
     // A small window into the stub's state, for assertions.
     if (url.pathname === "/__state")
       return send(200, {
@@ -140,6 +162,7 @@ const server = http.createServer((req, res) => {
           trashed: f.trashed,
         })),
         sentMessages,
+        calendarEvents: [...calendarEvents.entries()].map(([id, e]) => ({ id, ...e })),
       });
 
     const authorised = (req.headers.authorization || "").includes("stub-access-token");

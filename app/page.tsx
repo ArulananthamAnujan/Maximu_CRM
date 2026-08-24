@@ -1832,31 +1832,128 @@ function CalendarView({
   setActive: (x: ModuleKey) => void;
 }) {
   const [calendarNow] = useState(() => new Date());
+  const [connection, setConnection] = useState<MailboxStatus | null>(null);
+  const [connectionError, setConnectionError] = useState("");
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     today = calendarNow.getDay();
+
+  const loadConnection = async () => {
+    try {
+      const response = await fetch("/api/crm/calendar-connection", { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "The calendar connection could not be read.");
+      setConnection(result);
+      setConnectionError("");
+    } catch (reason) {
+      setConnectionError(
+        reason instanceof Error
+          ? reason.message
+          : "The calendar connection could not be read.",
+      );
+    }
+  };
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!cancelled) await loadConnection();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const disconnectCalendar = async () => {
+    if (!confirm("Disconnect your Google Calendar? You can reconnect at any time."))
+      return;
+    try {
+      const response = await fetch("/api/crm/calendar-connection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "disconnect" }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || "Your calendar could not be disconnected.");
+      }
+      await loadConnection();
+    } catch (reason) {
+      setConnectionError(
+        reason instanceof Error
+          ? reason.message
+          : "Your calendar could not be disconnected.",
+      );
+    }
+  };
+
   return (
     <section className="calendarWorkspace">
       <article className="calendarConnectBar">
         <div className="googleG">G</div>
-        <div>
-          <span>GOOGLE CALENDAR</span>
-          <strong>
-            Staff calendar connection is ready for administrator setup
-          </strong>
-          <small>
-            Once authorised, CRM appointments will appear beside each staff
-            member&apos;s Maximus calendar.
-          </small>
-        </div>
-        <Status value="Setup required" />
-        <button
-          className="ghostButton"
-          onClick={() => setActive("integrations")}
-        >
-          <Link2 size={15} />
-          Configure
-        </button>
+        {!connection ? (
+          <div>
+            <span>GOOGLE CALENDAR</span>
+            <strong>Checking your connection…</strong>
+          </div>
+        ) : !connection.oauthConfigured ? (
+          <>
+            <div>
+              <span>GOOGLE CALENDAR</span>
+              <strong>Calendar sync is ready for administrator setup</strong>
+              <small>
+                Once configured, a new appointment is created on the calendar
+                of whoever it is assigned to. Nothing is read back from
+                Google -- moving or deleting an event there does not change
+                the CRM.
+              </small>
+            </div>
+            <Status value="Setup required" />
+            <button
+              className="ghostButton"
+              onClick={() => setActive("integrations")}
+            >
+              <Link2 size={15} />
+              Configure
+            </button>
+          </>
+        ) : connection.connected ? (
+          <>
+            <div>
+              <span>GOOGLE CALENDAR</span>
+              <strong>Connected as {connection.email}</strong>
+              <small>
+                New appointments you own are created on this calendar.
+                Nothing is read back from Google.
+              </small>
+            </div>
+            <Status value="Connected" />
+            <button className="ghostButton" onClick={() => void disconnectCalendar()}>
+              Disconnect
+            </button>
+          </>
+        ) : (
+          <>
+            <div>
+              <span>GOOGLE CALENDAR</span>
+              <strong>Your calendar is not connected</strong>
+              <small>
+                Connect your own Google Calendar so appointments assigned to
+                you appear on it automatically.
+              </small>
+            </div>
+            <button
+              className="ghostButton"
+              onClick={() => {
+                window.location.href = "/api/auth/calendar/start";
+              }}
+            >
+              <Link2 size={15} />
+              Connect Calendar
+            </button>
+          </>
+        )}
       </article>
+      {connectionError && <p className="caseWorkError">{connectionError}</p>}
       <section className="calendarLayout">
         <article className="panel calendarBoard">
           <div className="panelHead">
