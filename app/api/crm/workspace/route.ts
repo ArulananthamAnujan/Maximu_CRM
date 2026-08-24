@@ -8,6 +8,7 @@ import { driveConfigured } from "@/server/google-drive";
 import { protectionConfigured, protect, reveal } from "@/server/protected-fields";
 import { calendarRefreshAccessToken, createCalendarEvent, deleteCalendarEvent } from "@/server/google-calendar";
 import { orgDate, orgTime } from "@/lib/timezone";
+import { VISA_DOCUMENT_TEMPLATES } from "@/lib/visa-document-checklist";
 
 export const dynamic = "force-dynamic";
 
@@ -268,6 +269,11 @@ export async function GET(request: Request) {
         fileName: row.drive_file_id ? "Google Drive file" : "Awaiting upload",
         status: row.state,
         createdAt: row.created_at,
+        caseId: row.case_id ?? "",
+        checklistKey: (row.metadata as Json | null)?.checklist_key ?? "",
+        note: (row.metadata as Json | null)?.note ?? "",
+        due: (row.metadata as Json | null)?.due_on ?? "",
+        clientVisible: (row.metadata as Json | null)?.client_visible !== false,
       })),
       messages: messages.map((row) => {
         const thread = threadById.get(String(row.thread_id)) ?? {};
@@ -822,6 +828,90 @@ export async function POST(request: Request) {
         token,
       );
       return Response.json({ ok: true });
+    }
+
+    if (action === "visaChecklist") {
+      if (session.identity.role === "client")
+        throw new LiveAccessError(403, "Only the case team can request documents.");
+      const caseId = required(body.caseId, "Visa case");
+      const [caseRow] = await rest<Json[]>(
+        `cases?select=id,client_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+        token,
+      );
+      if (!caseRow)
+        throw new LiveAccessError(403, "That visa case is not available to you.");
+
+      const selected = new Set(
+        VISA_DOCUMENT_TEMPLATES
+          .filter((item) => body[`visaDoc_${item.key}`] === "on")
+          .map((item) => item.key),
+      );
+      if (selected.size === 0)
+        throw new InputError("Select at least one document to request.");
+      const existing = await rest<Json[]>(
+        `documents?select=*&case_id=eq.${encodeURIComponent(caseId)}&metadata->>source=eq.visa_checklist`,
+        token,
+      );
+      const byKey = new Map(
+        existing.map((row) => [String((row.metadata as Json | null)?.checklist_key ?? ""), row]),
+      );
+
+      for (const template of VISA_DOCUMENT_TEMPLATES) {
+        const current = byKey.get(template.key);
+        if (selected.has(template.key)) {
+          const metadata = {
+            ...((current?.metadata as Json | null) ?? {}),
+            source: "visa_checklist",
+            checklist_key: template.key,
+            guidance: template.guidance,
+            note: nullable(body.documentNote),
+            due_on: nullable(body.due),
+            client_visible: true,
+          };
+          if (current) {
+            if (String(current.state) === "archived")
+              await patchRow("documents", String(current.id), { state: "requested", metadata }, token);
+            else
+              await patchRow("documents", String(current.id), { metadata }, token);
+          } else {
+            await insert("documents", {
+              id: crypto.randomUUID(),
+              organisation_id: org,
+              client_id: caseRow.client_id,
+              case_id: caseId,
+              document_type: template.category,
+              display_name: template.title,
+              state: "requested",
+              requested_by: actor,
+              metadata,
+            }, token);
+          }
+        } else if (
+          current &&
+          ["requested", "rejected", "archived"].includes(String(current.state)) &&
+          !current.drive_file_id
+        ) {
+          await patchRow("documents", String(current.id), {
+            state: "archived",
+            metadata: {
+              ...((current.metadata as Json | null) ?? {}),
+              client_visible: false,
+              withdrawn_at: new Date().toISOString(),
+            },
+          }, token);
+        }
+      }
+      await auditEvent(
+        org,
+        actor,
+        "visa_document_checklist.updated",
+        "case",
+        caseId,
+        session.identity.branchId,
+        `Updated visa document checklist (${selected.size} requested)`,
+        token,
+      );
+      return Response.json({ ok: true, requested: selected.size });
     }
 
     if (action === "message") {

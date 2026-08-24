@@ -49,6 +49,7 @@ import {
   Send,
   Sparkles,
 } from "lucide-react";
+import { VISA_DOCUMENT_TEMPLATES } from "@/lib/visa-document-checklist";
 
 type ModuleKey =
   | "dashboard"
@@ -87,6 +88,7 @@ type ModalType =
   | "task"
   | "appointment"
   | "document"
+  | "visaChecklist"
   | "message"
   | "invoice"
   | "template"
@@ -202,6 +204,11 @@ type DocumentRecord = {
   fileName: string;
   status: string;
   createdAt: string;
+  caseId?: string;
+  checklistKey?: string;
+  note?: string;
+  due?: string;
+  clientVisible?: boolean;
 };
 type MessageRecord = {
   id: string;
@@ -2108,6 +2115,13 @@ function DocumentsView({
               </button>
             )}
             <button
+              className="ghostButton"
+              onClick={() => openModal("visaChecklist")}
+            >
+              <FileCheck2 size={16} />
+              Visa checklist
+            </button>
+            <button
               className="primaryButton"
               onClick={() => openModal("document")}
             >
@@ -2953,7 +2967,9 @@ function ClientModuleView({
       </article>
     );
   if (module === "documents") {
-    const own = documents.filter((x) => x.client === client.name);
+    const own = documents.filter(
+      (x) => x.client === client.name && x.clientVisible !== false && x.status !== "archived",
+    );
     return (
       <article className="panel listPanel">
         <div className="panelHead">
@@ -2971,6 +2987,8 @@ function ClientModuleView({
                 <span>
                   {d.folder || "Client uploads"} · {d.fileName}
                 </span>
+                {d.note ? <small>{d.note}</small> : null}
+                {d.due ? <small>Requested by {d.due}</small> : null}
               </div>
               <Status value={d.status} />
               {storageConnected && /request|reject/i.test(d.status) ? (
@@ -7041,6 +7059,7 @@ function RecordModal({
   onDifferentPerson,
   serviceMode,
   role,
+  documents,
 }: {
   type: ModalType;
   close: () => void;
@@ -7057,6 +7076,7 @@ function RecordModal({
   onAddCase: (clientId: string) => void;
   onDifferentPerson: () => void;
   role: AppRole;
+  documents: DocumentRecord[];
 }) {
   // Uncontrolled radios left the Matter type select showing whatever it
   // defaulted to at mount: switching workspace here did nothing to it, so a
@@ -7073,6 +7093,8 @@ function RecordModal({
     editing?.matterType ||
       (workspace === "Direct Visa" ? "Migration enquiry" : "Education enquiry"),
   );
+  const [checklistCaseId, setChecklistCaseId] = useState("");
+  const [checklistSelection, setChecklistSelection] = useState<Set<string>>(new Set());
   const switchWorkspace = (next: "Study Abroad" | "Direct Visa") => {
     setWorkspace(next);
     if (!editing)
@@ -7088,6 +7110,8 @@ function RecordModal({
   const [openFor, setOpenFor] = useState(openKey);
   if (openKey !== openFor) {
     setOpenFor(openKey);
+    setChecklistCaseId("");
+    setChecklistSelection(new Set());
     const nextWorkspace: "Study Abroad" | "Direct Visa" = editing
       ? editing.serviceType === "direct_visa" ? "Direct Visa" : "Study Abroad"
       : serviceMode === "direct_visa" ? "Direct Visa" : "Study Abroad";
@@ -7103,6 +7127,7 @@ function RecordModal({
     task: "Create task",
     appointment: "Schedule appointment",
     document: "Request document",
+    visaChecklist: "Visa document checklist",
     message: "Compose draft",
     invoice: "Create invoice",
     template: "Create template",
@@ -7481,6 +7506,78 @@ function RecordModal({
                 uploaded here — attach the file in the shared drive and mark the
                 request received.
               </p>
+            </>
+          )}
+          {type === "visaChecklist" && (
+            <>
+              <label className="full">
+                Visa case
+                <select
+                  name="caseId"
+                  required
+                  value={checklistCaseId}
+                  onChange={(event) => {
+                    const caseId = event.target.value;
+                    setChecklistCaseId(caseId);
+                    setChecklistSelection(
+                      new Set(
+                        documents
+                          .filter(
+                            (document) =>
+                              document.caseId === caseId &&
+                              document.checklistKey &&
+                              document.status !== "archived",
+                          )
+                          .map((document) => String(document.checklistKey)),
+                      ),
+                    );
+                  }}
+                >
+                  <option value="">Select a visa case</option>
+                  {cases
+                    .filter((c) => c.serviceType === "direct_visa" || c.lifecycleStage === "visa")
+                    .map((c) => (
+                      <option key={c.id} value={c.dbId || c.id}>
+                        {c.name} · {c.id}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label>
+                Due date for requested items
+                <input name="due" type="date" />
+              </label>
+              <label className="full">
+                Instructions for the client
+                <textarea name="documentNote" placeholder="Add certification, translation or file-quality instructions that apply to this request." />
+              </label>
+              <p className="modalNotice full">
+                <FileCheck2 size={14} />
+                Tick only documents relevant to this matter. Ticked items appear in the client portal; unticked, unfulfilled checklist requests are withdrawn. Uploaded and verified records are never deleted.
+              </p>
+              <div className="visaChecklist full">
+                {[...new Set(VISA_DOCUMENT_TEMPLATES.map((item) => item.category))].map((category) => (
+                  <fieldset key={category}>
+                    <legend>{category}</legend>
+                    {VISA_DOCUMENT_TEMPLATES.filter((item) => item.category === category).map((item) => (
+                      <label className="checklistChoice" key={item.key}>
+                        <input
+                          name={`visaDoc_${item.key}`}
+                          type="checkbox"
+                          checked={checklistSelection.has(item.key)}
+                          onChange={(event) => {
+                            const next = new Set(checklistSelection);
+                            if (event.target.checked) next.add(item.key);
+                            else next.delete(item.key);
+                            setChecklistSelection(next);
+                          }}
+                        />
+                        <span><strong>{item.title}</strong><small>{item.guidance}</small></span>
+                      </label>
+                    ))}
+                  </fieldset>
+                ))}
+              </div>
             </>
           )}
           {type === "message" && (
@@ -8866,6 +8963,7 @@ export default function Home() {
         branches={branches}
         staff={staff}
         role={role}
+        documents={documents}
         saving={saving}
         error={formError}
       />
