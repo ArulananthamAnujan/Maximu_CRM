@@ -34,6 +34,7 @@ import {
   Pencil,
   Plus,
   Search,
+  School,
   Settings,
   ShieldCheck,
   Trash2,
@@ -63,6 +64,7 @@ type ModuleKey =
   | "case_complete"
   | "documents"
   | "communications"
+  | "courseFinder"
   | "templates"
   | "finance"
   | "reports"
@@ -300,6 +302,10 @@ const studyNavGroups = [
       ["defer", "Defer", Clock3],
     ],
   },
+  {
+    label: "Advising",
+    items: [["courseFinder", "Course Finder", School]],
+  },
 ] as const;
 
 const directVisaNavGroups = [
@@ -477,6 +483,7 @@ const roleConfig: Record<
       "case_complete",
       "documents",
       "communications",
+      "courseFinder",
       "templates",
       "finance",
       "reports",
@@ -504,6 +511,7 @@ const roleConfig: Record<
       "case_complete",
       "documents",
       "communications",
+      "courseFinder",
       "templates",
       "finance",
       "reports",
@@ -530,6 +538,7 @@ const roleConfig: Record<
       "case_complete",
       "documents",
       "communications",
+      "courseFinder",
     ],
   },
   client: {
@@ -700,6 +709,11 @@ const meta: Record<ModuleKey, [string, string, string]> = {
     "Messages",
     "Communication",
     "Case-linked message drafts. Sending is not connected yet.",
+  ],
+  courseFinder: [
+    "Course Finder",
+    "Advising reference",
+    "Institutions and the courses they offer, for advising a client on their options.",
   ],
   templates: [
     "Templates",
@@ -2983,6 +2997,294 @@ function Attention({
       </div>
       <strong>{count}</strong>
     </div>
+  );
+}
+
+type InstitutionRecord = {
+  id: string;
+  name: string;
+  country: string;
+  city: string | null;
+  website: string | null;
+  notes: string | null;
+  active: boolean;
+};
+type CourseFinderCourse = {
+  id: string;
+  institution_id: string;
+  name: string;
+  level: string | null;
+  field_of_study: string | null;
+  duration_months: number | null;
+  tuition_fee: number | null;
+  currency: string;
+  intake_months: string | null;
+  notes: string | null;
+  active: boolean;
+};
+
+/**
+ * Institutions and the courses they offer -- reference data for advising a
+ * client, not tied to any one case. "Course or visa target" on a case has
+ * always been free text; this is the canonical list it was never backed by.
+ */
+function CourseFinderView({ canManage }: { canManage: boolean }) {
+  const [institutions, setInstitutions] = useState<InstitutionRecord[]>([]);
+  const [courses, setCourses] = useState<CourseFinderCourse[]>([]);
+  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [query, setQuery] = useState("");
+  const [addingInstitution, setAddingInstitution] = useState(false);
+  const [addingCourseFor, setAddingCourseFor] = useState<string | null>(null);
+
+  const load = async () => {
+    try {
+      const response = await fetch("/api/crm/course-finder", { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "Course Finder could not be loaded.");
+      setInstitutions(result.institutions || []);
+      setCourses(result.courses || []);
+      setError("");
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Course Finder could not be loaded.",
+      );
+    } finally {
+      setLoaded(true);
+    }
+  };
+  // Kept free of state updates so a component gone by the time the request
+  // returns does not set state on it, the pattern used elsewhere in this file
+  // for a fetch that runs once on mount.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!cancelled) await load();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const send = async (body: Record<string, unknown>) => {
+    const response = await fetch("/api/crm/course-finder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setError(result.error || "That could not be saved.");
+      return false;
+    }
+    await load();
+    return true;
+  };
+
+  if (!loaded)
+    return (
+      <article className="panel listPanel" aria-busy="true">
+        <p className="reportProgress">Loading Course Finder…</p>
+      </article>
+    );
+  if (error && institutions.length === 0)
+    return (
+      <article className="panel listPanel">
+        <p className="caseWorkError">{error}</p>
+      </article>
+    );
+
+  const needle = query.trim().toLowerCase();
+  const coursesByInstitution = new Map<string, CourseFinderCourse[]>();
+  for (const course of courses) {
+    const key = course.institution_id;
+    coursesByInstitution.set(key, [...(coursesByInstitution.get(key) ?? []), course]);
+  }
+  const visibleInstitutions = institutions.filter((inst) => {
+    if (!needle) return true;
+    if (inst.name.toLowerCase().includes(needle)) return true;
+    return (coursesByInstitution.get(inst.id) ?? []).some((c) =>
+      c.name.toLowerCase().includes(needle),
+    );
+  });
+
+  return (
+    <article className="panel listPanel">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">ADVISING</span>
+          <h2>Institutions and courses</h2>
+        </div>
+        {canManage && (
+          <button className="primaryButton" onClick={() => setAddingInstitution(!addingInstitution)}>
+            <Plus size={16} />
+            {addingInstitution ? "Close" : "Add institution"}
+          </button>
+        )}
+      </div>
+      <label className="searchField">
+        Search institutions and courses
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="e.g. Monash, Master of IT"
+        />
+      </label>
+      {error && <p className="caseWorkError">{error}</p>}
+      {addingInstitution && (
+        <form
+          className="stackedForm"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const ok = await send({
+              action: "create_institution",
+              name: data.get("name"),
+              country: data.get("country"),
+              city: data.get("city"),
+              website: data.get("website"),
+            });
+            if (ok) setAddingInstitution(false);
+          }}
+        >
+          <label>
+            Institution name *<input name="name" required />
+          </label>
+          <label>
+            Country *<input name="country" required />
+          </label>
+          <label>
+            City
+            <input name="city" />
+          </label>
+          <label>
+            Website
+            <input name="website" type="url" placeholder="https://" />
+          </label>
+          <div className="formActions">
+            <button className="primaryButton">
+              <Check size={15} />
+              Add institution
+            </button>
+          </div>
+        </form>
+      )}
+      {visibleInstitutions.length === 0 ? (
+        <EmptyState
+          icon={School}
+          title="No institutions yet"
+          copy={
+            canManage
+              ? "Add an institution to start building the course list."
+              : "A manager has not added any institutions yet."
+          }
+          action={canManage ? "Add institution" : undefined}
+          onAction={canManage ? () => setAddingInstitution(true) : undefined}
+        />
+      ) : (
+        visibleInstitutions.map((inst) => (
+          <div className="institutionBlock" key={inst.id}>
+            <div className="functionalRow">
+              <div>
+                <strong>{inst.name}</strong>
+                <span>
+                  {[inst.city, inst.country].filter(Boolean).join(", ")}
+                  {inst.website ? ` · ${inst.website}` : ""}
+                </span>
+              </div>
+              {canManage && (
+                <button
+                  className="ghostButton"
+                  onClick={() =>
+                    setAddingCourseFor(addingCourseFor === inst.id ? null : inst.id)
+                  }
+                >
+                  {addingCourseFor === inst.id ? "Close" : "Add course"}
+                </button>
+              )}
+            </div>
+            {addingCourseFor === inst.id && (
+              <form
+                className="stackedForm"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  const data = new FormData(event.currentTarget);
+                  const ok = await send({
+                    action: "create_course",
+                    institutionId: inst.id,
+                    name: data.get("name"),
+                    level: data.get("level"),
+                    fieldOfStudy: data.get("fieldOfStudy"),
+                    durationMonths: data.get("durationMonths"),
+                    tuitionFee: data.get("tuitionFee"),
+                    currency: data.get("currency"),
+                    intakeMonths: data.get("intakeMonths"),
+                  });
+                  if (ok) setAddingCourseFor(null);
+                }}
+              >
+                <label>
+                  Course name *<input name="name" required />
+                </label>
+                <label>
+                  Level
+                  <input name="level" placeholder="e.g. Master's" />
+                </label>
+                <label>
+                  Field of study
+                  <input name="fieldOfStudy" />
+                </label>
+                <label>
+                  Duration (months)
+                  <input name="durationMonths" type="number" min="1" />
+                </label>
+                <label>
+                  Tuition fee
+                  <input name="tuitionFee" type="number" min="0" step="0.01" />
+                </label>
+                <label>
+                  Currency
+                  <input name="currency" defaultValue="AUD" />
+                </label>
+                <label>
+                  Intake months
+                  <input name="intakeMonths" placeholder="e.g. Feb, Jul" />
+                </label>
+                <div className="formActions">
+                  <button className="primaryButton">
+                    <Check size={15} />
+                    Add course
+                  </button>
+                </div>
+              </form>
+            )}
+            {(coursesByInstitution.get(inst.id) ?? [])
+              .filter(
+                (c) => !needle || c.name.toLowerCase().includes(needle) || inst.name.toLowerCase().includes(needle),
+              )
+              .map((course) => (
+                <div className="functionalRow courseRow" key={course.id}>
+                  <div>
+                    <strong>{course.name}</strong>
+                    <span>
+                      {[course.level, course.field_of_study, course.intake_months]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </div>
+                  <small>
+                    {course.duration_months ? `${course.duration_months} mo` : ""}
+                    {course.tuition_fee
+                      ? ` · ${course.currency} ${course.tuition_fee.toLocaleString()}`
+                      : ""}
+                  </small>
+                </div>
+              ))}
+          </div>
+        ))
+      )}
+    </article>
   );
 }
 
@@ -7804,6 +8106,8 @@ export default function Home() {
     content = (
       <MessagesView items={messages} openModal={open} setItems={syncMessages} />
     );
+  else if (active === "courseFinder")
+    content = <CourseFinderView canManage={role !== "staff"} />;
   else if (active === "finance")
     content = (
       <>

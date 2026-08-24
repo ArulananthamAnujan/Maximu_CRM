@@ -325,6 +325,31 @@ const queue = await opsPost({ action: "queue_integration", provider: "google_dri
   operation: "create_folder", caseId: newCaseId, idempotencyKey: `audit-${Date.now()}` }, owner.cookie);
 expect("an integration job can be queued", queue.status === 200, JSON.stringify(queue.json));
 
+section("Course Finder");
+const cfByStaff = await call("/api/crm/course-finder", { cookie: officer.cookie });
+expect("staff can browse Course Finder", cfByStaff.status === 200, JSON.stringify(cfByStaff.json)?.slice(0, 200));
+const cfByClient = await call("/api/crm/course-finder", { cookie: student.cookie });
+expect("a client cannot reach Course Finder", cfByClient.status === 403);
+const cfCreateByStaff = await call("/api/crm/course-finder", { method: "POST", cookie: officer.cookie,
+  body: { action: "create_institution", name: "Rogue University", country: "AU" } });
+expect("staff cannot add an institution", cfCreateByStaff.status === 403,
+  `${cfCreateByStaff.status} ${JSON.stringify(cfCreateByStaff.json)}`);
+
+const institution = await call("/api/crm/course-finder", { method: "POST", cookie: owner.cookie,
+  body: { action: "create_institution", name: "Monash University", country: "Australia", city: "Melbourne" } });
+expect("a manager can add an institution", institution.status === 200, JSON.stringify(institution.json));
+const cfAfter = await call("/api/crm/course-finder", { cookie: officer.cookie });
+const addedInstitution = (cfAfter.json?.institutions ?? []).find((row) => row.name === "Monash University");
+expect("the institution is visible to staff", Boolean(addedInstitution), JSON.stringify(cfAfter.json?.institutions)?.slice(0, 200));
+const course = await call("/api/crm/course-finder", { method: "POST", cookie: owner.cookie,
+  body: { action: "create_course", institutionId: addedInstitution?.id,
+    name: "Master of Information Technology", level: "Master's", tuitionFee: 42000 } });
+expect("a manager can add a course", course.status === 200, JSON.stringify(course.json));
+const cfWithCourse = await call("/api/crm/course-finder", { cookie: officer.cookie });
+expect("the course is on the list",
+  (cfWithCourse.json?.courses ?? []).some((row) => row.name === "Master of Information Technology"),
+  JSON.stringify(cfWithCourse.json?.courses)?.slice(0, 200));
+
 const notesView = await call(`/api/crm/operations?view=notes&caseId=${newCaseId}`, { cookie: officer.cookie });
 expect("case notes can be read back",
   notesView.status === 200 && (notesView.json?.data?.length ?? 0) > 0,
