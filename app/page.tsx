@@ -995,16 +995,14 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
             <button
               type="button"
               className="googleLoginButton"
-              onClick={() =>
-                setError(
-                  "Google Workspace sign-in will activate after the Maximus OAuth client is connected.",
-                )
-              }
+              onClick={() => {
+                window.location.href = "/api/auth/google/start";
+              }}
             >
               <div className="googleG">G</div>
               <span>
                 <b>Continue with Google Workspace</b>
-                <small>Connection pending</small>
+                <small>Sign in with your Google account</small>
               </span>
               <ChevronDown size={17} />
             </button>
@@ -2592,8 +2590,8 @@ function PortalView({ cases }: { cases: CaseRecord[] }) {
         <h2>No client account is linked yet</h2>
         <p>
           This restricted portal will display only the student/client record
-          linked to the signed-in Supabase account. No demonstration data has
-          been added.
+          linked to the signed-in account. No demonstration data has been
+          added.
         </p>
         <button
           className="ghostButton"
