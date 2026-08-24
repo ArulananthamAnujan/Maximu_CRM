@@ -178,6 +178,10 @@ export async function POST(request: Request) {
       if (session.identity.role !== "super_admin") throw new LiveAccessError(403, "Only a Super Admin can change permissions.");
       await insert("permissions", { id: crypto.randomUUID(), role_id: uuid(body.roleId, "Role"), resource: slug(body.resource, "Resource"), action: slug(body.permissionAction, "Permission action"), field_mask: isObject(body.fieldMask) ? body.fieldMask : {} }, token, "resolution=merge-duplicates,return=minimal");
     } else if (action === "create_branch") {
+      // Opening a new branch is an organisation-structural decision, not a
+      // branch manager's own patch, so it stays with whoever runs the whole
+      // organisation.
+      if (session.identity.role !== "super_admin") throw new LiveAccessError(403, "Only a Super Admin can add a branch.");
       await insert("branches", { id: crypto.randomUUID(), organisation_id: org, name: required(body.name, "Branch name"), code: required(body.code, "Branch code").toUpperCase(), country_code: required(body.countryCode, "Country").toUpperCase(), active: true }, token);
     } else if (action === "update_branch") {
       const changes: Json = {};
