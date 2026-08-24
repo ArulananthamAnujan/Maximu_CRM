@@ -88,7 +88,6 @@ type ModalType =
   | "invoice"
   | "template"
   | "workflow"
-  | "role"
   | null;
 type CaseRecord = {
   dbId?: string;
@@ -718,7 +717,7 @@ const meta: Record<ModuleKey, [string, string, string]> = {
     "Login activity, staff activity and audit controls.",
   ],
   administration: [
-    "Master's",
+    "Staff & Masters",
     "Organisation settings",
     "Staff, roles, branches, partners, institutions, courses and integrations.",
   ],
@@ -3084,36 +3083,58 @@ function ReportsView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">EDUCATION PIPELINE</span>
-            <h2>Enquiry to confirmation of enrolment</h2>
+            <span className="kicker">
+              {serviceMode === "direct_visa" ? "MIGRATION PIPELINE" : "EDUCATION PIPELINE"}
+            </span>
+            <h2>
+              {serviceMode === "direct_visa"
+                ? "Enquiry to visa outcome"
+                : "Enquiry to confirmation of enrolment"}
+            </h2>
           </div>
         </div>
         <ol className="funnel">
           {(
-            [
-              ["Enquiries", conversion.enquiries, ""],
-              [
-                "Converted",
-                conversion.converted,
-                `${conversion.conversionRate}% of enquiries`,
-              ],
-              ["Applications submitted", conversion.applicationsSubmitted, ""],
-              [
-                "Offers received",
-                conversion.offers,
-                `${conversion.offerRate}% of submitted`,
-              ],
-              [
-                "CoEs received",
-                conversion.coes,
-                `${conversion.coeRate}% of offers`,
-              ],
-              [
-                "Deferred to a later intake",
-                conversion.deferred,
-                `${conversion.deferralRate}% of submitted`,
-              ],
-            ] as [string, number, string][]
+            serviceMode === "direct_visa"
+              ? [
+                  ["Enquiries", conversion.enquiries, ""],
+                  [
+                    "Converted to client",
+                    conversion.converted,
+                    `${conversion.conversionRate}% of enquiries`,
+                  ],
+                  ["Visa matters lodged", visas.lodged, `of ${visas.matters} matters`],
+                  [
+                    "Granted",
+                    visas.granted,
+                    `${visas.grantRate}% of lodged and decided`,
+                  ],
+                  ["Refused", visas.refused, ""],
+                ]
+              : [
+                  ["Enquiries", conversion.enquiries, ""],
+                  [
+                    "Converted",
+                    conversion.converted,
+                    `${conversion.conversionRate}% of enquiries`,
+                  ],
+                  ["Applications submitted", conversion.applicationsSubmitted, ""],
+                  [
+                    "Offers received",
+                    conversion.offers,
+                    `${conversion.offerRate}% of submitted`,
+                  ],
+                  [
+                    "CoEs received",
+                    conversion.coes,
+                    `${conversion.coeRate}% of offers`,
+                  ],
+                  [
+                    "Deferred to a later intake",
+                    conversion.deferred,
+                    `${conversion.deferralRate}% of submitted`,
+                  ],
+                ]
           ).map(([label, value, note]) => (
             <li key={label}>
               <span>
@@ -3848,13 +3869,11 @@ type AdminBranch = {
  * nothing.
  */
 function AdminView({
-  openModal,
   roles,
   isOwner,
   currentProfileId,
   clients,
 }: {
-  openModal: (x: ModalType) => void;
   roles: { id: string; name: string; scope: string }[];
   isOwner: boolean;
   currentProfileId: string;
@@ -3979,10 +3998,6 @@ function AdminView({
             <h2>Staff accounts</h2>
           </div>
           <div className="panelHeadActions">
-            <button className="ghostButton" onClick={() => openModal("role")}>
-              <ShieldCheck size={15} />
-              Create staff role
-            </button>
             <button
               className="primaryButton"
               onClick={() => {
@@ -4315,15 +4330,17 @@ function AdminView({
             <span className="kicker">MASTERS</span>
             <h2>Branches</h2>
           </div>
-          <button
-            className="primaryButton"
-            onClick={() => setAddingBranch(!addingBranch)}
-          >
-            <Plus size={16} />
-            {addingBranch ? "Close" : "Add branch"}
-          </button>
+          {isOwner && (
+            <button
+              className="primaryButton"
+              onClick={() => setAddingBranch(!addingBranch)}
+            >
+              <Plus size={16} />
+              {addingBranch ? "Close" : "Add branch"}
+            </button>
+          )}
         </div>
-        {addingBranch && (
+        {isOwner && addingBranch && (
           <form
             className="stackedForm"
             onSubmit={async (event) => {
@@ -6366,6 +6383,7 @@ function RecordModal({
   onAddCase,
   onDifferentPerson,
   serviceMode,
+  role,
 }: {
   type: ModalType;
   close: () => void;
@@ -6381,7 +6399,47 @@ function RecordModal({
   serviceMode: ServiceMode;
   onAddCase: (clientId: string) => void;
   onDifferentPerson: () => void;
+  role: AppRole;
 }) {
+  // Uncontrolled radios left the Matter type select showing whatever it
+  // defaulted to at mount: switching workspace here did nothing to it, so a
+  // migration matter type stayed selected after switching to Study Abroad.
+  // Controlled state keeps them in step; editing an existing case leaves the
+  // matter type as recorded rather than resetting it on every stream toggle.
+  // Declared ahead of the type guard below so hook order never depends on it.
+  const [workspace, setWorkspace] = useState<"Study Abroad" | "Direct Visa">(
+    editing
+      ? editing.serviceType === "direct_visa" ? "Direct Visa" : "Study Abroad"
+      : serviceMode === "direct_visa" ? "Direct Visa" : "Study Abroad",
+  );
+  const [matterType, setMatterType] = useState(
+    editing?.matterType ||
+      (workspace === "Direct Visa" ? "Migration enquiry" : "Education enquiry"),
+  );
+  const switchWorkspace = (next: "Study Abroad" | "Direct Visa") => {
+    setWorkspace(next);
+    if (!editing)
+      setMatterType(next === "Direct Visa" ? "Migration enquiry" : "Education enquiry");
+  };
+  // The modal never unmounts between openings -- it just stops rendering --
+  // so workspace/matterType state from the last time it was open would
+  // otherwise leak into the next: editing one case after another, or
+  // reopening "Create record" from a different workspace tab. Reset during
+  // render when what the modal is open for changes, the pattern used
+  // elsewhere in this file for the same shape of problem.
+  const openKey = `${type ?? ""}:${editing?.id ?? ""}:${serviceMode}`;
+  const [openFor, setOpenFor] = useState(openKey);
+  if (openKey !== openFor) {
+    setOpenFor(openKey);
+    const nextWorkspace: "Study Abroad" | "Direct Visa" = editing
+      ? editing.serviceType === "direct_visa" ? "Direct Visa" : "Study Abroad"
+      : serviceMode === "direct_visa" ? "Direct Visa" : "Study Abroad";
+    setWorkspace(nextWorkspace);
+    setMatterType(
+      editing?.matterType ||
+        (nextWorkspace === "Direct Visa" ? "Migration enquiry" : "Education enquiry"),
+    );
+  }
   if (!type) return null;
   const titles: Record<Exclude<ModalType, null>, string> = {
     case: editing ? "Edit record" : "Create record",
@@ -6392,7 +6450,6 @@ function RecordModal({
     invoice: "Create invoice",
     template: "Create template",
     workflow: "Status configuration",
-    role: "Create role",
   };
   return (
     <div className="modalBackdrop" onClick={close}>
@@ -6489,11 +6546,8 @@ function RecordModal({
                     type="radio"
                     name="workspace"
                     value="Study Abroad"
-                    defaultChecked={
-                      editing
-                        ? editing.serviceType !== "direct_visa"
-                        : serviceMode !== "direct_visa"
-                    }
+                    checked={workspace === "Study Abroad"}
+                    onChange={() => switchWorkspace("Study Abroad")}
                   />
                   Study Abroad
                 </label>
@@ -6502,11 +6556,8 @@ function RecordModal({
                     type="radio"
                     name="workspace"
                     value="Direct Visa"
-                    defaultChecked={
-                      editing
-                        ? editing.serviceType === "direct_visa"
-                        : serviceMode === "direct_visa"
-                    }
+                    checked={workspace === "Direct Visa"}
+                    onChange={() => switchWorkspace("Direct Visa")}
                   />
                   Direct Visa
                 </label>
@@ -6554,12 +6605,8 @@ function RecordModal({
                   <select
                     name="matterType"
                     required
-                    defaultValue={
-                      editing?.matterType ||
-                      (serviceMode === "direct_visa"
-                        ? "Migration enquiry"
-                        : "Education enquiry")
-                    }
+                    value={matterType}
+                    onChange={(e) => setMatterType(e.target.value)}
                   >
                     <option>Education enquiry</option>
                     <option>Migration enquiry</option>
@@ -6603,17 +6650,29 @@ function RecordModal({
                     ))}
                   </select>
                 </label>
-                <label>
-                  Assigned staff
-                  <select name="ownerId" defaultValue={editing?.ownerId ?? ""}>
-                    <option value="">You</option>
-                    {staff.map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.display_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {role === "staff" ? (
+                  // A new case can only be created for oneself when staff --
+                  // the database accepts nothing else -- and reassigning an
+                  // existing one belongs to the dedicated, admin-gated
+                  // reassignment control on the case, not this form. Editing
+                  // still has to carry the case's current owner along rather
+                  // than silently reset it to whoever is editing.
+                  editing?.ownerId ? (
+                    <input type="hidden" name="ownerId" value={editing.ownerId} />
+                  ) : null
+                ) : (
+                  <label>
+                    Assigned staff
+                    <select name="ownerId" defaultValue={editing?.ownerId ?? ""}>
+                      <option value="">You</option>
+                      {staff.map((person) => (
+                        <option key={person.id} value={person.id}>
+                          {person.display_name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <label>
                   Course or visa target
                   <input
@@ -6853,22 +6912,6 @@ function RecordModal({
               <label className="full">
                 Stages
                 <input name="stages" required />
-              </label>
-            </>
-          )}
-          {type === "role" && (
-            <>
-              <label>
-                Role name
-                <input name="name" required />
-              </label>
-              <label>
-                Data scope
-                <select name="scope">
-                  <option>Organisation</option>
-                  <option>Assigned branches</option>
-                  <option>Assigned cases</option>
-                </select>
               </label>
             </>
           )}
@@ -7692,7 +7735,6 @@ export default function Home() {
     content = (
       <>
         <AdminView
-          openModal={open}
           roles={roles}
           isOwner={role === "super_admin"}
           currentProfileId={identity?.profileId ?? ""}
@@ -8091,6 +8133,7 @@ export default function Home() {
         editing={editing}
         branches={branches}
         staff={staff}
+        role={role}
         saving={saving}
         error={formError}
       />

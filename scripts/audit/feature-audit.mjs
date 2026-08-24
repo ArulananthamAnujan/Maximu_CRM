@@ -246,6 +246,12 @@ expect("a case officer cannot open administration", adminStaff.status === 403);
 const roleId = admin.json?.roles?.[0]?.id;
 expect("a branch can be created", (await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
   body: { action: "create_branch", name: "Sydney", code: "SYD", countryCode: "AU" } })).status === 200);
+// Opening a new branch is an organisation-structural decision; a branch
+// manager runs their own branch, not the organisation's shape.
+const managerBranch = await call("/api/crm/admin", { method: "POST", cookie: manager.cookie,
+  body: { action: "create_branch", name: "Rogue Branch", code: "RGE", countryCode: "AU" } });
+expect("a branch manager cannot add a branch", managerBranch.status === 403,
+  JSON.stringify(managerBranch.json));
 const invitation = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
   body: { action: "create_invitation", email: "newstaff@maximus.test", roleId } });
 expect("a staff invitation can be created", invitation.status === 200, JSON.stringify(invitation.json));
