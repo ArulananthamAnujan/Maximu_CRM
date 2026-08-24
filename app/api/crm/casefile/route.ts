@@ -157,6 +157,12 @@ export async function POST(request: Request) {
 
     if (action === "application_create") {
       const id = crypto.randomUUID();
+      const status = applicationStatus(body.status);
+      // A record can be entered already at a later status -- an application
+      // logged after the fact as already Submitted, say -- and the milestone
+      // date it implies has to be stamped then, not only when a later update
+      // moves it there. Reporting reads these dates, not the status text.
+      const now = new Date().toISOString();
       const value = {
         id,
         organisation_id: org,
@@ -166,8 +172,16 @@ export async function POST(request: Request) {
         campus: optional(body.campus),
         intake: optional(body.intake),
         application_reference: optional(body.reference),
-        status: applicationStatus(body.status),
+        status,
         deadline_at: optionalDate(body.deadline),
+        // Each later status implies the ones before it already happened.
+        ...(["submitted", "offer_received", "coe_received"].includes(status)
+          ? { submitted_at: now }
+          : {}),
+        ...(["offer_received", "coe_received"].includes(status)
+          ? { offer_received_at: now }
+          : {}),
+        ...(status === "coe_received" ? { coe_received_at: now } : {}),
         details: {},
       };
       await insert("education_applications", value, token);

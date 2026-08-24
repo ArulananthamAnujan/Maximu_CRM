@@ -32,6 +32,10 @@ insert into public.education_applications (organisation_id,case_id,institution,c
 select 'application_added=' || count(*) from public.education_applications
   where case_id = '00000000-0000-4000-8000-00000000dddd' and institution = 'Sneaky University';
 
+\echo '--- 5b. nor what its client has been billed, before the case is theirs ---'
+select 'invoice_visible_before_reassignment=' || count(*) from public.invoices
+  where id = '00000000-0000-4000-8000-00000000fee1';
+
 \echo '--- 6. once it is reassigned to them, they can work it ---'
 set test.uid = '00000000-0000-4000-8000-000000000001';   -- an administrator
 update public.cases set owner_id = '00000000-0000-4000-8000-000000000009'
@@ -82,3 +86,8 @@ insert into public.ai_interactions
           '00000000-0000-4000-8000-00000000dddd','case_draft','x','y','completed');
 select 'portal_writes=' || count(*) from public.ai_interactions
   where profile_id = '00000000-0000-4000-8000-000000000003';
+
+\echo '--- 13. the case owner (reassigned in step 6) sees what their client has been billed ---'
+set test.uid = '00000000-0000-4000-8000-000000000009';
+select 'invoice_visible_to_owner=' || count(*) from public.invoices
+  where id = '00000000-0000-4000-8000-00000000fee1';

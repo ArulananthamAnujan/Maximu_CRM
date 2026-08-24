@@ -97,6 +97,8 @@ expect_scope "the case owner cannot read the assistant's own interaction" "owner
 expect_scope "a case that changed owner does not carry its history with it" "new_owner_reads=1"
 expect_scope "a portal account can read an internal AI interaction" "portal_reads=0"
 expect_scope "a portal account wrote an AI interaction against a case it cannot access" "portal_writes=0"
+expect_scope "a colleague who does not yet own the case can see what its client has been billed" "invoice_visible_before_reassignment=0"
+expect_scope "the case owner cannot see what their own client has been billed" "invoice_visible_to_owner=1"
 
 echo
 echo "== Duplicate clients are found before a second record is made =="
