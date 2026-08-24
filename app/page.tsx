@@ -46,6 +46,7 @@ import {
   Cloud,
   Link2,
   RefreshCw,
+  Send,
   Sparkles,
 } from "lucide-react";
 
@@ -2090,17 +2091,108 @@ function messageWhen(message: MessageRecord): string {
   return message.sentAt ? `Sent ${stamp}` : `Drafted ${stamp}`;
 }
 
+type MailboxStatus = {
+  oauthConfigured: boolean;
+  connected: boolean;
+  email: string | null;
+};
+
 function MessagesView({
   items,
   openModal,
   setItems,
+  canSend,
 }: {
   items: MessageRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: MessageRecord[]) => void;
+  // A client's own portal login can raise a message to their case team, but
+  // only staff ever dispatch mail as the agency.
+  canSend: boolean;
 }) {
   // A discarded draft is kept for the record but is not part of the outbox.
   const [showDiscarded, setShowDiscarded] = useState(false);
+  const [mailbox, setMailbox] = useState<MailboxStatus | null>(null);
+  const [mailboxError, setMailboxError] = useState("");
+  const [sendingId, setSendingId] = useState<string | null>(null);
+  // Sent locally, ahead of the next full refresh -- kept separate from the
+  // shared items/setItems wiring so a send can never collide with the
+  // draft/ready toggle that setItems already carries.
+  const [sentIds, setSentIds] = useState<Set<string>>(new Set());
+
+  const loadMailbox = async () => {
+    try {
+      const response = await fetch("/api/crm/mailbox", { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "The mailbox status could not be read.");
+      setMailbox(result);
+      setMailboxError("");
+    } catch (reason) {
+      setMailboxError(
+        reason instanceof Error
+          ? reason.message
+          : "The mailbox status could not be read.",
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (!canSend) return;
+    let cancelled = false;
+    void (async () => {
+      if (!cancelled) await loadMailbox();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [canSend]);
+
+  const disconnectMailbox = async () => {
+    if (!confirm("Disconnect your Gmail account? You can reconnect at any time."))
+      return;
+    try {
+      const response = await fetch("/api/crm/mailbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "disconnect" }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || "Your Gmail account could not be disconnected.");
+      }
+      await loadMailbox();
+    } catch (reason) {
+      setMailboxError(
+        reason instanceof Error
+          ? reason.message
+          : "Your Gmail account could not be disconnected.",
+      );
+    }
+  };
+
+  const sendNow = async (messageId: string) => {
+    setSendingId(messageId);
+    setMailboxError("");
+    try {
+      const response = await fetch("/api/crm/mailbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "send_message", messageId }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(result.error || "The message could not be sent.");
+      setSentIds((prev) => new Set(prev).add(messageId));
+    } catch (reason) {
+      setMailboxError(
+        reason instanceof Error ? reason.message : "The message could not be sent.",
+      );
+    } finally {
+      setSendingId(null);
+    }
+  };
+
   const discarded = (message: MessageRecord) =>
     message.status.toLowerCase() === "discarded";
   const discardedCount = items.filter(discarded).length;
@@ -2132,12 +2224,43 @@ function MessagesView({
           </button>
         </div>
       </div>
-      <p className="modalNotice">
-        <AlertTriangle size={14} />
-        Drafts are recorded against the case. No mail provider is connected, so
-        nothing is sent from here yet -- send it from your mailbox and mark the
-        draft ready.
-      </p>
+      {canSend && mailbox?.oauthConfigured ? (
+        <p className="modalNotice">
+          {mailbox.connected ? (
+            <>
+              <Check size={14} />
+              Sending as <b>{mailbox.email}</b>.{" "}
+              <button className="ghostButton" onClick={() => void disconnectMailbox()}>
+                Disconnect
+              </button>
+            </>
+          ) : (
+            <>
+              <Link2 size={14} />
+              Drafts are recorded against the case. Connect your Gmail account to
+              send one directly from here.{" "}
+              <button
+                className="ghostButton"
+                onClick={() => {
+                  window.location.href = "/api/auth/gmail/start";
+                }}
+              >
+                <Link2 size={14} />
+                Connect Gmail
+              </button>
+            </>
+          )}
+        </p>
+      ) : (
+        <p className="modalNotice">
+          <AlertTriangle size={14} />
+          Drafts are recorded against the case.{" "}
+          {canSend
+            ? "Gmail sending is not set up on this deployment yet -- send it from your own mailbox and mark the draft ready."
+            : "Your case team sends the reply -- nothing is dispatched from here."}
+        </p>
+      )}
+      {mailboxError && <p className="caseWorkError">{mailboxError}</p>}
       {shown.length === 0 ? (
         <EmptyState
           icon={Mail}
@@ -2147,45 +2270,62 @@ function MessagesView({
           onAction={() => openModal("message")}
         />
       ) : (
-        shown.map((m) => (
-          <div className="functionalRow" key={m.id}>
-            <div className="docIcon">
-              <Mail size={17} />
+        shown.map((m) => {
+          const sent = sentIds.has(m.id) || m.status.toLowerCase() === "sent";
+          return (
+            <div className="functionalRow" key={m.id}>
+              <div className="docIcon">
+                <Mail size={17} />
+              </div>
+              <div>
+                <strong>{m.subject}</strong>
+                <span>
+                  To {m.to} · {messageWhen(m)}
+                </span>
+              </div>
+              <Status value={sent ? "Sent" : m.status} />
+              {sent ? null : (
+                <>
+                  {canSend && mailbox?.connected && (
+                    <button
+                      className="ghostButton"
+                      onClick={() => void sendNow(m.id)}
+                      disabled={sendingId === m.id}
+                    >
+                      <Send size={14} />
+                      {sendingId === m.id ? "Sending…" : "Send now"}
+                    </button>
+                  )}
+                  <button
+                    className="ghostButton"
+                    onClick={() =>
+                      setItems(
+                        items.map((x) =>
+                          x.id === m.id
+                            ? {
+                                ...x,
+                                status: x.status === "Draft" ? "Ready" : "Draft",
+                              }
+                            : x,
+                        ),
+                      )
+                    }
+                  >
+                    {m.status === "Draft" ? "Mark ready" : "Return to draft"}
+                  </button>
+                  <button
+                    className="iconButton"
+                    onClick={() => setItems(items.filter((x) => x.id !== m.id))}
+                    aria-label="Delete message"
+                    title="Delete message"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </>
+              )}
             </div>
-            <div>
-              <strong>{m.subject}</strong>
-              <span>
-                To {m.to} · {messageWhen(m)}
-              </span>
-            </div>
-            <Status value={m.status} />
-            <button
-              className="ghostButton"
-              onClick={() =>
-                setItems(
-                  items.map((x) =>
-                    x.id === m.id
-                      ? {
-                          ...x,
-                          status: x.status === "Draft" ? "Ready" : "Draft",
-                        }
-                      : x,
-                  ),
-                )
-              }
-            >
-              {m.status === "Draft" ? "Mark ready" : "Return to draft"}
-            </button>
-            <button
-              className="iconButton"
-              onClick={() => setItems(items.filter((x) => x.id !== m.id))}
-              aria-label="Delete message"
-              title="Delete message"
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        ))
+          );
+        })
       )}
     </article>
   );
@@ -8102,7 +8242,14 @@ export default function Home() {
     );
   else if (active === "communications")
     content = (
-      <MessagesView items={messages} openModal={open} setItems={syncMessages} />
+      <MessagesView
+        items={messages}
+        openModal={open}
+        setItems={syncMessages}
+        // This screen is only ever reached by staff -- the client portal has
+        // its own communications screen elsewhere in this render.
+        canSend={true}
+      />
     );
   else if (active === "courseFinder")
     content = <CourseFinderView canManage={role !== "staff"} />;

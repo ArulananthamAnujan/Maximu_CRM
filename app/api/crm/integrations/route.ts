@@ -7,6 +7,7 @@ import { driveProbe } from "@/server/google-drive";
 import { serviceRoleKey, supabaseRequest } from "@/server/supabase";
 import { aiConfigured } from "@/server/ai";
 import { protectionConfigured } from "@/server/protected-fields";
+import { gmailOAuthConfigured } from "@/server/gmail";
 
 /**
  * What is actually connected, checked rather than claimed. Drive is probed for
@@ -37,6 +38,15 @@ export async function GET(request: Request) {
       { method: "GET" },
       session.accessToken,
     ).catch(() => []);
+    // The Google provider toggle lives in the Supabase dashboard, not in this
+    // deployment's own environment, so it is read back from Supabase's own
+    // public settings endpoint rather than assumed from anything set here.
+    const authSettings = await supabaseRequest<{ external?: { google?: boolean } }>(
+      "/auth/v1/settings",
+      { method: "GET" },
+    ).catch(() => null);
+    const googleSignInEnabled = authSettings?.external?.google === true;
+    const gmailReady = gmailOAuthConfigured();
     const integrations = [
       {
         key: "drive",
@@ -93,10 +103,11 @@ export async function GET(request: Request) {
         key: "gmail",
         name: "Gmail sending",
         purpose: "Send case-linked email from the CRM.",
-        state: "not_built",
-        detail:
-          "Drafts are recorded against the case. No mail provider is connected, so nothing is sent from here — send it from your own mailbox and mark the draft ready.",
-        setup: [],
+        state: gmailReady ? "connected" : "not_configured",
+        detail: gmailReady
+          ? "Each member of staff connects their own Gmail account from Messages and sends drafts as themselves."
+          : "GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are not set, so nobody can connect a Gmail account yet. Drafts are still recorded against the case — send from your own mailbox and mark the draft ready until this is configured.",
+        setup: ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"],
       },
       {
         key: "calendar",
@@ -119,9 +130,10 @@ export async function GET(request: Request) {
         key: "google_signin",
         name: "Google sign-in",
         purpose: "Staff sign in with their Maximus Google account.",
-        state: "not_built",
-        detail:
-          "Sign-in is Supabase email and password. The Google button on the sign-in page is not wired to an OAuth flow.",
+        state: googleSignInEnabled ? "connected" : "not_configured",
+        detail: googleSignInEnabled
+          ? "The Google button on the sign-in page redirects through Supabase's Google provider, checked the same way an actual sign-in would."
+          : "The Google button on the sign-in page is wired up, but the Google provider is not yet switched on for this Supabase project (Authentication -> Providers -> Google).",
         setup: [],
       },
       {

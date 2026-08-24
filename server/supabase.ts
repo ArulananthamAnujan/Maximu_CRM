@@ -152,7 +152,7 @@ export class SupabaseError extends Error {
   }
 }
 
-function cookie(
+export function cookie(
   name: string,
   value: string,
   maxAge: number,

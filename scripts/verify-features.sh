@@ -68,6 +68,7 @@ pg_run "${work}/sql/seed.sql"
 service_role_key="audit-service-role-$(head -c 12 /dev/urandom | base64 | tr -d '/+=')"
 SHIM_DEBUG="${SHIM_DEBUG:-}" SHIM_PORT="${shim_port}" \
   SHIM_SERVICE_ROLE_KEY="${service_role_key}" \
+  SHIM_GOOGLE_PROVIDER="true" \
   node "${root}/scripts/audit/postgrest-shim.mjs" >"${work}/shim.log" 2>&1 &
 shim_pid=$!
 sleep 2
@@ -96,6 +97,8 @@ SHIM_URL="http://127.0.0.1:${shim_port}" \
   GOOGLE_SHARED_DRIVE_ID="shared-drive-root" \
   GOOGLE_PRIVATE_KEY_FILE="${work}/keys/service.pem" \
   DRIVE_STUB_URL="http://127.0.0.1:${drive_port}" \
+  GOOGLE_OAUTH_CLIENT_ID="audit-gmail-client" \
+  GOOGLE_OAUTH_CLIENT_SECRET="audit-gmail-secret" \
   MAX_UPLOAD_MB="0.5" \
   FIELD_ENCRYPTION_KEY="$(head -c 32 /dev/urandom | base64)" \
   SUPABASE_SERVICE_ROLE_KEY="${service_role_key}" \
