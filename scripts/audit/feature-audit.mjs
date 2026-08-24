@@ -1151,17 +1151,18 @@ expect("a login with no invitation gets no profile",
 
 // A client demo account is exactly this shape: a Supabase login that exists
 // with no CRM profile at all. Adding them as staff (or, as here, as a portal
-// account) must connect it rather than fail with advice and no way to act on
-// it -- that used to be a dead end.
+// account) must connect it immediately -- an invitation, waiting on that same
+// login to sign itself in, is a dead end when nobody holds its password,
+// which is exactly the case for a demo account created outside this app.
 const connectExisting = await adminPost({
   action: "create_staff", displayName: "Stranger Connected",
   email: "stranger@maximus.test", level: "student" });
-expect("adding an existing login falls back to an invitation instead of failing",
-  connectExisting.status === 200 && connectExisting.json?.created === "invitation",
+expect("adding an existing login connects it immediately instead of failing",
+  connectExisting.status === 200 && connectExisting.json?.created === "connected",
   JSON.stringify(connectExisting.json)?.slice(0, 240));
 const strangerAgain = await login("stranger@maximus.test");
 const strangerWorkspace = await call("/api/crm/workspace", { cookie: strangerAgain.cookie });
-expect("their next sign-in builds the profile the invitation promised",
+expect("their existing login now reaches the connected profile",
   strangerWorkspace.status === 200 && strangerWorkspace.json?.identity?.role === "client",
   JSON.stringify(strangerWorkspace.json?.identity ?? strangerWorkspace.json)?.slice(0, 240));
 

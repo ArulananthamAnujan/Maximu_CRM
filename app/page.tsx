@@ -7316,14 +7316,19 @@ export default function Home() {
       setSelected(null);
       await loadWorkspace();
       const movedDirect = record.serviceType === "direct_visa";
-      // Direct Visa has no nav slot of its own for the enquiry or
-      // application stages, so a migration case moved into either lands on
-      // "Clients" -- the nearest screen its own nav actually offers -- rather
-      // than a Study Abroad screen it has no way to reach.
+      // Direct Visa's nav has no screen of its own for the student or
+      // application stages: "Clients" is where the student stage lives, and
+      // "Visa Applications" covers both the application and visa stages, so a
+      // migration case moved into either lands there rather than on a Study
+      // Abroad screen it has no way to reach.
       setActive(
-        movedDirect && (stage === "student" || stage === "application")
-          ? "direct_visas"
-          : stageModule[stage],
+        !movedDirect
+          ? stageModule[stage]
+          : stage === "student"
+            ? "direct_visas"
+            : stage === "application"
+              ? "visas"
+              : stageModule[stage],
       );
       say(
         stage === "completed"
@@ -7702,7 +7707,20 @@ export default function Home() {
           : active === "applications"
             ? atStage("application")
             : active === "visas"
-              ? atStage("visa")
+              ? // Study Abroad splits "application" and "visa" into two
+                // screens because its own nav has both. The migration
+                // journey has no separate applications screen -- "Visa
+                // Applications" is where a case lands the moment it leaves
+                // Clients, and the visa stage represents it once lodged, so
+                // both stages belong on this one list for Direct Visa.
+                direct
+                ? cases.filter(
+                    (c) =>
+                      inStream(c) &&
+                      (c.lifecycleStage === "application" ||
+                        c.lifecycleStage === "visa"),
+                  )
+                : atStage("visa")
               : active === "direct_visas"
                 ? // "Clients" is Direct Visa's name for the stage Study Abroad
                   // calls "Students" -- the same lifecycle stage, not the visa
@@ -7729,7 +7747,9 @@ export default function Home() {
           active === "applications"
             ? "Cases at the application stage"
             : active === "visas"
-              ? "Cases at the visa stage"
+              ? direct
+                ? "Cases at the application or visa stage"
+                : "Cases at the visa stage"
               : active === "direct_visas"
                 ? "Cases at the client stage"
                 : meta[active][0]

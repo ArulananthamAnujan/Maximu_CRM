@@ -83,10 +83,22 @@ export async function GET(request: Request) {
 
     // A case still sitting at "enquiry" has not converted yet.
     const converted = cases.filter((row) => row.lifecycle_stage !== "enquiry").length;
-    const submitted = liveApplications.filter((row) => row.submitted_at).length;
+    // submitted_at is stamped when a record is created or edited into a
+    // post-submission status, but a status a record already held before that
+    // code existed carries no timestamp (0021 backfills what it can, but the
+    // count should not depend on every row having been touched since). Every
+    // status but "draft" means it was submitted at some point, so the count
+    // is not held hostage to that one column.
+    const submitted = liveApplications.filter(
+      (row) => row.submitted_at || (row.status && row.status !== "draft"),
+    ).length;
     const deferred = liveApplications.filter((row) => row.status === "deferred").length;
-    const offers = liveApplications.filter((row) => row.offer_received_at).length;
-    const coes = liveApplications.filter((row) => row.coe_received_at).length;
+    const offers = liveApplications.filter(
+      (row) => row.offer_received_at || row.status === "offer_received" || row.status === "offer_accepted" || row.status === "coe_received",
+    ).length;
+    const coes = liveApplications.filter(
+      (row) => row.coe_received_at || row.status === "coe_received",
+    ).length;
     const lodged = visas.filter((row) => row.lodged_at).length;
     const granted = visas.filter((row) => /grant|approv/i.test(String(row.outcome ?? ""))).length;
     const refused = visas.filter((row) => /refus|reject|decline/i.test(String(row.outcome ?? ""))).length;
