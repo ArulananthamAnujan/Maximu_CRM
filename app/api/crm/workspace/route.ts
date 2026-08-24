@@ -6,6 +6,7 @@ import {
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
 import { driveConfigured } from "@/server/google-drive";
 import { protectionConfigured } from "@/server/protected-fields";
+import { orgDate, orgTime } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -220,7 +221,7 @@ export async function GET(request: Request) {
           health: row.health === "closed" ? "healthy" : row.health,
           progress: Number(row.progress ?? 0),
           lifecycleStage: (row.lifecycle_stage as LifecycleStage) ?? "enquiry",
-          visaExpiry: dateOnly(row.visa_expiry_on),
+          visaExpiry: plainDate(row.visa_expiry_on),
           status:
             row.lifecycle_stage === "completed" || row.closed_at
               ? "completed"
@@ -357,7 +358,7 @@ export async function GET(request: Request) {
           subclass: row.visa_subclass ?? "",
           stream: row.visa_stream ?? "",
           destination: row.destination_country ?? "",
-          currentVisaExpiry: dateOnly(row.current_visa_expiry),
+          currentVisaExpiry: plainDate(row.current_visa_expiry),
           bridgingVisa: row.bridging_visa ?? "",
           lodgedOn: dateOnly(row.lodged_at),
           trn: row.trn ?? "",
@@ -1332,11 +1333,20 @@ function nullableDate(value: unknown): string | null {
 function normalHealth(value: unknown): "healthy" | "attention" | "critical" {
   return value === "critical" || value === "attention" ? value : "healthy";
 }
+// due_at, completed_at, submitted_at and the like are timestamptz: read as
+// UTC, they need converting to the organisation's timezone or the calendar
+// date shown can be a day off the one the event actually happened on.
 function dateOnly(value: unknown): string {
-  return typeof value === "string" ? value.slice(0, 10) : "";
+  return orgDate(value);
 }
 function timeOnly(value: unknown): string {
-  return typeof value === "string" ? value.slice(11, 16) : "";
+  return orgTime(value);
+}
+// visa_expiry_on and current_visa_expiry are plain `date` columns with no
+// time component -- there is no UTC-to-local conversion to make, so the
+// string PostgREST returns is the date, unchanged.
+function plainDate(value: unknown): string {
+  return typeof value === "string" ? value.slice(0, 10) : "";
 }
 function fullClientName(value?: Json): string {
   return value

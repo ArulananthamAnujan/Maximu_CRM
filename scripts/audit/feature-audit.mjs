@@ -232,6 +232,15 @@ expect("a one-character search returns nothing", shortSearch.json?.results?.leng
 section("Administration");
 const admin = await call("/api/crm/admin", { cookie: owner.cookie });
 expect("administration data loads for the owner", admin.status === 200, JSON.stringify(admin.json)?.slice(0, 200));
+// Staff & Masters must see the same branches the rest of the CRM already
+// works with -- the seeded branch is used by cases and by reporting, and has
+// to appear here too rather than showing "No branches yet".
+const workspaceForBranches = await call("/api/crm/workspace", { cookie: owner.cookie });
+expect("Staff & Masters lists the branch the rest of the CRM already uses",
+  (admin.json?.branches ?? []).length > 0 &&
+    (admin.json?.branches ?? []).some((b) =>
+      (workspaceForBranches.json?.branches ?? []).some((wb) => wb.id === b.id)),
+  JSON.stringify({ admin: admin.json?.branches, workspace: workspaceForBranches.json?.branches })?.slice(0, 300));
 const adminStaff = await call("/api/crm/admin", { cookie: officer.cookie });
 expect("a case officer cannot open administration", adminStaff.status === 403);
 const roleId = admin.json?.roles?.[0]?.id;
@@ -1139,6 +1148,22 @@ expect("the claimed invitation is marked accepted",
 const stranger = await login("stranger@maximus.test");
 expect("a login with no invitation gets no profile",
   !stranger.ok || (await call("/api/crm/workspace", { cookie: stranger.cookie })).status === 403);
+
+// A client demo account is exactly this shape: a Supabase login that exists
+// with no CRM profile at all. Adding them as staff (or, as here, as a portal
+// account) must connect it rather than fail with advice and no way to act on
+// it -- that used to be a dead end.
+const connectExisting = await adminPost({
+  action: "create_staff", displayName: "Stranger Connected",
+  email: "stranger@maximus.test", level: "student" });
+expect("adding an existing login falls back to an invitation instead of failing",
+  connectExisting.status === 200 && connectExisting.json?.created === "invitation",
+  JSON.stringify(connectExisting.json)?.slice(0, 240));
+const strangerAgain = await login("stranger@maximus.test");
+const strangerWorkspace = await call("/api/crm/workspace", { cookie: strangerAgain.cookie });
+expect("their next sign-in builds the profile the invitation promised",
+  strangerWorkspace.status === 200 && strangerWorkspace.json?.identity?.role === "client",
+  JSON.stringify(strangerWorkspace.json?.identity ?? strangerWorkspace.json)?.slice(0, 240));
 
 // ---------------------------------------------------------------------------
 section("A case officer works only their own cases");

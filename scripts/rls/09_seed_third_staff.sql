@@ -13,3 +13,11 @@ insert into public.ai_interactions
   (organisation_id, profile_id, case_id, purpose, prompt_redacted, response_redacted, status)
   values ('00000000-0000-4000-8000-00000000aaaa','00000000-0000-4000-8000-000000000002',
           '00000000-0000-4000-8000-00000000dddd','case_draft','draft this','a drafted reply','completed');
+
+-- An invoice for the seeded case's client, for the finance-visibility probe:
+-- a case officer who can see the case for cover should not also see what its
+-- client has been billed.
+insert into public.invoices
+  (id,organisation_id,client_id,invoice_number,invoice_type,total)
+  values ('00000000-0000-4000-8000-00000000fee1','00000000-0000-4000-8000-00000000aaaa',
+          '00000000-0000-4000-8000-00000000cccc','INV-2026-0099','tuition',2500);

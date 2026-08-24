@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { orgDate, orgDateTime } from "@/lib/timezone";
 import {
   Activity,
   AlertTriangle,
@@ -399,6 +400,11 @@ const stageLabels: Record<LifecycleStage, string> = {
   deferred: "Deferred",
   completed: "Completed",
 };
+/** Direct Visa calls the same lifecycle stage by the agency's own words. */
+function stageLabelFor(stage: LifecycleStage, direct: boolean): string {
+  if (direct && stage === "student") return "Client";
+  return stageLabels[stage];
+}
 const stageModule: Record<LifecycleStage, ModuleKey> = {
   enquiry: "enquiries",
   student: "students",
@@ -1773,7 +1779,7 @@ function TasksView({
             <div>
               <strong>{t.title}</strong>
               <span>
-                {cases.find((c) => c.id === t.caseId)?.name || "General task"} ·
+                {cases.find((c) => c.dbId === t.caseId)?.name || "General task"} ·
                 Due {t.due || "not set"}
               </span>
             </div>
@@ -2058,11 +2064,9 @@ function DocumentsView({
 function messageWhen(message: MessageRecord): string {
   const when = message.sentAt ?? message.createdAt;
   if (!when) return "Not sent";
-  const stamp = new Date(when);
-  if (Number.isNaN(stamp.getTime())) return "Not sent";
-  return message.sentAt
-    ? `Sent ${stamp.toLocaleString()}`
-    : `Drafted ${stamp.toLocaleString()}`;
+  const stamp = orgDateTime(when);
+  if (!stamp) return "Not sent";
+  return message.sentAt ? `Sent ${stamp}` : `Drafted ${stamp}`;
 }
 
 function MessagesView({
@@ -2334,7 +2338,7 @@ function TemplatesView({
             <div>
               <strong>{t.name}</strong>
               <span>
-                {t.type} · Updated {new Date(t.updatedAt).toLocaleDateString()}
+                {t.type} · Updated {orgDate(t.updatedAt)}
               </span>
             </div>
             <button
@@ -2866,18 +2870,31 @@ function Attention({
 function ReportsView({
   exportData,
   canSeeFinance,
+  serviceMode,
 }: {
   exportData: () => void;
   canSeeFinance: boolean;
+  serviceMode: ServiceMode;
 }) {
   const [report, setReport] = useState<AgencyReport | null>(null);
   const [error, setError] = useState("");
+  const stream = serviceMode === "direct_visa" ? "direct_visa" : "study_abroad";
+  // Switching workspace must not show the other workspace's figures while the
+  // new report loads. Cleared during render on the pattern React recommends
+  // for adjusting state from a prop, rather than in the effect below.
+  const [reportFor, setReportFor] = useState(stream);
+  if (stream !== reportFor) {
+    setReportFor(stream);
+    setReport(null);
+  }
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const response = await fetch("/api/crm/reports", { cache: "no-store" });
+        const response = await fetch(`/api/crm/reports?stream=${stream}`, {
+          cache: "no-store",
+        });
         const result = await response.json();
         if (cancelled) return;
         if (!response.ok)
@@ -2896,7 +2913,7 @@ function ReportsView({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [stream]);
 
   if (error)
     return (
@@ -3244,7 +3261,7 @@ function ReportsView({
 
       <p className="reportFooter">
         Scoped to what your account may see. Built{" "}
-        {new Date(report.generatedAt).toLocaleString()}.
+        {orgDateTime(report.generatedAt)}.
       </p>
     </>
   );
@@ -3529,7 +3546,7 @@ function AIAssistantView({
                   .map((row) => (
                     <div className="aiHistoryRow" key={row.id}>
                       <p>{row.response}</p>
-                      <small>{new Date(row.at).toLocaleString()}</small>
+                      <small>{orgDateTime(row.at)}</small>
                     </div>
                   ))}
               </div>
@@ -3664,7 +3681,7 @@ function GoogleWorkspaceView() {
             ))}
             {checkedAt ? (
               <p className="reportFooter">
-                Checked {new Date(checkedAt).toLocaleString()}.
+                Checked {orgDateTime(checkedAt)}.
               </p>
             ) : null}
           </>
@@ -4569,8 +4586,12 @@ const humanise = (value: unknown) =>
   String(value ?? "")
     .replace(/_/g, " ")
     .replace(/^\w/, (c) => c.toUpperCase());
-const day = (value: unknown) =>
-  typeof value === "string" && value ? value.slice(0, 10) : "";
+// Every value passed in here is either a plain `date` column (already the
+// right calendar date, wherever it's read from) or a UTC timestamptz string,
+// which orgDate converts to the organisation's timezone -- reading the two
+// through the same call is safe because Melbourne is always ahead of UTC, so
+// the conversion never rolls a date-only value back to the previous day.
+const day = (value: unknown) => orgDate(value);
 const text = (value: unknown) => (value == null ? "" : String(value));
 
 function Field({ label, value }: { label: string; value: unknown }) {
@@ -4640,6 +4661,16 @@ function CaseDrawerBody({
   storageConnected: boolean;
 }) {
   const [tab, setTab] = useState<CaseTab>("overview");
+  // Switching straight from one case to another, without closing the drawer,
+  // kept the previous case's active tab -- one that may not exist on the new
+  // case, since a migration case has no Applications tab. Reset it during
+  // render when the case itself changes, the pattern React recommends for
+  // adjusting state from a prop rather than doing it in an effect.
+  const [tabResetFor, setTabResetFor] = useState(item.dbId);
+  if (item.dbId !== tabResetFor) {
+    setTabResetFor(item.dbId);
+    setTab("overview");
+  }
   const [reason, setReason] = useState("");
   const [moving, setMoving] = useState<LifecycleStage | "">("");
   // The visa stage cannot be entered without an expiry date. It is asked for
@@ -4659,19 +4690,24 @@ function CaseDrawerBody({
   const stage = item.lifecycleStage;
   const moves = allowedStageMoves(stage);
   const needsExpiry = !recordedExpiry;
+  const direct = item.serviceType === "direct_visa";
+  // A migration matter has no institution applications -- that tab describes
+  // a Study Abroad case. Its own matter lives on the Visa matter tab.
+  const availableTabs = direct
+    ? caseTabs.filter(([key]) => key !== "applications")
+    : caseTabs;
   // Nine tabs do not fit a phone. The four that carry the day's work stay in
   // view -- with the visa matter taking the place of applications on a
   // migration file -- and the rest move behind one control.
   const compact = useCompactScreen();
-  const primaryTabs: CaseTab[] =
-    item.serviceType === "direct_visa"
-      ? ["overview", "visa", "documents", "finance"]
-      : ["overview", "applications", "documents", "finance"];
+  const primaryTabs: CaseTab[] = direct
+    ? ["overview", "visa", "documents", "finance"]
+    : ["overview", "applications", "documents", "finance"];
   const shownTabs = compact
-    ? caseTabs.filter(([key]) => primaryTabs.includes(key) || key === tab)
-    : caseTabs;
+    ? availableTabs.filter(([key]) => primaryTabs.includes(key) || key === tab)
+    : availableTabs;
   const moreTabs = compact
-    ? caseTabs.filter(([key]) => !shownTabs.some(([shown]) => shown === key))
+    ? availableTabs.filter(([key]) => !shownTabs.some(([shown]) => shown === key))
     : [];
   const needsExpiryFor = (next: LifecycleStage) =>
     needsExpiry && (next === "visa" || next === "completed");
@@ -4958,7 +4994,7 @@ function CaseDrawerBody({
                       step === "deferred" ? " parked" : ""
                     }`}
                   >
-                    <span>{stageLabels[step]}</span>
+                    <span>{stageLabelFor(step, direct)}</span>
                   </li>
                 ))}
               </ol>
@@ -5043,17 +5079,17 @@ function CaseDrawerBody({
                     ) : stage === "completed" ? (
                       <>
                         <RefreshCw size={15} />
-                        Reopen in {stageLabels[next].toLowerCase()}
+                        Reopen in {stageLabelFor(next, direct).toLowerCase()}
                       </>
                     ) : stage === "deferred" ? (
                       <>
                         <RefreshCw size={15} />
-                        Resume in {stageLabels[next].toLowerCase()}
+                        Resume in {stageLabelFor(next, direct).toLowerCase()}
                       </>
                     ) : (
                       <>
                         <ArrowRight size={15} />
-                        Move to {stageLabels[next].toLowerCase()}
+                        Move to {stageLabelFor(next, direct).toLowerCase()}
                       </>
                     )}
                   </button>
@@ -5089,11 +5125,7 @@ function CaseDrawerBody({
                 ["Passport expiry", day(client.passport_expiry)],
                 [
                   "Privacy consent",
-                  client.privacy_consent_at
-                    ? new Date(
-                        String(client.privacy_consent_at),
-                      ).toLocaleDateString()
-                    : "",
+                  client.privacy_consent_at ? orgDate(client.privacy_consent_at) : "",
                 ],
                 ["Marketing consent", client.marketing_consent ? "Yes" : "No"],
               ]}
@@ -5402,7 +5434,7 @@ function CaseDrawerBody({
                       <b>{humanise(entry.title)}</b>
                       {entry.detail && <p>{entry.detail}</p>}
                       <small>
-                        {new Date(entry.at).toLocaleString()}
+                        {orgDateTime(entry.at)}
                         {entry.kind === "private_note" ? " · private" : ""}
                       </small>
                     </div>
@@ -6312,6 +6344,7 @@ function RecordModal({
   onOpenExisting,
   onAddCase,
   onDifferentPerson,
+  serviceMode,
 }: {
   type: ModalType;
   close: () => void;
@@ -6324,6 +6357,7 @@ function RecordModal({
   error: string;
   duplicates: DuplicateMatch[] | null;
   onOpenExisting: (clientId: string) => void;
+  serviceMode: ServiceMode;
   onAddCase: (clientId: string) => void;
   onDifferentPerson: () => void;
 }) {
@@ -6434,7 +6468,11 @@ function RecordModal({
                     type="radio"
                     name="workspace"
                     value="Study Abroad"
-                    defaultChecked={editing?.serviceType !== "direct_visa"}
+                    defaultChecked={
+                      editing
+                        ? editing.serviceType !== "direct_visa"
+                        : serviceMode !== "direct_visa"
+                    }
                   />
                   Study Abroad
                 </label>
@@ -6443,7 +6481,11 @@ function RecordModal({
                     type="radio"
                     name="workspace"
                     value="Direct Visa"
-                    defaultChecked={editing?.serviceType === "direct_visa"}
+                    defaultChecked={
+                      editing
+                        ? editing.serviceType === "direct_visa"
+                        : serviceMode === "direct_visa"
+                    }
                   />
                   Direct Visa
                 </label>
@@ -6491,9 +6533,15 @@ function RecordModal({
                   <select
                     name="matterType"
                     required
-                    defaultValue={editing?.matterType || "Education enquiry"}
+                    defaultValue={
+                      editing?.matterType ||
+                      (serviceMode === "direct_visa"
+                        ? "Migration enquiry"
+                        : "Education enquiry")
+                    }
                   >
                     <option>Education enquiry</option>
+                    <option>Migration enquiry</option>
                     <option>Student admission</option>
                     <option>Student visa</option>
                     <option>407 Training Visa</option>
@@ -7267,17 +7315,26 @@ export default function Home() {
         throw new Error(result.error || "The case could not be moved.");
       setSelected(null);
       await loadWorkspace();
-      setActive(stageModule[stage]);
+      const movedDirect = record.serviceType === "direct_visa";
+      // Direct Visa has no nav slot of its own for the enquiry or
+      // application stages, so a migration case moved into either lands on
+      // "Clients" -- the nearest screen its own nav actually offers -- rather
+      // than a Study Abroad screen it has no way to reach.
+      setActive(
+        movedDirect && (stage === "student" || stage === "application")
+          ? "direct_visas"
+          : stageModule[stage],
+      );
       say(
         stage === "completed"
           ? `${record.name} marked as completed`
           : stage === "deferred"
             ? `${record.name} deferred`
             : record.lifecycleStage === "completed"
-              ? `${record.name} reopened in ${stageLabels[stage].toLowerCase()}`
+              ? `${record.name} reopened in ${stageLabelFor(stage, movedDirect).toLowerCase()}`
               : record.lifecycleStage === "deferred"
-                ? `${record.name} resumed in ${stageLabels[stage].toLowerCase()}`
-                : `${record.name} moved to ${stageLabels[stage].toLowerCase()}`,
+                ? `${record.name} resumed in ${stageLabelFor(stage, movedDirect).toLowerCase()}`
+                : `${record.name} moved to ${stageLabelFor(stage, movedDirect).toLowerCase()}`,
       );
     } catch (reason_) {
       say(
@@ -7561,7 +7618,11 @@ export default function Home() {
     );
   else if (active === "reports")
     content = (
-      <ReportsView exportData={exportData} canSeeFinance={canManageFinance} />
+      <ReportsView
+        exportData={exportData}
+        canSeeFinance={canManageFinance}
+        serviceMode={serviceMode}
+      />
     );
   else if (active === "ai")
     content = <AIAssistantView cases={cases} say={say} />;
@@ -7594,7 +7655,7 @@ export default function Home() {
               </div>
               <div>
                 <strong>{a.text}</strong>
-                <span>{new Date(a.at).toLocaleString()}</span>
+                <span>{orgDateTime(a.at)}</span>
               </div>
             </div>
           ))
@@ -7623,10 +7684,16 @@ export default function Home() {
       if (found) setSelected(found);
       else say("That case is not in your workspace.");
     };
-    // Each pipeline module shows the cases actually sitting at that stage, so
-    // moving a case between stages moves it between these lists.
+    // The pipeline stage a case sits at is shared by both service streams, but
+    // the screens that show it are not: the Study Abroad "Applications" list
+    // and the Direct Visa "Clients" list must never show each other's cases,
+    // whatever stage each happens to share. Every stage-based list here is
+    // filtered by the workspace currently open, not only by stage.
+    const direct = serviceMode === "direct_visa";
+    const inStream = (c: CaseRecord) =>
+      (c.serviceType === "direct_visa") === direct;
     const atStage = (stage: LifecycleStage) =>
-      cases.filter((c) => c.lifecycleStage === stage);
+      cases.filter((c) => c.lifecycleStage === stage && inStream(c));
     const list =
       active === "enquiries"
         ? atStage("enquiry")
@@ -7637,7 +7704,10 @@ export default function Home() {
             : active === "visas"
               ? atStage("visa")
               : active === "direct_visas"
-                ? atStage("visa").filter((c) => visa.includes(c))
+                ? // "Clients" is Direct Visa's name for the stage Study Abroad
+                  // calls "Students" -- the same lifecycle stage, not the visa
+                  // stage a migration matter reaches later.
+                  atStage("student")
                 : active === "case_complete"
                   ? atStage("completed")
                   : active === "defer"
@@ -7646,10 +7716,11 @@ export default function Home() {
                       // worked whose application moved to a later intake.
                       cases.filter(
                         (c) =>
-                          c.lifecycleStage === "deferred" ||
-                          c.deferredApplications > 0,
+                          inStream(c) &&
+                          (c.lifecycleStage === "deferred" ||
+                            c.deferredApplications > 0),
                       )
-                    : serviceMode === "direct_visa"
+                    : direct
                       ? visa
                       : education;
     const caseList = (
@@ -7657,9 +7728,11 @@ export default function Home() {
         title={
           active === "applications"
             ? "Cases at the application stage"
-            : active === "visas" || active === "direct_visas"
+            : active === "visas"
               ? "Cases at the visa stage"
-              : meta[active][0]
+              : active === "direct_visas"
+                ? "Cases at the client stage"
+                : meta[active][0]
         }
         cases={list}
         filter={filter}
@@ -7674,23 +7747,20 @@ export default function Home() {
     content =
       active === "applications" ? (
         <>
-          <ApplicationsBoard rows={applicationRows} onOpen={openCase} />
+          <ApplicationsBoard
+            rows={applicationRows.filter((row) =>
+              cases.some((c) => c.dbId === row.caseId && inStream(c)),
+            )}
+            onOpen={openCase}
+          />
           {caseList}
         </>
       ) : active === "visas" || active === "direct_visas" ? (
         <>
           <VisaMattersBoard
-            rows={
-              active === "direct_visas"
-                ? visaMatterRows.filter((row) =>
-                    cases.some(
-                      (c) =>
-                        c.dbId === row.caseId &&
-                        c.serviceType === "direct_visa",
-                    ),
-                  )
-                : visaMatterRows
-            }
+            rows={visaMatterRows.filter((row) =>
+              cases.some((c) => c.dbId === row.caseId && inStream(c)),
+            )}
             onOpen={openCase}
           />
           {caseList}
@@ -7972,6 +8042,7 @@ export default function Home() {
         onOpenExisting={openExistingClient}
         onAddCase={(id) => void addCaseToExistingClient(id)}
         onDifferentPerson={() => void createAsNewPerson()}
+        serviceMode={serviceMode}
         cases={cases}
         editing={editing}
         branches={branches}

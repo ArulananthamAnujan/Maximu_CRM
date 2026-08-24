@@ -23,8 +23,17 @@ export async function GET(request: Request) {
     if (session.identity.role === "client")
       throw new LiveAccessError(403, "Reporting is available to staff only.");
     const token = session.accessToken;
+    // The report is opened from one workspace toggle or the other, and each
+    // must show only its own cases -- a case at the same pipeline stage in
+    // the other stream is not this report's business, whatever it shares a
+    // stage with.
+    const streamParam = new URL(request.url).searchParams.get("stream");
+    const stream =
+      streamParam === "study_abroad" || streamParam === "direct_visa"
+        ? streamParam
+        : null;
 
-    const [cases, applications, visas, tasks, documents, invoices, profiles, branches] =
+    const [allCases, allApplications, allVisas, tasks, allDocuments, invoices, profiles, branches] =
       await Promise.all([
         rest("cases?select=id,branch_id,owner_id,service_type,matter_type,lifecycle_stage,health,opened_at,closed_at,due_at,visa_expiry_on&limit=5000", token),
         rest("education_applications?select=id,case_id,status,submitted_at,offer_received_at,coe_received_at,deadline_at,archived_at&limit=5000", token),
@@ -35,6 +44,22 @@ export async function GET(request: Request) {
         rest("profiles?select=id,display_name,branch_id,level,active&active=eq.true&limit=500", token),
         rest("branches?select=id,name,code&limit=200", token),
       ]);
+
+    const cases = stream
+      ? allCases.filter((row) => row.service_type === stream)
+      : allCases;
+    const caseIds = new Set(cases.map((row) => String(row.id)));
+    const applications = stream
+      ? allApplications.filter((row) => caseIds.has(String(row.case_id)))
+      : allApplications;
+    const visas = stream
+      ? allVisas.filter((row) => caseIds.has(String(row.case_id)))
+      : allVisas;
+    const documents = stream
+      ? allDocuments.filter(
+          (row) => row.case_id == null || caseIds.has(String(row.case_id)),
+        )
+      : allDocuments;
 
     const now = Date.now();
     const days = (value: unknown): number | null => {

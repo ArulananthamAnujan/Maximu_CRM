@@ -58,7 +58,13 @@ export async function POST(request: Request) {
       if (existing.length)
         throw new InputError("Somebody with that email address is already on the team.");
 
-      if (!serviceRoleKey()) {
+      // Records an invitation rather than a login: used both when this
+      // deployment has no service-role key at all, and when it does but the
+      // person already has a Supabase login -- a client demo account, most
+      // often, created before anyone thought to give it a CRM profile.
+      // claim_staff_invitation does not care which came first; it only needs
+      // a pending invitation addressed to the email the caller signs in with.
+      const recordInvitation = async () => {
         await insert("staff_invitations", {
           id: crypto.randomUUID(), organisation_id: org, email: address,
           role_id: roleId, branch_id: branchId, display_name: displayName,
@@ -69,9 +75,11 @@ export async function POST(request: Request) {
           ok: true,
           created: "invitation",
           email: address,
-          message: `${displayName} is invited. Create the Supabase login for ${address} (Authentication -> Users -> Add user), and their CRM account is set up the first time they sign in.`,
+          message: `${displayName} is invited. Their CRM account is set up the first time they sign in with ${address}.`,
         }), session.refreshed, request);
-      }
+      };
+
+      if (!serviceRoleKey()) return await recordInvitation();
 
       // A password they must change, generated here and shown once.
       const temporaryPassword = temporary();
@@ -84,8 +92,12 @@ export async function POST(request: Request) {
           }),
         });
       } catch (error) {
+        // That address already has a Supabase login -- exactly the shape of
+        // a client demo account that was never given a CRM profile. Recording
+        // the invitation is what actually connects it; erroring out here left
+        // the person with the same advice and nowhere to act on it.
         if (error instanceof SupabaseError && error.status === 422)
-          throw new InputError("That email address already has a login. Invite them instead, or ask them to sign in so their account is linked.");
+          return await recordInvitation();
         throw error;
       }
       if (!created?.id)
