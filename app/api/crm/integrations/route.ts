@@ -5,6 +5,7 @@ import {
 } from "@/server/supabase-session";
 import { driveProbe } from "@/server/google-drive";
 import { serviceRoleKey, supabaseRequest } from "@/server/supabase";
+import { aiConfigured } from "@/server/ai";
 import { protectionConfigured } from "@/server/protected-fields";
 
 /**
@@ -127,9 +128,11 @@ export async function GET(request: Request) {
         key: "ai",
         name: "AI assistant",
         purpose: "Drafting and summarising against the case file.",
-        state: "not_built",
-        detail: "A placeholder screen. No provider is connected.",
-        setup: [],
+        state: aiConfigured() ? "connected" : "not_configured",
+        detail: aiConfigured()
+          ? "Drafts and summarises against one case at a time, using only that case's own facts. Nothing it writes is saved until a person chooses to."
+          : "ANTHROPIC_API_KEY is not set, so the assistant screen has nothing to call.",
+        setup: ["ANTHROPIC_API_KEY"],
       },
     ];
 

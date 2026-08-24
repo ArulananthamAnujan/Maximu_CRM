@@ -73,6 +73,8 @@ const env = {
   GOOGLE_SHARED_DRIVE_ID: process.env.GOOGLE_SHARED_DRIVE_ID,
   FIELD_ENCRYPTION_KEY: process.env.FIELD_ENCRYPTION_KEY,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  ANTHROPIC_API_BASE: process.env.ANTHROPIC_API_BASE,
 };
 const ctx = { waitUntil() {}, passThroughOnException() {} };
 

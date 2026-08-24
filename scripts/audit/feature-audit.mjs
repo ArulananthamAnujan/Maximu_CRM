@@ -1032,7 +1032,7 @@ expect("the Shared Drive is probed rather than assumed",
 expect("passport encryption reports as configured",
   byKey.field_encryption?.state === "connected", JSON.stringify(byKey.field_encryption));
 expect("what is not built says so rather than saying not configured",
-  ["gmail", "calendar", "whatsapp", "google_signin", "ai"]
+  ["gmail", "calendar", "whatsapp", "google_signin"]
     .every((key) => byKey[key]?.state === "not_built"),
   JSON.stringify(Object.entries(byKey).map(([k, v]) => `${k}=${v.state}`)));
 const officerIntegrations = await call("/api/crm/integrations", { cookie: officer.cookie });
@@ -1229,6 +1229,56 @@ const page = await call("/", { cookie: student.cookie });
 expect("no client-facing screen names commissions or partner claims",
   !/partner claims|institution commission/i.test(page.text ?? ""),
   (page.text ?? "").slice(0, 120));
+
+// ---------------------------------------------------------------------------
+section("The case-file assistant");
+const aiCase = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "case", name: "Assistant Test Client", phone: "+61400000444",
+          email: "assistant.test@example.test", visaExpiry: "2028-11-30",
+          type: "Student visa", target: "Diploma of Business" } });
+const aiCaseId = aiCase.json?.caseId;
+expect("a case exists for the assistant to work from", aiCase.status === 200);
+
+const askAI = (body, cookie = officer.cookie) =>
+  call("/api/crm/ai", { method: "POST", cookie, body: { caseId: aiCaseId, ...body } });
+
+const noCase = await askAI({ caseId: undefined, instruction: "Summarise this case." });
+expect("the assistant refuses without a case", noCase.status === 400);
+
+const firstAsk = await askAI({ instruction: "Summarise where this case is up to." });
+expect("the assistant answers from the case context", firstAsk.status === 200,
+  JSON.stringify(firstAsk.json)?.slice(0, 240));
+expect("the reply is built from the case, not invented",
+  typeof firstAsk.json?.response === "string" &&
+    firstAsk.json.response.includes("Diploma of Business"),
+  firstAsk.json?.response?.slice(0, 200));
+
+const history = await call(`/api/crm/ai?caseId=${aiCaseId}`, { cookie: officer.cookie });
+expect("the exchange is on the case's history", history.status === 200 &&
+  (history.json?.interactions ?? []).length === 1,
+  JSON.stringify(history.json)?.slice(0, 240));
+
+const upstreamFailure = await askAI({ instruction: "TRIGGER_UPSTREAM_ERROR please" });
+expect("an upstream failure is reported, not swallowed",
+  upstreamFailure.status >= 500, `${upstreamFailure.status}`);
+
+const portalAsk = await askAI({ instruction: "Summarise this." }, student.cookie);
+expect("a portal account cannot use the assistant", portalAsk.status === 403);
+
+// Access follows the case, not the organisation: a colleague who cannot
+// modify the case can still see its history if they can read the case, but
+// someone who cannot access it at all gets nothing.
+const outsiderCaseId = "00000000-0000-4000-8000-00000000ffff";
+const outsiderAsk = await call("/api/crm/ai", { method: "POST", cookie: officer.cookie,
+  body: { caseId: outsiderCaseId, instruction: "Summarise this." } });
+expect("the assistant is scoped like everything else -- no case, no answer",
+  outsiderAsk.status === 400 || outsiderAsk.status === 403,
+  `${outsiderAsk.status} ${JSON.stringify(outsiderAsk.json)?.slice(0, 200)}`);
+
+const aiIntegration = (await call("/api/crm/integrations", { cookie: owner.cookie }))
+  .json?.integrations?.find((row) => row.key === "ai");
+expect("Integrations reports the assistant as connected when configured",
+  aiIntegration?.state === "connected", JSON.stringify(aiIntegration));
 
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });

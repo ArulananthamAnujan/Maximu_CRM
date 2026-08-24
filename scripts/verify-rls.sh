@@ -93,6 +93,10 @@ expect_scope "reassignment does not grant access" "after_reassignment=1"
 expect_scope "an administrator lost access" "admin_edited=1"
 expect_scope "an archive request is not recorded" "archive_requests=1"
 expect_scope "managers are not told about an archive request" "managers_notified=1"
+expect_scope "the case owner cannot read the assistant's own interaction" "owner_reads=1"
+expect_scope "a case that changed owner does not carry its history with it" "new_owner_reads=1"
+expect_scope "a portal account can read an internal AI interaction" "portal_reads=0"
+expect_scope "a portal account wrote an AI interaction against a case it cannot access" "portal_writes=0"
 
 echo
 echo "== Duplicate clients are found before a second record is made =="

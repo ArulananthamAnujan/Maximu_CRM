@@ -58,3 +58,27 @@ select 'archive_requests=' || count(*) from public.audit_events
 set test.uid = '00000000-0000-4000-8000-000000000001';
 select 'managers_notified=' || count(*) from public.notifications
   where kind = 'archive_request';
+
+\echo '--- 9. the case owner reads their own interaction ---'
+set test.uid = '00000000-0000-4000-8000-000000000002';
+select 'owner_reads=' || count(*) from public.ai_interactions
+  where case_id = '00000000-0000-4000-8000-00000000dddd';
+
+\echo '--- 10. the colleague who now owns the case (reassigned above) can also read it ---'
+set test.uid = '00000000-0000-4000-8000-000000000009';
+select 'new_owner_reads=' || count(*) from public.ai_interactions
+  where case_id = '00000000-0000-4000-8000-00000000dddd';
+
+\echo '--- 11. a portal account reads none of it ---'
+set test.uid = '00000000-0000-4000-8000-000000000003';
+select 'portal_reads=' || count(*) from public.ai_interactions
+  where case_id = '00000000-0000-4000-8000-00000000dddd';
+
+\echo '--- 12. an interaction cannot be written against a case that is not accessible ---'
+set test.uid = '00000000-0000-4000-8000-000000000003';
+insert into public.ai_interactions
+  (organisation_id, profile_id, case_id, purpose, prompt_redacted, response_redacted, status)
+  values ('00000000-0000-4000-8000-00000000aaaa','00000000-0000-4000-8000-000000000003',
+          '00000000-0000-4000-8000-00000000dddd','case_draft','x','y','completed');
+select 'portal_writes=' || count(*) from public.ai_interactions
+  where profile_id = '00000000-0000-4000-8000-000000000003';

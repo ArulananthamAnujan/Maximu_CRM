@@ -8181,6 +8181,130 @@ body {
   color: var(--muted);
   font-size: 11px;
 }
+/* The case-file assistant. */
+.aiCasePicker label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.aiCasePicker input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  background: #fff;
+}
+.aiCaseMatches {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.aiCaseMatches button {
+  text-align: left;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+.aiCaseMatches button:hover {
+  border-color: var(--brand);
+}
+.aiCaseMatches strong {
+  display: block;
+  font-size: 13px;
+}
+.aiCaseMatches span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.aiCaseChip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--brand) 6%, #fff);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+}
+.aiCaseChip strong {
+  display: block;
+  font-size: 13px;
+}
+.aiCaseChip span {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.aiInstructionForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.aiInstructionForm textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+  background: #fff;
+}
+.aiInstructionForm button {
+  align-self: flex-end;
+}
+.aiResponse {
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--brand) 4%, #fff);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+.aiResponse p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.aiResponseActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.aiHistory {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.aiHistoryRow {
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.aiHistoryRow p {
+  margin: 0 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.aiHistoryRow small {
+  font-size: 10px;
+  color: var(--muted);
+}
 .panelHeadActions {
   display: flex;
   flex-wrap: wrap;

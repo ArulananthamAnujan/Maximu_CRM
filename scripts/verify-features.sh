@@ -20,6 +20,7 @@ work="${AUDIT_DIR:-/var/lib/postgresql/crm-audit}"
 port="${AUDIT_PG_PORT:-5440}"
 shim_port="${AUDIT_SHIM_PORT:-8099}"
 drive_port="${AUDIT_DRIVE_PORT:-8098}"
+ai_port="${AUDIT_AI_PORT:-8097}"
 
 # shellcheck source=scripts/lib/pg-env.sh
 source "${root}/scripts/lib/pg-env.sh"
@@ -28,9 +29,11 @@ source "${root}/scripts/lib/pg-env.sh"
 
 shim_pid=""
 drive_pid=""
+ai_pid=""
 cleanup() {
   [[ -n "${shim_pid}" ]] && kill "${shim_pid}" 2>/dev/null || true
   [[ -n "${drive_pid}" ]] && kill "${drive_pid}" 2>/dev/null || true
+  [[ -n "${ai_pid}" ]] && kill "${ai_pid}" 2>/dev/null || true
   pg_stop "${work}"
 }
 trap cleanup EXIT
@@ -78,6 +81,13 @@ drive_pid=$!
 sleep 1
 kill -0 "${drive_pid}" 2>/dev/null || { echo "The Drive stub failed to start:"; cat "${work}/drive.log"; exit 70; }
 
+ai_key="audit-anthropic-$(head -c 12 /dev/urandom | base64 | tr -d '/+=')"
+ANTHROPIC_STUB_PORT="${ai_port}" ANTHROPIC_STUB_KEY="${ai_key}" \
+  node "${root}/scripts/audit/anthropic-stub.mjs" >"${work}/ai.log" 2>&1 &
+ai_pid=$!
+sleep 1
+kill -0 "${ai_pid}" 2>/dev/null || { echo "The Anthropic stub failed to start:"; cat "${work}/ai.log"; exit 70; }
+
 echo
 SHIM_URL="http://127.0.0.1:${shim_port}" \
   GOOGLE_API_BASE="http://127.0.0.1:${drive_port}" \
@@ -89,4 +99,6 @@ SHIM_URL="http://127.0.0.1:${shim_port}" \
   MAX_UPLOAD_MB="0.5" \
   FIELD_ENCRYPTION_KEY="$(head -c 32 /dev/urandom | base64)" \
   SUPABASE_SERVICE_ROLE_KEY="${service_role_key}" \
+  ANTHROPIC_API_KEY="${ai_key}" \
+  ANTHROPIC_API_BASE="http://127.0.0.1:${ai_port}" \
   node "${root}/scripts/audit/feature-audit.mjs"

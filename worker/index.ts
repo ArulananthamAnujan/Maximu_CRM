@@ -16,6 +16,9 @@ interface Env {
   GOOGLE_SHARED_DRIVE_ID?: string;
   FIELD_ENCRYPTION_KEY?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
+  ANTHROPIC_API_KEY?: string;
+  ANTHROPIC_MODEL?: string;
+  ANTHROPIC_API_BASE?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -83,6 +86,17 @@ const worker = {
     (
       globalThis as typeof globalThis & { __MAXIMUS_FIELD_KEY__?: string }
     ).__MAXIMUS_FIELD_KEY__ = env.FIELD_ENCRYPTION_KEY ?? "";
+    // The case-file assistant. Absent an API key it stays exactly what
+    // Integrations calls it: not configured.
+    (
+      globalThis as typeof globalThis & {
+        __MAXIMUS_AI__?: { apiKey?: string; model?: string; apiBase?: string };
+      }
+    ).__MAXIMUS_AI__ = {
+      apiKey: env.ANTHROPIC_API_KEY,
+      model: env.ANTHROPIC_MODEL,
+      apiBase: env.ANTHROPIC_API_BASE,
+    };
     const url = new URL(request.url);
 
     if (url.pathname === "/_vinext/image") {

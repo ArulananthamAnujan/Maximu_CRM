@@ -3250,6 +3250,13 @@ function ReportsView({
   );
 }
 
+type AIInteraction = {
+  id: string;
+  purpose: string;
+  response: string;
+  at: string;
+};
+
 type IntegrationStatus = {
   key: string;
   name: string;
@@ -3271,6 +3278,269 @@ const integrationLabels: Record<IntegrationStatus["state"], string> = {
  * does not match the service account shows as broken here instead of at the
  * moment somebody tries to upload a passport.
  */
+/**
+ * The case-file assistant. It only ever drafts and summarises against a case
+ * the signed-in person can already read -- the server enforces that, this
+ * screen just picks which case. Nothing it writes is saved until a person
+ * clicks "Save as case note" or "Save as message draft", which go through the
+ * same audited endpoints those buttons use everywhere else in the CRM.
+ */
+function AIAssistantView({
+  cases,
+  say,
+}: {
+  cases: CaseRecord[];
+  say: (text: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<CaseRecord | null>(null);
+  const [history, setHistory] = useState<AIInteraction[]>([]);
+  const [instruction, setInstruction] = useState("");
+  const [response, setResponse] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const matches =
+    query.trim().length > 1
+      ? cases
+          .filter((c) =>
+            `${c.name} ${c.id}`.toLowerCase().includes(query.toLowerCase()),
+          )
+          .slice(0, 8)
+      : [];
+
+  const loadHistory = async (caseId: string) => {
+    try {
+      const response_ = await fetch(`/api/crm/ai?caseId=${caseId}`, {
+        cache: "no-store",
+      });
+      const result = await response_.json();
+      if (response_.ok) setHistory(result.interactions ?? []);
+    } catch {
+      // History is a convenience; failing to load it should not block asking.
+    }
+  };
+
+  const pick = (record: CaseRecord) => {
+    setSelected(record);
+    setQuery("");
+    setResponse("");
+    setError("");
+    if (record.dbId) void loadHistory(record.dbId);
+  };
+
+  const ask = async () => {
+    if (!selected?.dbId || !instruction.trim()) return;
+    setAsking(true);
+    setError("");
+    try {
+      const result = await fetch("/api/crm/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caseId: selected.dbId,
+          instruction: instruction.trim(),
+        }),
+      });
+      const body = await result.json();
+      if (!result.ok)
+        throw new Error(body.error || "The assistant could not answer that.");
+      setResponse(body.response);
+      setInstruction("");
+      void loadHistory(selected.dbId);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "The assistant could not answer that.",
+      );
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  const saveAsNote = async () => {
+    if (!selected?.dbId || !response) return;
+    setSaving(true);
+    try {
+      const result = await fetch("/api/crm/operations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "case_note",
+          caseId: selected.dbId,
+          body: response,
+          visibility: "case_team",
+        }),
+      });
+      if (!result.ok) throw new Error((await result.json()).error);
+      say("Saved as a case note.");
+    } catch (reason) {
+      say(reason instanceof Error ? reason.message : "That did not save.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveAsDraft = async () => {
+    if (!selected?.dbId || !response) return;
+    if (!selected.email) {
+      say("This client has no email address on file yet.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const result = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "message",
+          caseId: selected.dbId,
+          clientId: selected.clientId,
+          to: selected.email,
+          subject: `${selected.name} -- ${selected.matterType || selected.type}`,
+          body: response,
+        }),
+      });
+      if (!result.ok) throw new Error((await result.json()).error);
+      say(
+        "Saved as a message draft. Review it under Messages before it's sent.",
+      );
+    } catch (reason) {
+      say(reason instanceof Error ? reason.message : "That did not save.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="workspaceHub">
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">CASE-SCOPED</span>
+            <h2>Assistant</h2>
+          </div>
+        </div>
+        <p className="coverageIntro">
+          Drafts and summarises from the facts on one case file -- nothing it
+          writes is saved until you choose to. It never sends a message or
+          changes a record on its own.
+        </p>
+
+        {!selected ? (
+          <div className="aiCasePicker">
+            <label>
+              Find a case
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by client name or case number"
+                autoFocus
+              />
+            </label>
+            {matches.length > 0 && (
+              <div className="aiCaseMatches">
+                {matches.map((c) => (
+                  <button key={c.id} onClick={() => pick(c)}>
+                    <strong>{c.name}</strong>
+                    <span>
+                      {c.id} · {c.matterType || c.type}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="aiCaseChip">
+              <div>
+                <strong>{selected.name}</strong>
+                <span>
+                  {selected.id} · {selected.matterType || selected.type}
+                </span>
+              </div>
+              <button
+                className="ghostButton"
+                onClick={() => {
+                  setSelected(null);
+                  setHistory([]);
+                  setResponse("");
+                }}
+              >
+                Change case
+              </button>
+            </div>
+
+            <form
+              className="aiInstructionForm"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void ask();
+              }}
+            >
+              <textarea
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+                placeholder="e.g. Summarise where this case is up to, or draft a message asking for a bank statement"
+                rows={3}
+                disabled={asking}
+              />
+              <button
+                className="primaryButton"
+                type="submit"
+                disabled={asking || !instruction.trim()}
+              >
+                <BrainCircuit size={15} />
+                {asking ? "Thinking…" : "Ask"}
+              </button>
+            </form>
+            {error && <p className="caseWorkError">{error}</p>}
+
+            {response && (
+              <div className="aiResponse">
+                <p>{response}</p>
+                <div className="aiResponseActions">
+                  <button
+                    className="ghostButton"
+                    disabled={saving}
+                    onClick={() => void saveAsNote()}
+                  >
+                    Save as case note
+                  </button>
+                  <button
+                    className="ghostButton"
+                    disabled={saving}
+                    onClick={() => void saveAsDraft()}
+                  >
+                    Save as message draft
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {history.length > 0 && (
+              <div className="aiHistory">
+                <span className="kicker">EARLIER ON THIS CASE</span>
+                {history
+                  .filter((row) => row.response !== response)
+                  .map((row) => (
+                    <div className="aiHistoryRow" key={row.id}>
+                      <p>{row.response}</p>
+                      <small>{new Date(row.at).toLocaleString()}</small>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </>
+        )}
+      </article>
+    </section>
+  );
+}
+
 function GoogleWorkspaceView() {
   const [integrations, setIntegrations] = useState<IntegrationStatus[] | null>(
     null,
@@ -7294,17 +7564,7 @@ export default function Home() {
       <ReportsView exportData={exportData} canSeeFinance={canManageFinance} />
     );
   else if (active === "ai")
-    content = (
-      <article className="panel listPanel">
-        <EmptyState
-          icon={BrainCircuit}
-          title="AI provider not connected"
-          copy="The AI screen is intentionally inactive until you choose a provider and add secure server-side credentials."
-          action="Open administration"
-          onAction={() => setActive("administration")}
-        />
-      </article>
-    );
+    content = <AIAssistantView cases={cases} say={say} />;
   else if (active === "compliance")
     content = (
       <article className="panel listPanel">

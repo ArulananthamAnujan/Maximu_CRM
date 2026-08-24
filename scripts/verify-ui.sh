@@ -19,6 +19,7 @@ work="${UI_DIR:-/var/lib/postgresql/crm-ui}"
 port="${UI_PG_PORT:-5441}"
 shim_port="${UI_SHIM_PORT:-8095}"
 drive_port="${UI_DRIVE_PORT:-8094}"
+ai_port="${UI_AI_PORT:-8093}"
 worker_port="${UI_WORKER_PORT:-8100}"
 
 # shellcheck source=scripts/lib/pg-env.sh
@@ -27,9 +28,9 @@ source "${root}/scripts/lib/pg-env.sh"
 command -v openssl >/dev/null || { echo "openssl is required." >&2; exit 69; }
 [[ -f "${root}/dist/server/index.js" ]] || { echo "Run 'npm run build' first." >&2; exit 69; }
 
-shim_pid=""; drive_pid=""; worker_pid=""
+shim_pid=""; drive_pid=""; worker_pid=""; ai_pid=""
 cleanup() {
-  for pid in "${worker_pid}" "${drive_pid}" "${shim_pid}"; do
+  for pid in "${worker_pid}" "${ai_pid}" "${drive_pid}" "${shim_pid}"; do
     [[ -n "${pid}" ]] && kill "${pid}" 2>/dev/null || true
   done
   pg_stop "${work}"
@@ -66,6 +67,11 @@ DRIVE_STUB_PORT="${drive_port}" \
   DRIVE_STUB_SHARED_DRIVE_ID="shared-drive-root" \
   node "${root}/scripts/audit/google-drive-stub.mjs" >"${work}/drive.log" 2>&1 &
 drive_pid=$!
+
+ai_key="ui-anthropic-$(head -c 12 /dev/urandom | base64 | tr -d '/+=')"
+ANTHROPIC_STUB_PORT="${ai_port}" ANTHROPIC_STUB_KEY="${ai_key}" \
+  node "${root}/scripts/audit/anthropic-stub.mjs" >"${work}/ai.log" 2>&1 &
+ai_pid=$!
 sleep 2
 
 SUPABASE_URL="http://127.0.0.1:${shim_port}" \
@@ -76,6 +82,8 @@ SUPABASE_URL="http://127.0.0.1:${shim_port}" \
   GOOGLE_PRIVATE_KEY_FILE="${work}/keys/service.pem" \
   FIELD_ENCRYPTION_KEY="$(head -c 32 /dev/urandom | base64)" \
   SUPABASE_SERVICE_ROLE_KEY="${service_role_key}" \
+  ANTHROPIC_API_KEY="${ai_key}" \
+  ANTHROPIC_API_BASE="http://127.0.0.1:${ai_port}" \
   WORKER_PORT="${worker_port}" \
   node "${root}/scripts/audit/worker-server.mjs" >"${work}/worker.log" 2>&1 &
 worker_pid=$!
