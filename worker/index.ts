@@ -19,6 +19,8 @@ interface Env {
   ANTHROPIC_API_KEY?: string;
   ANTHROPIC_MODEL?: string;
   ANTHROPIC_API_BASE?: string;
+  GOOGLE_OAUTH_CLIENT_ID?: string;
+  GOOGLE_OAUTH_CLIENT_SECRET?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -96,6 +98,17 @@ const worker = {
       apiKey: env.ANTHROPIC_API_KEY,
       model: env.ANTHROPIC_MODEL,
       apiBase: env.ANTHROPIC_API_BASE,
+    };
+    // A member of staff's own Gmail connection, for sending case-linked mail
+    // as themselves. Absent a client id and secret, Integrations reports
+    // Gmail sending as not configured and Messages has nothing to connect to.
+    (
+      globalThis as typeof globalThis & {
+        __MAXIMUS_GMAIL__?: { clientId?: string; clientSecret?: string };
+      }
+    ).__MAXIMUS_GMAIL__ = {
+      clientId: env.GOOGLE_OAUTH_CLIENT_ID,
+      clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
     };
     const url = new URL(request.url);
 

@@ -1099,9 +1099,12 @@ expect("the Shared Drive is probed rather than assumed",
 expect("passport encryption reports as configured",
   byKey.field_encryption?.state === "connected", JSON.stringify(byKey.field_encryption));
 expect("what is not built says so rather than saying not configured",
-  ["gmail", "calendar", "whatsapp", "google_signin"]
-    .every((key) => byKey[key]?.state === "not_built"),
+  ["calendar", "whatsapp"].every((key) => byKey[key]?.state === "not_built"),
   JSON.stringify(Object.entries(byKey).map(([k, v]) => `${k}=${v.state}`)));
+expect("Gmail sending reports connected once the OAuth client is configured",
+  byKey.gmail?.state === "connected", JSON.stringify(byKey.gmail));
+expect("Google sign-in is read from Supabase's own settings, not assumed",
+  byKey.google_signin?.state === "connected", JSON.stringify(byKey.google_signin));
 const officerIntegrations = await call("/api/crm/integrations", { cookie: officer.cookie });
 expect("a case officer cannot read the integration status",
   officerIntegrations.status === 403);
@@ -1363,6 +1366,106 @@ const aiIntegration = (await call("/api/crm/integrations", { cookie: owner.cooki
   .json?.integrations?.find((row) => row.key === "ai");
 expect("Integrations reports the assistant as connected when configured",
   aiIntegration?.state === "connected", JSON.stringify(aiIntegration));
+
+// ---------------------------------------------------------------------------
+section("Connecting and sending through a personal Gmail account");
+const gmailCase = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "case", name: "Gmail Test Client", phone: "+61400000555",
+          email: "gmail.test@example.test", visaExpiry: "2028-06-30",
+          type: "Student visa", target: "Diploma of IT" } });
+expect("a case exists for the message to be linked to", gmailCase.status === 200);
+
+const draft = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "message", caseId: gmailCase.json?.caseId, to: "client@example.test",
+          subject: "Your visa application", body: "Checking in on your documents." } });
+expect("a draft message is recorded against the case", draft.status === 200, JSON.stringify(draft.json));
+const draftedWorkspace = await call("/api/crm/workspace", { cookie: officer.cookie });
+const draftedMessage = (draftedWorkspace.json?.messages ?? [])
+  .find((m) => m.subject === "Your visa application");
+expect("the draft is there to send", draftedMessage !== undefined,
+  JSON.stringify((draftedWorkspace.json?.messages ?? []).slice(0, 3)));
+
+const beforeConnect = await call("/api/crm/mailbox", { cookie: officer.cookie });
+expect("nobody starts with a Gmail account connected",
+  beforeConnect.status === 200 && beforeConnect.json?.connected === false &&
+    beforeConnect.json?.oauthConfigured === true,
+  JSON.stringify(beforeConnect.json));
+
+const portalMailbox = await call("/api/crm/mailbox", { cookie: student.cookie });
+expect("a portal account has no mailbox to connect", portalMailbox.status === 403);
+const portalStart = await call("/api/auth/gmail/start", { cookie: student.cookie });
+expect("a portal account cannot start a Gmail connection",
+  portalStart.status === 302 && !(portalStart.headers.get("location") ?? "").includes("accounts.google.com"),
+  portalStart.headers.get("location"));
+
+const start = await call("/api/auth/gmail/start", { cookie: officer.cookie });
+expect("connecting Gmail redirects to Google",
+  start.status === 302 && (start.headers.get("location") ?? "").includes("accounts.google.com"),
+  start.headers.get("location"));
+const stateCookie = (start.headers.getSetCookie?.() ?? [])
+  .find((c) => c.startsWith("maximus_gmail_state="))?.split(";")[0];
+expect("a CSRF state cookie is set for the round trip", Boolean(stateCookie));
+const state = new URL(start.headers.get("location")).searchParams.get("state");
+
+const wrongState = await call(
+  "/api/auth/gmail/callback?code=officer-gmail-test&state=not-the-real-state",
+  { cookie: `${officer.cookie}; ${stateCookie}` });
+expect("a mismatched state is refused",
+  wrongState.status === 302 && (wrongState.headers.get("location") ?? "").includes("gmail=error"),
+  wrongState.headers.get("location"));
+const stillDisconnected = await call("/api/crm/mailbox", { cookie: officer.cookie });
+expect("the mismatched attempt connected nothing", stillDisconnected.json?.connected === false);
+
+const callback = await call(
+  `/api/auth/gmail/callback?code=officer-gmail-test&state=${state}`,
+  { cookie: `${officer.cookie}; ${stateCookie}` });
+expect("the callback completes the connection",
+  callback.status === 302 && (callback.headers.get("location") ?? "").includes("gmail=connected"),
+  callback.headers.get("location"));
+
+const afterConnect = await call("/api/crm/mailbox", { cookie: officer.cookie });
+expect("the officer's own Gmail account now shows connected",
+  afterConnect.json?.connected === true &&
+    afterConnect.json?.email === "officer-gmail-test@gmail.stub.test",
+  JSON.stringify(afterConnect.json));
+
+const managerSend = await call("/api/crm/mailbox", { method: "POST", cookie: manager.cookie,
+  body: { action: "send_message", messageId: draftedMessage?.id } });
+expect("someone without a Gmail connection of their own cannot send",
+  managerSend.status === 400, JSON.stringify(managerSend.json));
+
+const portalSend = await call("/api/crm/mailbox", { method: "POST", cookie: student.cookie,
+  body: { action: "send_message", messageId: draftedMessage?.id } });
+expect("a portal account cannot send mail as the agency", portalSend.status === 403);
+
+const send = await call("/api/crm/mailbox", { method: "POST", cookie: officer.cookie,
+  body: { action: "send_message", messageId: draftedMessage?.id } });
+expect("the connected officer sends the draft", send.status === 200, JSON.stringify(send.json));
+
+const sentWorkspace = await call("/api/crm/workspace", { cookie: officer.cookie });
+const sentMessage = (sentWorkspace.json?.messages ?? []).find((m) => m.id === draftedMessage?.id);
+expect("the sent message is marked sent with a timestamp",
+  sentMessage?.status === "sent" && Boolean(sentMessage?.sentAt), JSON.stringify(sentMessage));
+
+const gmailStubState = await (await fetch(`${DRIVE_STUB}/__state`)).json();
+const lastSent = (gmailStubState.sentMessages ?? []).at(-1);
+const decodedRaw = lastSent
+  ? Buffer.from(lastSent.raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")
+  : "";
+expect("the message actually sent through Gmail carries the drafted subject",
+  decodedRaw.includes("Your visa application") && decodedRaw.includes("client@example.test"),
+  decodedRaw.slice(0, 200));
+
+const disconnect = await call("/api/crm/mailbox", { method: "POST", cookie: officer.cookie,
+  body: { action: "disconnect" } });
+expect("disconnecting a Gmail account succeeds", disconnect.status === 200);
+const afterDisconnect = await call("/api/crm/mailbox", { cookie: officer.cookie });
+expect("the connection no longer shows as connected", afterDisconnect.json?.connected === false);
+
+const sendAfterDisconnect = await call("/api/crm/mailbox", { method: "POST", cookie: officer.cookie,
+  body: { action: "send_message", messageId: draftedMessage?.id } });
+expect("sending after disconnecting is refused",
+  sendAfterDisconnect.status === 400, JSON.stringify(sendAfterDisconnect.json));
 
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });

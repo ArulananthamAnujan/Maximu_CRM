@@ -1,10 +1,15 @@
 /**
- * A stand-in for Google's token service and the Drive API, covering the calls
- * this CRM makes against a Shared Drive.
+ * A stand-in for Google's token service, the Drive API and the slice of the
+ * Gmail API this CRM calls: covers the service-account flow behind the
+ * Shared Drive, and the per-staff OAuth code/refresh/send flow behind
+ * connecting and sending from a personal Gmail account.
  *
- * It verifies the RS256 service-account assertion with the matching public key,
- * so the signing path is genuinely exercised rather than assumed, and it holds
- * uploaded bytes in memory so a download can be compared with what went in.
+ * The Drive service-account assertion is verified with RS256 against the
+ * matching public key, so that signing path is genuinely exercised rather
+ * than assumed. The Gmail flow needs no such key: a code or refresh token is
+ * a deterministic function of its input, so nothing needs to be remembered
+ * between the two -- the same behaviour a real OAuth exchange has, without a
+ * browser to click through a consent screen.
  */
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -15,6 +20,7 @@ const SHARED_DRIVE_ID = process.env.DRIVE_STUB_SHARED_DRIVE_ID || "shared-drive-
 
 const folders = new Map(); // id -> { name, parent }
 const files = new Map(); // id -> { name, mimeType, parents, content, trashed }
+const sentMessages = []; // { to, subject, raw }
 let counter = 0;
 const nextId = (prefix) => `${prefix}-${++counter}`;
 
@@ -69,13 +75,57 @@ const server = http.createServer((req, res) => {
     };
 
     if (url.pathname === "/token") {
-      try {
-        const params = new URLSearchParams(raw.toString("utf8"));
-        verifyAssertion(params.get("assertion"));
-        return send(200, { access_token: "stub-access-token", expires_in: 3600 });
-      } catch (error) {
-        return send(400, { error: "invalid_grant", error_description: String(error.message) });
+      const params = new URLSearchParams(raw.toString("utf8"));
+      const grantType = params.get("grant_type");
+      // The service-account JWT-bearer grant Drive uses.
+      if (grantType === "urn:ietf:params:oauth:grant-type:jwt-bearer") {
+        try {
+          verifyAssertion(params.get("assertion"));
+          return send(200, { access_token: "stub-access-token", expires_in: 3600 });
+        } catch (error) {
+          return send(400, { error: "invalid_grant", error_description: String(error.message) });
+        }
       }
+      // The Gmail connect flow: a code exchanged once, a refresh token used
+      // afterwards. Both are deterministic functions of the code, so the
+      // stub needs no memory of who connected.
+      if (grantType === "authorization_code") {
+        const code = params.get("code");
+        if (!code) return send(400, { error: "invalid_request", error_description: "code is required" });
+        return send(200, {
+          access_token: `gmail-access-${code}`,
+          refresh_token: `gmail-refresh-${code}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+      if (grantType === "refresh_token") {
+        const token = params.get("refresh_token") || "";
+        const code = token.replace(/^gmail-refresh-/, "");
+        if (!code) return send(400, { error: "invalid_grant", error_description: "unknown refresh token" });
+        return send(200, { access_token: `gmail-access-${code}`, expires_in: 3600, token_type: "Bearer" });
+      }
+      return send(400, { error: "unsupported_grant_type", error_description: String(grantType) });
+    }
+
+    // Who a Gmail access token belongs to, used both to identify the
+    // connecting account and to authorise the send call below.
+    if (url.pathname === "/oauth2/v2/userinfo") {
+      const bearer = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      const code = bearer.replace(/^gmail-access-/, "");
+      if (!code || code === bearer) return send(401, { error: "invalid token" });
+      return send(200, { email: `${code}@gmail.stub.test` });
+    }
+
+    if (req.method === "POST" && url.pathname === "/gmail/v1/users/me/messages/send") {
+      const bearer = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+      if (!bearer.startsWith("gmail-access-")) return send(401, { error: { message: "missing token" } });
+      const body = JSON.parse(raw.toString("utf8"));
+      if (!body.raw) return send(400, { error: { message: "raw message body is required" } });
+      const id = nextId("gmail-msg");
+      const threadId = nextId("gmail-thread");
+      sentMessages.push({ id, threadId, raw: body.raw });
+      return send(200, { id, threadId });
     }
 
     // A small window into the stub's state, for assertions.
@@ -89,6 +139,7 @@ const server = http.createServer((req, res) => {
           size: f.content.length,
           trashed: f.trashed,
         })),
+        sentMessages,
       });
 
     const authorised = (req.headers.authorization || "").includes("stub-access-token");
