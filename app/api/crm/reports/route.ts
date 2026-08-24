@@ -210,7 +210,11 @@ export async function GET(request: Request) {
         outstanding:
           Math.round((sum(invoices, "total") - sum(invoices, "paid")) * 100) / 100,
         overdueInvoices: invoices.filter(
-          (row) => row.state !== "paid" && row.state !== "void" && overdue(row.due_on),
+          (row) =>
+            row.state !== "paid" &&
+            row.state !== "void" &&
+            row.state !== "refunded" &&
+            overdue(row.due_on),
         ).length,
         byState: tally(invoices, "state"),
       },
