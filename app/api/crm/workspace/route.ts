@@ -5,7 +5,8 @@ import {
 } from "@/server/supabase-session";
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
 import { driveConfigured } from "@/server/google-drive";
-import { protectionConfigured } from "@/server/protected-fields";
+import { protectionConfigured, protect, reveal } from "@/server/protected-fields";
+import { calendarRefreshAccessToken, createCalendarEvent, deleteCalendarEvent } from "@/server/google-calendar";
 import { orgDate, orgTime } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
@@ -748,8 +749,12 @@ export async function POST(request: Request) {
 
     if (action === "appointment") {
       const id = crypto.randomUUID();
+      const title = required(body.title, "Title");
       const startsAt = new Date(
         `${required(body.date, "Date")}T${String(body.time || "09:00")}:00`,
+      ).toISOString();
+      const endsAt = new Date(
+        new Date(startsAt).getTime() + 60 * 60 * 1000,
       ).toISOString();
       await insert(
         "appointments",
@@ -758,12 +763,10 @@ export async function POST(request: Request) {
           organisation_id: org,
           case_id: nullable(body.caseId),
           owner_id: actor,
-          title: required(body.title, "Title"),
+          title,
           appointment_type: String(body.appointmentType || "Consultation"),
           starts_at: startsAt,
-          ends_at: new Date(
-            new Date(startsAt).getTime() + 60 * 60 * 1000,
-          ).toISOString(),
+          ends_at: endsAt,
           status: "scheduled",
         },
         token,
@@ -778,6 +781,10 @@ export async function POST(request: Request) {
         `Scheduled appointment: ${String(body.title)}`,
         token,
       );
+      // A scheduling convenience, not the record of truth: the appointment is
+      // already saved, so a Google-side failure here is logged and swallowed
+      // rather than surfacing as a failed request to schedule it.
+      await syncAppointmentToCalendar(actor, id, title, startsAt, endsAt, token);
       return Response.json({ ok: true });
     }
 
@@ -1146,7 +1153,19 @@ export async function POST(request: Request) {
       } else if (resource === "task" && operation === "delete") {
         await deleteRow("tasks", id, token);
       } else if (resource === "appointment" && operation === "delete") {
+        const [cancelled] = await rest<
+          { owner_id: string | null; google_calendar_event_id: string | null }[]
+        >(
+          `appointments?select=owner_id,google_calendar_event_id&id=eq.${encodeURIComponent(id)}&limit=1`,
+          token,
+        );
         await deleteRow("appointments", id, token);
+        if (cancelled)
+          await cancelAppointmentOnCalendar(
+            cancelled.owner_id,
+            cancelled.google_calendar_event_id,
+            token,
+          );
       } else if (resource === "document" && operation === "delete") {
         await patchRow("documents", id, { state: "archived" }, token);
       } else if (resource === "message" && operation === "toggle") {
@@ -1286,6 +1305,78 @@ async function deleteRow(table: string, id: string, token: string) {
     { method: "DELETE" },
     token,
   );
+}
+
+/** Reads the owner's own Calendar connection, if they have one turned on. */
+async function ownerCalendarConnection(
+  ownerId: string,
+  token: string,
+): Promise<{ token_reference: string | null; active: boolean } | undefined> {
+  const connections = await rest<
+    { token_reference: string | null; active: boolean }[]
+  >(
+    `mailbox_connections?select=token_reference,active&profile_id=eq.${ownerId}&provider=eq.google_calendar&limit=1`,
+    token,
+  );
+  return connections[0];
+}
+
+async function syncAppointmentToCalendar(
+  ownerId: string | null,
+  appointmentId: string,
+  title: string,
+  startsAt: string,
+  endsAt: string,
+  token: string,
+): Promise<void> {
+  if (!ownerId) return;
+  try {
+    const connection = await ownerCalendarConnection(ownerId, token);
+    if (!connection?.active || !connection.token_reference) return;
+    const refreshToken = await reveal(connection.token_reference);
+    const fresh = await calendarRefreshAccessToken(refreshToken);
+    const event = await createCalendarEvent({
+      accessToken: fresh.access_token,
+      title,
+      startsAt,
+      endsAt,
+    });
+    await patchRow(
+      "appointments",
+      appointmentId,
+      { google_calendar_event_id: event.id },
+      token,
+    );
+    if (fresh.refresh_token)
+      await supabaseRequest(
+        `/rest/v1/mailbox_connections?profile_id=eq.${ownerId}&provider=eq.google_calendar`,
+        {
+          method: "PATCH",
+          headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ token_reference: await protect(fresh.refresh_token) }),
+        },
+        token,
+      );
+  } catch (error) {
+    console.error("calendar sync failed", error);
+  }
+}
+
+async function cancelAppointmentOnCalendar(
+  ownerId: string | null,
+  eventId: string | null,
+  token: string,
+): Promise<void> {
+  if (!ownerId || !eventId) return;
+  try {
+    const connection = await ownerCalendarConnection(ownerId, token);
+    if (!connection?.active || !connection.token_reference) return;
+    const refreshToken = await reveal(connection.token_reference);
+    const fresh = await calendarRefreshAccessToken(refreshToken);
+    await deleteCalendarEvent({ accessToken: fresh.access_token, eventId });
+  } catch (error) {
+    console.error("calendar cancel failed", error);
+  }
 }
 async function auditEvent(
   organisationId: string,

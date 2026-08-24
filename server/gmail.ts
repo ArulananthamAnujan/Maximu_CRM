@@ -12,26 +12,20 @@
  * directly against Google's REST endpoints rather than through the Node
  * googleapis SDK.
  */
+import {
+  googleOAuthClient,
+  googleOAuthConfigured,
+  GoogleOAuthNotConfiguredError,
+} from "@/server/google-oauth-client";
 
-export type GmailOAuthClient = {
-  clientId: string;
-  clientSecret: string;
-};
+export { GoogleOAuthNotConfiguredError as GmailNotConfiguredError };
+export const gmailOAuthConfigured = googleOAuthConfigured;
 
 declare global {
-  // Populated by the Worker entry point at request time, mirroring
-  // __MAXIMUS_DRIVE__.
-  var __MAXIMUS_GMAIL__:
-    | Partial<GmailOAuthClient & { apiBase: string; tokenBase: string; authBase: string }>
+  // Test-only overrides for Google's hosts, mirroring __MAXIMUS_DRIVE__.
+  var __MAXIMUS_GOOGLE_HOSTS__:
+    | Partial<{ apiBase: string; tokenBase: string; authBase: string }>
     | undefined;
-}
-
-export class GmailNotConfiguredError extends Error {
-  constructor() {
-    super(
-      "Gmail sending is not set up on this deployment. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET, and add the redirect URI in the Google Cloud OAuth client.",
-    );
-  }
 }
 
 export class GmailError extends Error {
@@ -43,41 +37,23 @@ export class GmailError extends Error {
   }
 }
 
-export function gmailOAuthClient(): GmailOAuthClient {
-  const runtime = globalThis.__MAXIMUS_GMAIL__;
-  const clientId = runtime?.clientId || process.env.GOOGLE_OAUTH_CLIENT_ID || "";
-  const clientSecret =
-    runtime?.clientSecret || process.env.GOOGLE_OAUTH_CLIENT_SECRET || "";
-  if (!clientId || !clientSecret) throw new GmailNotConfiguredError();
-  return { clientId, clientSecret };
-}
-
-export function gmailOAuthConfigured(): boolean {
-  try {
-    gmailOAuthClient();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function authBase(): string {
   return (
-    globalThis.__MAXIMUS_GMAIL__?.authBase ||
+    globalThis.__MAXIMUS_GOOGLE_HOSTS__?.authBase ||
     process.env.GOOGLE_AUTH_BASE ||
     "https://accounts.google.com"
   );
 }
 function tokenBase(): string {
   return (
-    globalThis.__MAXIMUS_GMAIL__?.tokenBase ||
+    globalThis.__MAXIMUS_GOOGLE_HOSTS__?.tokenBase ||
     process.env.GOOGLE_TOKEN_BASE ||
     "https://oauth2.googleapis.com"
   );
 }
 function apiBase(): string {
   return (
-    globalThis.__MAXIMUS_GMAIL__?.apiBase ||
+    globalThis.__MAXIMUS_GOOGLE_HOSTS__?.apiBase ||
     process.env.GOOGLE_API_BASE ||
     "https://www.googleapis.com"
   );
@@ -90,7 +66,7 @@ export function gmailAuthorizeUrl(options: {
   redirectUri: string;
   state: string;
 }): string {
-  const { clientId } = gmailOAuthClient();
+  const { clientId } = googleOAuthClient("Gmail sending");
   const url = new URL(`${authBase()}/o/oauth2/v2/auth`);
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", options.redirectUri);
@@ -127,7 +103,7 @@ export async function gmailExchangeCode(options: {
   code: string;
   redirectUri: string;
 }): Promise<TokenResponse> {
-  const { clientId, clientSecret } = gmailOAuthClient();
+  const { clientId, clientSecret } = googleOAuthClient("Gmail sending");
   return tokenRequest({
     grant_type: "authorization_code",
     code: options.code,
@@ -138,7 +114,7 @@ export async function gmailExchangeCode(options: {
 }
 
 export async function gmailRefreshAccessToken(refreshToken: string): Promise<TokenResponse> {
-  const { clientId, clientSecret } = gmailOAuthClient();
+  const { clientId, clientSecret } = googleOAuthClient("Gmail sending");
   return tokenRequest({
     grant_type: "refresh_token",
     refresh_token: refreshToken,

@@ -1099,10 +1099,11 @@ expect("the Shared Drive is probed rather than assumed",
 expect("passport encryption reports as configured",
   byKey.field_encryption?.state === "connected", JSON.stringify(byKey.field_encryption));
 expect("what is not built says so rather than saying not configured",
-  ["calendar", "whatsapp"].every((key) => byKey[key]?.state === "not_built"),
-  JSON.stringify(Object.entries(byKey).map(([k, v]) => `${k}=${v.state}`)));
+  byKey.whatsapp?.state === "not_built", JSON.stringify(byKey.whatsapp));
 expect("Gmail sending reports connected once the OAuth client is configured",
   byKey.gmail?.state === "connected", JSON.stringify(byKey.gmail));
+expect("Calendar sync reports connected once the OAuth client is configured",
+  byKey.calendar?.state === "connected", JSON.stringify(byKey.calendar));
 expect("Google sign-in is read from Supabase's own settings, not assumed",
   byKey.google_signin?.state === "connected", JSON.stringify(byKey.google_signin));
 const officerIntegrations = await call("/api/crm/integrations", { cookie: officer.cookie });
@@ -1466,6 +1467,77 @@ const sendAfterDisconnect = await call("/api/crm/mailbox", { method: "POST", coo
   body: { action: "send_message", messageId: draftedMessage?.id } });
 expect("sending after disconnecting is refused",
   sendAfterDisconnect.status === 400, JSON.stringify(sendAfterDisconnect.json));
+
+// ---------------------------------------------------------------------------
+section("Pushing appointments to a personal Google Calendar");
+const beforeCalendarConnect = await call("/api/crm/calendar-connection", { cookie: officer.cookie });
+expect("nobody starts with a calendar connected",
+  beforeCalendarConnect.status === 200 && beforeCalendarConnect.json?.connected === false &&
+    beforeCalendarConnect.json?.oauthConfigured === true,
+  JSON.stringify(beforeCalendarConnect.json));
+
+const unsyncedAppointment = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "appointment", title: "Before calendar is connected", date: "2027-03-01", time: "10:00" } });
+expect("an appointment can be created before any calendar is connected",
+  unsyncedAppointment.status === 200, JSON.stringify(unsyncedAppointment.json));
+const beforeConnectState = await (await fetch(`${DRIVE_STUB}/__state`)).json();
+const eventsBeforeConnect = (beforeConnectState.calendarEvents ?? []).length;
+
+const portalCalendarConnection = await call("/api/crm/calendar-connection", { cookie: student.cookie });
+expect("a portal account has no calendar to connect", portalCalendarConnection.status === 403);
+
+const calendarStart = await call("/api/auth/calendar/start", { cookie: officer.cookie });
+expect("connecting Calendar redirects to Google",
+  calendarStart.status === 302 && (calendarStart.headers.get("location") ?? "").includes("accounts.google.com"),
+  calendarStart.headers.get("location"));
+const calendarStateCookie = (calendarStart.headers.getSetCookie?.() ?? [])
+  .find((c) => c.startsWith("maximus_calendar_state="))?.split(";")[0];
+const calendarState = new URL(calendarStart.headers.get("location")).searchParams.get("state");
+const calendarCallback = await call(
+  `/api/auth/calendar/callback?code=officer-calendar-test&state=${calendarState}`,
+  { cookie: `${officer.cookie}; ${calendarStateCookie}` });
+expect("the calendar callback completes the connection",
+  calendarCallback.status === 302 && (calendarCallback.headers.get("location") ?? "").includes("calendar=connected"),
+  calendarCallback.headers.get("location"));
+
+const afterCalendarConnect = await call("/api/crm/calendar-connection", { cookie: officer.cookie });
+expect("the officer's own calendar now shows connected",
+  afterCalendarConnect.json?.connected === true &&
+    afterCalendarConnect.json?.email === "officer-calendar-test@gmail.stub.test",
+  JSON.stringify(afterCalendarConnect.json));
+
+const syncedAppointment = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "appointment", title: "After calendar is connected", date: "2027-03-02", time: "11:00" } });
+expect("an appointment can be created once a calendar is connected",
+  syncedAppointment.status === 200, JSON.stringify(syncedAppointment.json));
+
+const afterCreateState = await (await fetch(`${DRIVE_STUB}/__state`)).json();
+expect("the appointment was pushed onto the connected calendar",
+  (afterCreateState.calendarEvents ?? []).length === eventsBeforeConnect + 1 &&
+    (afterCreateState.calendarEvents ?? []).at(-1)?.summary === "After calendar is connected",
+  JSON.stringify(afterCreateState.calendarEvents?.at(-1)));
+
+const calendarWorkspace = await call("/api/crm/workspace", { cookie: officer.cookie });
+const syncedRecord = (calendarWorkspace.json?.appointments ?? [])
+  .find((a) => a.title === "After calendar is connected");
+expect("the synced appointment is visible to cancel", syncedRecord !== undefined);
+
+const cancelAppointment = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "mutate", resource: "appointment", operation: "delete", id: syncedRecord?.id } });
+expect("cancelling the appointment succeeds", cancelAppointment.status === 200,
+  JSON.stringify(cancelAppointment.json));
+
+const afterCancelState = await (await fetch(`${DRIVE_STUB}/__state`)).json();
+expect("cancelling the appointment removes it from the calendar",
+  (afterCancelState.calendarEvents ?? []).length === eventsBeforeConnect,
+  JSON.stringify(afterCancelState.calendarEvents));
+
+const disconnectCalendar = await call("/api/crm/calendar-connection", { method: "POST", cookie: officer.cookie,
+  body: { action: "disconnect" } });
+expect("disconnecting a calendar succeeds", disconnectCalendar.status === 200);
+const afterCalendarDisconnect = await call("/api/crm/calendar-connection", { cookie: officer.cookie });
+expect("the calendar connection no longer shows as connected",
+  afterCalendarDisconnect.json?.connected === false);
 
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });

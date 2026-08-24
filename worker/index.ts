@@ -99,14 +99,15 @@ const worker = {
       model: env.ANTHROPIC_MODEL,
       apiBase: env.ANTHROPIC_API_BASE,
     };
-    // A member of staff's own Gmail connection, for sending case-linked mail
-    // as themselves. Absent a client id and secret, Integrations reports
-    // Gmail sending as not configured and Messages has nothing to connect to.
+    // The Google Cloud OAuth client behind every per-staff connection: Gmail
+    // sending and Calendar sync both request consent through it. Absent a
+    // client id and secret, Integrations reports both as not configured and
+    // Messages/Calendar have nothing to connect to.
     (
       globalThis as typeof globalThis & {
-        __MAXIMUS_GMAIL__?: { clientId?: string; clientSecret?: string };
+        __MAXIMUS_GOOGLE_OAUTH__?: { clientId?: string; clientSecret?: string };
       }
-    ).__MAXIMUS_GMAIL__ = {
+    ).__MAXIMUS_GOOGLE_OAUTH__ = {
       clientId: env.GOOGLE_OAUTH_CLIENT_ID,
       clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
     };
