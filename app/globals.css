@@ -3577,6 +3577,14 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.googleCallback {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding: 24px;
+  color: #445266;
+}
 .institutionBlock {
   border: 1px solid #eaf0f5;
   border-radius: 10px;
