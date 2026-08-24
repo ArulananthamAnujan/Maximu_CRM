@@ -289,13 +289,23 @@ individual file, defaulting to 25.
 
 ## Safe Google rollout
 
+Only the Shared Drive is built, so only the Shared Drive is worth setting up.
+There is nothing in the CRM that a Gmail, Calendar or OAuth sign-in credential
+would switch on: those are listed as **Not built** above and on the
+Integrations screen, and configuring them changes nothing until they are.
+
 1. Create a Google Cloud project controlled by Maximus.
-2. Restrict the OAuth consent screen to the Workspace organisation.
-3. Enable Gmail and Drive APIs.
-4. Create an organisation-owned Shared Drive for CRM documents.
-5. Add the application service identity only to that Shared Drive.
-6. Configure individual Gmail OAuth for staff and shared mailbox connections.
-7. Test with dummy accounts and documents before enabling real client data.
+2. Enable the **Google Drive API** in it. No OAuth consent screen is needed:
+   the CRM authenticates as a service account, not as a person.
+3. Create an organisation-owned Shared Drive for CRM documents.
+4. Add the service account to that Shared Drive as a Content manager, and to
+   nothing else anywhere.
+5. Set the three values above, then open **Integrations** in the CRM. It signs
+   an assertion, exchanges it for a token and reads the drive back, so a key
+   that does not match the account, or an account that was never added to the
+   drive, shows as broken there rather than at the moment somebody uploads a
+   passport.
+6. Test with dummy clients and documents before enabling real client data.
 
 Never commit `.env.local`, OAuth secrets, service-account credentials or real
 student data. Production requires privacy, migration-agent workflow and
