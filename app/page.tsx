@@ -4466,6 +4466,7 @@ function CaseDrawer({
   refresh,
   staff,
   canAssign,
+  canModify,
   lifecycleReady,
   schemaWarning,
   storageConnected,
@@ -4483,6 +4484,7 @@ function CaseDrawer({
   refresh: () => Promise<void>;
   staff: StaffRecord[];
   canAssign: boolean;
+  canModify: boolean;
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
@@ -4498,6 +4500,7 @@ function CaseDrawer({
       refresh={refresh}
       staff={staff}
       canAssign={canAssign}
+      canModify={canModify}
       lifecycleReady={lifecycleReady}
       schemaWarning={schemaWarning}
       storageConnected={storageConnected}
@@ -4639,6 +4642,7 @@ function CaseDrawerBody({
   refresh,
   staff,
   canAssign,
+  canModify,
   lifecycleReady,
   schemaWarning,
   storageConnected,
@@ -4656,6 +4660,7 @@ function CaseDrawerBody({
   refresh: () => Promise<void>;
   staff: StaffRecord[];
   canAssign: boolean;
+  canModify: boolean;
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
@@ -4692,10 +4697,12 @@ function CaseDrawerBody({
   const needsExpiry = !recordedExpiry;
   const direct = item.serviceType === "direct_visa";
   // A migration matter has no institution applications -- that tab describes
-  // a Study Abroad case. Its own matter lives on the Visa matter tab.
-  const availableTabs = direct
-    ? caseTabs.filter(([key]) => key !== "applications")
-    : caseTabs;
+  // a Study Abroad case. Its own matter lives on the Visa matter tab. Finance
+  // is scoped the same way row-level security scopes it: visible on a case
+  // this account may actually change, not one it can merely see for cover.
+  const availableTabs = (
+    direct ? caseTabs.filter(([key]) => key !== "applications") : caseTabs
+  ).filter(([key]) => key !== "finance" || canModify);
   // Nine tabs do not fit a phone. The four that carry the day's work stay in
   // view -- with the visa matter taking the place of applications on a
   // migration file -- and the rest move behind one control.
@@ -5057,12 +5064,17 @@ function CaseDrawerBody({
                       next === "completed" ? "primaryButton" : "ghostButton"
                     }
                     disabled={
-                      moving !== "" || !lifecycleReady || needsExpiryFor(next)
+                      moving !== "" ||
+                      !lifecycleReady ||
+                      needsExpiryFor(next) ||
+                      !canModify
                     }
                     title={
-                      needsExpiryFor(next)
-                        ? "Record the visa expiry date above first"
-                        : undefined
+                      !canModify
+                        ? "This case is assigned to somebody else. Ask a manager to reassign it to you."
+                        : needsExpiryFor(next)
+                          ? "Record the visa expiry date above first"
+                          : undefined
                     }
                     onClick={() => void run(next)}
                   >
@@ -5462,7 +5474,16 @@ function CaseDrawerBody({
         )}
 
         <div className="drawerFooter">
-          <button className="ghostButton" onClick={() => edit(item)}>
+          <button
+            className="ghostButton"
+            onClick={() => edit(item)}
+            disabled={!canModify}
+            title={
+              canModify
+                ? undefined
+                : "This case is assigned to somebody else. Ask a manager to reassign it to you."
+            }
+          >
             <Pencil size={15} />
             Edit
           </button>
@@ -5471,7 +5492,7 @@ function CaseDrawerBody({
             onClick={() => remove(item.id)}
           >
             <Trash2 size={15} />
-            Archive
+            {canAssign ? "Archive" : "Request archive"}
           </button>
         </div>
       </aside>
@@ -8042,6 +8063,9 @@ export default function Home() {
           schemaWarning={schemaWarning}
           storageConnected={storageConnected}
           canAssign={role === "super_admin" || role === "admin"}
+          canModify={
+            role !== "staff" || selected?.ownerId === identity?.profileId
+          }
           item={selected}
           close={() => setSelected(null)}
           edit={editCase}

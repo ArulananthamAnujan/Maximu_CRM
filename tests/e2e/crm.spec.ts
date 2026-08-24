@@ -705,12 +705,24 @@ test("a case officer sees a colleague's case but cannot change it", async ({
 
   const drawer = page.locator(".caseDrawer");
   await expect(drawer).toBeVisible();
-  await drawer.getByRole("button", { name: /move to student/i }).click();
-  // The database refuses, and the refusal says what to do about it.
-  await expect(page.locator(".toast, .caseWorkError").first()).toContainText(
+  // The database would refuse a write here regardless, but the controls
+  // themselves say so up front rather than letting somebody click into a
+  // rejection: disabled, with the same explanation the database would give.
+  const moveButton = drawer.getByRole("button", { name: /move to student/i });
+  await expect(moveButton).toBeDisabled();
+  await expect(moveButton).toHaveAttribute(
+    "title",
     /assigned to somebody else/i,
-    { timeout: 25_000 },
   );
+  const editButton = drawer.getByRole("button", { name: /^edit$/i });
+  await expect(editButton).toBeDisabled();
+  // Finance is not merely empty on a case that isn't theirs -- the tab itself
+  // is not offered.
+  await expect(drawer.getByRole("tab", { name: /finance/i })).toHaveCount(0);
+  // Archiving is still offered, but as the request it actually is.
+  await expect(
+    drawer.getByRole("button", { name: /request archive/i }),
+  ).toBeVisible();
 });
 
 test("a case officer's ledger holds no commission invoices", async ({
