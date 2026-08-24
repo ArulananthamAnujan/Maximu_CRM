@@ -130,6 +130,21 @@ export function isSecureRequest(request: Request): boolean {
   }
 }
 
+/**
+ * The address a request actually came from, as the edge in front of this
+ * deployment reports it. Used only to slow down credential guessing, not for
+ * anything that has to be tamper-proof: a spoofed header just means that one
+ * attempt is bucketed under "unknown" with everyone else who sent none.
+ */
+export function clientIp(request: Request): string {
+  const direct =
+    request.headers.get("cf-connecting-ip") ||
+    request.headers.get("x-real-ip") ||
+    request.headers.get("x-forwarded-for");
+  if (!direct) return "unknown";
+  return direct.split(",")[0].trim() || "unknown";
+}
+
 export function jsonWithCookies(
   payload: unknown,
   status: number,

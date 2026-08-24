@@ -1539,6 +1539,85 @@ const afterCalendarDisconnect = await call("/api/crm/calendar-connection", { coo
 expect("the calendar connection no longer shows as connected",
   afterCalendarDisconnect.json?.connected === false);
 
+// ---------------------------------------------------------------------------
+section("The organisation's last Super Admin cannot be removed");
+const backupAdminEmail = `backup.admin.${Date.now()}@maximus.test`;
+const createBackupAdmin = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
+  body: { action: "create_staff", displayName: "Backup Admin", email: backupAdminEmail, level: "super_admin" } });
+expect("a second Super Admin can be created", createBackupAdmin.status === 200,
+  JSON.stringify(createBackupAdmin.json));
+const adminList = await call("/api/crm/admin", { cookie: owner.cookie });
+const backupAdminId = (adminList.json?.profiles ?? [])
+  .find((p) => p.email === backupAdminEmail)?.id;
+const ownerId = (adminList.json?.profiles ?? [])
+  .find((p) => p.email === "owner@maximus.test")?.id;
+expect("the new Super Admin is on the profile list", Boolean(backupAdminId),
+  JSON.stringify(adminList.json?.profiles?.slice(-3)));
+expect("the owner's own profile id is known", Boolean(ownerId));
+
+const deactivateBackup = await call("/api/crm/admin", { method: "POST", cookie: manager.cookie,
+  body: { action: "update_profile", profileId: backupAdminId, active: false } });
+expect("a Super Admin can be deactivated while another remains",
+  deactivateBackup.status === 200, JSON.stringify(deactivateBackup.json));
+
+const deactivateLastAdmin = await call("/api/crm/admin", { method: "POST", cookie: manager.cookie,
+  body: { action: "update_profile", profileId: ownerId, active: false } });
+expect("the organisation's last active Super Admin cannot be deactivated",
+  deactivateLastAdmin.status === 400, JSON.stringify(deactivateLastAdmin.json));
+
+const demoteLastAdmin = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
+  body: { action: "update_profile", profileId: ownerId, level: "admin" } });
+expect("the last active Super Admin cannot be demoted either",
+  demoteLastAdmin.status === 400, JSON.stringify(demoteLastAdmin.json));
+
+const reactivateBackup = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
+  body: { action: "update_profile", profileId: backupAdminId, active: true } });
+expect("the second Super Admin can be reactivated", reactivateBackup.status === 200,
+  JSON.stringify(reactivateBackup.json));
+const demoteBackup = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
+  body: { action: "update_profile", profileId: backupAdminId, level: "staff" } });
+expect("a Super Admin can be demoted while another remains",
+  demoteBackup.status === 200, JSON.stringify(demoteBackup.json));
+
+// ---------------------------------------------------------------------------
+section("Sign-in is rate limited");
+// The threshold and window live in the database function itself
+// (record_login_attempt), so this exercises that function directly rather
+// than driving the real endpoint eight times -- which would also count
+// against the shared "unknown IP" bucket every other login in this file
+// shares, and could lock later, unrelated sign-ins out.
+const rpcCall = async (name, args) => {
+  const response = await fetch(`${SHIM}/rest/v1/rpc/${name}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(args),
+  });
+  return { status: response.status, json: await response.json().catch(() => null) };
+};
+const probeId = `test-rate-limit-${Date.now()}`;
+let sixth;
+for (let i = 0; i < 6; i += 1)
+  sixth = await rpcCall("record_login_attempt", { p_identifier: probeId, p_success: false });
+expect("six failures do not lock the identifier yet", sixth.json?.[0]?.locked === false,
+  JSON.stringify(sixth.json));
+const seventh = await rpcCall("record_login_attempt", { p_identifier: probeId, p_success: false });
+const eighth = await rpcCall("record_login_attempt", { p_identifier: probeId, p_success: false });
+expect("enough recent failures locks the identifier", eighth.json?.[0]?.locked === true,
+  JSON.stringify([seventh.json, eighth.json]));
+const status = await rpcCall("login_lock_status", { p_identifier: probeId });
+expect("the lock is visible to a read-only status check", status.json?.[0]?.locked === true,
+  JSON.stringify(status.json));
+const otherProbeId = `test-rate-limit-other-${Date.now()}`;
+const otherStatus = await rpcCall("login_lock_status", { p_identifier: otherProbeId });
+expect("a different identifier is unaffected", otherStatus.json?.[0]?.locked === false,
+  JSON.stringify(otherStatus.json));
+const cleared = await rpcCall("record_login_attempt", { p_identifier: probeId, p_success: true });
+expect("a recorded success clears the lock", cleared.json?.[0]?.locked === false,
+  JSON.stringify(cleared.json));
+
+const sanityCheck = await call("/api/auth/login", { method: "POST",
+  body: { email: `rate-limit-sanity-${Date.now()}@maximus.test`, password: "whatever" } });
+expect("a single failed sign-in through the real endpoint still behaves normally",
+  sanityCheck.status === 401, JSON.stringify(sanityCheck.json));
+
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });
 expect("sign out succeeds", out.status === 200);
