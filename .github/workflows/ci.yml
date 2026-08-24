@@ -43,6 +43,14 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
+          # app_user (created by scripts/rls/00_supabase_shim.sql) has no
+          # password -- the RLS probes impersonate it by role, the way
+          # Supabase's own PostgREST does, not by a login it manages itself.
+          # The image's own pg_hba.conf requires scram-sha-256 for every role
+          # once POSTGRES_PASSWORD is set, which refuses that connection
+          # outright; trust matches the throwaway local cluster these same
+          # scripts use outside CI, where the same role connects the same way.
+          POSTGRES_HOST_AUTH_METHOD: trust
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s
@@ -82,6 +90,14 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_PASSWORD: postgres
+          # app_user (created by scripts/rls/00_supabase_shim.sql) has no
+          # password -- the RLS probes impersonate it by role, the way
+          # Supabase's own PostgREST does, not by a login it manages itself.
+          # The image's own pg_hba.conf requires scram-sha-256 for every role
+          # once POSTGRES_PASSWORD is set, which refuses that connection
+          # outright; trust matches the throwaway local cluster these same
+          # scripts use outside CI, where the same role connects the same way.
+          POSTGRES_HOST_AUTH_METHOD: trust
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s
