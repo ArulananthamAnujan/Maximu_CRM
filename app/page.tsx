@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { orgDate, orgDateTime } from "@/lib/timezone";
 import {
   Activity,
@@ -3821,17 +3821,12 @@ function Attention({
   );
 }
 
-type InstitutionRecord = {
-  id: string;
-  name: string;
-  country: string;
-  city: string | null;
-  website: string | null;
-  notes: string | null;
-  active: boolean;
-};
 type CourseFinderCourse = {
   id: string;
+  institution_name: string;
+  country: string;
+  institution_city: string | null;
+  institution_website: string | null;
   institution_id: string;
   name: string;
   level: string | null;
@@ -3842,7 +3837,19 @@ type CourseFinderCourse = {
   intake_months: string | null;
   notes: string | null;
   active: boolean;
+  campus: string | null;
+  website: string | null;
+  application_fee: number | null;
+  ielts_overall: number | null;
+  toefl_overall: number | null;
+  pte_overall: number | null;
+  duolingo_score: number | null;
+  gpa_score: string | null;
+  application_deadline: string | null;
+  entry_requirements: string | null;
+  scholarship: string | null;
 };
+type CourseFacet = { value: string; amount: number };
 
 /**
  * Institutions and the courses they offer -- reference data for advising a
@@ -3850,58 +3857,48 @@ type CourseFinderCourse = {
  * always been free text; this is the canonical list it was never backed by.
  */
 function CourseFinderView({ canManage }: { canManage: boolean }) {
-  const [institutions, setInstitutions] = useState<InstitutionRecord[]>([]);
   const [courses, setCourses] = useState<CourseFinderCourse[]>([]);
+  const [countries, setCountries] = useState<CourseFacet[]>([]);
+  const [levels, setLevels] = useState<CourseFacet[]>([]);
+  const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
-  const [addingInstitution, setAddingInstitution] = useState(false);
-  const [addingCourseFor, setAddingCourseFor] = useState<string | null>(null);
+  const [country, setCountry] = useState("");
+  const [level, setLevel] = useState("");
+  const [page, setPage] = useState(1);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const pageSize = 30;
 
-  const load = async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await fetch("/api/crm/course-finder", { cache: "no-store" });
+      const params = new URLSearchParams({ page: String(page), limit: String(pageSize) });
+      if (query.trim()) params.set("q", query.trim());
+      if (country) params.set("country", country);
+      if (level) params.set("level", level);
+      const response = await fetch(`/api/crm/course-finder?${params}`, { cache: "no-store", signal });
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error || "Course Finder could not be loaded.");
-      setInstitutions(result.institutions || []);
       setCourses(result.courses || []);
+      setCountries(result.countries || []);
+      setLevels(result.levels || []);
+      setTotal(Number(result.total) || 0);
       setError("");
     } catch (reason) {
+      if (reason instanceof DOMException && reason.name === "AbortError") return;
       setError(
         reason instanceof Error ? reason.message : "Course Finder could not be loaded.",
       );
     } finally {
       setLoaded(true);
     }
-  };
-  // Kept free of state updates so a component gone by the time the request
-  // returns does not set state on it, the pattern used elsewhere in this file
-  // for a fetch that runs once on mount.
+  }, [query, country, level, page]);
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!cancelled) await load();
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const send = async (body: Record<string, unknown>) => {
-    const response = await fetch("/api/crm/course-finder", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      setError(result.error || "That could not be saved.");
-      return false;
-    }
-    await load();
-    return true;
-  };
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => void load(controller.signal), 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [load]);
 
   if (!loaded)
     return (
@@ -3909,202 +3906,39 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
         <p className="reportProgress">Loading Course Finder…</p>
       </article>
     );
-  if (error && institutions.length === 0)
+  if (error && courses.length === 0)
     return (
       <article className="panel listPanel">
         <p className="caseWorkError">{error}</p>
       </article>
     );
 
-  const needle = query.trim().toLowerCase();
-  const coursesByInstitution = new Map<string, CourseFinderCourse[]>();
-  for (const course of courses) {
-    const key = course.institution_id;
-    coursesByInstitution.set(key, [...(coursesByInstitution.get(key) ?? []), course]);
-  }
-  const visibleInstitutions = institutions.filter((inst) => {
-    if (!needle) return true;
-    if (inst.name.toLowerCase().includes(needle)) return true;
-    return (coursesByInstitution.get(inst.id) ?? []).some((c) =>
-      c.name.toLowerCase().includes(needle),
-    );
-  });
-
   return (
-    <article className="panel listPanel">
+    <article className="panel listPanel courseFinderPanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">ADVISING</span>
-          <h2>Institutions and courses</h2>
+          <span className="kicker">GLOBAL COURSE CATALOGUE</span>
+          <h2>Find the right study option</h2>
+          <p className="courseFinderIntro">Compare institutions, entry requirements, intakes and fees without leaving the client conversation.</p>
         </div>
-        {canManage && (
-          <button className="primaryButton" onClick={() => setAddingInstitution(!addingInstitution)}>
-            <Plus size={16} />
-            {addingInstitution ? "Close" : "Add institution"}
-          </button>
-        )}
+        <span className="catalogueCount">{total.toLocaleString()} courses</span>
       </div>
-      <label className="searchField">
-        Search institutions and courses
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="e.g. Monash, Master of IT"
-        />
-      </label>
+      <div className="courseFinderFilters">
+        <label className="searchField">Course, institution or campus<input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search Bachelor of Nursing, Monash…" /></label>
+        <label>Destination<select value={country} onChange={(e) => { setCountry(e.target.value); setPage(1); }}><option value="">All countries</option>{countries.map((item) => <option value={item.value} key={item.value}>{item.value} ({item.amount.toLocaleString()})</option>)}</select></label>
+        <label>Study level<select value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); }}><option value="">All levels</option>{levels.map((item) => <option value={item.value} key={item.value}>{item.value} ({item.amount.toLocaleString()})</option>)}</select></label>
+      </div>
       {error && <p className="caseWorkError">{error}</p>}
-      {addingInstitution && (
-        <form
-          className="stackedForm"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            const data = new FormData(event.currentTarget);
-            const ok = await send({
-              action: "create_institution",
-              name: data.get("name"),
-              country: data.get("country"),
-              city: data.get("city"),
-              website: data.get("website"),
-            });
-            if (ok) setAddingInstitution(false);
-          }}
-        >
-          <label>
-            Institution name *<input name="name" required />
-          </label>
-          <label>
-            Country *<input name="country" required />
-          </label>
-          <label>
-            City
-            <input name="city" />
-          </label>
-          <label>
-            Website
-            <input name="website" type="url" placeholder="https://" />
-          </label>
-          <div className="formActions">
-            <button className="primaryButton">
-              <Check size={15} />
-              Add institution
-            </button>
-          </div>
-        </form>
-      )}
-      {visibleInstitutions.length === 0 ? (
-        <EmptyState
-          icon={School}
-          title="No institutions yet"
-          copy={
-            canManage
-              ? "Add an institution to start building the course list."
-              : "A manager has not added any institutions yet."
-          }
-          action={canManage ? "Add institution" : undefined}
-          onAction={canManage ? () => setAddingInstitution(true) : undefined}
-        />
+      {courses.length === 0 ? (
+        <EmptyState icon={School} title="No matching courses" copy="Try removing a filter or using a broader course name." />
       ) : (
-        visibleInstitutions.map((inst) => (
-          <div className="institutionBlock" key={inst.id}>
-            <div className="functionalRow">
-              <div>
-                <strong>{inst.name}</strong>
-                <span>
-                  {[inst.city, inst.country].filter(Boolean).join(", ")}
-                  {inst.website ? ` · ${inst.website}` : ""}
-                </span>
-              </div>
-              {canManage && (
-                <button
-                  className="ghostButton"
-                  onClick={() =>
-                    setAddingCourseFor(addingCourseFor === inst.id ? null : inst.id)
-                  }
-                >
-                  {addingCourseFor === inst.id ? "Close" : "Add course"}
-                </button>
-              )}
-            </div>
-            {addingCourseFor === inst.id && (
-              <form
-                className="stackedForm"
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  const data = new FormData(event.currentTarget);
-                  const ok = await send({
-                    action: "create_course",
-                    institutionId: inst.id,
-                    name: data.get("name"),
-                    level: data.get("level"),
-                    fieldOfStudy: data.get("fieldOfStudy"),
-                    durationMonths: data.get("durationMonths"),
-                    tuitionFee: data.get("tuitionFee"),
-                    currency: data.get("currency"),
-                    intakeMonths: data.get("intakeMonths"),
-                  });
-                  if (ok) setAddingCourseFor(null);
-                }}
-              >
-                <label>
-                  Course name *<input name="name" required />
-                </label>
-                <label>
-                  Level
-                  <input name="level" placeholder="e.g. Master's" />
-                </label>
-                <label>
-                  Field of study
-                  <input name="fieldOfStudy" />
-                </label>
-                <label>
-                  Duration (months)
-                  <input name="durationMonths" type="number" min="1" />
-                </label>
-                <label>
-                  Tuition fee
-                  <input name="tuitionFee" type="number" min="0" step="0.01" />
-                </label>
-                <label>
-                  Currency
-                  <input name="currency" defaultValue="AUD" />
-                </label>
-                <label>
-                  Intake months
-                  <input name="intakeMonths" placeholder="e.g. Feb, Jul" />
-                </label>
-                <div className="formActions">
-                  <button className="primaryButton">
-                    <Check size={15} />
-                    Add course
-                  </button>
-                </div>
-              </form>
-            )}
-            {(coursesByInstitution.get(inst.id) ?? [])
-              .filter(
-                (c) => !needle || c.name.toLowerCase().includes(needle) || inst.name.toLowerCase().includes(needle),
-              )
-              .map((course) => (
-                <div className="functionalRow courseRow" key={course.id}>
-                  <div>
-                    <strong>{course.name}</strong>
-                    <span>
-                      {[course.level, course.field_of_study, course.intake_months]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  </div>
-                  <small>
-                    {course.duration_months ? `${course.duration_months} mo` : ""}
-                    {course.tuition_fee
-                      ? ` · ${course.currency} ${course.tuition_fee.toLocaleString()}`
-                      : ""}
-                  </small>
-                </div>
-              ))}
-          </div>
-        ))
+        <div className="courseResults">{courses.map((course) => <section className="courseCard" key={course.id}>
+          <div className="courseCardMain"><div><span className="courseDestination">{course.country}{course.campus ? ` · ${course.campus}` : ""}</span><h3>{course.name}</h3><p>{course.institution_name}</p><div className="courseFacts"><span>{course.level || "Level not supplied"}</span><span>{course.duration_months ? `${course.duration_months} months` : "Duration on request"}</span><span>{course.intake_months || "Intake on request"}</span></div></div><div className="coursePrice"><small>Tuition</small><strong>{course.tuition_fee ? `${course.currency} ${Number(course.tuition_fee).toLocaleString()}` : "On request"}</strong><button className="ghostButton" onClick={() => setExpanded(expanded === course.id ? null : course.id)}>{expanded === course.id ? "Hide details" : "View details"}</button></div></div>
+          {expanded === course.id && <div className="courseDetails"><dl><div><dt>English</dt><dd>{[course.ielts_overall && `IELTS ${course.ielts_overall}`, course.toefl_overall && `TOEFL ${course.toefl_overall}`, course.pte_overall && `PTE ${course.pte_overall}`, course.duolingo_score && `Duolingo ${course.duolingo_score}`].filter(Boolean).join(" · ") || "Contact institution"}</dd></div><div><dt>GPA</dt><dd>{course.gpa_score || "Not supplied"}</dd></div><div><dt>Application deadline</dt><dd>{course.application_deadline || "Not supplied"}</dd></div><div><dt>Application fee</dt><dd>{course.application_fee ? `${course.currency} ${Number(course.application_fee).toLocaleString()}` : "Not supplied"}</dd></div></dl>{course.entry_requirements && <p><b>Entry requirements:</b> {course.entry_requirements}</p>}{course.scholarship && <p><b>Scholarship:</b> {course.scholarship}</p>}{(course.website || course.institution_website) && <a className="ghostButton" href={course.website || course.institution_website || "#"} target="_blank" rel="noreferrer">Open official website</a>}</div>}
+        </section>)}</div>
       )}
+      {total > pageSize && <div className="cataloguePager"><button className="ghostButton" disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button><span>Page {page} of {Math.ceil(total / pageSize)}</span><button className="ghostButton" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>Next</button></div>}
+      {canManage && <p className="catalogueAdminNote">Catalogue maintenance is restricted to administrators; staff can safely search and advise.</p>}
     </article>
   );
 }

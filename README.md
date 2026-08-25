@@ -206,6 +206,22 @@ Copy the local Supabase URL and keys into `.env.local`.
 read-only query: paste it into the SQL editor and every row should read OK.
 Anything reading MISSING names the migration that has not been applied yet.
 
+### Importing the legacy Course Finder
+
+Apply `0022_course_finder.sql` and `0026_course_finder_catalog.sql`, then import
+the Maximus export with a service-role key kept only in the terminal:
+
+```bash
+SUPABASE_URL=https://PROJECT.supabase.co \
+SUPABASE_SERVICE_ROLE_KEY=... \
+COURSE_FINDER_ORGANISATION_ID=... \
+npm run import:courses -- /path/to/maximus_all_courses.csv
+```
+
+Run the same command with `--dry-run` first to validate counts without writing.
+The importer is repeatable: legacy IDs are upserted, not duplicated. It cleans
+searchable values while retaining rejected/raw source values in `legacy_data`.
+
 **Checking every feature.** `scripts/verify-features.sh` builds a throwaway
 PostgreSQL database, applies every migration, seeds a two-branch agency and
 drives the built Worker through the whole CRM as an owner, a branch manager, a

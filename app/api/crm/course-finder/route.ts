@@ -20,12 +20,28 @@ export async function GET(request: Request) {
     if (session.identity.role === "client")
       throw new LiveAccessError(403, "Course Finder is available to staff only.");
     const token = session.accessToken;
-    const [institutions, courses] = await Promise.all([
-      get("institutions?select=*&order=name.asc", token),
-      get("courses?select=*&order=name.asc", token),
-    ]);
+    const url = new URL(request.url);
+    const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
+    const page = Math.max(Number(url.searchParams.get("page")) || 1, 1);
+    const institution = url.searchParams.get("institution");
+    if (institution) uuid(institution, "Institution");
+    const catalog = await supabaseRequest<Json>(
+      "/rest/v1/rpc/search_course_catalog",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          p_query: optional(url.searchParams.get("q")),
+          p_country: optional(url.searchParams.get("country")),
+          p_level: optional(url.searchParams.get("level")),
+          p_institution: institution || null,
+          p_limit: limit,
+          p_offset: (page - 1) * limit,
+        }),
+      },
+      token,
+    );
     return appendRefreshCookies(
-      Response.json({ ok: true, institutions, courses }),
+      Response.json({ ok: true, ...catalog, page, limit }),
       session.refreshed,
       request,
     );
@@ -103,9 +119,6 @@ export async function POST(request: Request) {
   }
 }
 
-async function get(query: string, token: string) {
-  return supabaseRequest(`/rest/v1/${query}`, { method: "GET" }, token);
-}
 async function insert(table: string, value: Json, token: string) {
   const updated = await supabaseRequest<Json[]>(
     `/rest/v1/${table}`,
@@ -151,7 +164,13 @@ class InputError extends Error {}
 function apiError(error: unknown): Response {
   if (error instanceof InputError) return Response.json({ ok: false, error: error.message }, { status: 400 });
   if (error instanceof LiveAccessError) return Response.json({ ok: false, error: error.message }, { status: error.status });
-  if (error instanceof SupabaseError) return Response.json({ ok: false, error: "The database rejected this Course Finder action." }, { status: error.status >= 400 && error.status < 500 ? error.status : 503 });
+  if (error instanceof SupabaseError) {
+    const migrationMissing = /search_course_catalog|PGRST202|does not exist/i.test(error.message);
+    return Response.json(
+      { ok: false, error: migrationMissing ? "Course Finder needs database migration 0026_course_finder_catalog.sql." : "The database rejected this Course Finder action." },
+      { status: error.status >= 400 && error.status < 500 ? error.status : 503 },
+    );
+  }
   console.error(error);
   return Response.json({ ok: false, error: "Course Finder could not be loaded." }, { status: 500 });
 }
