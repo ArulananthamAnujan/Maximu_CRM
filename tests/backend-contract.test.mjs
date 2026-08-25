@@ -332,5 +332,5 @@ test("the README says how to make CI an actual merge gate", async () => {
   assert.match(readme, /Browser end-to-end/);
   // And is honest about what is not built.
   assert.match(readme, /What is and is not built/i);
-  assert.match(readme, /No mail provider is connected/i);
+  assert.match(readme, /WhatsApp \| Not implemented/i);
 });
