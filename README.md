@@ -97,12 +97,12 @@ Not built, and labelled as such in the interface rather than implied:
 
 | Area | State |
 |---|---|
-| Sending email | Drafts are recorded against the case. No mail provider is connected, so nothing is sent from the CRM. |
+| Sending email | Built. A staff member connects their own Gmail (Integrations, or the mailbox screen); until then, drafts are still recorded against the case and can be sent from your own mailbox by hand. |
 | WhatsApp | Not implemented. |
 | Campaigns | Not implemented. Templates are reusable wording, not a campaign engine. |
-| Google sign-in | Sign-in is Supabase email and password. The Google button is not wired to an OAuth flow. |
+| Google sign-in | Built. The Google button redirects through Supabase's own Google OAuth provider, which is switched on separately in the Supabase dashboard -- see "Google sign-in setup" below. |
 | AI assistant | A placeholder screen. No provider is connected. |
-| Lead scoring, follow-up SLA automation, structured lost-lead reasons, campaign performance, Course Finder | Not implemented. |
+| Lead scoring, follow-up SLA automation, structured lost-lead reasons, campaign performance | Not implemented. |
 
 **Integrations** (owner and branch manager) reports this from the running
 deployment rather than from this table: the Shared Drive is probed for real --
@@ -289,24 +289,75 @@ individual file, defaulting to 25.
 
 ## Safe Google rollout
 
-Only the Shared Drive is built, so only the Shared Drive is worth setting up.
-There is nothing in the CRM that a Gmail, Calendar or OAuth sign-in credential
-would switch on: those are listed as **Not built** above and on the
-Integrations screen, and configuring them changes nothing until they are.
+The Shared Drive, Gmail, Calendar and Google sign-in are all built. Each is
+independently optional: an unconfigured one reports **Not configured** on the
+Integrations screen and changes nothing elsewhere in the CRM, rather than
+failing partway through something a user started.
 
-1. Create a Google Cloud project controlled by Maximus.
+1. Create a Google Cloud project controlled by Maximus (or reuse the one the
+   Shared Drive already uses -- see below).
 2. Enable the **Google Drive API** in it. No OAuth consent screen is needed:
    the CRM authenticates as a service account, not as a person.
 3. Create an organisation-owned Shared Drive for CRM documents.
 4. Add the service account to that Shared Drive as a Content manager, and to
    nothing else anywhere.
-5. Set the three values above, then open **Integrations** in the CRM. It signs
-   an assertion, exchanges it for a token and reads the drive back, so a key
-   that does not match the account, or an account that was never added to the
-   drive, shows as broken there rather than at the moment somebody uploads a
-   passport.
-6. Test with dummy clients and documents before enabling real client data.
+5. Set the three `GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_PRIVATE_KEY` /
+   `GOOGLE_SHARED_DRIVE_ID` values above, then open **Integrations** in the
+   CRM. It signs an assertion, exchanges it for a token and reads the drive
+   back, so a key that does not match the account, or an account that was
+   never added to the drive, shows as broken there rather than at the moment
+   somebody uploads a passport.
+6. For Gmail, Calendar and Google sign-in, follow "Google sign-in setup"
+   below -- they use a separate, per-user OAuth client rather than the Drive
+   service account.
+7. Test with dummy clients and documents before enabling real client data.
 
 Never commit `.env.local`, OAuth secrets, service-account credentials or real
 student data. Production requires privacy, migration-agent workflow and
 security review before launch.
+
+## Google sign-in setup
+
+Gmail send, Calendar sync and the "Continue with Google" sign-in button share
+one Google Cloud OAuth client (a person, not a service account), unlike the
+Shared Drive above. Gmail and Calendar work once `GOOGLE_OAUTH_CLIENT_ID` and
+`GOOGLE_OAUTH_CLIENT_SECRET` are set; sign-in needs one further step because
+Supabase performs that exchange itself.
+
+1. In the Google Cloud project, **APIs & Services -> Credentials -> Create
+   credentials -> OAuth client ID**, type **Web application**. Reuse the
+   Drive project or a separate one -- either works, they are unrelated
+   credentials.
+2. If the consent screen has not been configured yet, Google will ask for it
+   first. Internal or External is fine; External needs the usual verification
+   only once real (non-test) users outside your own test list sign in.
+3. Under **Authorized redirect URIs**, add every one this deployment needs:
+   - `https://your-app-domain/api/auth/gmail/callback`
+   - `https://your-app-domain/api/auth/calendar/callback`
+   - `https://<your-project-ref>.supabase.co/auth/v1/callback` -- sign-in
+     only, and note this is Supabase's callback, not this app's; find the
+     exact URL in the Supabase dashboard's Google provider settings, it fills
+     it in for you.
+   Add the equivalent `http://localhost:3000/...` pair for local dev if
+   needed.
+4. Copy the client's ID and secret into `GOOGLE_OAUTH_CLIENT_ID` and
+   `GOOGLE_OAUTH_CLIENT_SECRET` (`.dev.vars` locally, the deployment's secrets
+   in Netlify or Cloudflare). This alone turns on Gmail and Calendar
+   connecting from the Integrations screen -- reload it and both should show
+   **Not configured** turn into an active "Connect" button.
+5. For sign-in specifically: in the **Supabase dashboard**, go to
+   **Authentication -> Providers -> Google**, switch it on, and paste the
+   same client ID and secret from step 4. Save.
+6. In the same dashboard, **Authentication -> URL Configuration -> Redirect
+   URLs**, add `https://your-app-domain/auth/google-callback` (and the
+   `http://localhost:3000/auth/google-callback` equivalent for local dev).
+   Supabase refuses the redirect otherwise.
+7. Reopen **Integrations** in the CRM as a Super Admin or branch manager --
+   "Google sign-in" reads this setting back live from Supabase's own
+   `/auth/v1/settings` endpoint, so it will not show connected until step 5
+   is actually saved on Supabase's side, independent of anything in this
+   app's own environment variables.
+8. Test with a Google account that already has a matching, active Maximus CRM
+   profile before relying on it -- the button signs a person in, it does not
+   create or invite an account. An unrecognised Google account is told
+   plainly to ask an administrator to add them under Staff & Masters.
