@@ -4039,6 +4039,30 @@ type CourseFinderCourse = {
 type CourseFacet = { value: string; amount: number };
 type CourseInstitution = { id: string; name: string; country: string; city: string | null };
 
+const mojibakeReplacements: [string, string][] = [
+  ["â€™", "’"], ["â€˜", "‘"], ["â€œ", "“"], ["â€�", "”"],
+  ["â€“", "–"], ["â€”", "—"], ["â€¦", "…"], ["Â·", "·"],
+  ["Ã©", "é"], ["Ã¨", "è"], ["Ãª", "ê"], ["Ã«", "ë"],
+  ["Ã¡", "á"], ["Ã ", "à"], ["Ã¢", "â"], ["Ã¤", "ä"],
+  ["Ã­", "í"], ["Ã¬", "ì"], ["Ã®", "î"], ["Ã¯", "ï"],
+  ["Ã³", "ó"], ["Ã²", "ò"], ["Ã´", "ô"], ["Ã¶", "ö"],
+  ["Ãº", "ú"], ["Ã¹", "ù"], ["Ã»", "û"], ["Ã¼", "ü"],
+  ["Ã±", "ñ"], ["Ã§", "ç"], ["Â", ""],
+];
+
+function cleanCatalogueText(value: string | null | undefined, fallback = "Not supplied") {
+  if (!value?.trim()) return fallback;
+  return mojibakeReplacements.reduce(
+    (text, [broken, corrected]) => text.split(broken).join(corrected),
+    value,
+  ).replace(/\s+/g, " ").trim();
+}
+
+function catalogueLevelLabel(value: string | null | undefined) {
+  const clean = cleanCatalogueText(value, "Unclassified");
+  return /^\d+(?:\.\d+)?$/.test(clean) ? "Other / Unclassified" : clean;
+}
+
 /**
  * Institutions and the courses they offer -- reference data for advising a
  * client, not tied to any one case. "Course or visa target" on a case has
@@ -4056,9 +4080,28 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
   const [country, setCountry] = useState("");
   const [level, setLevel] = useState("");
   const [institution, setInstitution] = useState("");
+  const [institutionQuery, setInstitutionQuery] = useState("");
+  const [institutionOpen, setInstitutionOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
   const pageSize = 50;
+  const availableInstitutions = useMemo(() => {
+    const needle = institutionQuery.trim().toLocaleLowerCase();
+    return institutions
+      .filter((item) => !country || item.country === country)
+      .filter((item) => !needle || [item.name, item.city, item.country].some((part) =>
+        cleanCatalogueText(part, "").toLocaleLowerCase().includes(needle),
+      ))
+      .slice(0, 12);
+  }, [institutions, country, institutionQuery]);
+  const selectedInstitution = institutions.find((item) => item.id === institution);
+
+  useEffect(() => {
+    if (selectedInstitution && country && selectedInstitution.country !== country) {
+      setInstitution("");
+      setInstitutionQuery("");
+    }
+  }, [country, selectedInstitution]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -4118,14 +4161,40 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
       <div className="courseFinderFilters legacyFinderFilters">
         <label className="searchField">Course, institution or campus<input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search Bachelor of Nursing, Monash…" /></label>
         <label>Destination<select value={country} onChange={(e) => { setCountry(e.target.value); setPage(1); }}><option value="">All countries</option>{countries.map((item) => <option value={item.value} key={item.value}>{item.value} ({item.amount.toLocaleString()})</option>)}</select></label>
-        <label>Study level<select value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); }}><option value="">All levels</option>{levels.map((item) => <option value={item.value} key={item.value}>{item.value} ({item.amount.toLocaleString()})</option>)}</select></label>
-        <label>Institution<select value={institution} onChange={(e) => { setInstitution(e.target.value); setPage(1); }}><option value="">All institutions</option>{institutions.filter((item) => !country || item.country === country).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
+        <label>Study level<select value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); }}><option value="">All levels</option>{levels.map((item) => <option value={item.value} key={item.value}>{catalogueLevelLabel(item.value)} ({item.amount.toLocaleString()})</option>)}</select></label>
+        <div className="institutionPicker">
+          <label htmlFor="course-institution-search">Institution</label>
+          <div className="institutionPickerControl">
+            <Search size={16} aria-hidden="true" />
+            <input
+              id="course-institution-search"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={institutionOpen}
+              aria-controls="course-institution-options"
+              value={institutionOpen ? institutionQuery : selectedInstitution ? cleanCatalogueText(selectedInstitution.name) : institutionQuery}
+              onFocus={() => { setInstitutionOpen(true); if (selectedInstitution) setInstitutionQuery(""); }}
+              onChange={(event) => { setInstitutionQuery(event.target.value); setInstitution(""); setInstitutionOpen(true); setPage(1); }}
+              placeholder="Search institution…"
+            />
+            {(institution || institutionQuery) && <button type="button" aria-label="Clear institution" onClick={() => { setInstitution(""); setInstitutionQuery(""); setInstitutionOpen(false); setPage(1); }}><X size={15} /></button>}
+          </div>
+          {institutionOpen && <div className="institutionOptions" id="course-institution-options" role="listbox">
+            <button type="button" role="option" aria-selected={!institution} onClick={() => { setInstitution(""); setInstitutionQuery(""); setInstitutionOpen(false); setPage(1); }}>
+              <span>All institutions</span><small>{country ? `Across ${cleanCatalogueText(country)}` : "Across all destinations"}</small>
+            </button>
+            {availableInstitutions.map((item) => <button type="button" role="option" aria-selected={item.id === institution} key={item.id} onClick={() => { setInstitution(item.id); setInstitutionQuery(""); setInstitutionOpen(false); setPage(1); }}>
+              <span>{cleanCatalogueText(item.name)}</span><small>{[cleanCatalogueText(item.country, ""), cleanCatalogueText(item.city, "")].filter(Boolean).join(" · ")}</small>
+            </button>)}
+            {availableInstitutions.length === 0 && <p>No institutions match this search.</p>}
+          </div>}
+        </div>
       </div>
       {error && <p className="caseWorkError">{error}</p>}
       {courses.length === 0 ? (
         <EmptyState icon={School} title="No matching courses" copy="Try removing a filter or using a broader course name." />
       ) : (
-        <div className="legacyCourseTable"><div className="legacyCourseHead"><span>Country</span><span>Institution / campus</span><span>Course</span><span>Level</span><span>Duration</span><span>Intake</span><span>Tuition fee</span><span /></div>{courses.map((course) => <div className={`legacyCourseRecord ${expanded === course.id ? "open" : ""}`} key={course.id}><div className="legacyCourseRow"><span data-label="Country"><b>{course.country}</b></span><span data-label="Institution / campus"><b>{course.institution_name}</b><small>{course.campus || course.institution_city || "Campus not supplied"}</small></span><span data-label="Course"><b>{course.name}</b></span><span data-label="Level">{course.level || "—"}</span><span data-label="Duration">{course.duration_months ? `${course.duration_months} months` : "—"}</span><span data-label="Intake">{course.intake_months || "—"}</span><span data-label="Tuition fee"><b>{course.tuition_fee ? `${course.currency} ${Number(course.tuition_fee).toLocaleString()}` : "On request"}</b></span><button className="ghostButton" onClick={() => setExpanded(expanded === course.id ? null : course.id)}>{expanded === course.id ? "Close" : "Full details"}</button></div>{expanded === course.id && <CourseFinderDetails course={course} canManage={canManage} />}</div>)}</div>
+        <div className="legacyCourseTable"><div className="legacyCourseHead"><span>Country</span><span>Institution / campus</span><span>Course</span><span>Level</span><span>Duration</span><span>Intake</span><span>Tuition fee</span><span /></div>{courses.map((course) => <div className={`legacyCourseRecord ${expanded === course.id ? "open" : ""}`} key={course.id}><div className="legacyCourseRow"><span data-label="Country"><b>{cleanCatalogueText(course.country)}</b></span><span data-label="Institution / campus"><b>{cleanCatalogueText(course.institution_name)}</b><small>{cleanCatalogueText(course.campus || course.institution_city, "Campus not supplied")}</small></span><span data-label="Course"><b>{cleanCatalogueText(course.name)}</b></span><span data-label="Level">{catalogueLevelLabel(course.level)}</span><span data-label="Duration">{course.duration_months ? `${course.duration_months} months` : "—"}</span><span className="courseIntake" data-label="Intake">{cleanCatalogueText(course.intake_months, "—")}</span><span className="courseFee" data-label="Tuition fee"><b>{course.tuition_fee ? `${cleanCatalogueText(course.currency, "")} ${Number(course.tuition_fee).toLocaleString()}` : "On request"}</b></span><button className="ghostButton courseDetailsButton" onClick={() => setExpanded(expanded === course.id ? null : course.id)}>{expanded === course.id ? "Close" : "Full details"}</button></div>{expanded === course.id && <CourseFinderDetails course={course} canManage={canManage} />}</div>)}</div>
       )}
       {total > pageSize && <div className="cataloguePager"><button className="ghostButton" disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button><span>Page {page} of {Math.ceil(total / pageSize)}</span><button className="ghostButton" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>Next</button></div>}
       {canManage && <p className="catalogueAdminNote">Catalogue maintenance is restricted to administrators; staff can safely search and advise.</p>}
@@ -4137,9 +4206,9 @@ function CourseFinderDetails({ course, canManage }: { course: CourseFinderCourse
   const money = (value: number | null) => value === null ? "Not supplied" : `${course.currency} ${Number(value).toLocaleString()}`;
   const english = (score: number | null, band: string | null) => [score, band].filter((value) => value !== null && value !== "").join(" · ") || "Not supplied";
   return <div className="legacyCourseDetails">
-    <section><h4>Course information</h4><dl><div><dt>Country</dt><dd>{course.country}</dd></div><div><dt>Institution</dt><dd>{course.institution_name}</dd></div><div><dt>Campus</dt><dd>{course.campus || "Not supplied"}</dd></div><div><dt>Course level</dt><dd>{course.level || "Not supplied"}</dd></div><div><dt>Field of study</dt><dd>{course.field_of_study || "Not supplied"}</dd></div><div><dt>Duration</dt><dd>{course.duration_months ? `${course.duration_months} months` : "Not supplied"}</dd></div><div><dt>Intake</dt><dd>{course.intake_months || "Not supplied"}</dd></div><div><dt>Application deadline</dt><dd>{course.application_deadline || "Not supplied"}</dd></div></dl></section>
-    <section><h4>Fees and commercial information</h4><dl><div><dt>Tuition fee</dt><dd>{money(course.tuition_fee)}</dd></div><div><dt>Application fee</dt><dd>{money(course.application_fee)}</dd></div><div><dt>Currency</dt><dd>{course.currency || "Not supplied"}</dd></div><div><dt>Expected commission</dt><dd>{course.expected_commission || "Not supplied"}</dd></div><div><dt>Scholarship</dt><dd>{course.scholarship || "Not supplied"}</dd></div></dl></section>
-    <section><h4>English and academic requirements</h4><dl><div><dt>IELTS score / bands</dt><dd>{english(course.ielts_overall, course.ielts_band)}</dd></div><div><dt>TOEFL score / bands</dt><dd>{english(course.toefl_overall, course.toefl_band)}</dd></div><div><dt>PTE score / bands</dt><dd>{english(course.pte_overall, course.pte_band)}</dd></div><div><dt>Duolingo score</dt><dd>{course.duolingo_score ?? "Not supplied"}</dd></div><div><dt>GPA requirement</dt><dd>{course.gpa_score || "Not supplied"}</dd></div></dl>{course.entry_requirements && <div className="requirementNote"><b>Complete entry requirements</b><p>{course.entry_requirements}</p></div>}</section>
+    <section><h4>Course information</h4><dl><div><dt>Country</dt><dd>{cleanCatalogueText(course.country)}</dd></div><div><dt>Institution</dt><dd>{cleanCatalogueText(course.institution_name)}</dd></div><div><dt>Campus</dt><dd>{cleanCatalogueText(course.campus)}</dd></div><div><dt>Course level</dt><dd>{catalogueLevelLabel(course.level)}</dd></div><div><dt>Field of study</dt><dd>{cleanCatalogueText(course.field_of_study)}</dd></div><div><dt>Duration</dt><dd>{course.duration_months ? `${course.duration_months} months` : "Not supplied"}</dd></div><div><dt>Intake</dt><dd>{cleanCatalogueText(course.intake_months)}</dd></div><div><dt>Application deadline</dt><dd>{cleanCatalogueText(course.application_deadline)}</dd></div></dl></section>
+    <section><h4>Fees and commercial information</h4><dl><div><dt>Tuition fee</dt><dd>{money(course.tuition_fee)}</dd></div><div><dt>Application fee</dt><dd>{money(course.application_fee)}</dd></div><div><dt>Currency</dt><dd>{cleanCatalogueText(course.currency)}</dd></div><div><dt>Expected commission</dt><dd>{cleanCatalogueText(course.expected_commission)}</dd></div><div><dt>Scholarship</dt><dd>{cleanCatalogueText(course.scholarship)}</dd></div></dl></section>
+    <section><h4>English and academic requirements</h4><dl><div><dt>IELTS score / bands</dt><dd>{english(course.ielts_overall, course.ielts_band)}</dd></div><div><dt>TOEFL score / bands</dt><dd>{english(course.toefl_overall, course.toefl_band)}</dd></div><div><dt>PTE score / bands</dt><dd>{english(course.pte_overall, course.pte_band)}</dd></div><div><dt>Duolingo score</dt><dd>{course.duolingo_score ?? "Not supplied"}</dd></div><div><dt>GPA requirement</dt><dd>{cleanCatalogueText(course.gpa_score)}</dd></div></dl>{course.entry_requirements && <div className="requirementNote"><b>Complete entry requirements</b><p>{cleanCatalogueText(course.entry_requirements)}</p></div>}</section>
     <section><h4>Links and source</h4><dl><div><dt>Catalogue status</dt><dd>{course.active ? "Active" : "Inactive"}</dd></div><div><dt>Last source update</dt><dd>{course.source_updated_at ? new Date(course.source_updated_at).toLocaleDateString() : course.legacy_data?.updated_date || "Not supplied"}</dd></div>{canManage && <><div><dt>Legacy course ID</dt><dd>{course.source_key || "Not supplied"}</dd></div><div><dt>Legacy institution ID</dt><dd>{course.legacy_data?.legacy_university_id || "Not supplied"}</dd></div><div><dt>Created by / date</dt><dd>{[course.legacy_data?.created_by, course.legacy_data?.created_date].filter(Boolean).join(" · ") || "Not supplied"}</dd></div><div><dt>Updated by / date</dt><dd>{[course.legacy_data?.updated_by, course.legacy_data?.updated_date].filter(Boolean).join(" · ") || "Not supplied"}</dd></div></>}</dl>{(course.website || course.institution_website) ? <a className="primaryButton courseWebsiteLink" href={course.website || course.institution_website || "#"} target="_blank" rel="noreferrer">Open official website</a> : <p className="courseMissingValue">Official website not supplied</p>}</section>
   </div>;
 }
