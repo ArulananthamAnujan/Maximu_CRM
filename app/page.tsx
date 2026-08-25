@@ -5929,7 +5929,6 @@ function CaseDrawer({
   schemaWarning,
   storageConnected,
   onRequestDocument,
-  canManageFinance,
 }: {
   item: CaseRecord | null;
   close: () => void;
@@ -5949,7 +5948,6 @@ function CaseDrawer({
   schemaWarning: string;
   storageConnected: boolean;
   onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist" | "invoice") => void;
-  canManageFinance: boolean;
 }) {
   return item ? (
     <CaseDrawerBody
@@ -5967,7 +5965,6 @@ function CaseDrawer({
       schemaWarning={schemaWarning}
       storageConnected={storageConnected}
       onRequestDocument={onRequestDocument}
-      canManageFinance={canManageFinance}
     />
   ) : null;
 }
@@ -6111,7 +6108,6 @@ function CaseDrawerBody({
   schemaWarning,
   storageConnected,
   onRequestDocument,
-  canManageFinance,
 }: {
   item: CaseRecord;
   close: () => void;
@@ -6131,7 +6127,6 @@ function CaseDrawerBody({
   schemaWarning: string;
   storageConnected: boolean;
   onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist" | "invoice") => void;
-  canManageFinance: boolean;
 }) {
   const [tab, setTab] = useState<CaseTab>("overview");
   // Switching straight from one case to another, without closing the drawer,
@@ -6947,7 +6942,7 @@ function CaseDrawerBody({
 
         {tab === "finance" && (
           <>
-            {canManageFinance && (
+            {canModify && (
               <div className="caseWorkPanelHead">
                 <span />
                 <div className="caseWorkPanelActions">
@@ -9460,20 +9455,11 @@ export default function Home() {
     );
   else if (active === "templates")
     content = (
-      <TemplatesView
-        items={templates}
-        openModal={open}
-        setItems={syncTemplates}
-        canManage={canManageFinance}
-      />
-    );
-  else if (active === "workflows")
-    content = (
       <>
-        <WorkflowView
-          items={workflows}
+        <TemplatesView
+          items={templates}
           openModal={open}
-          setItems={syncWorkflows}
+          setItems={syncTemplates}
           canManage={canManageFinance}
         />
         <DocumentChecklistTemplatesPanel
@@ -9482,6 +9468,15 @@ export default function Home() {
           reload={loadChecklistTemplates}
         />
       </>
+    );
+  else if (active === "workflows")
+    content = (
+      <WorkflowView
+        items={workflows}
+        openModal={open}
+        setItems={syncWorkflows}
+        canManage={canManageFinance}
+      />
     );
   else if (active === "reports")
     content = (
@@ -9925,7 +9920,6 @@ export default function Home() {
           edit={editCase}
           remove={removeCase}
           onRequestDocument={openForCase}
-          canManageFinance={canManageFinance}
         />
       ) : null}
       <RecordModal

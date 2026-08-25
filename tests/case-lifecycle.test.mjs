@@ -334,20 +334,22 @@ test("moving a case without the migration explains what to apply", async () => {
   assert.doesNotMatch(result.body.error, /schema cache/);
 });
 
-// invoices, content_templates and workflow_templates are writable only by
-// manager level and above (migration 0005). Without this guard the request
-// reached the database and came back as a row-level security rejection.
-test("a case officer is refused invoice creation with a clear reason", async () => {
+// content_templates and workflow_templates stay writable only by manager
+// level and above (migration 0005), gated here before the request ever
+// reaches the database. Invoices are different since migration 0026: a case
+// officer may now raise one for a client they can already modify, so the
+// route no longer gatekeeps this itself -- it forwards the request and
+// invoices_staff_create (row-level security) is what actually decides.
+test("a case officer's invoice request reaches the database rather than being refused up front", async () => {
   const result = await post(
     { action: "invoice", clientId: CASE_ID, amount: "100" },
     { level: "staff" },
   );
-  assert.equal(result.status, 403);
-  assert.match(result.body.error, /manager or administrator/i);
+  assert.equal(result.status, 200);
   assert.equal(
-    result.requests.some((r) => r.path === "/rest/v1/invoices"),
-    false,
-    "the request must not reach the database",
+    result.requests.some((r) => r.path === "/rest/v1/invoices" && r.method === "POST"),
+    true,
+    "the route must let row-level security decide, not refuse it itself",
   );
 });
 
