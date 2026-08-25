@@ -6,6 +6,7 @@ import {
 import { driveProbe } from "@/server/google-drive";
 import { serviceRoleKey, supabaseRequest } from "@/server/supabase";
 import { aiConfigured } from "@/server/ai";
+import { emailConfigured } from "@/server/email";
 import { protectionConfigured } from "@/server/protected-fields";
 import { gmailOAuthConfigured } from "@/server/gmail";
 
@@ -136,6 +137,16 @@ export async function GET(request: Request) {
           ? "The Google button on the sign-in page redirects through Supabase's Google provider, checked the same way an actual sign-in would."
           : "The Google button on the sign-in page is wired up, but the Google provider is not yet switched on for this Supabase project (Authentication -> Providers -> Google).",
         setup: [],
+      },
+      {
+        key: "email",
+        name: "Client email notices",
+        purpose: "Emails a client when a document or invoice is requested, and when their portal access is sent.",
+        state: emailConfigured() ? "connected" : "not_configured",
+        detail: emailConfigured()
+          ? "Sent through Resend. Wording is editable per organisation under Templates."
+          : "RESEND_API_KEY and RESEND_FROM_EMAIL are not set, so these emails are not sent -- the underlying request or invoice is still recorded either way.",
+        setup: ["RESEND_API_KEY", "RESEND_FROM_EMAIL"],
       },
       {
         key: "ai",

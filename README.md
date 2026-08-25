@@ -20,6 +20,9 @@ A local-first, case-centric CRM foundation for education and migration agencies.
 - Proactive case-risk and document-intelligence workspace
 - Team calendar, approved template library and compliance centre
 - Database records for AI citations, action proposals, consent and appointments
+- Course Finder: a searchable institution and course catalogue, importable from a legacy export
+- Editable email templates and automatic client notices for document/invoice requests and new portal logins
+- Client portal self-service: request access with a secure setup link, confirm a document or invoice request was received
 
 New Enquiry is deliberately short: who the client is, the matter, the branch and
 the staff member who will own it. Academic history, employment, English tests,
@@ -97,11 +100,13 @@ Not built, and labelled as such in the interface rather than implied:
 
 | Area | State |
 |---|---|
-| Sending email | Built. A staff member connects their own Gmail (Integrations, or the mailbox screen); until then, drafts are still recorded against the case and can be sent from your own mailbox by hand. |
+| Sending email as a staff member | Built. A staff member connects their own Gmail (Integrations, or the mailbox screen); until then, drafts are still recorded against the case and can be sent from your own mailbox by hand. |
+| Client email notices | Built. The CRM emails a client itself -- a document requested, an invoice raised, a new portal login -- through Resend (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`). Wording is editable per organisation under Templates. Until configured, the underlying request or invoice is still recorded; the email is simply not sent. |
 | WhatsApp | Not implemented. |
 | Campaigns | Not implemented. Templates are reusable wording, not a campaign engine. |
 | Google sign-in | Built. The Google button redirects through Supabase's own Google OAuth provider, which is switched on separately in the Supabase dashboard -- see "Google sign-in setup" below. |
-| AI assistant | A placeholder screen. No provider is connected. |
+| AI assistant | Built. Drafts and summarises against one case at a time from that case's own facts, with nothing written until a person chooses to save it. Needs `ANTHROPIC_API_KEY`; until set, the assistant screen has nothing to call. |
+| Course Finder | Built: a searchable institution/course catalogue with country and level filters. The 61,000+ row legacy Maximus export is imported separately -- see "Importing the legacy Course Finder" below. |
 | Lead scoring, follow-up SLA automation, structured lost-lead reasons, campaign performance | Not implemented. |
 
 **Integrations** (owner and branch manager) reports this from the running

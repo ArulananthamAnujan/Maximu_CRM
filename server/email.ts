@@ -40,7 +40,10 @@ function fromAddress(): string {
 }
 
 export function emailConfigured(): boolean {
-  return apiKey().length > 0;
+  // An API key alone is not enough to actually deliver anything: Resend
+  // requires a verified sending address, and the fallback above is a
+  // placeholder that exists only to fail obviously rather than silently.
+  return apiKey().length > 0 && fromAddress() !== "Maximus CRM <notifications@example.invalid>";
 }
 
 export class EmailProviderError extends Error {
