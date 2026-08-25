@@ -4024,16 +4024,24 @@ type CourseFinderCourse = {
   campus: string | null;
   website: string | null;
   application_fee: number | null;
+  expected_commission: string | null;
   ielts_overall: number | null;
+  ielts_band: string | null;
   toefl_overall: number | null;
+  toefl_band: string | null;
   pte_overall: number | null;
+  pte_band: string | null;
   duolingo_score: number | null;
   gpa_score: string | null;
   application_deadline: string | null;
   entry_requirements: string | null;
   scholarship: string | null;
+  source_key: string | null;
+  source_updated_at: string | null;
+  legacy_data: Record<string, string | null> | null;
 };
 type CourseFacet = { value: string; amount: number };
+type CourseInstitution = { id: string; name: string; country: string; city: string | null };
 
 /**
  * Institutions and the courses they offer -- reference data for advising a
@@ -4044,15 +4052,17 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
   const [courses, setCourses] = useState<CourseFinderCourse[]>([]);
   const [countries, setCountries] = useState<CourseFacet[]>([]);
   const [levels, setLevels] = useState<CourseFacet[]>([]);
+  const [institutions, setInstitutions] = useState<CourseInstitution[]>([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("");
   const [level, setLevel] = useState("");
+  const [institution, setInstitution] = useState("");
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const pageSize = 30;
+  const pageSize = 50;
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -4060,6 +4070,7 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
       if (query.trim()) params.set("q", query.trim());
       if (country) params.set("country", country);
       if (level) params.set("level", level);
+      if (institution) params.set("institution", institution);
       const response = await fetch(`/api/crm/course-finder?${params}`, { cache: "no-store", signal });
       const result = await response.json();
       if (!response.ok)
@@ -4067,6 +4078,7 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
       setCourses(result.courses || []);
       setCountries(result.countries || []);
       setLevels(result.levels || []);
+      setInstitutions(result.institutions || []);
       setTotal(Number(result.total) || 0);
       setError("");
     } catch (reason) {
@@ -4077,7 +4089,7 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
     } finally {
       setLoaded(true);
     }
-  }, [query, country, level, page]);
+  }, [query, country, level, institution, page]);
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(() => void load(controller.signal), 250);
@@ -4107,24 +4119,33 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
         </div>
         <span className="catalogueCount">{total.toLocaleString()} courses</span>
       </div>
-      <div className="courseFinderFilters">
+      <div className="courseFinderFilters legacyFinderFilters">
         <label className="searchField">Course, institution or campus<input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search Bachelor of Nursing, Monash…" /></label>
         <label>Destination<select value={country} onChange={(e) => { setCountry(e.target.value); setPage(1); }}><option value="">All countries</option>{countries.map((item) => <option value={item.value} key={item.value}>{item.value} ({item.amount.toLocaleString()})</option>)}</select></label>
         <label>Study level<select value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); }}><option value="">All levels</option>{levels.map((item) => <option value={item.value} key={item.value}>{item.value} ({item.amount.toLocaleString()})</option>)}</select></label>
+        <label>Institution<select value={institution} onChange={(e) => { setInstitution(e.target.value); setPage(1); }}><option value="">All institutions</option>{institutions.filter((item) => !country || item.country === country).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label>
       </div>
       {error && <p className="caseWorkError">{error}</p>}
       {courses.length === 0 ? (
         <EmptyState icon={School} title="No matching courses" copy="Try removing a filter or using a broader course name." />
       ) : (
-        <div className="courseResults">{courses.map((course) => <section className="courseCard" key={course.id}>
-          <div className="courseCardMain"><div><span className="courseDestination">{course.country}{course.campus ? ` · ${course.campus}` : ""}</span><h3>{course.name}</h3><p>{course.institution_name}</p><div className="courseFacts"><span>{course.level || "Level not supplied"}</span><span>{course.duration_months ? `${course.duration_months} months` : "Duration on request"}</span><span>{course.intake_months || "Intake on request"}</span></div></div><div className="coursePrice"><small>Tuition</small><strong>{course.tuition_fee ? `${course.currency} ${Number(course.tuition_fee).toLocaleString()}` : "On request"}</strong><button className="ghostButton" onClick={() => setExpanded(expanded === course.id ? null : course.id)}>{expanded === course.id ? "Hide details" : "View details"}</button></div></div>
-          {expanded === course.id && <div className="courseDetails"><dl><div><dt>English</dt><dd>{[course.ielts_overall && `IELTS ${course.ielts_overall}`, course.toefl_overall && `TOEFL ${course.toefl_overall}`, course.pte_overall && `PTE ${course.pte_overall}`, course.duolingo_score && `Duolingo ${course.duolingo_score}`].filter(Boolean).join(" · ") || "Contact institution"}</dd></div><div><dt>GPA</dt><dd>{course.gpa_score || "Not supplied"}</dd></div><div><dt>Application deadline</dt><dd>{course.application_deadline || "Not supplied"}</dd></div><div><dt>Application fee</dt><dd>{course.application_fee ? `${course.currency} ${Number(course.application_fee).toLocaleString()}` : "Not supplied"}</dd></div></dl>{course.entry_requirements && <p><b>Entry requirements:</b> {course.entry_requirements}</p>}{course.scholarship && <p><b>Scholarship:</b> {course.scholarship}</p>}{(course.website || course.institution_website) && <a className="ghostButton" href={course.website || course.institution_website || "#"} target="_blank" rel="noreferrer">Open official website</a>}</div>}
-        </section>)}</div>
+        <div className="legacyCourseTable"><div className="legacyCourseHead"><span>Country</span><span>Institution / campus</span><span>Course</span><span>Level</span><span>Duration</span><span>Intake</span><span>Tuition fee</span><span /></div>{courses.map((course) => <div className={`legacyCourseRecord ${expanded === course.id ? "open" : ""}`} key={course.id}><div className="legacyCourseRow"><span data-label="Country"><b>{course.country}</b></span><span data-label="Institution / campus"><b>{course.institution_name}</b><small>{course.campus || course.institution_city || "Campus not supplied"}</small></span><span data-label="Course"><b>{course.name}</b></span><span data-label="Level">{course.level || "—"}</span><span data-label="Duration">{course.duration_months ? `${course.duration_months} months` : "—"}</span><span data-label="Intake">{course.intake_months || "—"}</span><span data-label="Tuition fee"><b>{course.tuition_fee ? `${course.currency} ${Number(course.tuition_fee).toLocaleString()}` : "On request"}</b></span><button className="ghostButton" onClick={() => setExpanded(expanded === course.id ? null : course.id)}>{expanded === course.id ? "Close" : "Full details"}</button></div>{expanded === course.id && <CourseFinderDetails course={course} canManage={canManage} />}</div>)}</div>
       )}
       {total > pageSize && <div className="cataloguePager"><button className="ghostButton" disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button><span>Page {page} of {Math.ceil(total / pageSize)}</span><button className="ghostButton" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>Next</button></div>}
       {canManage && <p className="catalogueAdminNote">Catalogue maintenance is restricted to administrators; staff can safely search and advise.</p>}
     </article>
   );
+}
+
+function CourseFinderDetails({ course, canManage }: { course: CourseFinderCourse; canManage: boolean }) {
+  const money = (value: number | null) => value === null ? "Not supplied" : `${course.currency} ${Number(value).toLocaleString()}`;
+  const english = (score: number | null, band: string | null) => [score, band].filter((value) => value !== null && value !== "").join(" · ") || "Not supplied";
+  return <div className="legacyCourseDetails">
+    <section><h4>Course information</h4><dl><div><dt>Country</dt><dd>{course.country}</dd></div><div><dt>Institution</dt><dd>{course.institution_name}</dd></div><div><dt>Campus</dt><dd>{course.campus || "Not supplied"}</dd></div><div><dt>Course level</dt><dd>{course.level || "Not supplied"}</dd></div><div><dt>Field of study</dt><dd>{course.field_of_study || "Not supplied"}</dd></div><div><dt>Duration</dt><dd>{course.duration_months ? `${course.duration_months} months` : "Not supplied"}</dd></div><div><dt>Intake</dt><dd>{course.intake_months || "Not supplied"}</dd></div><div><dt>Application deadline</dt><dd>{course.application_deadline || "Not supplied"}</dd></div></dl></section>
+    <section><h4>Fees and commercial information</h4><dl><div><dt>Tuition fee</dt><dd>{money(course.tuition_fee)}</dd></div><div><dt>Application fee</dt><dd>{money(course.application_fee)}</dd></div><div><dt>Currency</dt><dd>{course.currency || "Not supplied"}</dd></div><div><dt>Expected commission</dt><dd>{course.expected_commission || "Not supplied"}</dd></div><div><dt>Scholarship</dt><dd>{course.scholarship || "Not supplied"}</dd></div></dl></section>
+    <section><h4>English and academic requirements</h4><dl><div><dt>IELTS score / bands</dt><dd>{english(course.ielts_overall, course.ielts_band)}</dd></div><div><dt>TOEFL score / bands</dt><dd>{english(course.toefl_overall, course.toefl_band)}</dd></div><div><dt>PTE score / bands</dt><dd>{english(course.pte_overall, course.pte_band)}</dd></div><div><dt>Duolingo score</dt><dd>{course.duolingo_score ?? "Not supplied"}</dd></div><div><dt>GPA requirement</dt><dd>{course.gpa_score || "Not supplied"}</dd></div></dl>{course.entry_requirements && <div className="requirementNote"><b>Complete entry requirements</b><p>{course.entry_requirements}</p></div>}</section>
+    <section><h4>Links and source</h4><dl><div><dt>Catalogue status</dt><dd>{course.active ? "Active" : "Inactive"}</dd></div><div><dt>Last source update</dt><dd>{course.source_updated_at ? new Date(course.source_updated_at).toLocaleDateString() : "Not supplied"}</dd></div>{canManage && <div><dt>Legacy course ID</dt><dd>{course.source_key || "Not supplied"}</dd></div>}</dl>{(course.website || course.institution_website) ? <a className="primaryButton courseWebsiteLink" href={course.website || course.institution_website || "#"} target="_blank" rel="noreferrer">Open official website</a> : <p className="courseMissingValue">Official website not supplied</p>}</section>
+  </div>;
 }
 
 function ReportsView({
