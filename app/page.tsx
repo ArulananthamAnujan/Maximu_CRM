@@ -4095,13 +4095,17 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
       .slice(0, 12);
   }, [institutions, country, institutionQuery]);
   const selectedInstitution = institutions.find((item) => item.id === institution);
-
-  useEffect(() => {
+  // A destination change can leave the picked institution in a country no
+  // longer selected. Cleared during render on the pattern React recommends
+  // for adjusting state from a prop, rather than in an effect.
+  const [institutionCountryCheckpoint, setInstitutionCountryCheckpoint] = useState(country);
+  if (country !== institutionCountryCheckpoint) {
+    setInstitutionCountryCheckpoint(country);
     if (selectedInstitution && country && selectedInstitution.country !== country) {
       setInstitution("");
       setInstitutionQuery("");
     }
-  }, [country, selectedInstitution]);
+  }
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
