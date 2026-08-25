@@ -28,7 +28,6 @@ import {
   LogOut,
   Mail,
   Menu,
-  MoreHorizontal,
   Eye,
   EyeOff,
   Pencil,
@@ -342,6 +341,7 @@ const studyNavGroups = [
       ["applications", "Applications", BookOpen],
       ["visas", "Visa", BriefcaseBusiness],
       ["defer", "Defer", Clock3],
+      ["case_complete", "Completed", FileCheck2],
     ],
   },
 ] as const;
@@ -353,6 +353,7 @@ const directVisaNavGroups = [
       ["enquiries", "Enquiries", Users],
       ["direct_visas", "Clients", UserCog],
       ["visas", "Visa Applications", ShieldCheck],
+      ["defer", "Deferred", Clock3],
       ["case_complete", "Case Complete", FileCheck2],
     ],
   },
@@ -410,6 +411,7 @@ const adminToolGroups = [
   {
     label: "Branch management",
     items: [
+      ["workflows", "Workflow Templates", Workflow],
       ["administration", "Staff & Masters", Settings],
       ["compliance", "Activity & Compliance", LockKeyhole],
     ],
@@ -1091,7 +1093,7 @@ function Sidebar({
     <aside className={`sidebar ${open ? "open" : ""}`}>
       <div className="brand">
         <button
-          className="brandMark"
+          className="brandHome"
           onClick={() => {
             setActive(role === "client" ? "portal" : "dashboard");
             setOpen(false);
@@ -1099,12 +1101,12 @@ function Sidebar({
           aria-label={role === "client" ? "Open my journey" : "Open dashboard"}
           title={role === "client" ? "Open my journey" : "Open dashboard"}
         >
-          M
+          <span className="brandMark" aria-hidden="true">M</span>
+          <span className="brandWords">
+            <strong>MAXIMUS</strong>
+            <span>Education &amp; Migration</span>
+          </span>
         </button>
-        <div>
-          <strong>MAXIMUS</strong>
-          <span>Education & Migration</span>
-        </div>
         <button
           className="mobileClose"
           onClick={() => setOpen(false)}
@@ -1156,16 +1158,6 @@ function Sidebar({
                 : "Direct Visa"}
           </span>
         </div>
-        {config.modules.includes("administration") ? (
-          <button
-            className="iconButton"
-            onClick={() => setActive("administration")}
-            aria-label="Open settings"
-            title="Open settings"
-          >
-            <MoreHorizontal size={18} />
-          </button>
-        ) : null}
       </div>
     </aside>
   );
@@ -2948,6 +2940,49 @@ function TemplatesView({
     </article>
   );
 }
+
+function TemplatesWorkspace({
+  items, checklistTemplates, emailTemplates, openModal, setItems,
+  canManage, reloadChecklist, reloadEmails,
+}: {
+  items: TemplateRecord[]; checklistTemplates: ChecklistTemplateRecord[];
+  emailTemplates: EmailTemplateRecord[]; openModal: (x: ModalType) => void;
+  setItems: (x: TemplateRecord[]) => void; canManage: boolean;
+  reloadChecklist: () => Promise<void>; reloadEmails: () => Promise<void>;
+}) {
+  const [section, setSection] = useState<"documents" | "emails" | "content">("documents");
+  const sections = [
+    { key: "documents" as const, label: "Document requests", icon: FileCheck2, count: checklistTemplates.length },
+    { key: "emails" as const, label: "Client emails", icon: Mail, count: emailTemplates.length },
+    { key: "content" as const, label: "Reusable content", icon: FileText, count: items.length },
+  ];
+  return (
+    <section className="templateWorkspace">
+      <div className="templateWorkspaceIntro">
+        <div>
+          <span className="kicker">CONTROL CENTRE</span>
+          <h2>Standardise every client interaction</h2>
+          <p>Maintain the approved requests and messages your team uses every day, without making staff search through one long settings page.</p>
+        </div>
+        <div className="templateWorkspaceSummary">
+          <strong>{checklistTemplates.filter((item) => item.active).length}</strong>
+          <span>active document requests</span>
+        </div>
+      </div>
+      <div className="templateWorkspaceTabs" role="tablist" aria-label="Template types">
+        {sections.map(({ key, label, icon: Icon, count }) => (
+          <button key={key} role="tab" aria-selected={section === key}
+            className={section === key ? "active" : ""} onClick={() => setSection(key)}>
+            <Icon size={17} /><span>{label}</span><b>{count}</b>
+          </button>
+        ))}
+      </div>
+      {section === "documents" && <DocumentChecklistTemplatesPanel templates={checklistTemplates} canManage={canManage} reload={reloadChecklist} />}
+      {section === "emails" && <EmailTemplatesPanel templates={emailTemplates} canManage={canManage} reload={reloadEmails} />}
+      {section === "content" && <TemplatesView items={items} openModal={openModal} setItems={setItems} canManage={canManage} />}
+    </section>
+  );
+}
 function WorkflowView({
   items,
   openModal,
@@ -3049,6 +3084,9 @@ function DocumentChecklistTemplatesPanel({
   const [editingKey, setEditingKey] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active");
 
   const send = async (body: Record<string, unknown>) => {
     setBusy(true);
@@ -3071,8 +3109,15 @@ function DocumentChecklistTemplatesPanel({
     }
   };
 
+  const categories = [...new Set(templates.map((item) => item.category))].sort();
+  const visibleTemplates = templates.filter((item) => {
+    const haystack = `${item.title} ${item.guidance} ${item.category}`.toLowerCase();
+    return (!query.trim() || haystack.includes(query.trim().toLowerCase())) &&
+      (categoryFilter === "all" || item.category === categoryFilter) &&
+      (statusFilter === "all" || (statusFilter === "active" ? item.active : !item.active));
+  });
   const byCategory = new Map<string, ChecklistTemplateRecord[]>();
-  for (const t of templates)
+  for (const t of visibleTemplates)
     byCategory.set(t.category, [...(byCategory.get(t.category) ?? []), t]);
 
   return (
@@ -3094,6 +3139,21 @@ function DocumentChecklistTemplatesPanel({
         from a client, on any case. Deactivating an item removes it from new
         requests without touching anything already asked for under it.
       </p>
+      {templates.length > 0 && (
+        <div className="templateFilters">
+          <label className="templateSearch"><Search size={16} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search document requests" aria-label="Search document requests" />
+          </label>
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="Filter by category">
+            <option value="all">All categories</option>
+            {categories.map((category) => <option value={category} key={category}>{category}</option>)}
+          </select>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by status">
+            <option value="active">Active only</option><option value="inactive">Inactive only</option><option value="all">All statuses</option>
+          </select>
+          <span className="templateResultCount">{visibleTemplates.length} of {templates.length}</span>
+        </div>
+      )}
       {error && <p className="caseWorkError">{error}</p>}
       {adding && (
         <form
@@ -3137,6 +3197,8 @@ function DocumentChecklistTemplatesPanel({
           action={canManage ? "Add item" : undefined}
           onAction={canManage ? () => setAdding(true) : undefined}
         />
+      ) : visibleTemplates.length === 0 ? (
+        <EmptyState icon={Search} title="No matching document requests" copy="Clear a filter or search with a broader phrase." />
       ) : (
         [...byCategory.entries()].map(([category, items]) => (
           <div key={category}>
@@ -3240,6 +3302,7 @@ function EmailTemplatesPanel({
   reload: () => Promise<void>;
 }) {
   const [editingId, setEditingId] = useState("");
+  const [previewId, setPreviewId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -3322,21 +3385,23 @@ function EmailTemplatesPanel({
               </button>
             </form>
           ) : (
-            <div className="functionalRow" key={item.id}>
-              <div className="docIcon">
-                <Mail size={17} />
-              </div>
-              <div>
-                <strong>{EMAIL_TEMPLATE_LABELS[item.kind] || item.kind}</strong>
-                <span>{item.subject}</span>
-              </div>
-              {canManage && (
-                <button
-                  className="ghostButton"
-                  onClick={() => setEditingId(item.id)}
-                >
-                  Edit
+            <div className="emailTemplateCard" key={item.id}>
+              <div className="emailTemplateCardHead">
+                <div className="docIcon"><Mail size={17} /></div>
+                <div><strong>{EMAIL_TEMPLATE_LABELS[item.kind] || item.kind}</strong><span>{item.subject}</span></div>
+                <button className="ghostButton" onClick={() => setPreviewId(previewId === item.id ? "" : item.id)}>
+                  <Eye size={15} />{previewId === item.id ? "Close preview" : "Preview"}
                 </button>
+                {canManage && <button className="primaryButton" onClick={() => setEditingId(item.id)}><Pencil size={15} />Edit wording</button>}
+              </div>
+              {previewId === item.id && (
+                <div className="emailTemplatePreview">
+                  <div><b>Subject</b><p>{item.subject}</p></div>
+                  <div><b>Message</b><p>{item.body}</p></div>
+                  <div className="templateTokens"><b>Automatic fields</b>
+                    {[...new Set(`${item.subject} ${item.body}`.match(/{{[^}]+}}/g) || [])].map((token) => <code key={token}>{token}</code>)}
+                  </div>
+                </div>
               )}
             </div>
           ),
@@ -9649,24 +9714,10 @@ export default function Home() {
     );
   else if (active === "templates")
     content = (
-      <>
-        <TemplatesView
-          items={templates}
-          openModal={open}
-          setItems={syncTemplates}
-          canManage={canManageFinance}
-        />
-        <DocumentChecklistTemplatesPanel
-          templates={checklistTemplates}
-          canManage={canManageFinance}
-          reload={loadChecklistTemplates}
-        />
-        <EmailTemplatesPanel
-          templates={emailTemplates}
-          canManage={canManageFinance}
-          reload={loadEmailTemplates}
-        />
-      </>
+      <TemplatesWorkspace items={templates} checklistTemplates={checklistTemplates}
+        emailTemplates={emailTemplates} openModal={open} setItems={syncTemplates}
+        canManage={canManageFinance} reloadChecklist={loadChecklistTemplates}
+        reloadEmails={loadEmailTemplates} />
     );
   else if (active === "workflows")
     content = (
@@ -10067,19 +10118,6 @@ export default function Home() {
           ) : null}
         </header>
         <div className="content">
-          <div className="accessBanner">
-            <ShieldCheck size={16} />
-            <span>
-              <b>{roleConfig[role].label} account</b> · {roleConfig[role].scope}
-            </span>
-            <small>
-              {role !== "client"
-                ? serviceMode === "study"
-                  ? "Study Abroad workspace"
-                  : "Direct Visa workspace"
-                : "Private journey"}
-            </small>
-          </div>
           <div className="pageTitle">
             <div>
               <span>
@@ -10098,16 +10136,10 @@ export default function Home() {
               </h1>
               <p>{screenMeta[2]}</p>
             </div>
-            {role !== "client" ? (
+            {role !== "client" && (["dashboard", "enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete", "reports", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) ? (
               <div className="titleActions">
-                <button className="ghostButton" onClick={exportData}>
-                  <Download size={16} />
-                  Export
-                </button>
-                <button className="primaryButton" onClick={() => open("case")}>
-                  <Plus size={16} />
-                  {serviceMode === "study" ? "New enquiry" : "New client"}
-                </button>
+                {(["reports", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) && <button className="ghostButton" onClick={exportData}><Download size={16} />Export</button>}
+                {(["dashboard", "enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete"] as ModuleKey[]).includes(active) && <button className="primaryButton" onClick={() => open("case")}><Plus size={16} />{serviceMode === "study" ? "New enquiry" : "New client"}</button>}
               </div>
             ) : null}
           </div>
