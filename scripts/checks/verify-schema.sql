@@ -40,7 +40,23 @@ with expected(area, kind, name, detail) as (values
   ('Staff scope (0018)',    'function', 'can_modify_client',                'A case officer writes only to the cases assigned to them'),
   ('Staff scope (0018)',    'function', 'request_case_archive',             'A case officer asks; a manager archives'),
   ('Staff scope (0018)',    'policy',   'cases.cases_scoped_write',         'Rebuilt on can_modify_client'),
-  ('Staff scope (0018)',    'policy',   'clients.clients_scoped_write',     'Rebuilt on can_modify_client')
+  ('Staff scope (0018)',    'policy',   'clients.clients_scoped_write',     'Rebuilt on can_modify_client'),
+  ('AI scope (0019)',       'policy',   'ai_interactions.ai_interactions_read', 'Scoped to what the reader may see'),
+  ('AI scope (0019)',       'policy',   'ai_interactions.ai_interactions_write','Scoped to what the reader may see'),
+  ('Finance scope (0020)',  'policy',   'invoices.invoices_scoped_select',  'A case officer sees only their own clients'' invoices'),
+  ('Course Finder (0022)',  'table',    'institutions',                     'Institutions a course can belong to'),
+  ('Course Finder (0022)',  'table',    'courses',                          'The Course Finder catalogue'),
+  ('Course Finder (0022)',  'policy',   'institutions.institutions_admin_write', 'Administrator only'),
+  ('Course Finder (0022)',  'policy',   'courses.courses_admin_write',      'Administrator only'),
+  ('Rate limiting (0023)',  'table',    'login_attempts',                   'Recent sign-in attempts by identifier'),
+  ('Rate limiting (0023)',  'function', 'login_lock_status',                'Whether an identifier is currently locked out'),
+  ('Rate limiting (0023)',  'function', 'record_login_attempt',             'Records a sign-in attempt and reports the resulting lock state'),
+  ('Tier 2/3 (0024)',       'policy',   'client_user_links.client_links_write', 'Fixes: linking a portal account had no write policy at all'),
+  ('Tier 2/3 (0024)',       'function', 'merge_duplicate_clients',          'Reassigns a duplicate client''s records onto the survivor'),
+  ('Tier 2/3 (0024)',       'function', 'update_own_contact_details',       'A client updates their own email, mobile or preferred name'),
+  ('Tier 2/3 (0024)',       'function', 'acknowledge_own_consent',          'A client records their own answer to a consent declaration'),
+  ('Tier 2/3 (0024)',       'table',    'credit_notes',                     'An amount forgiven against an invoice without a refund'),
+  ('Tier 2/3 (0024)',       'table',    'saved_views',                      'A named filter preset, private to whoever saved it')
 )
 select
   e.area,
