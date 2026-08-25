@@ -1852,6 +1852,61 @@ const ownDeclaration = (afterConsentWorkspace.json?.declarations ?? []).find(
 expect("the acknowledgement is recorded and visible to the client",
   ownDeclaration?.response === true, JSON.stringify(ownDeclaration));
 
+section("The document-request checklist is editable masters data");
+const checklistRead = await call("/api/crm/document-checklist-templates", { cookie: officer.cookie });
+expect("staff can read the document checklist",
+  checklistRead.status === 200, JSON.stringify(checklistRead.json));
+expect("every organisation starts with the same 35 default items",
+  (checklistRead.json?.templates ?? []).length === 35,
+  `${(checklistRead.json?.templates ?? []).length} templates`);
+for (const category of ["Identity", "Family and relationships", "Immigration history",
+  "Character and health", "Financial capacity", "Employment and skills",
+  "Education and English", "Application support"])
+  expect(`the default list covers ${category}`,
+    (checklistRead.json?.templates ?? []).some((t) => t.category === category));
+const checklistReadAsClient = await call("/api/crm/document-checklist-templates", { cookie: student.cookie });
+expect("a client cannot read the document checklist", checklistReadAsClient.status === 403);
+
+const checklistCreateAsStaff = await call("/api/crm/document-checklist-templates", { method: "POST", cookie: officer.cookie,
+  body: { action: "create", category: "Identity", title: "A staff-added item" } });
+expect("a case officer cannot change the document checklist", checklistCreateAsStaff.status === 403);
+
+const checklistCreate = await call("/api/crm/document-checklist-templates", { method: "POST", cookie: manager.cookie,
+  body: { action: "create", category: "Identity", title: "Utility bill",
+          guidance: "A recent bill showing the current address." } });
+expect("a manager can add a document checklist item", checklistCreate.status === 200, JSON.stringify(checklistCreate.json));
+const afterChecklistCreate = await call("/api/crm/document-checklist-templates", { cookie: officer.cookie });
+const utilityBill = (afterChecklistCreate.json?.templates ?? []).find((t) => t.title === "Utility bill");
+expect("the new item is on the list", Boolean(utilityBill), JSON.stringify(afterChecklistCreate.json).slice(0, 200));
+
+const checklistDeactivate = await call("/api/crm/document-checklist-templates", { method: "POST", cookie: manager.cookie,
+  body: { action: "update", templateId: utilityBill?.id, active: false } });
+expect("a manager can deactivate a document checklist item", checklistDeactivate.status === 200);
+const afterDeactivate = await call("/api/crm/document-checklist-templates", { cookie: officer.cookie });
+expect("the deactivated item is marked inactive, not removed",
+  (afterDeactivate.json?.templates ?? []).find((t) => t.id === utilityBill?.id)?.active === false);
+
+section("Requesting documents from a database-backed checklist");
+const checklistCase = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "case", name: "Nadia Checklist Case", phone: "+61400000099",
+          email: "nadia.checklist@example.test", visaExpiry: "2028-01-31",
+          workspace: "Direct Visa", matterType: "Partner visa 820/801" } });
+expect("a visa case exists for the checklist request", checklistCase.status === 200, JSON.stringify(checklistCase.json));
+const checklistCaseWs = await call("/api/crm/workspace", { cookie: officer.cookie });
+const checklistApplicant = checklistCaseWs.json?.cases?.find((c) => c.name === "Nadia Checklist Case");
+const passportItem = (checklistRead.json?.templates ?? []).find((t) => t.title === "Passport bio page");
+const requestChecklist = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "visaChecklist", caseId: checklistApplicant?.dbId, [`visaDoc_${passportItem?.id}`]: "on" } });
+expect("a document can be requested from the live checklist",
+  requestChecklist.status === 200 && requestChecklist.json?.requested === 1,
+  JSON.stringify(requestChecklist.json));
+const afterChecklistRequest = await call("/api/crm/workspace", { cookie: officer.cookie });
+const requestedDoc = (afterChecklistRequest.json?.documents ?? []).find(
+  (d) => d.caseId === checklistApplicant?.dbId && d.checklistKey === passportItem?.id);
+expect("the requested document is recorded against the case and client-visible",
+  Boolean(requestedDoc) && requestedDoc?.clientVisible !== false,
+  JSON.stringify(requestedDoc));
+
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });
 expect("sign out succeeds", out.status === 200);

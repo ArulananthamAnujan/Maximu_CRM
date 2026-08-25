@@ -16,6 +16,12 @@ const USE_SU = process.env.PG_SU === "1";
 
 const lit = (v) => (v === null || v === undefined ? "null" : `'${String(v).replace(/'/g, "''")}'`);
 const ident = (v) => `"${String(v).replace(/"/g, '""')}"`;
+// PostgREST filter columns can carry a JSON path, e.g. `metadata->>source`
+// meaning the jsonb column `metadata`, key `source`, extracted as text.
+const columnExpr = (v) => {
+  const [base, ...path] = String(v).split("->>");
+  return path.reduce((expr, key) => `${expr}->>${lit(key)}`, ident(base));
+};
 
 // `asAuth` false runs as the database owner, used only for the auth endpoints
 // that Supabase itself would serve. Everything else runs as `authenticated`
@@ -89,13 +95,14 @@ function toSql(value, type) {
 function predicate(column, spec) {
   const [op, ...rest] = spec.split(".");
   const value = rest.join(".");
-  if (op === "eq") return `${ident(column)} = ${lit(value)}`;
-  if (op === "neq") return `${ident(column)} <> ${lit(value)}`;
-  if (op === "is") return `${ident(column)} is ${value === "null" ? "null" : value}`;
-  if (op === "ilike") return `${ident(column)}::text ilike ${lit(value.replace(/\*/g, "%"))}`;
-  if (op === "in") return `${ident(column)}::text = any(${lit(value.replace(/[()]/g, "").split(",").join("|"))}::text)`;
-  if (op === "gte") return `${ident(column)} >= ${lit(value)}`;
-  if (op === "lte") return `${ident(column)} <= ${lit(value)}`;
+  const target = columnExpr(column);
+  if (op === "eq") return `${target} = ${lit(value)}`;
+  if (op === "neq") return `${target} <> ${lit(value)}`;
+  if (op === "is") return `${target} is ${value === "null" ? "null" : value}`;
+  if (op === "ilike") return `${target}::text ilike ${lit(value.replace(/\*/g, "%"))}`;
+  if (op === "in") return `${target}::text = any(${lit(value.replace(/[()]/g, "").split(",").join("|"))}::text)`;
+  if (op === "gte") return `${target} >= ${lit(value)}`;
+  if (op === "lte") return `${target} <= ${lit(value)}`;
   throw new Error(`unsupported filter operator: ${op}`);
 }
 

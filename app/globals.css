@@ -3551,6 +3551,9 @@ body {
 .documentClientGroup + .documentClientGroup {
   margin-top: 6px;
 }
+.checklistTemplatesPanel {
+  margin-top: 20px;
+}
 .documentClientGroupHead {
   margin: 18px 0 0;
   padding: 0 5px;
