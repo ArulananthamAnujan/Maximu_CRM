@@ -344,10 +344,6 @@ const studyNavGroups = [
       ["defer", "Defer", Clock3],
     ],
   },
-  {
-    label: "Advising",
-    items: [["courseFinder", "Course Finder", School]],
-  },
 ] as const;
 
 const directVisaNavGroups = [
@@ -381,6 +377,7 @@ const dailyNavGroups = [
     items: [
       ["calendar", "Calendar", CalendarDays],
       ["work", "Tasks", Check],
+      ["courseFinder", "Course Finder", School],
     ],
   },
 ] as const;
@@ -1219,13 +1216,17 @@ function ProfileServiceSwitch({
 function DailyTopNav({
   active,
   setActive,
+  serviceMode,
 }: {
   active: ModuleKey;
   setActive: (x: ModuleKey) => void;
+  serviceMode: ServiceMode;
 }) {
   return (
     <nav className="dailyTopNav" aria-label="Daily workspace navigation">
-      {dailyNavGroups[0].items.map(([key, label, Icon]) => (
+      {dailyNavGroups[0].items
+        .filter(([key]) => key !== "courseFinder" || serviceMode === "study")
+        .map(([key, label, Icon]) => (
         <button
           key={key}
           className={active === key ? "active" : ""}
@@ -1236,7 +1237,7 @@ function DailyTopNav({
           <Icon size={17} />
           <span>{label}</span>
         </button>
-      ))}
+        ))}
     </nav>
   );
 }
@@ -9979,7 +9980,7 @@ export default function Home() {
           </div>
           {role !== "client" ? (
             <div className="topbarSecondary">
-              <DailyTopNav active={active} setActive={setActive} />
+              <DailyTopNav active={active} setActive={setActive} serviceMode={serviceMode} />
             </div>
           ) : null}
         </header>
