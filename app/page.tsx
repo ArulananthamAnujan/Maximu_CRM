@@ -10116,6 +10116,13 @@ export default function Home() {
       </main>
       {role !== "client" ? (
         <CaseDrawer
+          key={selected
+            ? documents
+                .filter((document) => document.caseId === selected.dbId)
+                .map((document) => `${document.id}:${document.status}`)
+                .sort()
+                .join("|") || selected.dbId
+            : "closed"}
           moveStage={moveCaseStage}
           assign={assignCase}
           refresh={loadWorkspace}

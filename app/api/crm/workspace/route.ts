@@ -1027,7 +1027,7 @@ export async function POST(request: Request) {
           client_name: fullClientName(client),
           document_title: title,
           note: nullable(body.documentNote) ?? "",
-          portal_link: new URL(request.url).origin,
+          portal_link: publicOrigin(request),
           sender_name: session.identity.displayName,
         });
       return Response.json({ ok: true });
@@ -1145,7 +1145,7 @@ export async function POST(request: Request) {
             client_name: fullClientName(client),
             document_title: newlyRequested.join(", "),
             note: nullable(body.documentNote) ?? "",
-            portal_link: new URL(request.url).origin,
+            portal_link: publicOrigin(request),
             sender_name: session.identity.displayName,
           });
       }
@@ -1245,7 +1245,7 @@ export async function POST(request: Request) {
           client_name: fullClientName(invoiceClient),
           amount: `$${total.toFixed(2)}`,
           due_clause: due ? `, due ${due}` : "",
-          portal_link: new URL(request.url).origin,
+            portal_link: publicOrigin(request),
           sender_name: session.identity.displayName,
         });
       }
@@ -1362,7 +1362,7 @@ export async function POST(request: Request) {
           body: JSON.stringify({
             type: "recovery",
             email: address,
-            options: { redirect_to: new URL(request.url).origin },
+            options: { redirect_to: publicOrigin(request) },
           }),
         });
         setupLink = generated.action_link || generated.properties?.action_link || "";
@@ -2093,6 +2093,25 @@ function fullClientName(value?: Json): string {
   return value
     ? [value.first_name, value.last_name].filter(Boolean).join(" ")
     : "";
+}
+
+// Some server adapters expose the internal worker URL as localhost even when
+// the browser is on the public Netlify site. Client emails and Supabase action
+// links must always return to the address the client can actually open.
+function publicOrigin(request: Request): string {
+  for (const configured of [process.env.NEXT_PUBLIC_APP_URL, process.env.URL]) {
+    if (!configured) continue;
+    try {
+      return new URL(configured).origin;
+    } catch {
+      // Continue to the proxy headers when an optional value is malformed.
+    }
+  }
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host")?.trim();
+  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (host) return `${forwardedProtocol || "https"}://${host}`;
+  return new URL(request.url).origin;
 }
 // invoices, content_templates and workflow_templates are all writable only by
 // manager level and above (migration 0005). Check it here so the CRM can say
