@@ -8674,9 +8674,10 @@ body {
 
 .visaChecklist {
   max-height: min(52vh, 620px);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
   padding: 2px 6px 6px 0;
 }
@@ -8692,23 +8693,48 @@ body {
   color: var(--ink);
   font-size: 12px;
   font-weight: 800;
+  text-transform: none;
+  letter-spacing: normal;
 }
 .checklistChoice {
-  display: flex !important;
-  flex-direction: row !important;
+  display: flex;
+  flex-direction: row;
   align-items: flex-start;
   gap: 9px;
   padding: 8px;
   border-radius: 8px;
   cursor: pointer;
+  /* This label sits inside .formGrid, whose generic `label` rule sets
+     uppercase, letter-spacing and a heavy weight for form field captions --
+     none of which belong on a checklist item's own title and guidance text.
+     Reset here, at the label, so nothing has to fight it per child. */
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 400;
 }
 .checklistChoice:hover { background: var(--surface); }
 .checklistChoice input { width: 17px; height: 17px; margin-top: 2px; flex: 0 0 auto; }
-.checklistChoice span, .checklistChoice strong, .checklistChoice small { display: block; }
-.checklistChoice strong { color: var(--ink); font-size: 12px; }
-.checklistChoice small { margin-top: 2px; color: var(--muted); font-size: 10px; line-height: 1.35; }
+.checklistChoice span { display: block; min-width: 0; }
+.checklistChoice strong {
+  display: block;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.checklistChoice small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  text-transform: none;
+  letter-spacing: normal;
+}
 @media (max-width: 760px) {
-  .visaChecklist { grid-template-columns: 1fr; max-height: 55vh; }
+  .visaChecklist { max-height: 55vh; }
 }
 
 /* A dataset fetched right up to its cap: told rather than silently short. */
