@@ -8673,6 +8673,11 @@ body {
 }
 
 .visaChecklist {
+  /* .formGrid label.full spans both of the form's columns, but this is a
+     div, not a label, so that rule never matched it -- it sat in a single
+     column at half the modal's width. Spans on its own instead, the same
+     way .modalNotice does. */
+  grid-column: 1 / -1;
   max-height: min(52vh, 620px);
   overflow-y: auto;
   overflow-x: hidden;
