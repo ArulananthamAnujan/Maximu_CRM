@@ -377,7 +377,6 @@ const dailyNavGroups = [
     items: [
       ["calendar", "Calendar", CalendarDays],
       ["work", "Tasks", Check],
-      ["courseFinder", "Course Finder", School],
     ],
   },
 ] as const;
@@ -1216,17 +1215,13 @@ function ProfileServiceSwitch({
 function DailyTopNav({
   active,
   setActive,
-  serviceMode,
 }: {
   active: ModuleKey;
   setActive: (x: ModuleKey) => void;
-  serviceMode: ServiceMode;
 }) {
   return (
     <nav className="dailyTopNav" aria-label="Daily workspace navigation">
-      {dailyNavGroups[0].items
-        .filter(([key]) => key !== "courseFinder" || serviceMode === "study")
-        .map(([key, label, Icon]) => (
+      {dailyNavGroups[0].items.map(([key, label, Icon]) => (
         <button
           key={key}
           className={active === key ? "active" : ""}
@@ -1237,7 +1232,7 @@ function DailyTopNav({
           <Icon size={17} />
           <span>{label}</span>
         </button>
-        ))}
+      ))}
     </nav>
   );
 }
@@ -9863,11 +9858,24 @@ export default function Home() {
               </div>
             )}
             {role !== "client" ? (
-              <ProfileServiceSwitch
-                serviceMode={serviceMode}
-                setServiceMode={setServiceMode}
-                setActive={setActive}
-              />
+              <div className="serviceAndFinder">
+                <ProfileServiceSwitch
+                  serviceMode={serviceMode}
+                  setServiceMode={setServiceMode}
+                  setActive={setActive}
+                />
+                {serviceMode === "study" ? (
+                  <button
+                    className={`courseFinderSwitchButton ${active === "courseFinder" ? "active" : ""}`}
+                    onClick={() => setActive("courseFinder")}
+                    aria-label="Open Course Finder"
+                    title="Open Course Finder"
+                  >
+                    <School size={17} />
+                    <span>Course Finder</span>
+                  </button>
+                ) : null}
+              </div>
             ) : null}
             <div className="topActions">
               <div className="signedAccount">
@@ -9980,7 +9988,7 @@ export default function Home() {
           </div>
           {role !== "client" ? (
             <div className="topbarSecondary">
-              <DailyTopNav active={active} setActive={setActive} serviceMode={serviceMode} />
+              <DailyTopNav active={active} setActive={setActive} />
             </div>
           ) : null}
         </header>
