@@ -25,23 +25,33 @@ export async function GET(request: Request) {
     const page = Math.max(Number(url.searchParams.get("page")) || 1, 1);
     const institution = url.searchParams.get("institution");
     if (institution) uuid(institution, "Institution");
-    const catalog = await supabaseRequest<Json>(
-      "/rest/v1/rpc/search_course_catalog",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          p_query: optional(url.searchParams.get("q")),
-          p_country: optional(url.searchParams.get("country")),
-          p_level: optional(url.searchParams.get("level")),
-          p_institution: institution || null,
-          p_limit: limit,
-          p_offset: (page - 1) * limit,
-        }),
-      },
-      token,
-    );
+    const [catalog, institutions] = await Promise.all([
+      supabaseRequest<Json>(
+        "/rest/v1/rpc/search_course_catalog",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            p_query: optional(url.searchParams.get("q")),
+            p_country: optional(url.searchParams.get("country")),
+            p_level: optional(url.searchParams.get("level")),
+            p_institution: institution || null,
+            p_limit: limit,
+            p_offset: (page - 1) * limit,
+          }),
+        },
+        token,
+      ),
+      // Small compared to the course catalogue -- the list an administrator
+      // picks from when adding a course, and looks a new institution up
+      // against before adding a duplicate.
+      supabaseRequest<Json[]>(
+        "/rest/v1/institutions?select=id,name,country,city&active=eq.true&order=name.asc&limit=5000",
+        { method: "GET" },
+        token,
+      ),
+    ]);
     return appendRefreshCookies(
-      Response.json({ ok: true, ...catalog, page, limit }),
+      Response.json({ ok: true, ...catalog, institutions, page, limit }),
       session.refreshed,
       request,
     );

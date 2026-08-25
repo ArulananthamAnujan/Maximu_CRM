@@ -1,5 +1,9 @@
 -- Minimal Supabase-compatible surface so the real migrations can run locally.
 create schema if not exists auth;
+-- Real Supabase provisions this schema by default, to hold extensions
+-- (pg_trgm and the like) away from public. A plain local Postgres cluster
+-- does not, so a migration that installs one into it fails here otherwise.
+create schema if not exists extensions;
 create table if not exists auth.users (
   id uuid primary key,
   email text
