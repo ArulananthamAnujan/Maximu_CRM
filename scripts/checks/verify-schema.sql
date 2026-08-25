@@ -60,7 +60,10 @@ with expected(area, kind, name, detail) as (values
   ('Checklist templates (0025)', 'table', 'document_checklist_templates',   'The editable document-request checklist, replacing a hard-coded list'),
   ('Checklist templates (0025)', 'policy', 'document_checklist_templates.document_checklist_templates_admin_write', 'Same masters-data access shape as institutions and courses'),
   ('Checklist templates (0025)', 'function', 'seed_default_document_checklist_templates', 'Gives every organisation the same 35 starting items the code used to hard-code'),
-  ('Staff invoicing (0026)', 'policy', 'invoices.invoices_staff_create', 'A case officer may raise an invoice for a client they can already modify')
+  ('Staff invoicing (0026)', 'policy', 'invoices.invoices_staff_create', 'A case officer may raise an invoice for a client they can already modify'),
+  ('Email templates (0027)', 'table',    'email_templates',                  'Editable wording for the document, invoice and portal-welcome emails a client is sent'),
+  ('Email templates (0027)', 'policy',   'email_templates.email_templates_admin_write', 'Same masters-data access shape as institutions and courses'),
+  ('Email templates (0027)', 'function', 'seed_default_email_templates',     'Gives every organisation the three starting email templates')
 )
 select
   e.area,

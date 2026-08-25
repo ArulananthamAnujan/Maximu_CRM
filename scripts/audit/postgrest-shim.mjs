@@ -153,6 +153,14 @@ const server = http.createServer((req, res) => {
     const raw = Buffer.concat(chunks).toString("utf8");
     const url = new URL(req.url, "http://pgrest");
     const uid = (req.headers.authorization || "").replace(/^Bearer\s+/i, "") || null;
+    // Real Supabase's service-role key bypasses row-level security on every
+    // endpoint, not only the /auth/v1/admin/* ones this shim special-cases --
+    // exercised by an administrator sending a client their portal access,
+    // which creates the profile and client_user_links row directly rather
+    // than through row-level security a case officer never has on either.
+    const isServiceRole =
+      Boolean(process.env.SHIM_SERVICE_ROLE_KEY) &&
+      req.headers.apikey === process.env.SHIM_SERVICE_ROLE_KEY;
     const send = (status, body) => {
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(body === undefined ? "" : JSON.stringify(body));
@@ -217,6 +225,19 @@ const server = http.createServer((req, res) => {
         return send(405, { message: "method not allowed" });
       }
 
+      // A secure one-time sign-in link, used to set up client portal access
+      // without ever handing over a password. Real Supabase requires the
+      // service-role key here too.
+      if (url.pathname === "/auth/v1/admin/generate_link" && req.method === "POST") {
+        const key = req.headers.apikey || "";
+        if (!process.env.SHIM_SERVICE_ROLE_KEY || key !== process.env.SHIM_SERVICE_ROLE_KEY)
+          return send(401, { message: "service role key required" });
+        const { email } = JSON.parse(raw || "{}");
+        const id = await sql(`select id::text from auth.users where lower(email) = lower(${lit(email)})`, null, false);
+        if (!id) return send(422, { msg: "user not found" });
+        return send(200, { action_link: `http://127.0.0.1:${port}/verify?token=stub-${id}` });
+      }
+
       if (url.pathname.startsWith("/rest/v1/rpc/")) {
         const fn = url.pathname.replace("/rest/v1/rpc/", "");
         const args = JSON.parse(raw || "{}");
@@ -241,7 +262,8 @@ const server = http.createServer((req, res) => {
         const limit = url.searchParams.get("limit");
         const out = await sql(
           `select coalesce(json_agg(t)::text,'[]') from (select ${cols} from public.${ident(table)}${where}` +
-          `${buildOrder(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""}) t`, uid);
+          `${buildOrder(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""}) t`,
+          uid, !isServiceRole);
         return send(200, JSON.parse(out || "[]"));
       }
 
@@ -259,12 +281,12 @@ const server = http.createServer((req, res) => {
         // PostgREST only adds RETURNING when the caller asks for the row back.
         // That matters: RETURNING makes PostgreSQL apply the SELECT policy too.
         if (prefer.includes("return=minimal")) {
-          await sql(statement, uid);
+          await sql(statement, uid, !isServiceRole);
           return send(201, undefined);
         }
         const out = await sql(
           `with inserted as (${statement} returning *)` +
-          ` select coalesce(json_agg(inserted)::text,'[]') from inserted`, uid);
+          ` select coalesce(json_agg(inserted)::text,'[]') from inserted`, uid, !isServiceRole);
         return send(201, JSON.parse(out || "[]"));
       }
 
@@ -275,16 +297,17 @@ const server = http.createServer((req, res) => {
           .map(([k, v]) => `${ident(k)} = ${toSql(v, patchTypes.get(k))}`).join(", ");
         const statement = `update public.${ident(table)} set ${sets}${where}`;
         if (String(req.headers.prefer || "").includes("return=minimal")) {
-          await sql(statement, uid);
+          await sql(statement, uid, !isServiceRole);
           return send(204, undefined);
         }
         const out = await sql(
-          `with updated as (${statement} returning *) select coalesce(json_agg(updated)::text,'[]') from updated`, uid);
+          `with updated as (${statement} returning *) select coalesce(json_agg(updated)::text,'[]') from updated`,
+          uid, !isServiceRole);
         return send(200, JSON.parse(out || "[]"));
       }
 
       if (req.method === "DELETE") {
-        await sql(`delete from public.${ident(table)}${where}`, uid);
+        await sql(`delete from public.${ident(table)}${where}`, uid, !isServiceRole);
         return send(204, undefined);
       }
       return send(405, { message: "method not allowed" });

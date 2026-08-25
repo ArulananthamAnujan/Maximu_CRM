@@ -21,6 +21,7 @@ const env = {
   ASSETS: { fetch: async () => new Response("", { status: 404 }) },
 };
 const DRIVE_STUB = process.env.DRIVE_STUB_URL;
+const RESEND_STUB = process.env.RESEND_STUB_URL;
 const ctx = { waitUntil() {}, passThroughOnException() {} };
 
 const results = [];
@@ -1909,6 +1910,136 @@ const requestedDoc = (afterChecklistRequest.json?.documents ?? []).find(
 expect("the requested document is recorded against the case and client-visible",
   Boolean(requestedDoc) && requestedDoc?.clientVisible !== false,
   JSON.stringify(requestedDoc));
+
+// ---------------------------------------------------------------------------
+section("Email templates are editable masters data");
+const emailTemplatesRead = await call("/api/crm/email-templates", { cookie: officer.cookie });
+expect("staff can read the email templates", emailTemplatesRead.status === 200, JSON.stringify(emailTemplatesRead.json));
+const templateKinds = (emailTemplatesRead.json?.templates ?? []).map((t) => t.kind).sort();
+expect("every organisation starts with the three system email templates",
+  JSON.stringify(templateKinds) === JSON.stringify(["document_request", "invoice_request", "portal_welcome"]),
+  JSON.stringify(templateKinds));
+
+const emailTemplatesAsClient = await call("/api/crm/email-templates", { cookie: student.cookie });
+expect("a client cannot read the email templates", emailTemplatesAsClient.status === 403);
+
+const documentTemplate = (emailTemplatesRead.json?.templates ?? []).find((t) => t.kind === "document_request");
+const emailTemplateUpdateAsStaff = await call("/api/crm/email-templates", { method: "POST", cookie: officer.cookie,
+  body: { action: "update", templateId: documentTemplate?.id, subject: "Hijacked wording" } });
+expect("a case officer cannot change email wording", emailTemplateUpdateAsStaff.status === 403);
+
+const emailTemplateUpdate = await call("/api/crm/email-templates", { method: "POST", cookie: manager.cookie,
+  body: { action: "update", templateId: documentTemplate?.id, subject: "We need a document from you, {{client_name}}" } });
+expect("a manager can edit an email template", emailTemplateUpdate.status === 200, JSON.stringify(emailTemplateUpdate.json));
+
+// ---------------------------------------------------------------------------
+section("Requesting a document or raising an invoice emails the client");
+const sentBeforeRequests = await (await fetch(`${RESEND_STUB}/__sent`)).json();
+const emailCase = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "case", name: "Email Notice Case", phone: "+61400000098",
+          email: "email.notice@example.test", visaExpiry: "2028-06-30",
+          workspace: "Direct Visa", matterType: "Partner visa 820/801" } });
+expect("a case exists to raise document and invoice requests against",
+  emailCase.status === 200, JSON.stringify(emailCase.json));
+const requestedDocument = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "document", clientId: emailCase.json?.clientId, caseId: emailCase.json?.caseId,
+          title: "Certified passport copy", folder: "Identity" } });
+expect("the document request itself succeeds", requestedDocument.status === 200, JSON.stringify(requestedDocument.json));
+const raisedInvoice = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "invoice", clientId: emailCase.json?.clientId, caseId: emailCase.json?.caseId, amount: "450" } });
+expect("the invoice itself is raised", raisedInvoice.status === 200, JSON.stringify(raisedInvoice.json));
+
+const sentAfterRequests = await (await fetch(`${RESEND_STUB}/__sent`)).json();
+const newlySent = sentAfterRequests.slice(sentBeforeRequests.length);
+expect("both the document request and the invoice emailed the client",
+  newlySent.filter((m) => (m.to ?? []).includes("email.notice@example.test")).length === 2,
+  JSON.stringify(newlySent.map((m) => ({ to: m.to, subject: m.subject }))));
+expect("the document request email uses the edited wording, tokens filled in",
+  newlySent.some((m) => m.subject === "We need a document from you, Email Notice Case"),
+  JSON.stringify(newlySent.map((m) => m.subject)));
+expect("the invoice email uses the default wording",
+  newlySent.some((m) => m.subject === "An invoice has been raised for your file"),
+  JSON.stringify(newlySent.map((m) => m.subject)));
+
+// ---------------------------------------------------------------------------
+section("Sending a client their portal access");
+const portalAccessDenied = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
+  body: { action: "send_portal_access", clientId: emailCase.json?.clientId } });
+expect("a colleague cannot send portal access for a client that is not theirs",
+  portalAccessDenied.status >= 400, `${portalAccessDenied.status} ${JSON.stringify(portalAccessDenied.json)?.slice(0, 200)}`);
+
+const portalAccessAsClient = await call("/api/crm/workspace", { method: "POST", cookie: student.cookie,
+  body: { action: "send_portal_access", clientId: emailCase.json?.clientId } });
+expect("a client cannot send themselves portal access", portalAccessAsClient.status === 403);
+
+const sentBeforePortal = await (await fetch(`${RESEND_STUB}/__sent`)).json();
+const portalAccess = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "send_portal_access", clientId: emailCase.json?.clientId } });
+expect("the case officer sends portal access to their own client",
+  portalAccess.status === 200, JSON.stringify(portalAccess.json));
+expect("portal access was actually emailed, not just created",
+  portalAccess.json?.emailSent === true, JSON.stringify(portalAccess.json));
+
+const sentAfterPortal = await (await fetch(`${RESEND_STUB}/__sent`)).json();
+const portalEmail = sentAfterPortal[sentAfterPortal.length - 1];
+expect("the portal welcome email went to the client, not a password in plain text",
+  sentAfterPortal.length === sentBeforePortal.length + 1 &&
+    (portalEmail?.to ?? []).includes("email.notice@example.test") &&
+    /http/.test(portalEmail?.text ?? "") &&
+    !/temporaryPassword|password:\s*\S/i.test(portalEmail?.text ?? ""),
+  JSON.stringify(portalEmail));
+
+const portalLogin = await login("email.notice@example.test");
+expect("the client can sign in through the login portal access just created",
+  portalLogin.ok, JSON.stringify(portalLogin.body));
+const portalLoginWorkspace = await call("/api/crm/workspace", { cookie: portalLogin.cookie });
+expect("and lands in the client portal, not a staff view",
+  portalLoginWorkspace.json?.identity?.role === "client",
+  JSON.stringify(portalLoginWorkspace.json?.identity));
+
+const resendPortalAccess = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+  body: { action: "send_portal_access", clientId: emailCase.json?.clientId } });
+expect("sending it again reuses the existing login rather than creating a duplicate",
+  resendPortalAccess.status === 200, JSON.stringify(resendPortalAccess.json));
+
+// ---------------------------------------------------------------------------
+section("A client can confirm a document or invoice request reached them");
+const portalDocRequest = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "document", clientId: portalClientId, caseId: selfServiceCase.json?.caseId,
+          title: "Proof of enrolment", folder: "Education" } });
+expect("a document is requested on the client's own case",
+  portalDocRequest.status === 200, JSON.stringify(portalDocRequest.json));
+const portalInvoiceRequest = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "invoice", clientId: portalClientId, caseId: selfServiceCase.json?.caseId, amount: "250" } });
+expect("an invoice is raised on the client's own case",
+  portalInvoiceRequest.status === 200, JSON.stringify(portalInvoiceRequest.json));
+
+const portalWorkspace = await call("/api/crm/workspace", { cookie: selfServiceLogin.cookie });
+const ownDocument = (portalWorkspace.json?.documents ?? []).find((d) => d.title === "Proof of enrolment");
+const ownInvoice = (portalWorkspace.json?.invoices ?? []).find((i) => i.amount === 250);
+expect("the client can see the document requested of them",
+  Boolean(ownDocument), JSON.stringify(portalWorkspace.json?.documents)?.slice(0, 200));
+expect("the client can see the invoice raised on their file",
+  Boolean(ownInvoice), JSON.stringify(portalWorkspace.json?.invoices)?.slice(0, 200));
+
+const confirmDoc = await call("/api/crm/workspace", { method: "POST", cookie: selfServiceLogin.cookie,
+  body: { action: "confirm_document", id: ownDocument?.id } });
+expect("the client can confirm the document request reached them",
+  confirmDoc.status === 200, JSON.stringify(confirmDoc.json));
+const confirmInvoice = await call("/api/crm/workspace", { method: "POST", cookie: selfServiceLogin.cookie,
+  body: { action: "confirm_invoice", id: ownInvoice?.id } });
+expect("and confirm the invoice too",
+  confirmInvoice.status === 200, JSON.stringify(confirmInvoice.json));
+
+const strangerConfirm = await call("/api/crm/workspace", { method: "POST", cookie: student.cookie,
+  body: { action: "confirm_document", id: ownDocument?.id } });
+expect("a different client cannot confirm somebody else's document",
+  strangerConfirm.status >= 400, `${strangerConfirm.status} ${JSON.stringify(strangerConfirm.json)?.slice(0, 200)}`);
+
+const confirmationAlerts = await call("/api/crm/operations?view=notifications", { cookie: owner.cookie });
+expect("the case owner is told the client confirmed",
+  (confirmationAlerts.json?.data ?? []).some((n) => /confirmed/i.test(n.title ?? "")),
+  JSON.stringify((confirmationAlerts.json?.data ?? []).map((n) => n.title))?.slice(0, 240));
 
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });

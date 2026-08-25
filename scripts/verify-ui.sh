@@ -20,6 +20,7 @@ port="${UI_PG_PORT:-5441}"
 shim_port="${UI_SHIM_PORT:-8095}"
 drive_port="${UI_DRIVE_PORT:-8094}"
 ai_port="${UI_AI_PORT:-8093}"
+resend_port="${UI_RESEND_PORT:-8092}"
 worker_port="${UI_WORKER_PORT:-8100}"
 
 # shellcheck source=scripts/lib/pg-env.sh
@@ -28,9 +29,9 @@ source "${root}/scripts/lib/pg-env.sh"
 command -v openssl >/dev/null || { echo "openssl is required." >&2; exit 69; }
 [[ -f "${root}/dist/server/index.js" ]] || { echo "Run 'npm run build' first." >&2; exit 69; }
 
-shim_pid=""; drive_pid=""; worker_pid=""; ai_pid=""
+shim_pid=""; drive_pid=""; worker_pid=""; ai_pid=""; resend_pid=""
 cleanup() {
-  for pid in "${worker_pid}" "${ai_pid}" "${drive_pid}" "${shim_pid}"; do
+  for pid in "${worker_pid}" "${ai_pid}" "${resend_pid}" "${drive_pid}" "${shim_pid}"; do
     [[ -n "${pid}" ]] && kill "${pid}" 2>/dev/null || true
   done
   pg_stop "${work}"
@@ -72,6 +73,11 @@ ai_key="ui-anthropic-$(head -c 12 /dev/urandom | base64 | tr -d '/+=')"
 ANTHROPIC_STUB_PORT="${ai_port}" ANTHROPIC_STUB_KEY="${ai_key}" \
   node "${root}/scripts/audit/anthropic-stub.mjs" >"${work}/ai.log" 2>&1 &
 ai_pid=$!
+
+resend_key="ui-resend-$(head -c 12 /dev/urandom | base64 | tr -d '/+=')"
+RESEND_STUB_PORT="${resend_port}" RESEND_STUB_KEY="${resend_key}" \
+  node "${root}/scripts/audit/resend-stub.mjs" >"${work}/resend.log" 2>&1 &
+resend_pid=$!
 sleep 2
 
 SUPABASE_URL="http://127.0.0.1:${shim_port}" \
@@ -84,6 +90,9 @@ SUPABASE_URL="http://127.0.0.1:${shim_port}" \
   SUPABASE_SERVICE_ROLE_KEY="${service_role_key}" \
   ANTHROPIC_API_KEY="${ai_key}" \
   ANTHROPIC_API_BASE="http://127.0.0.1:${ai_port}" \
+  RESEND_API_KEY="${resend_key}" \
+  RESEND_API_BASE="http://127.0.0.1:${resend_port}" \
+  RESEND_FROM_EMAIL="Maximus CRM <notifications@maximus-test.invalid>" \
   WORKER_PORT="${worker_port}" \
   node "${root}/scripts/audit/worker-server.mjs" >"${work}/worker.log" 2>&1 &
 worker_pid=$!

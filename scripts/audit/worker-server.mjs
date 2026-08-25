@@ -75,6 +75,9 @@ const env = {
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
   ANTHROPIC_API_BASE: process.env.ANTHROPIC_API_BASE,
+  RESEND_API_KEY: process.env.RESEND_API_KEY,
+  RESEND_API_BASE: process.env.RESEND_API_BASE,
+  RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
 };
 const ctx = { waitUntil() {}, passThroughOnException() {} };
 
