@@ -3028,10 +3028,11 @@ function WorkflowView({
 }
 
 /**
- * The document-request checklist offered on "Visa checklist" -- masters
- * data now, so an agency can add, reword or retire an item without a code
- * change. Every organisation starts with the same 35 items the code used
- * to hard-code; this is where they get edited from that point on.
+ * The document-request checklist offered on any case, not just a visa
+ * matter -- masters data now, so an agency can add, reword or retire an
+ * item without a code change. Every organisation starts with the same 35
+ * items the code used to hard-code; this is where they get edited from
+ * that point on.
  */
 function DocumentChecklistTemplatesPanel({
   templates,
@@ -3087,9 +3088,9 @@ function DocumentChecklistTemplatesPanel({
         )}
       </div>
       <p className="coverageIntro">
-        What &ldquo;Visa checklist&rdquo; offers when requesting documents from a
-        client. Deactivating an item removes it from new requests without
-        touching anything already asked for under it.
+        What &ldquo;Document checklist&rdquo; offers when requesting documents
+        from a client, on any case. Deactivating an item removes it from new
+        requests without touching anything already asked for under it.
       </p>
       {error && <p className="caseWorkError">{error}</p>}
       {adding && (
@@ -6774,17 +6775,14 @@ function CaseDrawerBody({
               <div className="caseWorkPanelHead">
                 <span className="kicker">DOCUMENT CHECKLIST</span>
                 <div className="caseWorkPanelActions">
-                  {(item.serviceType === "direct_visa" ||
-                    item.lifecycleStage === "visa") && (
-                    <button
-                      type="button"
-                      className="ghostButton"
-                      onClick={() => onRequestDocument(caseId ?? "", "visaChecklist")}
-                    >
-                      <FileCheck2 size={14} />
-                      Visa checklist
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="ghostButton"
+                    onClick={() => onRequestDocument(caseId ?? "", "visaChecklist")}
+                  >
+                    <FileCheck2 size={14} />
+                    Document checklist
+                  </button>
                   <button
                     type="button"
                     className="ghostButton"
@@ -7972,7 +7970,7 @@ function RecordModal({
     task: "Create task",
     appointment: "Schedule appointment",
     document: "Request document",
-    visaChecklist: "Visa document checklist",
+    visaChecklist: "Document checklist",
     message: "Compose draft",
     invoice: "Create invoice",
     template: "Create template",
@@ -8366,13 +8364,13 @@ function RecordModal({
             <>
               {presetCase ? (
                 <label className="full">
-                  Visa case
+                  Case
                   <input value={`${presetCase.name} · ${presetCase.id}`} disabled />
                   <input type="hidden" name="caseId" value={checklistCaseId} />
                 </label>
               ) : (
                 <label className="full">
-                  Visa case
+                  Case
                   <select
                     name="caseId"
                     required
@@ -8394,14 +8392,12 @@ function RecordModal({
                       );
                     }}
                   >
-                    <option value="">Select a visa case</option>
-                    {cases
-                      .filter((c) => c.serviceType === "direct_visa" || c.lifecycleStage === "visa")
-                      .map((c) => (
-                        <option key={c.id} value={c.dbId || c.id}>
-                          {c.name} · {c.id}
-                        </option>
-                      ))}
+                    <option value="">Select a case</option>
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.dbId || c.id}>
+                        {c.name} · {c.id}
+                      </option>
+                    ))}
                   </select>
                 </label>
               )}
