@@ -1098,7 +1098,10 @@ export async function POST(request: Request) {
     }
 
     if (action === "invoice") {
-      requireManager(session.identity.role, "raise an invoice");
+      // Raising one is open to a case officer for a client they can already
+      // modify -- invoices_staff_create enforces that boundary at the
+      // database, same as every other staff write in this schema. Changing
+      // or voiding an invoice once raised stays manager and above.
       const id = crypto.randomUUID();
       const total = Number(body.amount ?? 0);
       await insert(

@@ -180,9 +180,8 @@ expect("a message draft can be saved", msg.status === 200, JSON.stringify(msg.js
 const inv = await mk({ action: "invoice", clientId: created.json?.clientId, caseId: newCaseId, amount: "1500", due: "2026-10-31" }, owner.cookie);
 expect("a manager can raise an invoice", inv.status === 200, JSON.stringify(inv.json));
 const invStaff = await mk({ action: "invoice", clientId: created.json?.clientId, caseId: newCaseId, amount: "10" });
-expect("a case officer is told plainly they cannot raise an invoice",
-  invStaff.status === 403 && /manager or administrator/i.test(invStaff.json?.error ?? ""),
-  `${invStaff.status} ${JSON.stringify(invStaff.json)}`);
+expect("a case officer can raise an invoice for their own case",
+  invStaff.status === 200, `${invStaff.status} ${JSON.stringify(invStaff.json)}`);
 const tpl = await mk({ action: "template", name: "Offer acceptance", templateType: "Email", content: "Dear {{name}}" }, owner.cookie);
 expect("a manager can create a template", tpl.status === 200, JSON.stringify(tpl.json));
 const tplStaff = await mk({ action: "template", name: "Nope", templateType: "Email", content: "x" });
@@ -1256,6 +1255,10 @@ expect("nor add anything to its case file", colleagueApp.status >= 400,
 const stillIntact = await call(`/api/crm/casefile?caseId=${priya?.dbId}`, { cookie: officer.cookie });
 expect("and the case is untouched",
   !(stillIntact.json?.applications ?? []).some((a) => a.institution === "Sneaky University"));
+const colleagueInvoice = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
+  body: { action: "invoice", clientId: priya?.clientId, caseId: priya?.dbId, amount: "999" } });
+expect("nor raise an invoice against it", colleagueInvoice.status >= 400,
+  `${colleagueInvoice.status} ${JSON.stringify(colleagueInvoice.json)?.slice(0, 200)}`);
 
 // Reassignment is what grants access, and it works.
 expect("an administrator reassigns the case to the colleague",
