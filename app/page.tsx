@@ -2266,12 +2266,10 @@ function CalendarView({
 }
 function DocumentsView({
   items,
-  openModal,
   setItems,
   storageConnected,
 }: {
   items: DocumentRecord[];
-  openModal: (x: ModalType) => void;
   setItems: (x: DocumentRecord[]) => void;
   storageConnected: boolean;
 }) {
@@ -2282,6 +2280,15 @@ function DocumentsView({
   const shown = showArchived
     ? items
     : items.filter((d) => d.status !== "archived");
+  // Every file, grouped by the client it belongs to -- an archive to browse
+  // and download from, not where a request gets started. Requesting a
+  // document happens from that client's own case now, so it is never out of
+  // step with which case it was actually asked for on.
+  const byClient = new Map<string, DocumentRecord[]>();
+  for (const d of shown) {
+    const key = d.client || "No client";
+    byClient.set(key, [...(byClient.get(key) ?? []), d]);
+  }
   return (
     <section className="moduleGrid">
       <article className="panel widePanel">
@@ -2301,20 +2308,6 @@ function DocumentsView({
                   : `Show ${archivedCount} archived`}
               </button>
             )}
-            <button
-              className="ghostButton"
-              onClick={() => openModal("visaChecklist")}
-            >
-              <FileCheck2 size={16} />
-              Visa checklist
-            </button>
-            <button
-              className="primaryButton"
-              onClick={() => openModal("document")}
-            >
-              <Plus size={16} />
-              Request document
-            </button>
           </div>
         </div>
         {shown.length === 0 ? (
@@ -2327,34 +2320,36 @@ function DocumentsView({
             }
             copy={
               storageConnected
-                ? "Request the documents this case needs and track whether they have arrived. Files are stored on the organisation's Shared Drive."
-                : "Request the documents this case needs and track whether they have arrived. Shared Drive storage is not configured, so files cannot be uploaded yet."
+                ? "Every document requested from a client, across every case, ends up here once it's on file. Open a case's Documents tab to request one -- this screen is the archive, not where a request starts."
+                : "Every document requested from a client, across every case, ends up here once it's on file. Shared Drive storage is not configured, so files cannot be uploaded yet."
             }
-            action="Request document"
-            onAction={() => openModal("document")}
           />
         ) : (
-          shown.map((d) => (
-            <div className="functionalRow" key={d.id}>
-              <div className="docIcon">
-                <FileText size={18} />
-              </div>
-              <div>
-                <strong>{d.title}</strong>
-                <span>
-                  {d.client || "No client"} · {d.folder || "Unfiled"} ·{" "}
-                  {d.fileName}
-                </span>
-              </div>
-              <Status value={d.status} />
-              <button
-                className="iconButton"
-                onClick={() => setItems(items.filter((x) => x.id !== d.id))}
-                aria-label="Remove document"
-                title="Remove document"
-              >
-                <Trash2 size={16} />
-              </button>
+          [...byClient.entries()].map(([client, docs]) => (
+            <div className="documentClientGroup" key={client}>
+              <h3 className="documentClientGroupHead">{client}</h3>
+              {docs.map((d) => (
+                <div className="functionalRow" key={d.id}>
+                  <div className="docIcon">
+                    <FileText size={18} />
+                  </div>
+                  <div>
+                    <strong>{d.title}</strong>
+                    <span>
+                      {d.folder || "Unfiled"} · {d.fileName}
+                    </span>
+                  </div>
+                  <Status value={d.status} />
+                  <button
+                    className="iconButton"
+                    onClick={() => setItems(items.filter((x) => x.id !== d.id))}
+                    aria-label="Remove document"
+                    title="Remove document"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
             </div>
           ))
         )}
@@ -5730,6 +5725,7 @@ function CaseDrawer({
   lifecycleReady,
   schemaWarning,
   storageConnected,
+  onRequestDocument,
 }: {
   item: CaseRecord | null;
   close: () => void;
@@ -5748,6 +5744,7 @@ function CaseDrawer({
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
+  onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist") => void;
 }) {
   return item ? (
     <CaseDrawerBody
@@ -5764,6 +5761,7 @@ function CaseDrawer({
       lifecycleReady={lifecycleReady}
       schemaWarning={schemaWarning}
       storageConnected={storageConnected}
+      onRequestDocument={onRequestDocument}
     />
   ) : null;
 }
@@ -5906,6 +5904,7 @@ function CaseDrawerBody({
   lifecycleReady,
   schemaWarning,
   storageConnected,
+  onRequestDocument,
 }: {
   item: CaseRecord;
   close: () => void;
@@ -5924,6 +5923,7 @@ function CaseDrawerBody({
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
+  onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist") => void;
 }) {
   const [tab, setTab] = useState<CaseTab>("overview");
   // Switching straight from one case to another, without closing the drawer,
@@ -6564,7 +6564,30 @@ function CaseDrawerBody({
         {tab === "documents" && (
           <>
             <section className="caseWorkPanel">
-              <span className="kicker">DOCUMENT CHECKLIST</span>
+              <div className="caseWorkPanelHead">
+                <span className="kicker">DOCUMENT CHECKLIST</span>
+                <div className="caseWorkPanelActions">
+                  {(item.serviceType === "direct_visa" ||
+                    item.lifecycleStage === "visa") && (
+                    <button
+                      type="button"
+                      className="ghostButton"
+                      onClick={() => onRequestDocument(caseId ?? "", "visaChecklist")}
+                    >
+                      <FileCheck2 size={14} />
+                      Visa checklist
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="ghostButton"
+                    onClick={() => onRequestDocument(caseId ?? "", "document")}
+                  >
+                    <Plus size={14} />
+                    Request document
+                  </button>
+                </div>
+              </div>
               {checklist.length === 0 ? (
                 <p className="caseWorkEmpty">
                   Nothing on the checklist yet. Add the documents this case
@@ -6577,7 +6600,7 @@ function CaseDrawerBody({
                       entry.status === "completed" || entry.status === "waived";
                     return (
                       <li key={entry.id} className={settled ? "settled" : ""}>
-                        <span>
+                        <span className="checklistInfo">
                           <b>{entry.title}</b>
                           <small>
                             {entry.required ? "Required" : "Optional"}
@@ -7628,6 +7651,7 @@ function RecordModal({
   serviceMode,
   role,
   documents,
+  presetCaseId,
 }: {
   type: ModalType;
   close: () => void;
@@ -7645,7 +7669,14 @@ function RecordModal({
   onDifferentPerson: () => void;
   role: AppRole;
   documents: DocumentRecord[];
+  presetCaseId?: string;
 }) {
+  // Requesting a document from within the case it belongs to arrives with
+  // the case already decided -- the case/client pickers below are only for
+  // when a case was not already the thing on screen.
+  const presetCase = presetCaseId
+    ? cases.find((c) => (c.dbId || c.id) === presetCaseId)
+    : undefined;
   // Uncontrolled radios left the Matter type select showing whatever it
   // defaulted to at mount: switching workspace here did nothing to it, so a
   // migration matter type stayed selected after switching to Study Abroad.
@@ -7674,12 +7705,25 @@ function RecordModal({
   // reopening "Create record" from a different workspace tab. Reset during
   // render when what the modal is open for changes, the pattern used
   // elsewhere in this file for the same shape of problem.
-  const openKey = `${type ?? ""}:${editing?.id ?? ""}:${serviceMode}`;
+  const openKey = `${type ?? ""}:${editing?.id ?? ""}:${serviceMode}:${presetCaseId ?? ""}`;
   const [openFor, setOpenFor] = useState(openKey);
   if (openKey !== openFor) {
     setOpenFor(openKey);
-    setChecklistCaseId("");
-    setChecklistSelection(new Set());
+    setChecklistCaseId(presetCaseId || "");
+    setChecklistSelection(
+      presetCaseId
+        ? new Set(
+            documents
+              .filter(
+                (document) =>
+                  document.caseId === presetCaseId &&
+                  document.checklistKey &&
+                  document.status !== "archived",
+              )
+              .map((document) => String(document.checklistKey)),
+          )
+        : new Set(),
+    );
     const nextWorkspace: "Study Abroad" | "Direct Visa" = editing
       ? editing.serviceType === "direct_visa" ? "Direct Visa" : "Study Abroad"
       : serviceMode === "direct_visa" ? "Direct Visa" : "Study Abroad";
@@ -8045,17 +8089,26 @@ function RecordModal({
                 Document title
                 <input name="title" required />
               </label>
-              <label>
-                Client
-                <select name="clientId" required>
-                  <option value="">Select client</option>
-                  {cases.map((c) => (
-                    <option key={c.id} value={c.clientId}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {presetCase ? (
+                <label>
+                  Client
+                  <input value={presetCase.name} disabled />
+                  <input type="hidden" name="clientId" value={presetCase.clientId || ""} />
+                  <input type="hidden" name="caseId" value={presetCase.dbId || presetCase.id} />
+                </label>
+              ) : (
+                <label>
+                  Client
+                  <select name="clientId" required>
+                    <option value="">Select client</option>
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.clientId}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 Folder
                 <input name="folder" placeholder="e.g. Identity documents" />
@@ -8078,39 +8131,47 @@ function RecordModal({
           )}
           {type === "visaChecklist" && (
             <>
-              <label className="full">
-                Visa case
-                <select
-                  name="caseId"
-                  required
-                  value={checklistCaseId}
-                  onChange={(event) => {
-                    const caseId = event.target.value;
-                    setChecklistCaseId(caseId);
-                    setChecklistSelection(
-                      new Set(
-                        documents
-                          .filter(
-                            (document) =>
-                              document.caseId === caseId &&
-                              document.checklistKey &&
-                              document.status !== "archived",
-                          )
-                          .map((document) => String(document.checklistKey)),
-                      ),
-                    );
-                  }}
-                >
-                  <option value="">Select a visa case</option>
-                  {cases
-                    .filter((c) => c.serviceType === "direct_visa" || c.lifecycleStage === "visa")
-                    .map((c) => (
-                      <option key={c.id} value={c.dbId || c.id}>
-                        {c.name} · {c.id}
-                      </option>
-                    ))}
-                </select>
-              </label>
+              {presetCase ? (
+                <label className="full">
+                  Visa case
+                  <input value={`${presetCase.name} · ${presetCase.id}`} disabled />
+                  <input type="hidden" name="caseId" value={checklistCaseId} />
+                </label>
+              ) : (
+                <label className="full">
+                  Visa case
+                  <select
+                    name="caseId"
+                    required
+                    value={checklistCaseId}
+                    onChange={(event) => {
+                      const caseId = event.target.value;
+                      setChecklistCaseId(caseId);
+                      setChecklistSelection(
+                        new Set(
+                          documents
+                            .filter(
+                              (document) =>
+                                document.caseId === caseId &&
+                                document.checklistKey &&
+                                document.status !== "archived",
+                            )
+                            .map((document) => String(document.checklistKey)),
+                        ),
+                      );
+                    }}
+                  >
+                    <option value="">Select a visa case</option>
+                    {cases
+                      .filter((c) => c.serviceType === "direct_visa" || c.lifecycleStage === "visa")
+                      .map((c) => (
+                        <option key={c.id} value={c.dbId || c.id}>
+                          {c.name} · {c.id}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
               <label>
                 Due date for requested items
                 <input name="due" type="date" />
@@ -8263,6 +8324,7 @@ export default function Home() {
     [query, setQuery] = useState(""),
     [filter, setFilter] = useState("all"),
     [modal, setModal] = useState<ModalType>(null),
+    [presetCaseId, setPresetCaseId] = useState(""),
     [selected, setSelected] = useState<CaseRecord | null>(null),
     [editing, setEditing] = useState<CaseRecord | null>(null),
     [toast, setToast] = useState(""),
@@ -8441,6 +8503,13 @@ export default function Home() {
     setModal(x);
     setQuickOpen(false);
   };
+  // Requesting a document from within the case it belongs to, rather than
+  // picking that same case back out of every case in the organisation from
+  // the File Manager screen.
+  const openDocumentRequest = (caseId: string, kind: "document" | "visaChecklist" = "document") => {
+    setPresetCaseId(caseId);
+    open(kind);
+  };
   // Sends a completed form to the workspace and refreshes what is on screen.
   const submitRecord = async (
     kind: Exclude<ModalType, null>,
@@ -8460,6 +8529,7 @@ export default function Home() {
       setEditing(null);
       setDuplicates(null);
       setPendingIntake(null);
+      setPresetCaseId("");
       await loadWorkspace();
       say(`${kind[0].toUpperCase() + kind.slice(1)} saved to Supabase`);
       return true;
@@ -9033,7 +9103,6 @@ export default function Home() {
     content = (
       <DocumentsView
         items={documents}
-        openModal={open}
         setItems={syncDocuments}
         storageConnected={storageConnected}
       />
@@ -9577,6 +9646,7 @@ export default function Home() {
           close={() => setSelected(null)}
           edit={editCase}
           remove={removeCase}
+          onRequestDocument={openDocumentRequest}
         />
       ) : null}
       <RecordModal
@@ -9587,6 +9657,7 @@ export default function Home() {
           setFormError("");
           setDuplicates(null);
           setPendingIntake(null);
+          setPresetCaseId("");
         }}
         submit={save}
         duplicates={duplicates}
@@ -9594,6 +9665,7 @@ export default function Home() {
         onAddCase={(id) => void addCaseToExistingClient(id)}
         onDifferentPerson={() => void createAsNewPerson()}
         serviceMode={serviceMode}
+        presetCaseId={presetCaseId}
         cases={cases}
         editing={editing}
         branches={branches}
