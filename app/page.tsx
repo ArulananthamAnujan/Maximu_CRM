@@ -5928,6 +5928,7 @@ function CaseDrawer({
   schemaWarning,
   storageConnected,
   onRequestDocument,
+  canManageFinance,
 }: {
   item: CaseRecord | null;
   close: () => void;
@@ -5946,7 +5947,8 @@ function CaseDrawer({
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
-  onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist") => void;
+  onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist" | "invoice") => void;
+  canManageFinance: boolean;
 }) {
   return item ? (
     <CaseDrawerBody
@@ -5964,6 +5966,7 @@ function CaseDrawer({
       schemaWarning={schemaWarning}
       storageConnected={storageConnected}
       onRequestDocument={onRequestDocument}
+      canManageFinance={canManageFinance}
     />
   ) : null;
 }
@@ -6107,6 +6110,7 @@ function CaseDrawerBody({
   schemaWarning,
   storageConnected,
   onRequestDocument,
+  canManageFinance,
 }: {
   item: CaseRecord;
   close: () => void;
@@ -6125,7 +6129,8 @@ function CaseDrawerBody({
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
-  onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist") => void;
+  onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist" | "invoice") => void;
+  canManageFinance: boolean;
 }) {
   const [tab, setTab] = useState<CaseTab>("overview");
   // Switching straight from one case to another, without closing the drawer,
@@ -6943,19 +6948,42 @@ function CaseDrawerBody({
         )}
 
         {tab === "finance" && (
-          <RecordTable
-            title="Invoices"
-            rows={file?.invoices ?? []}
-            columns={[
-              ["Invoice", "invoice_number"],
-              ["Type", "invoice_type"],
-              ["Total", "total"],
-              ["Paid", "paid"],
-              ["State", "state"],
-              ["Due", "due_on"],
-            ]}
-            empty="No invoices raised for this case."
-          />
+          <>
+            {canManageFinance && (
+              <div className="caseWorkPanelHead">
+                <span />
+                <div className="caseWorkPanelActions">
+                  <button
+                    type="button"
+                    className="ghostButton"
+                    onClick={() => onRequestDocument(caseId ?? "", "invoice")}
+                  >
+                    <Plus size={14} />
+                    Create invoice
+                  </button>
+                </div>
+              </div>
+            )}
+            <RecordTable
+              title="Invoices"
+              rows={(file?.invoices ?? []).map((row) => ({
+                ...row,
+                raised_by:
+                  staff.find((person) => person.id === row.created_by)
+                    ?.display_name || "Unknown",
+              }))}
+              columns={[
+                ["Invoice", "invoice_number"],
+                ["Type", "invoice_type"],
+                ["Total", "total"],
+                ["Paid", "paid"],
+                ["State", "state"],
+                ["Due", "due_on"],
+                ["Raised by", "raised_by"],
+              ]}
+              empty="No invoices raised for this case."
+            />
+          </>
         )}
 
         <div className="drawerFooter">
@@ -8449,17 +8477,26 @@ function RecordModal({
           )}
           {type === "invoice" && (
             <>
-              <label>
-                Client
-                <select name="clientId" required>
-                  <option value="">Select client</option>
-                  {cases.map((c) => (
-                    <option key={c.id} value={c.clientId}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {presetCase ? (
+                <label>
+                  Client
+                  <input value={presetCase.name} disabled />
+                  <input type="hidden" name="clientId" value={presetCase.clientId || ""} />
+                  <input type="hidden" name="caseId" value={presetCase.dbId || presetCase.id} />
+                </label>
+              ) : (
+                <label>
+                  Client
+                  <select name="clientId" required>
+                    <option value="">Select client</option>
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.clientId}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 Amount
                 <input
@@ -8741,10 +8778,10 @@ export default function Home() {
     setModal(x);
     setQuickOpen(false);
   };
-  // Requesting a document from within the case it belongs to, rather than
-  // picking that same case back out of every case in the organisation from
-  // the File Manager screen.
-  const openDocumentRequest = (caseId: string, kind: "document" | "visaChecklist" = "document") => {
+  // Opening a document request or an invoice from within the case it
+  // belongs to, rather than picking that same case back out of every case
+  // in the organisation from a separate screen.
+  const openForCase = (caseId: string, kind: "document" | "visaChecklist" | "invoice" = "document") => {
     setPresetCaseId(caseId);
     open(kind);
   };
@@ -9891,7 +9928,8 @@ export default function Home() {
           close={() => setSelected(null)}
           edit={editCase}
           remove={removeCase}
-          onRequestDocument={openDocumentRequest}
+          onRequestDocument={openForCase}
+          canManageFinance={canManageFinance}
         />
       ) : null}
       <RecordModal
