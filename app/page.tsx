@@ -49,7 +49,6 @@ import {
   Send,
   Sparkles,
 } from "lucide-react";
-import { VISA_DOCUMENT_TEMPLATES } from "@/lib/visa-document-checklist";
 
 type ModuleKey =
   | "dashboard"
@@ -288,6 +287,15 @@ type CaseNote = {
   visibility: string;
   created_at: string;
   author_id: string | null;
+};
+// "key" is the template's database id -- named to match the visaDoc_${key}
+// form field and checklist_key metadata this replaced a hard-coded list for.
+type ChecklistTemplateRecord = {
+  key: string;
+  category: string;
+  title: string;
+  guidance: string;
+  active: boolean;
 };
 type BranchRecord = { id: string; name: string; code: string };
 type StaffRecord = {
@@ -3011,6 +3019,200 @@ function WorkflowView({
               >
                 {w.active ? "Deactivate" : "Activate"}
               </button>
+            )}
+          </div>
+        ))
+      )}
+    </article>
+  );
+}
+
+/**
+ * The document-request checklist offered on "Visa checklist" -- masters
+ * data now, so an agency can add, reword or retire an item without a code
+ * change. Every organisation starts with the same 35 items the code used
+ * to hard-code; this is where they get edited from that point on.
+ */
+function DocumentChecklistTemplatesPanel({
+  templates,
+  canManage,
+  reload,
+}: {
+  templates: ChecklistTemplateRecord[];
+  canManage: boolean;
+  reload: () => Promise<void>;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [editingKey, setEditingKey] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const send = async (body: Record<string, unknown>) => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/crm/document-checklist-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(result.error || "That could not be saved.");
+        return false;
+      }
+      await reload();
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const byCategory = new Map<string, ChecklistTemplateRecord[]>();
+  for (const t of templates)
+    byCategory.set(t.category, [...(byCategory.get(t.category) ?? []), t]);
+
+  return (
+    <article className="panel listPanel checklistTemplatesPanel">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">DOCUMENT REQUESTS</span>
+          <h2>Document checklist</h2>
+        </div>
+        {canManage && (
+          <button className="primaryButton" onClick={() => setAdding(!adding)}>
+            <Plus size={16} />
+            {adding ? "Close" : "Add item"}
+          </button>
+        )}
+      </div>
+      <p className="coverageIntro">
+        What &ldquo;Visa checklist&rdquo; offers when requesting documents from a
+        client. Deactivating an item removes it from new requests without
+        touching anything already asked for under it.
+      </p>
+      {error && <p className="caseWorkError">{error}</p>}
+      {adding && (
+        <form
+          className="stackedForm"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            const ok = await send({
+              action: "create",
+              category: data.get("category"),
+              title: data.get("title"),
+              guidance: data.get("guidance"),
+            });
+            if (ok) setAdding(false);
+          }}
+        >
+          <label>
+            Category *<input name="category" required placeholder="e.g. Identity" />
+          </label>
+          <label>
+            Title *<input name="title" required placeholder="e.g. Passport bio page" />
+          </label>
+          <label className="wide">
+            Guidance
+            <input name="guidance" placeholder="What the client should actually send" />
+          </label>
+          <button className="primaryButton" disabled={busy}>
+            {busy ? "Saving…" : "Add to checklist"}
+          </button>
+        </form>
+      )}
+      {templates.length === 0 ? (
+        <EmptyState
+          icon={FileCheck2}
+          title="No checklist items yet"
+          copy={
+            canManage
+              ? "Add the documents your team asks clients for most often."
+              : "Your managers have not set up the document checklist yet."
+          }
+          action={canManage ? "Add item" : undefined}
+          onAction={canManage ? () => setAdding(true) : undefined}
+        />
+      ) : (
+        [...byCategory.entries()].map(([category, items]) => (
+          <div key={category}>
+            <h3 className="documentClientGroupHead">{category}</h3>
+            {items.map((item) =>
+              editingKey === item.key ? (
+                <form
+                  className="stackedForm"
+                  key={item.key}
+                  onSubmit={async (event) => {
+                    event.preventDefault();
+                    const data = new FormData(event.currentTarget);
+                    const ok = await send({
+                      action: "update",
+                      templateId: item.key,
+                      category: data.get("category"),
+                      title: data.get("title"),
+                      guidance: data.get("guidance"),
+                    });
+                    if (ok) setEditingKey("");
+                  }}
+                >
+                  <label>
+                    Category *
+                    <input name="category" required defaultValue={item.category} />
+                  </label>
+                  <label>
+                    Title *<input name="title" required defaultValue={item.title} />
+                  </label>
+                  <label className="wide">
+                    Guidance
+                    <input name="guidance" defaultValue={item.guidance} />
+                  </label>
+                  <button className="primaryButton" disabled={busy}>
+                    {busy ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghostButton"
+                    onClick={() => setEditingKey("")}
+                  >
+                    Cancel
+                  </button>
+                </form>
+              ) : (
+                <div className="functionalRow" key={item.key}>
+                  <div className="docIcon">
+                    <FileCheck2 size={17} />
+                  </div>
+                  <div>
+                    <strong>{item.title}</strong>
+                    <span>{item.guidance || "No guidance added"}</span>
+                  </div>
+                  <Status value={item.active ? "Active" : "Inactive"} />
+                  {canManage && (
+                    <>
+                      <button
+                        className="ghostButton"
+                        onClick={() => setEditingKey(item.key)}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="ghostButton"
+                        disabled={busy}
+                        onClick={() =>
+                          void send({
+                            action: "update",
+                            templateId: item.key,
+                            active: !item.active,
+                          })
+                        }
+                      >
+                        {item.active ? "Deactivate" : "Activate"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              ),
             )}
           </div>
         ))
@@ -7651,6 +7853,7 @@ function RecordModal({
   serviceMode,
   role,
   documents,
+  checklistTemplates,
   presetCaseId,
 }: {
   type: ModalType;
@@ -7669,6 +7872,7 @@ function RecordModal({
   onDifferentPerson: () => void;
   role: AppRole;
   documents: DocumentRecord[];
+  checklistTemplates: ChecklistTemplateRecord[];
   presetCaseId?: string;
 }) {
   // Requesting a document from within the case it belongs to arrives with
@@ -7677,6 +7881,7 @@ function RecordModal({
   const presetCase = presetCaseId
     ? cases.find((c) => (c.dbId || c.id) === presetCaseId)
     : undefined;
+  const activeChecklistTemplates = checklistTemplates.filter((t) => t.active);
   // Uncontrolled radios left the Matter type select showing whatever it
   // defaulted to at mount: switching workspace here did nothing to it, so a
   // migration matter type stayed selected after switching to Study Abroad.
@@ -8184,11 +8389,17 @@ function RecordModal({
                 <FileCheck2 size={14} />
                 Tick only documents relevant to this matter. Ticked items appear in the client portal; unticked, unfulfilled checklist requests are withdrawn. Uploaded and verified records are never deleted.
               </p>
+              {activeChecklistTemplates.length === 0 && (
+                <p className="caseWorkEmpty full">
+                  No checklist items are set up yet. Add some on the Statuses
+                  &amp; document checklists screen first.
+                </p>
+              )}
               <div className="visaChecklist full">
-                {[...new Set(VISA_DOCUMENT_TEMPLATES.map((item) => item.category))].map((category) => (
+                {[...new Set(activeChecklistTemplates.map((item) => item.category))].map((category) => (
                   <fieldset key={category}>
                     <legend>{category}</legend>
-                    {VISA_DOCUMENT_TEMPLATES.filter((item) => item.category === category).map((item) => (
+                    {activeChecklistTemplates.filter((item) => item.category === category).map((item) => (
                       <label className="checklistChoice" key={item.key}>
                         <input
                           name={`visaDoc_${item.key}`}
@@ -8359,6 +8570,7 @@ export default function Home() {
     [declarations, setDeclarations] = useState<ClientDeclaration[]>([]),
     [templates, setTemplates] = useState<TemplateRecord[]>([]),
     [workflows, setWorkflows] = useState<WorkflowRecord[]>([]),
+    [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplateRecord[]>([]),
     [audits, setAudits] = useState<AuditRecord[]>([]),
     [applicationRows, setApplicationRows] = useState<ApplicationRow[]>([]),
     [visaMatterRows, setVisaMatterRows] = useState<VisaMatterRow[]>([]),
@@ -8424,6 +8636,31 @@ export default function Home() {
       body: JSON.stringify({ action: "read_notification", id }),
     }).catch(() => undefined);
   };
+  // The document-request checklist is masters data now (editable on the
+  // Statuses & document checklists screen), not a fixed list in the code.
+  // Loaded once alongside the workspace and re-loaded after any edit so the
+  // request modal never offers something that was just retired.
+  const loadChecklistTemplates = async () => {
+    try {
+      const response = await fetch("/api/crm/document-checklist-templates", {
+        cache: "no-store",
+      });
+      const result = await response.json();
+      if (!response.ok) return;
+      setChecklistTemplates(
+        ((result.templates || []) as Record<string, unknown>[]).map((row) => ({
+          key: String(row.id),
+          category: String(row.category),
+          title: String(row.title),
+          guidance: row.guidance ? String(row.guidance) : "",
+          active: row.active !== false,
+        })),
+      );
+    } catch {
+      // A checklist that fails to load leaves the request modal showing
+      // nothing rather than the workspace itself failing to load.
+    }
+  };
   const loadWorkspace = async () => {
     let authenticatedIdentity: LiveIdentity | null = null;
     try {
@@ -8472,6 +8709,7 @@ export default function Home() {
       setBranches((result.branches || []) as BranchRecord[]);
       landOn(result.identity.role as AppRole);
       void loadAlerts(result.identity.role as AppRole);
+      if (result.identity.role !== "client") void loadChecklistTemplates();
     } catch (reason) {
       if (!authenticatedIdentity) setIdentity(null);
       else
@@ -9198,12 +9436,19 @@ export default function Home() {
     );
   else if (active === "workflows")
     content = (
-      <WorkflowView
-        items={workflows}
-        openModal={open}
-        setItems={syncWorkflows}
-        canManage={canManageFinance}
-      />
+      <>
+        <WorkflowView
+          items={workflows}
+          openModal={open}
+          setItems={syncWorkflows}
+          canManage={canManageFinance}
+        />
+        <DocumentChecklistTemplatesPanel
+          templates={checklistTemplates}
+          canManage={canManageFinance}
+          reload={loadChecklistTemplates}
+        />
+      </>
     );
   else if (active === "reports")
     content = (
@@ -9672,6 +9917,7 @@ export default function Home() {
         staff={staff}
         role={role}
         documents={documents}
+        checklistTemplates={checklistTemplates}
         saving={saving}
         error={formError}
       />

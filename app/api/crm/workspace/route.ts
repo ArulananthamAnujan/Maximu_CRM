@@ -8,7 +8,6 @@ import { driveConfigured } from "@/server/google-drive";
 import { protectionConfigured, protect, reveal } from "@/server/protected-fields";
 import { calendarRefreshAccessToken, createCalendarEvent, deleteCalendarEvent } from "@/server/google-calendar";
 import { orgDate, orgTime } from "@/lib/timezone";
-import { VISA_DOCUMENT_TEMPLATES } from "@/lib/visa-document-checklist";
 
 export const dynamic = "force-dynamic";
 
@@ -961,8 +960,25 @@ export async function POST(request: Request) {
       if (!caseRow)
         throw new LiveAccessError(403, "That visa case is not available to you.");
 
+      // The checklist is masters data now, editable per organisation
+      // (document_checklist_templates), not a fixed list baked into the
+      // code. Only active entries can be requested; a retired one is left
+      // alone rather than silently archiving what was already asked for
+      // under it.
+      const checklistTemplates = (
+        await rest<Json[]>(
+          `document_checklist_templates?select=id,category,title,guidance&organisation_id=eq.${org}&active=eq.true`,
+          token,
+        )
+      ).map((row) => ({
+        key: String(row.id),
+        category: String(row.category),
+        title: String(row.title),
+        guidance: row.guidance ? String(row.guidance) : "",
+      }));
+
       const selected = new Set(
-        VISA_DOCUMENT_TEMPLATES
+        checklistTemplates
           .filter((item) => body[`visaDoc_${item.key}`] === "on")
           .map((item) => item.key),
       );
@@ -976,7 +992,7 @@ export async function POST(request: Request) {
         existing.map((row) => [String((row.metadata as Json | null)?.checklist_key ?? ""), row]),
       );
 
-      for (const template of VISA_DOCUMENT_TEMPLATES) {
+      for (const template of checklistTemplates) {
         const current = byKey.get(template.key);
         if (selected.has(template.key)) {
           const metadata = {
