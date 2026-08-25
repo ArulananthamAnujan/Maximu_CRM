@@ -4039,23 +4039,24 @@ type CourseFinderCourse = {
 type CourseFacet = { value: string; amount: number };
 type CourseInstitution = { id: string; name: string; country: string; city: string | null };
 
-const mojibakeReplacements: [string, string][] = [
-  ["â€™", "’"], ["â€˜", "‘"], ["â€œ", "“"], ["â€�", "”"],
-  ["â€“", "–"], ["â€”", "—"], ["â€¦", "…"], ["Â·", "·"],
-  ["Ã©", "é"], ["Ã¨", "è"], ["Ãª", "ê"], ["Ã«", "ë"],
-  ["Ã¡", "á"], ["Ã ", "à"], ["Ã¢", "â"], ["Ã¤", "ä"],
-  ["Ã­", "í"], ["Ã¬", "ì"], ["Ã®", "î"], ["Ã¯", "ï"],
-  ["Ã³", "ó"], ["Ã²", "ò"], ["Ã´", "ô"], ["Ã¶", "ö"],
-  ["Ãº", "ú"], ["Ã¹", "ù"], ["Ã»", "û"], ["Ã¼", "ü"],
-  ["Ã±", "ñ"], ["Ã§", "ç"], ["Â", ""],
-];
-
 function cleanCatalogueText(value: string | null | undefined, fallback = "Not supplied") {
   if (!value?.trim()) return fallback;
-  return mojibakeReplacements.reduce(
-    (text, [broken, corrected]) => text.split(broken).join(corrected),
-    value,
-  ).replace(/\s+/g, " ").trim();
+  // The legacy MySQL export contains UTF-8 bytes that were previously read as
+  // Windows-1252. Unicode escapes keep these repairs stable through every
+  // compiler and deployment environment.
+  return value
+    .replace(/\u00e2\u20ac\u2122/g, "’").replace(/\u00e2\u20ac\u02dc/g, "‘")
+    .replace(/\u00e2\u20ac\u0153/g, "“").replace(/\u00e2\u20ac\ufffd/g, "”")
+    .replace(/\u00e2\u20ac\u201c/g, "–").replace(/\u00e2\u20ac\u201d/g, "—")
+    .replace(/\u00e2\u20ac\u00a6/g, "…").replace(/\u00e2\u201a\u00ac/g, "€")
+    .replace(/\u00c2\u00b7/g, "·")
+    .replace(/\u00c3\u00a9/g, "é").replace(/\u00c3\u00a8/g, "è").replace(/\u00c3\u00aa/g, "ê").replace(/\u00c3\u00ab/g, "ë")
+    .replace(/\u00c3\u00a1/g, "á").replace(/\u00c3\u00a0/g, "à").replace(/\u00c3\u00a2/g, "â").replace(/\u00c3\u00a4/g, "ä")
+    .replace(/\u00c3\u00ad/g, "í").replace(/\u00c3\u00ac/g, "ì").replace(/\u00c3\u00ae/g, "î").replace(/\u00c3\u00af/g, "ï")
+    .replace(/\u00c3\u00b3/g, "ó").replace(/\u00c3\u00b2/g, "ò").replace(/\u00c3\u00b4/g, "ô").replace(/\u00c3\u00b6/g, "ö")
+    .replace(/\u00c3\u00ba/g, "ú").replace(/\u00c3\u00b9/g, "ù").replace(/\u00c3\u00bb/g, "û").replace(/\u00c3\u00bc/g, "ü")
+    .replace(/\u00c3\u00b1/g, "ñ").replace(/\u00c3\u00a7/g, "ç").replace(/\u00c2/g, "")
+    .replace(/\s+/g, " ").trim();
 }
 
 function catalogueLevelLabel(value: string | null | undefined) {
