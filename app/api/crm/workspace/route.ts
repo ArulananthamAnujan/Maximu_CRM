@@ -3,11 +3,17 @@ import {
   LiveAccessError,
   liveSession,
 } from "@/server/supabase-session";
-import { SupabaseError, supabaseRequest } from "@/server/supabase";
+import {
+  serviceRoleKey,
+  SupabaseError,
+  supabaseAdminRequest,
+  supabaseRequest,
+} from "@/server/supabase";
 import { driveConfigured } from "@/server/google-drive";
 import { protectionConfigured, protect, reveal } from "@/server/protected-fields";
 import { calendarRefreshAccessToken, createCalendarEvent, deleteCalendarEvent } from "@/server/google-calendar";
 import { orgDate, orgTime } from "@/lib/timezone";
+import { emailConfigured, renderTemplate, sendEmail } from "@/server/email";
 
 export const dynamic = "force-dynamic";
 
@@ -543,6 +549,8 @@ export async function POST(request: Request) {
       "appointment_request",
       "update_own_contact",
       "acknowledge_consent",
+      "confirm_document",
+      "confirm_invoice",
     ];
     if (
       session.identity.role === "client" &&
@@ -647,6 +655,69 @@ export async function POST(request: Request) {
             kind: "appointment_requested",
             title: "A client asked for an appointment",
             body: `${session.identity.displayName} asked for ${String(body.title)}.`,
+          },
+          token,
+        ).catch((error) =>
+          console.error("Could not notify the case owner", error),
+        );
+      return appendRefreshCookies(
+        Response.json({ ok: true }),
+        session.refreshed,
+        request,
+      );
+    }
+
+    if (action === "confirm_document" || action === "confirm_invoice") {
+      // A client acknowledging a document or invoice request reached them --
+      // recorded on the case history, and the case owner is told. It never
+      // changes the record's own state (still requested, still unpaid); it
+      // is only the client's own audit trail of having seen it.
+      const resource = action === "confirm_document" ? "documents" : "invoices";
+      const label = action === "confirm_document" ? "Document" : "Invoice";
+      const recordId = required(body.id, label);
+      const linkedClient = await ownClientId(session.identity.profileId, token);
+      if (!linkedClient)
+        throw new LiveAccessError(403, "No client record is linked to this account.");
+      const [record] = await rest<Json[]>(
+        `${resource}?select=id,client_id,case_id&id=eq.${encodeURIComponent(recordId)}&limit=1`,
+        token,
+      );
+      if (!record || String(record.client_id) !== String(linkedClient))
+        throw new LiveAccessError(403, "That record is not available to you.");
+      if (!record.case_id)
+        throw new InputError("This is not linked to a case yet, so it cannot be confirmed.");
+      const caseId = String(record.case_id);
+      await insert(
+        "audit_events",
+        {
+          organisation_id: org,
+          actor_id: actor,
+          action: action === "confirm_document" ? "document.confirmed_received" : "invoice.confirmed_received",
+          resource_type: action === "confirm_document" ? "document" : "invoice",
+          resource_id: recordId,
+          case_id: caseId,
+          summary: `${session.identity.displayName} confirmed receipt of ${label.toLowerCase() === "document" ? "a document" : "an invoice"}`,
+        },
+        token,
+      );
+      const [caseRow] = await rest<Array<{ owner_id: string | null }>>(
+        `cases?select=owner_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+        token,
+      );
+      if (caseRow?.owner_id)
+        await insert(
+          "notifications",
+          {
+            id: crypto.randomUUID(),
+            organisation_id: org,
+            recipient_id: caseRow.owner_id,
+            case_id: caseId,
+            kind: action === "confirm_document" ? "document_confirmed" : "invoice_confirmed",
+            title:
+              action === "confirm_document"
+                ? "A client confirmed a document request"
+                : "A client confirmed an invoice",
+            body: `${session.identity.displayName} confirmed receipt.`,
           },
           token,
         ).catch((error) =>
@@ -916,6 +987,7 @@ export async function POST(request: Request) {
     if (action === "document") {
       const id = crypto.randomUUID();
       const clientId = required(body.clientId, "Client");
+      const title = required(body.title, "Document title");
       await insert(
         "documents",
         {
@@ -924,7 +996,7 @@ export async function POST(request: Request) {
           client_id: clientId,
           case_id: nullable(body.caseId),
           document_type: String(body.folder || "General"),
-          display_name: required(body.title, "Document title"),
+          display_name: title,
           state: "requested",
           requested_by: actor,
           // No file is transferred here. The document is tracked as requested
@@ -946,6 +1018,18 @@ export async function POST(request: Request) {
         `Requested document: ${String(body.title)}`,
         token,
       );
+      const [client] = await rest<Json[]>(
+        `clients?select=email,first_name,last_name&id=eq.${encodeURIComponent(clientId)}&limit=1`,
+        token,
+      );
+      if (client)
+        await notifyClient(org, token, "document_request", String(client.email ?? ""), {
+          client_name: fullClientName(client),
+          document_title: title,
+          note: nullable(body.documentNote) ?? "",
+          portal_link: new URL(request.url).origin,
+          sender_name: session.identity.displayName,
+        });
       return Response.json({ ok: true });
     }
 
@@ -992,6 +1076,7 @@ export async function POST(request: Request) {
         existing.map((row) => [String((row.metadata as Json | null)?.checklist_key ?? ""), row]),
       );
 
+      const newlyRequested: string[] = [];
       for (const template of checklistTemplates) {
         const current = byKey.get(template.key);
         if (selected.has(template.key)) {
@@ -1005,10 +1090,12 @@ export async function POST(request: Request) {
             client_visible: true,
           };
           if (current) {
-            if (String(current.state) === "archived")
+            if (String(current.state) === "archived") {
               await patchRow("documents", String(current.id), { state: "requested", metadata }, token);
-            else
+              newlyRequested.push(template.title);
+            } else {
               await patchRow("documents", String(current.id), { metadata }, token);
+            }
           } else {
             await insert("documents", {
               id: crypto.randomUUID(),
@@ -1021,6 +1108,7 @@ export async function POST(request: Request) {
               requested_by: actor,
               metadata,
             }, token);
+            newlyRequested.push(template.title);
           }
         } else if (
           current &&
@@ -1047,6 +1135,20 @@ export async function POST(request: Request) {
         `Updated visa document checklist (${selected.size} requested)`,
         token,
       );
+      if (newlyRequested.length) {
+        const [client] = await rest<Json[]>(
+          `clients?select=email,first_name,last_name&id=eq.${encodeURIComponent(String(caseRow.client_id))}&limit=1`,
+          token,
+        );
+        if (client)
+          await notifyClient(org, token, "document_request", String(client.email ?? ""), {
+            client_name: fullClientName(client),
+            document_title: newlyRequested.join(", "),
+            note: nullable(body.documentNote) ?? "",
+            portal_link: new URL(request.url).origin,
+            sender_name: session.identity.displayName,
+          });
+      }
       return Response.json({ ok: true, requested: selected.size });
     }
 
@@ -1133,7 +1235,193 @@ export async function POST(request: Request) {
         `Created invoice for $${total.toFixed(2)}`,
         token,
       );
+      const [invoiceClient] = await rest<Json[]>(
+        `clients?select=email,first_name,last_name&id=eq.${encodeURIComponent(String(body.clientId))}&limit=1`,
+        token,
+      );
+      if (invoiceClient) {
+        const due = nullable(body.due);
+        await notifyClient(org, token, "invoice_request", String(invoiceClient.email ?? ""), {
+          client_name: fullClientName(invoiceClient),
+          amount: `$${total.toFixed(2)}`,
+          due_clause: due ? `, due ${due}` : "",
+          portal_link: new URL(request.url).origin,
+          sender_name: session.identity.displayName,
+        });
+      }
       return Response.json({ ok: true });
+    }
+
+    if (action === "send_portal_access") {
+      // Same boundary a case officer already writes every other client record
+      // through -- true always for manager and above, true for staff or a
+      // partner only for a client they can already modify.
+      const clientId = required(body.clientId, "Client");
+      const permitted = await supabaseRequest<boolean>(
+        "/rest/v1/rpc/can_modify_client",
+        { method: "POST", body: JSON.stringify({ target_client: clientId }) },
+        token,
+      );
+      if (!permitted)
+        throw new LiveAccessError(403, "That client is not available to you.");
+      const [client] = await rest<Json[]>(
+        `clients?select=id,email,first_name,last_name,branch_id&id=eq.${encodeURIComponent(clientId)}&limit=1`,
+        token,
+      );
+      if (!client)
+        throw new LiveAccessError(403, "That client is not available to you.");
+      const address = String(client.email ?? "").trim().toLowerCase();
+      if (!address) throw new InputError("This client has no email address on file.");
+      if (!serviceRoleKey())
+        throw new InputError(
+          "Portal access needs a service-role key configured for this deployment (SUPABASE_SERVICE_ROLE_KEY).",
+        );
+
+      // The login and the profile it points at are created with the
+      // service-role key, the same as adding a member of staff -- the
+      // permission check above is what actually gates this, not row-level
+      // security on profiles (which never lets staff write there directly).
+      // Read with the service-role key, not the caller's own token: staff can
+      // write a client's case but client_user_links is readable only by an
+      // administrator, so a case officer's own session would never see a
+      // link that already exists and would try to create a second one.
+      const [existingLink] = await supabaseAdminRequest<Array<{ profile_id: string }>>(
+        `/rest/v1/client_user_links?select=profile_id&client_id=eq.${encodeURIComponent(clientId)}&limit=1`,
+      );
+      let profileId = existingLink?.profile_id ?? null;
+      if (!profileId) {
+        let created: { id?: string };
+        let connectedExisting = false;
+        try {
+          created = await supabaseAdminRequest<{ id?: string }>("/auth/v1/admin/users", {
+            method: "POST",
+            body: JSON.stringify({
+              email: address,
+              password: crypto.randomUUID(),
+              email_confirm: true,
+            }),
+          });
+        } catch (error) {
+          // That address already has a Supabase login -- connect it rather
+          // than fail, the same fallback staff onboarding uses.
+          if (!(error instanceof SupabaseError) || error.status !== 422) throw error;
+          const found = await supabaseAdminRequest<{ users?: { id: string; email?: string }[] }>(
+            `/auth/v1/admin/users?email=${encodeURIComponent(address)}`,
+          );
+          const match = (found.users ?? []).find(
+            (row) => (row.email ?? "").toLowerCase() === address,
+          );
+          if (!match) throw error;
+          created = { id: match.id };
+          connectedExisting = true;
+        }
+        if (!created?.id) throw new InputError("The portal login was not created.");
+        profileId = created.id;
+        const [existingProfile] = await supabaseAdminRequest<Json[]>(
+          `/rest/v1/profiles?select=id&id=eq.${encodeURIComponent(profileId)}&limit=1`,
+        );
+        if (!existingProfile) {
+          try {
+            await supabaseAdminRequest("/rest/v1/profiles", {
+              method: "POST",
+              headers: { Prefer: "return=minimal" },
+              body: JSON.stringify({
+                id: profileId,
+                organisation_id: org,
+                branch_id: client.branch_id ?? null,
+                display_name: fullClientName(client) || address,
+                email: address,
+                level: "student",
+                active: true,
+              }),
+            });
+          } catch (error) {
+            if (!connectedExisting)
+              await supabaseAdminRequest(`/auth/v1/admin/users/${profileId}`, {
+                method: "DELETE",
+              }).catch(() => undefined);
+            throw error;
+          }
+        }
+        await supabaseAdminRequest("/rest/v1/client_user_links", {
+          method: "POST",
+          headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ profile_id: profileId, client_id: clientId }),
+        });
+      }
+
+      // A secure one-time link, not a password handed over in an email --
+      // the client sets their own password behind it.
+      let setupLink = "";
+      try {
+        const generated = await supabaseAdminRequest<{
+          action_link?: string;
+          properties?: { action_link?: string };
+        }>("/auth/v1/admin/generate_link", {
+          method: "POST",
+          body: JSON.stringify({
+            type: "recovery",
+            email: address,
+            options: { redirect_to: new URL(request.url).origin },
+          }),
+        });
+        setupLink = generated.action_link || generated.properties?.action_link || "";
+      } catch (error) {
+        console.error("Could not generate a portal setup link", error);
+      }
+
+      let emailSent = false;
+      if (setupLink && emailConfigured()) {
+        try {
+          const template = await emailTemplateFor(org, "portal_welcome", token);
+          if (template) {
+            const values = {
+              client_name: fullClientName(client) || address,
+              email: address,
+              setup_link: setupLink,
+              sender_name: session.identity.displayName,
+            };
+            const subject = renderTemplate(template.subject, values);
+            const rendered = renderTemplate(template.body, values);
+            await sendEmail({
+              to: address,
+              subject,
+              text: rendered,
+              html: rendered.replace(/\n/g, "<br>"),
+            });
+            emailSent = true;
+          }
+        } catch (error) {
+          console.error(`Could not send portal_welcome email to ${address}`, error);
+        }
+      }
+
+      await auditEvent(
+        org,
+        actor,
+        "client.portal_access_sent",
+        "client",
+        clientId,
+        session.identity.branchId,
+        `Sent portal access to ${address}`,
+        token,
+      );
+
+      return appendRefreshCookies(
+        Response.json({
+          ok: true,
+          email: address,
+          emailSent,
+          setupLink: emailSent ? undefined : setupLink,
+          message: emailSent
+            ? `${address} has been emailed their portal sign-in link.`
+            : setupLink
+              ? "Email is not configured on this deployment -- share this sign-in link with the client yourself."
+              : 'Portal access was created, but a sign-in link could not be generated. Ask the client to use "Forgot password" on the sign-in page.',
+        }),
+        session.refreshed,
+        request,
+      );
     }
 
     if (action === "template") {
@@ -1515,6 +1803,55 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     return apiError(error);
+  }
+}
+
+/**
+ * The org's wording for one of the three system emails, or null if this
+ * organisation's row is missing (shouldn't happen -- seeded on every
+ * organisation -- but the request that triggered this must not fail either
+ * way).
+ */
+async function emailTemplateFor(
+  org: string,
+  kind: "document_request" | "invoice_request" | "portal_welcome",
+  token: string,
+): Promise<{ subject: string; body: string } | null> {
+  const rows = await rest<Json[]>(
+    `email_templates?select=subject,body&organisation_id=eq.${org}&kind=eq.${kind}&limit=1`,
+    token,
+  );
+  const row = rows[0];
+  return row ? { subject: String(row.subject), body: String(row.body) } : null;
+}
+
+/**
+ * Tells a client something was requested or raised on their file. Never lets
+ * a delivery failure -- or email being unconfigured on this deployment --
+ * fail the write it rides along with; the record exists whether or not the
+ * notice about it does.
+ */
+async function notifyClient(
+  org: string,
+  token: string,
+  kind: "document_request" | "invoice_request" | "portal_welcome",
+  to: string | null | undefined,
+  values: Record<string, string>,
+): Promise<void> {
+  if (!to || !emailConfigured()) return;
+  try {
+    const template = await emailTemplateFor(org, kind, token);
+    if (!template) return;
+    const subject = renderTemplate(template.subject, values);
+    const rendered = renderTemplate(template.body, values);
+    await sendEmail({
+      to,
+      subject,
+      text: rendered,
+      html: rendered.replace(/\n/g, "<br>"),
+    });
+  } catch (error) {
+    console.error(`Could not send ${kind} email to ${to}`, error);
   }
 }
 

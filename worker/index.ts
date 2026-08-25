@@ -21,6 +21,9 @@ interface Env {
   ANTHROPIC_API_BASE?: string;
   GOOGLE_OAUTH_CLIENT_ID?: string;
   GOOGLE_OAUTH_CLIENT_SECRET?: string;
+  RESEND_API_KEY?: string;
+  RESEND_API_BASE?: string;
+  RESEND_FROM_EMAIL?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -110,6 +113,18 @@ const worker = {
     ).__MAXIMUS_GOOGLE_OAUTH__ = {
       clientId: env.GOOGLE_OAUTH_CLIENT_ID,
       clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+    };
+    // The CRM notifying a client itself -- document/invoice requests and a
+    // new portal login. Absent a key, Integrations reports it not
+    // configured and those notices are simply not sent.
+    (
+      globalThis as typeof globalThis & {
+        __MAXIMUS_EMAIL__?: { apiKey?: string; apiBase?: string; from?: string };
+      }
+    ).__MAXIMUS_EMAIL__ = {
+      apiKey: env.RESEND_API_KEY,
+      apiBase: env.RESEND_API_BASE,
+      from: env.RESEND_FROM_EMAIL,
     };
     const url = new URL(request.url);
 

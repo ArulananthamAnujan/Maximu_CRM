@@ -297,6 +297,12 @@ type ChecklistTemplateRecord = {
   guidance: string;
   active: boolean;
 };
+type EmailTemplateRecord = {
+  id: string;
+  kind: string;
+  subject: string;
+  body: string;
+};
 type BranchRecord = { id: string; name: string; code: string };
 type StaffRecord = {
   id: string;
@@ -3222,6 +3228,128 @@ function DocumentChecklistTemplatesPanel({
   );
 }
 
+const EMAIL_TEMPLATE_LABELS: Record<string, string> = {
+  document_request: "Document requested",
+  invoice_request: "Invoice raised",
+  portal_welcome: "Portal access sent",
+};
+
+function EmailTemplatesPanel({
+  templates,
+  canManage,
+  reload,
+}: {
+  templates: EmailTemplateRecord[];
+  canManage: boolean;
+  reload: () => Promise<void>;
+}) {
+  const [editingId, setEditingId] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async (templateId: string, subject: string, body: string) => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/crm/email-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update", templateId, subject, body }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(result.error || "That could not be saved.");
+        return false;
+      }
+      await reload();
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <article className="panel listPanel checklistTemplatesPanel">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">CLIENT NOTICES</span>
+          <h2>Email templates</h2>
+        </div>
+      </div>
+      <p className="coverageIntro">
+        What the CRM sends a client on its own: a document request, an
+        invoice, and the message that goes out when a staff member sends
+        portal access. <code>{"{{tokens}}"}</code> are filled in automatically
+        when each email is sent.
+      </p>
+      {error && <p className="caseWorkError">{error}</p>}
+      {templates.length === 0 ? (
+        <EmptyState
+          icon={Mail}
+          title="Email templates are not set up yet"
+          copy="These are seeded automatically for every organisation. Reload if you don't see them."
+        />
+      ) : (
+        templates.map((item) =>
+          editingId === item.id ? (
+            <form
+              className="stackedForm"
+              key={item.id}
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const ok = await save(
+                  item.id,
+                  String(data.get("subject") || ""),
+                  String(data.get("body") || ""),
+                );
+                if (ok) setEditingId("");
+              }}
+            >
+              <label className="wide">
+                Subject *
+                <input name="subject" required defaultValue={item.subject} />
+              </label>
+              <label className="wide">
+                Body *
+                <textarea name="body" required rows={6} defaultValue={item.body} />
+              </label>
+              <button className="primaryButton" disabled={busy}>
+                {busy ? "Saving…" : "Save"}
+              </button>
+              <button
+                type="button"
+                className="ghostButton"
+                onClick={() => setEditingId("")}
+              >
+                Cancel
+              </button>
+            </form>
+          ) : (
+            <div className="functionalRow" key={item.id}>
+              <div className="docIcon">
+                <Mail size={17} />
+              </div>
+              <div>
+                <strong>{EMAIL_TEMPLATE_LABELS[item.kind] || item.kind}</strong>
+                <span>{item.subject}</span>
+              </div>
+              {canManage && (
+                <button
+                  className="ghostButton"
+                  onClick={() => setEditingId(item.id)}
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+          ),
+        )
+      )}
+    </article>
+  );
+}
+
 const REQUIRED_CONSENTS: { type: string; label: string; detail: string }[] = [
   {
     type: "privacy_policy",
@@ -3496,6 +3624,33 @@ function ClientModuleView({
 }) {
   const [uploading, setUploading] = useState("");
   const [portalError, setPortalError] = useState("");
+  const [confirming, setConfirming] = useState("");
+  const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
+  // Acknowledging a document or invoice request reached them -- recorded on
+  // the case history and told to the case owner. It never changes the
+  // record's own state, so the confirmation is tracked locally rather than
+  // read back from a field that does not exist on it.
+  const confirmReceipt = async (kind: "confirm_document" | "confirm_invoice", id: string) => {
+    setConfirming(id);
+    setPortalError("");
+    try {
+      const response = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: kind, id }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(result.error || "That could not be confirmed.");
+      setConfirmedIds((current) => new Set(current).add(id));
+    } catch (reason) {
+      setPortalError(
+        reason instanceof Error ? reason.message : "That could not be confirmed.",
+      );
+    } finally {
+      setConfirming("");
+    }
+  };
   // A client supplies a document that was asked of them. The API and the
   // database both limit this to their own requested documents.
   const uploadOwn = async (documentId: string, chosen: File) => {
@@ -3559,6 +3714,20 @@ function ClientModuleView({
                 {d.due ? <small>Requested by {d.due}</small> : null}
               </div>
               <Status value={d.status} />
+              {confirmedIds.has(d.id) ? (
+                <span className="portalConfirmed">
+                  <Check size={14} /> Confirmed
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="ghostButton"
+                  disabled={confirming === d.id}
+                  onClick={() => void confirmReceipt("confirm_document", d.id)}
+                >
+                  {confirming === d.id ? "Confirming…" : "Confirm received"}
+                </button>
+              )}
               {storageConnected && /request|reject/i.test(d.status) ? (
                 <label className="ghostButton fileButton">
                   <Cloud size={14} />
@@ -3712,6 +3881,20 @@ function ClientModuleView({
                 </span>
               </div>
               <Status value={i.status} />
+              {confirmedIds.has(i.id) ? (
+                <span className="portalConfirmed">
+                  <Check size={14} /> Confirmed
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="ghostButton"
+                  disabled={confirming === i.id}
+                  onClick={() => void confirmReceipt("confirm_invoice", i.id)}
+                >
+                  {confirming === i.id ? "Confirming…" : "Confirm received"}
+                </button>
+              )}
             </div>
           ))
         ) : (
@@ -3719,6 +3902,7 @@ function ClientModuleView({
             You have not been invoiced for anything yet.
           </p>
         )}
+        {portalError && <p className="caseWorkError">{portalError}</p>}
       </article>
     </>
   );
@@ -5988,6 +6172,11 @@ function CaseDrawerBody({
   const [newNote, setNewNote] = useState("");
   const [working, setWorking] = useState(false);
   const [caseError, setCaseError] = useState("");
+  const [sendingPortalAccess, setSendingPortalAccess] = useState(false);
+  const [portalAccessResult, setPortalAccessResult] = useState<{
+    message: string;
+    setupLink?: string;
+  } | null>(null);
   const caseId = item.dbId;
   const stage = item.lifecycleStage;
   const moves = allowedStageMoves(stage);
@@ -6404,6 +6593,59 @@ function CaseDrawerBody({
                   </button>
                 ))}
               </div>
+              {stage === "student" && canModify && (
+                <div className="handoverPanel">
+                  <button
+                    type="button"
+                    className="ghostButton"
+                    disabled={sendingPortalAccess}
+                    onClick={async () => {
+                      setSendingPortalAccess(true);
+                      setPortalAccessResult(null);
+                      try {
+                        const response = await fetch("/api/crm/workspace", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            action: "send_portal_access",
+                            clientId: item.clientId,
+                          }),
+                        });
+                        const result = await response.json().catch(() => ({}));
+                        setPortalAccessResult({
+                          message: response.ok
+                            ? result.message || "Portal access was sent."
+                            : result.error || "Portal access could not be sent.",
+                          setupLink: response.ok ? result.setupLink : undefined,
+                        });
+                      } catch {
+                        setPortalAccessResult({
+                          message: "Portal access could not be sent.",
+                        });
+                      } finally {
+                        setSendingPortalAccess(false);
+                      }
+                    }}
+                  >
+                    <Send size={14} />
+                    {sendingPortalAccess ? "Sending…" : "Send portal access"}
+                  </button>
+                  {portalAccessResult && (
+                    <>
+                      <strong>{portalAccessResult.message}</strong>
+                      {portalAccessResult.setupLink && (
+                        <>
+                          <code>{portalAccessResult.setupLink}</code>
+                          <small>
+                            This link is shown once and is not stored anywhere
+                            you can read it again.
+                          </small>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </section>
           </>
         )}
@@ -8433,6 +8675,7 @@ export default function Home() {
     [templates, setTemplates] = useState<TemplateRecord[]>([]),
     [workflows, setWorkflows] = useState<WorkflowRecord[]>([]),
     [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplateRecord[]>([]),
+    [emailTemplates, setEmailTemplates] = useState<EmailTemplateRecord[]>([]),
     [audits, setAudits] = useState<AuditRecord[]>([]),
     [applicationRows, setApplicationRows] = useState<ApplicationRow[]>([]),
     [visaMatterRows, setVisaMatterRows] = useState<VisaMatterRow[]>([]),
@@ -8523,6 +8766,29 @@ export default function Home() {
       // nothing rather than the workspace itself failing to load.
     }
   };
+  // The wording behind the three emails the CRM sends a client on its own,
+  // editable on the Templates screen. Loaded once alongside the workspace,
+  // same shape as the document checklist.
+  const loadEmailTemplates = async () => {
+    try {
+      const response = await fetch("/api/crm/email-templates", {
+        cache: "no-store",
+      });
+      const result = await response.json();
+      if (!response.ok) return;
+      setEmailTemplates(
+        ((result.templates || []) as Record<string, unknown>[]).map((row) => ({
+          id: String(row.id),
+          kind: String(row.kind),
+          subject: String(row.subject),
+          body: String(row.body),
+        })),
+      );
+    } catch {
+      // Editable wording that fails to load leaves the Templates screen
+      // showing nothing rather than the workspace itself failing to load.
+    }
+  };
   const loadWorkspace = async () => {
     let authenticatedIdentity: LiveIdentity | null = null;
     try {
@@ -8571,7 +8837,10 @@ export default function Home() {
       setBranches((result.branches || []) as BranchRecord[]);
       landOn(result.identity.role as AppRole);
       void loadAlerts(result.identity.role as AppRole);
-      if (result.identity.role !== "client") void loadChecklistTemplates();
+      if (result.identity.role !== "client") {
+        void loadChecklistTemplates();
+        void loadEmailTemplates();
+      }
     } catch (reason) {
       if (!authenticatedIdentity) setIdentity(null);
       else
@@ -9300,6 +9569,11 @@ export default function Home() {
           templates={checklistTemplates}
           canManage={canManageFinance}
           reload={loadChecklistTemplates}
+        />
+        <EmailTemplatesPanel
+          templates={emailTemplates}
+          canManage={canManageFinance}
+          reload={loadEmailTemplates}
         />
       </>
     );

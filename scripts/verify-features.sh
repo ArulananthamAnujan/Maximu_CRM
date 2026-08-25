@@ -21,6 +21,7 @@ port="${AUDIT_PG_PORT:-5440}"
 shim_port="${AUDIT_SHIM_PORT:-8099}"
 drive_port="${AUDIT_DRIVE_PORT:-8098}"
 ai_port="${AUDIT_AI_PORT:-8097}"
+resend_port="${AUDIT_RESEND_PORT:-8096}"
 
 # shellcheck source=scripts/lib/pg-env.sh
 source "${root}/scripts/lib/pg-env.sh"
@@ -30,10 +31,12 @@ source "${root}/scripts/lib/pg-env.sh"
 shim_pid=""
 drive_pid=""
 ai_pid=""
+resend_pid=""
 cleanup() {
   [[ -n "${shim_pid}" ]] && kill "${shim_pid}" 2>/dev/null || true
   [[ -n "${drive_pid}" ]] && kill "${drive_pid}" 2>/dev/null || true
   [[ -n "${ai_pid}" ]] && kill "${ai_pid}" 2>/dev/null || true
+  [[ -n "${resend_pid}" ]] && kill "${resend_pid}" 2>/dev/null || true
   pg_stop "${work}"
 }
 trap cleanup EXIT
@@ -89,6 +92,13 @@ ai_pid=$!
 sleep 1
 kill -0 "${ai_pid}" 2>/dev/null || { echo "The Anthropic stub failed to start:"; cat "${work}/ai.log"; exit 70; }
 
+resend_key="audit-resend-$(head -c 12 /dev/urandom | base64 | tr -d '/+=')"
+RESEND_STUB_PORT="${resend_port}" RESEND_STUB_KEY="${resend_key}" \
+  node "${root}/scripts/audit/resend-stub.mjs" >"${work}/resend.log" 2>&1 &
+resend_pid=$!
+sleep 1
+kill -0 "${resend_pid}" 2>/dev/null || { echo "The Resend stub failed to start:"; cat "${work}/resend.log"; exit 70; }
+
 echo
 SHIM_URL="http://127.0.0.1:${shim_port}" \
   GOOGLE_API_BASE="http://127.0.0.1:${drive_port}" \
@@ -104,4 +114,8 @@ SHIM_URL="http://127.0.0.1:${shim_port}" \
   SUPABASE_SERVICE_ROLE_KEY="${service_role_key}" \
   ANTHROPIC_API_KEY="${ai_key}" \
   ANTHROPIC_API_BASE="http://127.0.0.1:${ai_port}" \
+  RESEND_API_KEY="${resend_key}" \
+  RESEND_API_BASE="http://127.0.0.1:${resend_port}" \
+  RESEND_FROM_EMAIL="Maximus CRM <notifications@maximus-test.invalid>" \
+  RESEND_STUB_URL="http://127.0.0.1:${resend_port}" \
   node "${root}/scripts/audit/feature-audit.mjs"

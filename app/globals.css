@@ -8268,6 +8268,16 @@ body {
   color: #b45309 !important;
   font-weight: 600;
 }
+/* A client's acknowledgement that a document or invoice request reached
+   them -- shown in place of the "Confirm received" button once sent. */
+.portalConfirmed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #14532d;
+}
 .mutedCell {
   color: var(--muted);
   font-size: 11px;
