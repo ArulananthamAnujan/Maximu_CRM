@@ -87,6 +87,7 @@ export async function GET(request: Request) {
       applications,
       visaMatters,
       visaHistory,
+      collaborators,
     ] = await Promise.all([
       safeRest(
         `clients?select=*&archived_at=is.null&order=updated_at.desc&limit=${RECORD_LIMIT}`,
@@ -177,6 +178,11 @@ export async function GET(request: Request) {
         token,
         degraded,
       ),
+      safeRest(
+        "case_collaborators?select=case_id,profile_id&limit=5000",
+        token,
+        degraded,
+      ),
     ]);
 
     // A dataset fetched exactly up to its cap may have more rows the
@@ -222,6 +228,11 @@ export async function GET(request: Request) {
     const branchById = new Map(branches.map((row) => [String(row.id), row]));
     const profileById = new Map(profiles.map((row) => [String(row.id), row]));
     const threadById = new Map(threads.map((row) => [String(row.id), row]));
+    const collaboratorsByCase = new Map<string, string[]>();
+    for (const row of collaborators) {
+      const key = String(row.case_id);
+      collaboratorsByCase.set(key, [...(collaboratorsByCase.get(key) ?? []), String(row.profile_id)]);
+    }
     const workflowStages = new Map<string, Json[]>();
     for (const stage of stages) {
       const key = String(stage.template_id);
@@ -273,6 +284,7 @@ export async function GET(request: Request) {
           stage: stage.name ?? client.current_lifecycle ?? "Enquiry",
           owner: owner.display_name ?? "",
           ownerId: row.owner_id ?? "",
+          collaboratorIds: collaboratorsByCase.get(String(row.id)) ?? [],
           branch: branch.name ?? "",
           branchId: row.branch_id,
           due: dateOnly(row.due_at),
@@ -1515,16 +1527,13 @@ export async function POST(request: Request) {
     }
 
     if (action === "assign" || action === "bulk_assign") {
-      // Reassignment is a management action: it changes who is accountable for
-      // the case and who sees it in their queue.
-      if (
-        session.identity.role !== "super_admin" &&
-        session.identity.role !== "admin"
-      )
-        throw new LiveAccessError(
-          403,
-          `Only an administrator can reassign ${action === "bulk_assign" ? "cases" : "a case"}.`,
-        );
+      // Managers may redistribute any accessible case. A staff member may
+      // hand over the one case they currently own; bulk redistribution stays
+      // a management operation.
+      const manager =
+        session.identity.role === "super_admin" || session.identity.role === "admin";
+      if (!manager && action === "bulk_assign")
+        throw new LiveAccessError(403, "Only an administrator can reassign cases in bulk.");
       const ownerId = required(body.ownerId, "Staff member");
       const candidates = await rest<Json[]>(
         `profiles?select=id,display_name,level,active&id=eq.${encodeURIComponent(ownerId)}&limit=1`,
@@ -1549,6 +1558,17 @@ export async function POST(request: Request) {
       let succeeded = 0;
       const failedCaseIds: string[] = [];
       for (const caseId of caseIds) {
+        if (!manager) {
+          const owned = await rest<Json[]>(
+            `cases?select=id,owner_id&id=eq.${encodeURIComponent(caseId)}&owner_id=eq.${encodeURIComponent(actor)}&limit=1`,
+            token,
+          );
+          if (!owned[0])
+            throw new LiveAccessError(
+              403,
+              "You can transfer only a case currently assigned to you.",
+            );
+        }
         try {
           await patchRow("cases", caseId, { owner_id: ownerId }, token);
         } catch (error) {
@@ -1593,6 +1613,56 @@ export async function POST(request: Request) {
       }
       if (action === "bulk_assign")
         return Response.json({ ok: true, succeeded, failed: failedCaseIds.length });
+      return Response.json({ ok: true });
+    }
+
+    if (action === "add_collaborator" || action === "remove_collaborator") {
+      const caseId = required(body.caseId, "Case");
+      const profileId = required(body.profileId, "Staff member");
+      const [subject] = await rest<Json[]>(
+        `cases?select=id,owner_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+        token,
+      );
+      if (!subject) throw new LiveAccessError(403, "That case is not available.");
+      const manager =
+        session.identity.role === "super_admin" || session.identity.role === "admin";
+      if (!manager && subject.owner_id !== actor)
+        throw new LiveAccessError(403, "Only the case owner or an administrator can change the case team.");
+      if (profileId === subject.owner_id)
+        throw new InputError("The case owner is already part of the case team.");
+      if (action === "add_collaborator") {
+        const [candidate] = await rest<Json[]>(
+          `profiles?select=id,level,active&id=eq.${encodeURIComponent(profileId)}&limit=1`,
+          token,
+        );
+        if (!candidate || candidate.active !== true || candidate.level === "student")
+          throw new InputError("Choose an active staff member from this organisation.");
+        await supabaseRequest(
+          "/rest/v1/case_collaborators",
+          {
+            method: "POST",
+            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+            body: JSON.stringify({ organisation_id: org, case_id: caseId, profile_id: profileId, added_by: actor }),
+          },
+          token,
+        );
+      } else {
+        await supabaseRequest(
+          `/rest/v1/case_collaborators?case_id=eq.${encodeURIComponent(caseId)}&profile_id=eq.${encodeURIComponent(profileId)}`,
+          { method: "DELETE", headers: { Prefer: "return=minimal" } },
+          token,
+        );
+      }
+      await auditEvent(
+        org,
+        actor,
+        action === "add_collaborator" ? "case.collaborator_added" : "case.collaborator_removed",
+        "case",
+        caseId,
+        session.identity.branchId,
+        action === "add_collaborator" ? "Added a colleague to the case team" : "Removed a colleague from the case team",
+        token,
+      );
       return Response.json({ ok: true });
     }
 

@@ -82,6 +82,8 @@ async function startStub({
           return send(400, { code: "22023", message: rpcFailure, hint: null });
         return send(200, [{ id: CASE_ID, lifecycle_stage: "visa" }]);
       }
+      if (url.pathname === "/rest/v1/cases" && req.method === "GET" && url.searchParams.has("owner_id"))
+        return send(200, [{ id: CASE_ID, owner_id: USER.id }]);
       // PostgREST returns the rows an update actually touched when the caller
       // asks for a representation, and an empty array when row-level security
       // hid every one of them. The route relies on that to tell a refused
@@ -277,15 +279,15 @@ test("a write row-level security refused is reported, not reported as saved", as
   assert.match(result.body.error, /not yours to change/i);
 });
 
-test("a staff account cannot reassign a case", async () => {
+test("a staff account can transfer a case they own", async () => {
   const result = await post(
     { action: "assign", caseId: CASE_ID, ownerId: TARGET_STAFF.id },
     { level: "staff" },
   );
-  assert.equal(result.status, 403);
+  assert.equal(result.status, 200);
   assert.equal(
     result.requests.some((r) => r.method === "PATCH"),
-    false,
+    true,
   );
 });
 

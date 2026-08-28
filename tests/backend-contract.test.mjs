@@ -256,11 +256,10 @@ test("the service-role key is used on one path and never as a filter", async () 
   const supabase = await read("server/supabase.ts");
   assert.match(supabase, /export async function supabaseAdminRequest/);
   const admin = await read("app/api/crm/admin/route.ts");
-  // Exactly the three admin calls that create a login, undo it, and look one
-  // up by email to connect a pre-existing login (a client demo account, most
-  // often) without it having to sign itself in first.
+  // Admin calls create/undo/find a login and can retire a removed staff login
+  // so its real email is available for a future account.
   const uses = admin.match(/supabaseAdminRequest/g) ?? [];
-  assert.equal(uses.length, 4, "service-role calls beyond creating a login");
+  assert.equal(uses.length, 5, "unexpected service-role calls");
   assert.match(admin, /supabaseAdminRequest<\{ id\?: string \}>\("\/auth\/v1\/admin\/users"/);
   assert.match(admin, /supabaseAdminRequest<\{ users\?:/);
   // Only a Super Admin makes another administrator.

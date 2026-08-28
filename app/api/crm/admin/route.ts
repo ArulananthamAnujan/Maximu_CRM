@@ -199,6 +199,56 @@ export async function POST(request: Request) {
         }
       }
       await patch("profiles", target, changes, token);
+    } else if (action === "remove_staff") {
+      if (session.identity.role !== "super_admin")
+        throw new LiveAccessError(403, "Only a Super Admin can remove a staff account.");
+      if (!serviceRoleKey())
+        throw new InputError("Permanent staff removal requires the Supabase service-role connection.");
+      const target = uuid(body.profileId, "Profile");
+      if (target === session.identity.profileId)
+        throw new InputError("You cannot remove your own account.");
+      const [person] = await get(
+        `profiles?select=id,display_name,email,level,active&id=eq.${target}&limit=1`,
+        token,
+      ) as Json[];
+      if (!person) throw new InputError("That staff account no longer exists.");
+      if (person.level === "super_admin") {
+        const remaining = await get(
+          `profiles?select=id&organisation_id=eq.${org}&level=eq.super_admin&active=eq.true&id=neq.${target}`,
+          token,
+        ) as Json[];
+        if (remaining.length === 0)
+          throw new InputError("Promote another Super Admin before removing this account.");
+      }
+      const assigned = await get(
+        `cases?select=id&organisation_id=eq.${org}&or=(owner_id.eq.${target},supervisor_id.eq.${target})&closed_at=is.null&limit=1`,
+        token,
+      ) as Json[];
+      if (assigned.length)
+        throw new InputError("Transfer this staff member's open cases before removing their account.");
+
+      const retiredEmail = `removed+${target}@accounts.invalid`;
+      await supabaseAdminRequest(`/auth/v1/admin/users/${target}`, {
+        method: "PUT",
+        body: JSON.stringify({ email: retiredEmail, ban_duration: "876000h" }),
+      });
+      await supabaseRequest(
+        `/rest/v1/profile_roles?profile_id=eq.${target}`,
+        { method: "DELETE", headers: { Prefer: "return=minimal" } },
+        token,
+      ).catch(() => undefined);
+      await supabaseRequest(
+        `/rest/v1/mailbox_connections?profile_id=eq.${target}`,
+        { method: "DELETE", headers: { Prefer: "return=minimal" } },
+        token,
+      ).catch(() => undefined);
+      await patch("profiles", target, {
+        display_name: `${String(person.display_name ?? "Former staff")} (removed)`,
+        email: retiredEmail,
+        active: false,
+        branch_id: null,
+        department: null,
+      }, token);
     } else if (action === "assign_role") {
       if (session.identity.role !== "super_admin") throw new LiveAccessError(403, "Only a Super Admin can assign roles.");
       await insert("profile_roles", { profile_id: uuid(body.profileId, "Profile"), role_id: uuid(body.roleId, "Role"), branch_id: uuid(body.branchId, "Branch") }, token, "resolution=merge-duplicates,return=minimal");

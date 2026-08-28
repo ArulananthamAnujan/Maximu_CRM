@@ -53,6 +53,8 @@ export async function GET(request: Request) {
       preferences,
       visaHistory,
       declarations,
+      collaborators,
+      communications,
     ] = await Promise.all([
       get<Json[]>(`clients?select=*&id=eq.${clientId}&limit=1`, token),
       get<Json[]>(
@@ -108,6 +110,14 @@ export async function GET(request: Request) {
         `client_declarations?select=*&client_id=eq.${clientId}&order=declaration_type.asc`,
         token,
       ),
+      get<Json[]>(
+        `case_collaborators?select=profile_id,added_at,profiles!case_collaborators_profile_id_fkey(display_name,email)&case_id=eq.${caseId}&order=added_at.asc`,
+        token,
+      ),
+      get<Json[]>(
+        `email_messages?select=id,sender,recipients,direction,body_preview,sent_at,created_at,delivery_state,email_threads!inner(case_id,subject)&email_threads.case_id=eq.${caseId}&order=created_at.desc&limit=200`,
+        token,
+      ),
     ]);
 
     return appendRefreshCookies(
@@ -127,6 +137,22 @@ export async function GET(request: Request) {
         documents,
         notes,
         invoices,
+        collaborators: collaborators.map((row) => ({
+          profileId: row.profile_id,
+          addedAt: row.added_at,
+          name: (row.profiles as Json | null)?.display_name ?? "Team member",
+          email: (row.profiles as Json | null)?.email ?? "",
+        })),
+        communications: communications.map((row) => ({
+          id: row.id,
+          sender: row.sender,
+          recipients: row.recipients,
+          direction: row.direction,
+          body: row.body_preview,
+          sentAt: row.sent_at ?? row.created_at,
+          status: row.delivery_state,
+          subject: (row.email_threads as Json | null)?.subject ?? "Message",
+        })),
         intake: {
           education,
           employment,

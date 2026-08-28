@@ -107,6 +107,7 @@ type CaseRecord = {
   stage: string;
   owner: string;
   ownerId: string;
+  collaboratorIds?: string[];
   branch: string;
   due: string;
   health: "healthy" | "attention" | "critical";
@@ -5465,6 +5466,9 @@ function AdminView({
   const [working, setWorking] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addingBranch, setAddingBranch] = useState(false);
+  const [staffSearch, setStaffSearch] = useState("");
+  const [staffStatus, setStaffStatus] = useState("active");
+  const [staffBranch, setStaffBranch] = useState("");
   const [handover, setHandover] = useState<{
     message: string;
     password?: string;
@@ -5565,6 +5569,15 @@ function AdminView({
     (row) => row.status !== "accepted",
   );
   const portalAccounts = profiles.filter((row) => row.level === "student");
+  const visibleProfiles = profiles.filter((person) => {
+    const needle = staffSearch.trim().toLowerCase();
+    return (
+      person.level !== "student" &&
+      (!needle || `${person.display_name} ${person.email} ${person.department ?? ""}`.toLowerCase().includes(needle)) &&
+      (staffStatus === "all" || (staffStatus === "active" ? person.active : !person.active)) &&
+      (!staffBranch || person.branch_id === staffBranch)
+    );
+  });
 
   return (
     <section className="adminStack">
@@ -5588,6 +5601,35 @@ function AdminView({
           </div>
         </div>
         {error && <p className="caseWorkError">{error}</p>}
+
+        <div className="staffFilters" aria-label="Staff filters">
+          <label>
+            Search team
+            <input
+              type="search"
+              value={staffSearch}
+              onChange={(event) => setStaffSearch(event.target.value)}
+              placeholder="Name, email or department"
+            />
+          </label>
+          <label>
+            Status
+            <select value={staffStatus} onChange={(event) => setStaffStatus(event.target.value)}>
+              <option value="active">Active</option>
+              <option value="inactive">Deactivated</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          <label>
+            Branch
+            <select value={staffBranch} onChange={(event) => setStaffBranch(event.target.value)}>
+              <option value="">All branches</option>
+              {adminBranches.map((branch) => (
+                <option key={branch.id} value={branch.id}>{branch.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
 
         {handover && (
           <div className="handoverPanel">
@@ -5695,8 +5737,8 @@ function AdminView({
             <span className="skeletonBar" />
             <span className="skeletonBar short" />
           </div>
-        ) : profiles.length === 0 ? (
-          <p className="boardEmpty">Nobody is on the team yet.</p>
+        ) : visibleProfiles.length === 0 ? (
+          <p className="boardEmpty">No staff match these filters.</p>
         ) : (
           <div className="recordTableWrap">
             <table className="recordTable boardTable">
@@ -5712,7 +5754,7 @@ function AdminView({
                 </tr>
               </thead>
               <tbody>
-                {profiles.map((person) => (
+                {visibleProfiles.map((person) => (
                   <tr
                     key={person.id}
                     className={person.active ? "" : "archivedRow"}
@@ -5770,19 +5812,27 @@ function AdminView({
                       {person.id === currentProfileId ? (
                         <span className="mutedCell">This is you</span>
                       ) : (
-                        <button
-                          className="linkButton"
-                          disabled={working}
-                          onClick={() =>
-                            void send({
-                              action: "update_profile",
-                              profileId: person.id,
-                              active: !person.active,
-                            })
-                          }
-                        >
-                          {person.active ? "Deactivate" : "Reactivate"}
-                        </button>
+                        <div className="staffActions">
+                          <button
+                            className="linkButton"
+                            disabled={working}
+                            onClick={() => void send({ action: "update_profile", profileId: person.id, active: !person.active })}
+                          >
+                            {person.active ? "Deactivate" : "Reactivate"}
+                          </button>
+                          {isOwner && !person.active && (
+                            <button
+                              className="linkButton dangerLink"
+                              disabled={working}
+                              onClick={() => {
+                                if (confirm(`Remove ${person.display_name}'s login? Their historical actions remain, but their email can be used to create a new account later. Open cases must be transferred first.`))
+                                  void send({ action: "remove_staff", profileId: person.id });
+                              }}
+                            >
+                              Remove account
+                            </button>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -5793,8 +5843,9 @@ function AdminView({
         )}
         <p className="coverageIntro">
           Deactivating somebody keeps their history and stops them signing in.
-          Accounts are not deleted, because the case record has to say who did
-          what for seven years.
+          Deactivation is reversible. Remove account releases the email for a
+          future account while retaining the historical actor required by the
+          case and audit record; open cases must be transferred first.
         </p>
       </article>
 
@@ -6102,7 +6153,7 @@ function CaseDrawer({
   lifecycleReady,
   schemaWarning,
   storageConnected,
-  onRequestDocument,
+  onCaseAction,
 }: {
   item: CaseRecord | null;
   close: () => void;
@@ -6121,7 +6172,7 @@ function CaseDrawer({
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
-  onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist" | "invoice") => void;
+  onCaseAction: (caseId: string, kind?: "document" | "visaChecklist" | "invoice" | "message") => void;
 }) {
   return item ? (
     <CaseDrawerBody
@@ -6138,7 +6189,7 @@ function CaseDrawer({
       lifecycleReady={lifecycleReady}
       schemaWarning={schemaWarning}
       storageConnected={storageConnected}
-      onRequestDocument={onRequestDocument}
+      onCaseAction={onCaseAction}
     />
   ) : null;
 }
@@ -6151,6 +6202,7 @@ type CaseTab =
   | "applications"
   | "visa"
   | "documents"
+  | "communication"
   | "timeline"
   | "finance";
 
@@ -6162,6 +6214,7 @@ const caseTabs: [CaseTab, string][] = [
   ["applications", "Applications"],
   ["visa", "Visa matter"],
   ["documents", "Documents"],
+  ["communication", "Communication"],
   ["timeline", "Timeline"],
   ["finance", "Finance"],
 ];
@@ -6175,6 +6228,8 @@ type CaseFile = {
   documents: Record<string, unknown>[];
   notes: CaseNote[];
   invoices: Record<string, unknown>[];
+  collaborators: { profileId: string; name: string; email: string; addedAt: string }[];
+  communications: { id: string; sender: string; recipients: string[]; direction: string; body: string; sentAt: string; status: string; subject: string }[];
   intake: {
     education: Record<string, unknown>[];
     employment: Record<string, unknown>[];
@@ -6281,7 +6336,7 @@ function CaseDrawerBody({
   lifecycleReady,
   schemaWarning,
   storageConnected,
-  onRequestDocument,
+  onCaseAction,
 }: {
   item: CaseRecord;
   close: () => void;
@@ -6300,7 +6355,7 @@ function CaseDrawerBody({
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
-  onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist" | "invoice") => void;
+  onCaseAction: (caseId: string, kind?: "document" | "visaChecklist" | "invoice" | "message") => void;
 }) {
   const [tab, setTab] = useState<CaseTab>("overview");
   // Switching straight from one case to another, without closing the drawer,
@@ -6321,6 +6376,7 @@ function CaseDrawerBody({
   const [recordedExpiry, setRecordedExpiry] = useState(item.visaExpiry || "");
   const [savingExpiry, setSavingExpiry] = useState(false);
   const [owner, setOwner] = useState(item.ownerId);
+  const [collaborator, setCollaborator] = useState("");
   const [assigning, setAssigning] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [file, setFile] = useState<CaseFile | null>(null);
@@ -6633,6 +6689,36 @@ function CaseDrawerBody({
                 </div>
               </section>
             )}
+            <section className="caseWorkPanel">
+              <div className="caseWorkPanelHead">
+                <div>
+                  <span className="kicker">CASE TEAM</span>
+                  <h3>People working together</h3>
+                </div>
+              </div>
+              <div className="caseTeamList">
+                <span><strong>{item.owner || "Unassigned"}</strong><small>Accountable owner</small></span>
+                {(file?.collaborators ?? []).map((person) => (
+                  <span key={person.profileId}>
+                    <strong>{person.name}</strong><small>Collaborator</small>
+                    {canAssign && <button className="linkButton" onClick={() => void operation({ action: "remove_collaborator", caseId, profileId: person.profileId })}>Remove</button>}
+                  </span>
+                ))}
+              </div>
+              {canAssign && (
+                <div className="assignRow">
+                  <select value={collaborator} onChange={(event) => setCollaborator(event.target.value)} aria-label="Add case collaborator">
+                    <option value="">Add a colleague</option>
+                    {staff.filter((person) => person.id !== item.ownerId && !(file?.collaborators ?? []).some((member) => member.profileId === person.id)).map((person) => (
+                      <option key={person.id} value={person.id}>{person.display_name}</option>
+                    ))}
+                  </select>
+                  <button className="ghostButton" disabled={!collaborator || working} onClick={async () => {
+                    if (await operation({ action: "add_collaborator", caseId, profileId: collaborator })) setCollaborator("");
+                  }}><Plus size={14} /> Add to case</button>
+                </div>
+              )}
+            </section>
             <section className="lifecyclePanel">
               <span className="kicker">CASE PIPELINE</span>
               <ol className="lifecycleTrack">
@@ -7005,7 +7091,7 @@ function CaseDrawerBody({
                   <button
                     type="button"
                     className="ghostButton"
-                    onClick={() => onRequestDocument(caseId ?? "", "visaChecklist")}
+                    onClick={() => onCaseAction(caseId ?? "", "visaChecklist")}
                   >
                     <FileCheck2 size={14} />
                     Document checklist
@@ -7013,7 +7099,7 @@ function CaseDrawerBody({
                   <button
                     type="button"
                     className="ghostButton"
-                    onClick={() => onRequestDocument(caseId ?? "", "document")}
+                    onClick={() => onCaseAction(caseId ?? "", "document")}
                   >
                     <Plus size={14} />
                     Request document
@@ -7115,6 +7201,33 @@ function CaseDrawerBody({
           </>
         )}
 
+        {tab === "communication" && (
+          <section className="caseWorkPanel">
+            <div className="caseWorkPanelHead">
+              <div>
+                <span className="kicker">SHARED CLIENT CONVERSATION</span>
+                <h3>Email and messages</h3>
+              </div>
+              <button className="primaryButton" onClick={() => onCaseAction(caseId ?? "", "message")}>
+                <Plus size={14} /> New message
+              </button>
+            </div>
+            {(file?.communications ?? []).length === 0 ? (
+              <p className="caseWorkEmpty">No communication is linked to this case yet.</p>
+            ) : (
+              <div className="communicationFeed">
+                {(file?.communications ?? []).map((message) => (
+                  <article key={message.id}>
+                    <div><strong>{message.subject}</strong><Status value={message.status || message.direction} /></div>
+                    <small>{message.sender} · {orgDateTime(message.sentAt)}</small>
+                    <p>{message.body || "No preview available."}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {tab === "timeline" && (
           <section className="caseWorkPanel">
             <span className="kicker">FILE NOTE AND ACTIVITY</span>
@@ -7181,7 +7294,7 @@ function CaseDrawerBody({
                   <button
                     type="button"
                     className="ghostButton"
-                    onClick={() => onRequestDocument(caseId ?? "", "invoice")}
+                    onClick={() => onCaseAction(caseId ?? "", "invoice")}
                   >
                     <Plus size={14} />
                     Create invoice
@@ -8675,11 +8788,11 @@ function RecordModal({
             <>
               <label>
                 To
-                <input name="to" type="email" required />
+                <input name="to" type="email" defaultValue={presetCase?.email ?? ""} required />
               </label>
               <label>
                 Linked case
-                <select name="caseId">
+                <select name="caseId" defaultValue={presetCase?.dbId || presetCase?.id || ""}>
                   <option value="">None</option>
                   {cases.map((c) => (
                     <option key={c.id} value={c.dbId || c.id}>
@@ -9031,7 +9144,7 @@ export default function Home() {
   // Opening a document request or an invoice from within the case it
   // belongs to, rather than picking that same case back out of every case
   // in the organisation from a separate screen.
-  const openForCase = (caseId: string, kind: "document" | "visaChecklist" | "invoice" = "document") => {
+  const openForCase = (caseId: string, kind: "document" | "visaChecklist" | "invoice" | "message" = "document") => {
     setPresetCaseId(caseId);
     open(kind);
   };
@@ -10149,11 +10262,14 @@ export default function Home() {
       {role !== "client" ? (
         <CaseDrawer
           key={selected
-            ? documents
-                .filter((document) => document.caseId === selected.dbId)
-                .map((document) => `${document.id}:${document.status}`)
-                .sort()
-                .join("|") || selected.dbId
+            ? [
+                ...documents
+                  .filter((document) => document.caseId === selected.dbId)
+                  .map((document) => `${document.id}:${document.status}`),
+                ...messages
+                  .filter((message) => message.caseId === selected.dbId)
+                  .map((message) => `${message.id}:${message.status}`),
+              ].sort().join("|") || selected.dbId
             : "closed"}
           moveStage={moveCaseStage}
           assign={assignCase}
@@ -10162,15 +10278,15 @@ export default function Home() {
           lifecycleReady={!schemaWarning}
           schemaWarning={schemaWarning}
           storageConnected={storageConnected}
-          canAssign={role === "super_admin" || role === "admin"}
-          canModify={
-            role !== "staff" || selected?.ownerId === identity?.profileId
-          }
+          canAssign={Boolean(role === "super_admin" || role === "admin" || selected?.ownerId === identity?.profileId)}
+          canModify={Boolean(
+            role !== "staff" || selected?.ownerId === identity?.profileId || selected?.collaboratorIds?.includes(identity?.profileId ?? "")
+          )}
           item={selected}
           close={() => setSelected(null)}
           edit={editCase}
           remove={removeCase}
-          onRequestDocument={openForCase}
+          onCaseAction={openForCase}
         />
       ) : null}
       <RecordModal
