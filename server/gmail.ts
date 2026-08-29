@@ -60,7 +60,7 @@ function apiBase(): string {
 }
 
 export const GMAIL_SCOPE =
-  "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email";
+  "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email";
 
 export function gmailAuthorizeUrl(options: {
   redirectUri: string;
@@ -182,4 +182,60 @@ export async function gmailSend(options: {
   if (!response.ok)
     throw new GmailError(response.status, `Gmail refused to send: ${await response.text()}`);
   return (await response.json()) as { id: string; threadId: string };
+}
+
+export type GmailMessage = {
+  id: string;
+  threadId: string;
+  internalDate?: string;
+  snippet?: string;
+  payload?: {
+    headers?: { name: string; value: string }[];
+    body?: { data?: string };
+    parts?: GmailMessage["payload"][];
+    mimeType?: string;
+  };
+};
+
+export async function gmailSearchMessages(options: {
+  accessToken: string;
+  query: string;
+  maxResults?: number;
+}): Promise<{ id: string; threadId: string }[]> {
+  const url = new URL(`${apiBase()}/gmail/v1/users/me/messages`);
+  url.searchParams.set("q", options.query);
+  url.searchParams.set("maxResults", String(options.maxResults ?? 100));
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${options.accessToken}` } });
+  if (!response.ok)
+    throw new GmailError(response.status, `Gmail refused the inbox search: ${await response.text()}`);
+  const result = (await response.json()) as { messages?: { id: string; threadId: string }[] };
+  return result.messages ?? [];
+}
+
+export async function gmailGetMessage(options: { accessToken: string; id: string }): Promise<GmailMessage> {
+  const url = new URL(`${apiBase()}/gmail/v1/users/me/messages/${encodeURIComponent(options.id)}`);
+  url.searchParams.set("format", "full");
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${options.accessToken}` } });
+  if (!response.ok)
+    throw new GmailError(response.status, `Gmail refused the message lookup: ${await response.text()}`);
+  return (await response.json()) as GmailMessage;
+}
+
+export function gmailHeader(message: GmailMessage, name: string): string {
+  return message.payload?.headers?.find((header) => header.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+}
+
+function decodeBase64Url(value: string): string {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return new TextDecoder().decode(Uint8Array.from(atob(padded), (char) => char.charCodeAt(0)));
+}
+
+export function gmailTextBody(payload: GmailMessage["payload"]): string {
+  if (!payload) return "";
+  if (payload.mimeType === "text/plain" && payload.body?.data) return decodeBase64Url(payload.body.data);
+  for (const part of payload.parts ?? []) {
+    const body = gmailTextBody(part);
+    if (body) return body;
+  }
+  return payload.body?.data ? decodeBase64Url(payload.body.data) : "";
 }

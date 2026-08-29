@@ -6,9 +6,13 @@ import {
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
 import {
   buildRawMessage,
+  gmailGetMessage,
+  gmailHeader,
   gmailOAuthConfigured,
   gmailRefreshAccessToken,
+  gmailSearchMessages,
   gmailSend,
+  gmailTextBody,
   GmailError,
   GmailNotConfiguredError,
 } from "@/server/gmail";
@@ -65,6 +69,86 @@ export async function POST(request: Request) {
         { method: "DELETE" },
         token,
       );
+    } else if (action === "sync_case") {
+      const caseId = uuid(body.caseId, "Case");
+      const cases = await supabaseRequest<{ client_id: string }[]>(
+        `/rest/v1/cases?select=client_id&id=eq.${caseId}&limit=1`,
+        { method: "GET" }, token,
+      );
+      if (!cases[0]) throw new LiveAccessError(403, "That case could not be found.");
+      const clients = await supabaseRequest<{ id: string; email: string }[]>(
+        `/rest/v1/clients?select=id,email&id=eq.${cases[0].client_id}&limit=1`,
+        { method: "GET" }, token,
+      );
+      const client = clients[0];
+      if (!client?.email) throw new InputError("Add the client's email address before syncing Gmail.");
+      const connections = await supabaseRequest<
+        { email: string; token_reference: string | null; active: boolean }[]
+      >(
+        `/rest/v1/mailbox_connections?select=email,token_reference,active&profile_id=eq.${session.identity.profileId}&provider=eq.gmail&limit=1`,
+        { method: "GET" }, token,
+      );
+      const connection = connections[0];
+      if (!connection?.active || !connection.token_reference)
+        throw new InputError("Connect your Gmail account before receiving messages.");
+      const refreshToken = await reveal(connection.token_reference);
+      const fresh = await gmailRefreshAccessToken(refreshToken);
+      const matches = await gmailSearchMessages({
+        accessToken: fresh.access_token,
+        query: `{from:${client.email} to:${client.email}}`,
+        maxResults: 100,
+      });
+      let imported = 0;
+      for (const match of matches.reverse()) {
+        const existing = await supabaseRequest<{ id: string }[]>(
+          `/rest/v1/email_messages?select=id&provider_message_id=eq.${encodeURIComponent(match.id)}&limit=1`,
+          { method: "GET" }, token,
+        );
+        if (existing.length) continue;
+        const gmail = await gmailGetMessage({ accessToken: fresh.access_token, id: match.id });
+        let threads = await supabaseRequest<{ id: string }[]>(
+          `/rest/v1/email_threads?select=id&provider_thread_id=eq.${encodeURIComponent(gmail.threadId)}&limit=1`,
+          { method: "GET" }, token,
+        );
+        const sentAt = gmail.internalDate
+          ? new Date(Number(gmail.internalDate)).toISOString()
+          : new Date(gmailHeader(gmail, "Date") || Date.now()).toISOString();
+        if (!threads.length) {
+          const threadId = crypto.randomUUID();
+          await supabaseRequest("/rest/v1/email_threads", {
+            method: "POST", headers: { Prefer: "return=minimal" },
+            body: JSON.stringify({
+              id: threadId, organisation_id: session.identity.organisationId,
+              client_id: client.id, case_id: caseId, provider_thread_id: gmail.threadId,
+              subject: gmailHeader(gmail, "Subject") || "Email conversation",
+              assigned_to: session.identity.profileId, status: "open",
+              awaiting_party: "staff", last_message_at: sentAt,
+            }),
+          }, token);
+          threads = [{ id: threadId }];
+        }
+        const sender = gmailHeader(gmail, "From");
+        const outbound = sender.toLowerCase().includes(connection.email.toLowerCase());
+        const addresses = (value: string) => value.split(",").map((part) => part.trim()).filter(Boolean);
+        await supabaseRequest("/rest/v1/email_messages", {
+          method: "POST", headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({
+            id: crypto.randomUUID(), organisation_id: session.identity.organisationId,
+            thread_id: threads[0].id, provider_message_id: gmail.id,
+            sender, recipients: addresses(gmailHeader(gmail, "To")),
+            cc: addresses(gmailHeader(gmail, "Cc")), direction: outbound ? "outbound" : "inbound",
+            body_preview: gmailTextBody(gmail.payload).trim() || gmail.snippet || "",
+            sent_at: sentAt, delivery_state: outbound ? "sent" : "received",
+            created_by: session.identity.profileId, metadata: { gmail_thread_id: gmail.threadId },
+          }),
+        }, token);
+        await supabaseRequest(`/rest/v1/email_threads?id=eq.${threads[0].id}`, {
+          method: "PATCH", headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ last_message_at: sentAt, awaiting_party: outbound ? "client" : "staff", status: "open" }),
+        }, token);
+        imported += 1;
+      }
+      return appendRefreshCookies(Response.json({ ok: true, imported }), session.refreshed, request);
     } else if (action === "send_message") {
       const messageId = uuid(body.messageId, "Message");
 

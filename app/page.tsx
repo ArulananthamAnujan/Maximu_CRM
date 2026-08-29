@@ -6383,6 +6383,7 @@ function CaseDrawerBody({
   const [newItem, setNewItem] = useState("");
   const [newNote, setNewNote] = useState("");
   const [working, setWorking] = useState(false);
+  const [syncingMail, setSyncingMail] = useState(false);
   const [caseError, setCaseError] = useState("");
   const [sendingPortalAccess, setSendingPortalAccess] = useState(false);
   const [portalAccessResult, setPortalAccessResult] = useState<{
@@ -6505,6 +6506,26 @@ function CaseDrawerBody({
     send("/api/crm/casefile", body);
   const intake = (body: Record<string, unknown>) =>
     send("/api/crm/intake", body);
+
+  const syncCaseMail = async () => {
+    if (!caseId) return;
+    setSyncingMail(true);
+    try {
+      const response = await fetch("/api/crm/mailbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync_case", caseId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Gmail could not be synchronised.");
+      setCaseError(result.imported ? `${result.imported} Gmail message${result.imported === 1 ? "" : "s"} added to this conversation.` : "Gmail is up to date for this person.");
+      await reload();
+    } catch (reason_) {
+      setCaseError(reason_ instanceof Error ? reason_.message : "Gmail could not be synchronised.");
+    } finally {
+      setSyncingMail(false);
+    }
+  };
 
   const run = async (next: LifecycleStage) => {
     setMoving(next);
@@ -7208,9 +7229,15 @@ function CaseDrawerBody({
                 <span className="kicker">SHARED CLIENT CONVERSATION</span>
                 <h3>Email and messages</h3>
               </div>
-              <button className="primaryButton" onClick={() => onCaseAction(caseId ?? "", "message")}>
-                <Plus size={14} /> New message
-              </button>
+              <div className="caseWorkPanelActions">
+                <button className="ghostButton" disabled={syncingMail} onClick={() => void syncCaseMail()}>
+                  <RefreshCw size={14} className={syncingMail ? "spin" : ""} />
+                  {syncingMail ? "Checking Gmail…" : "Receive from Gmail"}
+                </button>
+                <button className="primaryButton" onClick={() => onCaseAction(caseId ?? "", "message")}>
+                  <Plus size={14} /> New message
+                </button>
+              </div>
             </div>
             {(file?.communications ?? []).length === 0 ? (
               <p className="caseWorkEmpty">No communication is linked to this case yet.</p>
@@ -8910,6 +8937,7 @@ export default function Home() {
     [modal, setModal] = useState<ModalType>(null),
     [presetCaseId, setPresetCaseId] = useState(""),
     [selected, setSelected] = useState<CaseRecord | null>(null),
+    [caseWindowId, setCaseWindowId] = useState(""),
     [editing, setEditing] = useState<CaseRecord | null>(null),
     [toast, setToast] = useState(""),
     [formError, setFormError] = useState(""),
@@ -9126,6 +9154,27 @@ export default function Home() {
     const timer = window.setTimeout(() => void loadWorkspace(), 0);
     return () => window.clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setCaseWindowId(new URL(window.location.href).searchParams.get("case") ?? ""),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    if (!caseWindowId || selected?.dbId === caseWindowId) return;
+    const record = cases.find((entry) => entry.dbId === caseWindowId);
+    if (!record) return;
+    const timer = window.setTimeout(() => setSelected(record), 0);
+    return () => window.clearTimeout(timer);
+  }, [caseWindowId, cases, selected?.dbId]);
+  const openCaseWorkspace = useCallback((record: CaseRecord) => {
+    if (!record.dbId) return;
+    const target = new URL(window.location.href);
+    target.search = "";
+    target.searchParams.set("case", record.dbId);
+    window.open(target.toString(), `maximus-case-${record.dbId}`, "noopener,noreferrer");
+  }, []);
   const searched = useMemo(
     () =>
       cases.filter((c) =>
@@ -9259,7 +9308,7 @@ export default function Home() {
     setEditing(null);
     setDuplicates(null);
     setPendingIntake(null);
-    if (existing) setSelected(existing);
+    if (existing) openCaseWorkspace(existing);
     else say("That client has no case on file yet.");
   };
   const addCaseToExistingClient = async (clientId: string) => {
@@ -9905,7 +9954,7 @@ export default function Home() {
     // Opens the case an application or visa matter belongs to.
     const openCase = (id: string) => {
       const found = cases.find((c) => c.dbId === id);
-      if (found) setSelected(found);
+      if (found) openCaseWorkspace(found);
       else say("That case is not in your workspace.");
     };
     // The pipeline stage a case sits at is shared by both service streams, but
@@ -9978,7 +10027,7 @@ export default function Home() {
         filter={filter}
         setFilter={setFilter}
         openModal={open}
-        onSelect={setSelected}
+        onSelect={openCaseWorkspace}
         staff={staff}
         canBulkAssign={canManageFinance}
         onBulkAssign={bulkAssignCases}
@@ -10013,7 +10062,7 @@ export default function Home() {
       );
   }
   return (
-    <div className={`appShell mode-${serviceMode}`}>
+    <div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}`}>
       {schemaWarning && (
         <div className="schemaBanner" role="status">
           <AlertTriangle size={15} />
@@ -10067,7 +10116,7 @@ export default function Home() {
                         <button
                           key={c.id}
                           onClick={() => {
-                            setSelected(c);
+                            openCaseWorkspace(c);
                             setQuery("");
                           }}
                         >
@@ -10283,7 +10332,10 @@ export default function Home() {
             role !== "staff" || selected?.ownerId === identity?.profileId || selected?.collaboratorIds?.includes(identity?.profileId ?? "")
           )}
           item={selected}
-          close={() => setSelected(null)}
+          close={() => {
+            if (caseWindowId) window.close();
+            else setSelected(null);
+          }}
           edit={editCase}
           remove={removeCase}
           onCaseAction={openForCase}

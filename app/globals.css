@@ -8095,6 +8095,51 @@ body {
   max-width: 720px;
   width: min(720px, 96vw);
 }
+.caseWindow > .sidebar,
+.caseWindow > .mainArea,
+.caseWindow > .schemaBanner,
+.caseWindow > .truncationBanner {
+  display: none;
+}
+.caseWindow .drawerBackdrop {
+  position: fixed;
+  background: #f4f7fb;
+  backdrop-filter: none;
+  justify-content: stretch;
+}
+.caseWindow .caseDrawer.wide {
+  width: 100%;
+  max-width: none;
+  box-shadow: none;
+  padding: clamp(18px, 3vw, 38px);
+  animation: none;
+}
+.caseWindow .drawerHead {
+  position: sticky;
+  top: calc(-1 * clamp(18px, 3vw, 38px));
+  z-index: 3;
+  margin: calc(-1 * clamp(18px, 3vw, 38px));
+  margin-bottom: 0;
+  padding: 22px clamp(18px, 3vw, 38px);
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(14px);
+}
+.caseWindow .caseTabs {
+  position: sticky;
+  top: 104px;
+  z-index: 2;
+  background: #f4f7fb;
+  padding-top: 12px;
+}
+.caseWindow .caseWorkPanel,
+.caseWindow .assignPanel,
+.caseWindow .lifecyclePanel,
+.caseWindow .drawerHealth {
+  max-width: 1180px;
+  margin-left: auto;
+  margin-right: auto;
+}
 .caseTabs {
   display: flex;
   flex-wrap: wrap;
