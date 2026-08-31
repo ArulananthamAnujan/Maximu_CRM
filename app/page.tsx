@@ -7614,7 +7614,7 @@ function CaseDrawerBody({
             <CaseInvoices
               invoices={file?.invoices ?? []}
               documents={file?.documents ?? []}
-              caseId={caseId}
+              caseId={caseId ?? ""}
               storageConnected={storageConnected}
               onChanged={reload}
             />
