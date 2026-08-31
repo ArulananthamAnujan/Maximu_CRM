@@ -1233,16 +1233,20 @@ function DailyTopNav({
 function WorkspaceDashboard({
   cases,
   tasks,
+  appointments,
   documents,
   openModal,
   setActive,
+  onOpenCase,
   serviceMode,
 }: {
   cases: CaseRecord[];
   tasks: TaskRecord[];
+  appointments: AppointmentRecord[];
   documents: DocumentRecord[];
   openModal: (x: ModalType) => void;
   setActive: (x: ModuleKey) => void;
+  onOpenCase: (x: CaseRecord) => void;
   serviceMode: ServiceMode;
 }) {
   const direct = serviceMode === "direct_visa",
@@ -1256,20 +1260,16 @@ function WorkspaceDashboard({
     attention = workspaceCases.filter((c) => c.health !== "healthy").length,
     waiting = workspaceCases.filter((c) => c.status === "waiting").length,
     completed = workspaceCases.filter((c) => c.status === "completed").length,
-    steps = direct
-      ? [
-          ["01", "Enquiry", "Capture and qualify"],
-          ["02", "Client", "Convert and assign"],
-          ["03", "Visa Application", "Prepare and lodge"],
-          ["04", "Case Complete", "Record the outcome"],
-        ]
-      : [
-          ["01", "Enquiry", "Capture and qualify"],
-          ["02", "Student", "Convert and counsel"],
-          ["03", "Application", "Offer and CoE"],
-          ["04", "Visa", "Lodge and decide"],
-          ["05", "Defer", "Move the intake"],
-        ],
+    today = new Date().toISOString().slice(0, 10),
+    openTasks = tasks.filter((task) => !task.completed),
+    overdueTasks = openTasks.filter((task) => task.due && task.due < today),
+    pendingDocuments = documents.filter(
+      (document) => !["received", "completed", "uploaded"].includes(document.status.toLowerCase()),
+    ),
+    upcomingAppointments = appointments
+      .filter((appointment) => appointment.date >= today)
+      .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)),
+    nextAppointments = upcomingAppointments.slice(0, 3),
     openList = direct ? "direct_visas" : "students";
   return (
     <>
@@ -1283,13 +1283,13 @@ function WorkspaceDashboard({
           <div>
             <h2>
               {direct
-                ? "Every visa matter, clearly managed."
-                : "Every student journey, beautifully organised."}
+                ? "Migration operations desk"
+                : "Student operations desk"}
             </h2>
             <p>
               {direct
-                ? "Move from enquiry to client, visa application and case completion in one focused migration workspace."
-                : "Move from first enquiry to student, application, visa and defer management without losing the next action."}
+                ? "See the matters that need action, the deadlines at risk and the next client commitments from one place."
+                : "See the students who need action, the work due today and the next application commitments from one place."}
             </p>
             <div className="welcomeActions">
               <button className="heroPrimary" onClick={() => openModal("case")}>
@@ -1317,37 +1317,42 @@ function WorkspaceDashboard({
             </small>
             <div>
               <i />
-              <b>Workspace ready</b>
+              <b>{attention ? `${attention} need attention` : "No case risks flagged"}</b>
             </div>
           </div>
         </div>
       </section>
-      <section className="modeJourney">
+      <section className="operationsBrief" aria-label="Today's priorities">
         <div className="sectionIntro">
           <div>
-            <span className="kicker">THE MAXIMUS PROCESS</span>
-            <h2>{direct ? "Direct Visa workflow" : "Study Abroad workflow"}</h2>
+            <span className="kicker">TODAY</span>
+            <h2>What needs your team&apos;s attention</h2>
           </div>
-          <p>
-            The service switch changes the complete navigation, terminology and
-            reporting context.
-          </p>
+          <p>Open the queue and continue the work without searching across modules.</p>
         </div>
-        <div className="journeyTrack">
-          {steps.map(([number, label, copy], index) => (
-            <article key={label} className={index === 0 ? "active" : ""}>
-              <b>{number}</b>
-              <div>
-                <strong>{label}</strong>
-                <small>{copy}</small>
-              </div>
-              {index < steps.length - 1 ? <ArrowRight size={16} /> : null}
-            </article>
-          ))}
+        <div className="priorityStrip">
+          <button onClick={() => setActive("work")} className={overdueTasks.length ? "urgent" : ""}>
+            <span><Check size={18} /></span>
+            <strong>{overdueTasks.length}</strong>
+            <small>overdue task{overdueTasks.length === 1 ? "" : "s"}</small>
+            <ArrowRight size={15} />
+          </button>
+          <button onClick={() => setActive("documents")}>
+            <span><FileCheck2 size={18} /></span>
+            <strong>{pendingDocuments.length}</strong>
+            <small>document request{pendingDocuments.length === 1 ? "" : "s"} open</small>
+            <ArrowRight size={15} />
+          </button>
+          <button onClick={() => setActive("calendar")}>
+            <span><CalendarDays size={18} /></span>
+            <strong>{upcomingAppointments.length}</strong>
+            <small>upcoming appointment{upcomingAppointments.length === 1 ? "" : "s"}</small>
+            <ArrowRight size={15} />
+          </button>
         </div>
       </section>
       <section className="signalGrid">
-        <article className="signal ocean">
+        <button className="signal ocean" onClick={() => setActive(openList)}>
           <div>
             <span>{direct ? "Active clients" : "Active students"}</span>
             <strong>
@@ -1358,8 +1363,8 @@ function WorkspaceDashboard({
           <div className="signalIcon blue">
             {direct ? <ShieldCheck size={22} /> : <GraduationCap size={22} />}
           </div>
-        </article>
-        <article className="signal sunshine">
+        </button>
+        <button className="signal sunshine" onClick={() => setActive(openList)}>
           <div>
             <span>Need attention</span>
             <strong>{attention}</strong>
@@ -1368,8 +1373,8 @@ function WorkspaceDashboard({
           <div className="signalIcon amber">
             <AlertTriangle size={22} />
           </div>
-        </article>
-        <article className="signal coral">
+        </button>
+        <button className="signal coral" onClick={() => setActive(openList)}>
           <div>
             <span>Waiting</span>
             <strong>{waiting}</strong>
@@ -1378,8 +1383,8 @@ function WorkspaceDashboard({
           <div className="signalIcon">
             <Clock3 size={22} />
           </div>
-        </article>
-        <article className="signal mint">
+        </button>
+        <button className="signal mint" onClick={() => setActive("case_complete")}>
           <div>
             <span>{direct ? "Case complete" : "Completed"}</span>
             <strong>{completed}</strong>
@@ -1388,7 +1393,7 @@ function WorkspaceDashboard({
           <div className="signalIcon green">
             <Check size={22} />
           </div>
-        </article>
+        </button>
       </section>
       <section className="dashboardGrid">
         <article className="panel pipelinePanel">
@@ -1421,7 +1426,7 @@ function WorkspaceDashboard({
                 <button
                   className="caseRow compactRecord"
                   key={c.id}
-                  onClick={() => setActive(openList)}
+                  onClick={() => onOpenCase(c)}
                 >
                   <span className="clientCell">
                     <b>{c.name}</b>
@@ -1480,6 +1485,21 @@ function WorkspaceDashboard({
               </div>
               <ArrowRight size={15} />
             </button>
+            {nextAppointments.length > 0 ? (
+              <div className="dashboardAppointments">
+                <span className="kicker">NEXT APPOINTMENTS</span>
+                {nextAppointments.map((appointment) => (
+                  <button key={appointment.id} onClick={() => setActive("calendar")}>
+                    <CalendarDays size={15} />
+                    <span>
+                      <strong>{appointment.client || appointment.title}</strong>
+                      <small>{appointment.date} · {appointment.time || "Time not set"}</small>
+                    </span>
+                    <ArrowRight size={14} />
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </article>
         </aside>
       </section>
@@ -1515,6 +1535,12 @@ function CaseWorkspace({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [assigning, setAssigning] = useState(false);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [listQuery, setListQuery] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const [branchFilter, setBranchFilter] = useState("all");
+  const [healthFilter, setHealthFilter] = useState("all");
+  const [dueFilter, setDueFilter] = useState("all");
   // A screen switch must not carry a selection from one case list into the
   // next; adjusted here, during render, rather than in an effect.
   const [selectionModule, setSelectionModule] = useState(module);
@@ -1541,8 +1567,43 @@ function CaseWorkspace({
     };
   }, [module]);
 
-  const shown =
-    filter === "all" ? cases : cases.filter((c) => c.status === filter);
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAhead = new Date(Date.parse(`${today}T00:00:00Z`) + 7 * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const shown = cases.filter((record) => {
+    if (filter !== "all" && record.status !== filter) return false;
+    if (
+      listQuery &&
+      !`${record.name} ${record.id} ${record.email} ${record.type} ${record.target}`
+        .toLowerCase()
+        .includes(listQuery.toLowerCase())
+    ) return false;
+    if (ownerFilter !== "all" && record.ownerId !== ownerFilter) return false;
+    if (branchFilter !== "all" && record.branchId !== branchFilter) return false;
+    if (healthFilter !== "all" && record.health !== healthFilter) return false;
+    if (dueFilter === "overdue" && (!record.due || record.due >= today)) return false;
+    if (
+      dueFilter === "next7" &&
+      (!record.due || record.due < today || record.due > weekAhead)
+    ) return false;
+    if (dueFilter === "none" && record.due) return false;
+    return true;
+  });
+  const activeFilterCount = [
+    listQuery,
+    ownerFilter !== "all" ? ownerFilter : "",
+    branchFilter !== "all" ? branchFilter : "",
+    healthFilter !== "all" ? healthFilter : "",
+    dueFilter !== "all" ? dueFilter : "",
+  ].filter(Boolean).length;
+  const clearFilters = () => {
+    setListQuery("");
+    setOwnerFilter("all");
+    setBranchFilter("all");
+    setHealthFilter("all");
+    setDueFilter("all");
+  };
   const toggleOne = (id: string) =>
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -1567,7 +1628,14 @@ function CaseWorkspace({
           action: "create",
           module,
           name: name.trim(),
-          filters: { filter },
+          filters: {
+            filter,
+            query: listQuery,
+            owner: ownerFilter,
+            branch: branchFilter,
+            health: healthFilter,
+            due: dueFilter,
+          },
         }),
       });
       const result = await response.json();
@@ -1613,10 +1681,11 @@ function CaseWorkspace({
         <div>
           <button
             className="ghostButton"
-            onClick={() => setFilter(filter === "all" ? "active" : "all")}
+            aria-expanded={showFilters}
+            onClick={() => setShowFilters((value) => !value)}
           >
             <Filter size={15} />
-            Filter
+            Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
           </button>
           <button className="primaryButton" onClick={() => openModal("case")}>
             <Plus size={16} />
@@ -1624,12 +1693,81 @@ function CaseWorkspace({
           </button>
         </div>
       </div>
+      {showFilters ? (
+        <div className="caseFilterPanel">
+          <label className="caseFilterSearch">
+            <span>Search this list</span>
+            <div>
+              <Search size={16} />
+              <input
+                value={listQuery}
+                onChange={(event) => setListQuery(event.target.value)}
+                placeholder="Name, case number, email or matter"
+              />
+            </div>
+          </label>
+          <label>
+            <span>Owner</span>
+            <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
+              <option value="all">All owners</option>
+              <option value="">Unassigned</option>
+              {staff.filter((person) => person.active).map((person) => (
+                <option key={person.id} value={person.id}>{person.display_name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Branch</span>
+            <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
+              <option value="all">All branches</option>
+              {Array.from(
+                new Map(
+                  cases
+                    .filter((record) => record.branchId)
+                    .map((record) => [record.branchId, record.branch]),
+                ).entries(),
+              ).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Case health</span>
+            <select value={healthFilter} onChange={(event) => setHealthFilter(event.target.value)}>
+              <option value="all">All health states</option>
+              <option value="critical">Critical</option>
+              <option value="attention">Needs attention</option>
+              <option value="healthy">Healthy</option>
+            </select>
+          </label>
+          <label>
+            <span>Due date</span>
+            <select value={dueFilter} onChange={(event) => setDueFilter(event.target.value)}>
+              <option value="all">Any due date</option>
+              <option value="overdue">Overdue</option>
+              <option value="next7">Next 7 days</option>
+              <option value="none">No due date</option>
+            </select>
+          </label>
+          <div className="caseFilterSummary">
+            <strong>{shown.length}</strong>
+            <span>of {cases.length} cases</span>
+            {activeFilterCount ? <button className="linkButton" onClick={clearFilters}>Clear filters</button> : null}
+          </div>
+        </div>
+      ) : null}
       <div className="savedViewsBar">
         {savedViews.map((view) => (
             <span className="savedViewChip" key={view.id}>
               <button
                 type="button"
-                onClick={() => setFilter(String(view.filters?.filter ?? "all"))}
+                onClick={() => {
+                  setFilter(String(view.filters?.filter ?? "all"));
+                  setListQuery(String(view.filters?.query ?? ""));
+                  setOwnerFilter(String(view.filters?.owner ?? "all"));
+                  setBranchFilter(String(view.filters?.branch ?? "all"));
+                  setHealthFilter(String(view.filters?.health ?? "all"));
+                  setDueFilter(String(view.filters?.due ?? "all"));
+                  setShowFilters(true);
+                }}
               >
                 {view.name}
               </button>
@@ -8930,6 +9068,7 @@ function RecordModal({
 }
 
 export default function Home() {
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const [active, setActive] = useState<ModuleKey>("dashboard"),
     [menuOpen, setMenuOpen] = useState(false),
     [query, setQuery] = useState(""),
@@ -9154,6 +9293,20 @@ export default function Home() {
     const timer = window.setTimeout(() => void loadWorkspace(), 0);
     return () => window.clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (event.key === "Escape" && query) {
+        setQuery("");
+        searchRef.current?.blur();
+      }
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [query]);
   useEffect(() => {
     const timer = window.setTimeout(
       () => setCaseWindowId(new URL(window.location.href).searchParams.get("case") ?? ""),
@@ -9762,9 +9915,11 @@ export default function Home() {
       <WorkspaceDashboard
         cases={cases}
         tasks={tasks}
+        appointments={appointments}
         documents={documents}
         openModal={open}
         setActive={setActive}
+        onOpenCase={openCaseWorkspace}
         serviceMode={serviceMode}
       />
     );
@@ -10102,6 +10257,7 @@ export default function Home() {
               <div className="searchWrap">
                 <Search size={18} />
                 <input
+                  ref={searchRef}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={`Search ${serviceMode === "study" ? "students and applications" : "clients and visa matters"}…`}
