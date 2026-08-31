@@ -8470,13 +8470,18 @@ function RecordModal({
     );
   }
   if (!type) return null;
+  const isClientAppointment = role === "client" && type === "appointment";
+  const isClientMessage = role === "client" && type === "message";
+  const clientCase = cases[0];
   const titles: Record<Exclude<ModalType, null>, string> = {
     case: editing ? "Edit record" : "Create record",
     task: "Create task",
-    appointment: "Schedule appointment",
+    appointment: isClientAppointment
+      ? "Request an appointment"
+      : "Schedule appointment",
     document: "Request document",
     visaChecklist: "Document checklist",
-    message: "Compose draft",
+    message: isClientMessage ? "Message your case team" : "Compose draft",
     invoice: "Create invoice",
     template: "Create template",
     workflow: "Status configuration",
@@ -8493,6 +8498,8 @@ function RecordModal({
             <span>
               {type === "case"
                 ? "MAXIMUS COMPLETE INFORMATION CAPTURE"
+                : isClientAppointment || isClientMessage
+                  ? "MY MAXIMUS PORTAL"
                 : "SECURE CRM RECORD"}
             </span>
             <h2>{titles[type]}</h2>
@@ -8786,37 +8793,68 @@ function RecordModal({
           {type === "appointment" && (
             <>
               <label className="full">
-                Title
+                {isClientAppointment
+                  ? "What would you like to discuss?"
+                  : "Title"}
                 <input name="title" required />
               </label>
-              <label>
-                Linked case
-                <select name="caseId">
-                  <option value="">Internal appointment</option>
-                  {cases.map((c) => (
-                    <option key={c.id} value={c.dbId || c.id}>
-                      {c.name}
+              {isClientAppointment && cases.length === 1 ? (
+                <label>
+                  Case
+                  <input value={`${clientCase.name} · ${clientCase.id}`} disabled />
+                  <input
+                    type="hidden"
+                    name="caseId"
+                    value={clientCase.dbId || clientCase.id}
+                  />
+                </label>
+              ) : (
+                <label>
+                  {isClientAppointment ? "Case" : "Linked case"}
+                  <select name="caseId" required={isClientAppointment}>
+                    <option value="">
+                      {isClientAppointment
+                        ? "Select your case"
+                        : "Internal appointment"}
                     </option>
-                  ))}
-                </select>
-              </label>
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.dbId || c.id}>
+                        {isClientAppointment ? `${c.name} · ${c.id}` : c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
-                Date
+                {isClientAppointment ? "Preferred date" : "Date"}
                 <input name="date" type="date" required />
               </label>
               <label>
-                Time
+                {isClientAppointment ? "Preferred time" : "Time"}
                 <input name="time" type="time" required />
               </label>
               <label>
-                Type
+                {isClientAppointment ? "Appointment reason" : "Type"}
                 <select name="appointmentType">
                   <option>Counselling</option>
                   <option>Document review</option>
                   <option>Visa consultation</option>
-                  <option>Internal meeting</option>
+                  {isClientAppointment ? (
+                    <>
+                      <option>Application update</option>
+                      <option>Other</option>
+                    </>
+                  ) : (
+                    <option>Internal meeting</option>
+                  )}
                 </select>
               </label>
+              {isClientAppointment && !clientCase ? (
+                <p className="formError full" role="alert">
+                  Your login is not linked to a case yet. Please contact your
+                  Maximus case team before requesting an appointment.
+                </p>
+              ) : null}
             </>
           )}
           {type === "document" && (
@@ -8951,21 +8989,51 @@ function RecordModal({
           )}
           {type === "message" && (
             <>
-              <label>
-                To
-                <input name="to" type="email" defaultValue={presetCase?.email ?? ""} required />
-              </label>
-              <label>
-                Linked case
-                <select name="caseId" defaultValue={presetCase?.dbId || presetCase?.id || ""}>
-                  <option value="">None</option>
-                  {cases.map((c) => (
-                    <option key={c.id} value={c.dbId || c.id}>
-                      {c.name}
+              {isClientMessage ? (
+                <label>
+                  To
+                  <input value="Your Maximus case team" disabled />
+                </label>
+              ) : (
+                <label>
+                  To
+                  <input
+                    name="to"
+                    type="email"
+                    defaultValue={presetCase?.email ?? ""}
+                    required
+                  />
+                </label>
+              )}
+              {isClientMessage && cases.length === 1 ? (
+                <label>
+                  Case
+                  <input value={`${clientCase.name} · ${clientCase.id}`} disabled />
+                  <input
+                    type="hidden"
+                    name="caseId"
+                    value={clientCase.dbId || clientCase.id}
+                  />
+                </label>
+              ) : (
+                <label>
+                  {isClientMessage ? "Case" : "Linked case"}
+                  <select
+                    name="caseId"
+                    required={isClientMessage}
+                    defaultValue={presetCase?.dbId || presetCase?.id || ""}
+                  >
+                    <option value="">
+                      {isClientMessage ? "Select your case" : "None"}
                     </option>
-                  ))}
-                </select>
-              </label>
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.dbId || c.id}>
+                        {isClientMessage ? `${c.name} · ${c.id}` : c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="full">
                 Subject
                 <input name="subject" required />
@@ -8974,6 +9042,12 @@ function RecordModal({
                 Message
                 <textarea name="body" required />
               </label>
+              {isClientMessage && !clientCase ? (
+                <p className="formError full" role="alert">
+                  Your login is not linked to a case yet. Please contact Maximus
+                  directly so the case team can connect your portal.
+                </p>
+              ) : null}
             </>
           )}
           {type === "invoice" && (
@@ -9057,9 +9131,26 @@ function RecordModal({
           <button type="button" className="ghostButton" onClick={close}>
             Cancel
           </button>
-          <button type="submit" className="primaryButton" disabled={saving}>
+          <button
+            type="submit"
+            className="primaryButton"
+            disabled={
+              saving ||
+              ((isClientAppointment || isClientMessage) && !clientCase)
+            }
+          >
             <Check size={15} />
-            {saving ? "Saving securely…" : "Save complete record"}
+            {saving
+              ? isClientAppointment
+                ? "Sending request…"
+                : isClientMessage
+                  ? "Sending message…"
+                  : "Saving securely…"
+              : isClientAppointment
+                ? "Send appointment request"
+                : isClientMessage
+                  ? "Send message"
+                  : "Save complete record"}
           </button>
         </footer>
       </form>
@@ -9371,7 +9462,13 @@ export default function Home() {
       setPendingIntake(null);
       setPresetCaseId("");
       await loadWorkspace();
-      say(`${kind[0].toUpperCase() + kind.slice(1)} saved to Supabase`);
+      say(
+        role === "client" && kind === "appointment"
+          ? "Appointment request sent to your case team"
+          : role === "client" && kind === "message"
+            ? "Message sent to your case team"
+            : `${kind[0].toUpperCase() + kind.slice(1)} saved to Supabase`,
+      );
       return true;
     } catch (reason) {
       const message =

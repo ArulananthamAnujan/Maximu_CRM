@@ -1167,17 +1167,52 @@ export async function POST(request: Request) {
     if (action === "message") {
       const threadId = crypto.randomUUID();
       const messageId = crypto.randomUUID();
-      const recipient = required(body.to, "Recipient");
+      let clientId = nullable(body.clientId);
+      let caseId = nullable(body.caseId);
+      let recipient = nullable(body.to);
+      let assignedTo = actor;
+      let threadStatus = "draft";
+      let direction = "outbound";
+      let deliveryState = "draft";
+      if (session.identity.role === "client") {
+        clientId = await ownClientId(session.identity.profileId, token);
+        caseId = required(body.caseId, "Case");
+        if (!clientId)
+          throw new LiveAccessError(
+            403,
+            "No client record is linked to this account.",
+          );
+        const [linkedCase] = await rest<Json[]>(
+          `cases?select=id,client_id,owner_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+          token,
+        );
+        if (!linkedCase || String(linkedCase.client_id) !== String(clientId))
+          throw new LiveAccessError(
+            403,
+            "You can only message the team working on your own case.",
+          );
+        if (!linkedCase.owner_id)
+          throw new InputError(
+            "Your case does not have an assigned officer yet. Please contact Maximus directly.",
+          );
+        assignedTo = String(linkedCase.owner_id);
+        recipient = "Maximus case team";
+        threadStatus = "open";
+        direction = "inbound";
+        deliveryState = "received";
+      } else {
+        recipient = required(body.to, "Recipient");
+      }
       await insert(
         "email_threads",
         {
           id: threadId,
           organisation_id: org,
-          client_id: nullable(body.clientId),
-          case_id: nullable(body.caseId),
+          client_id: clientId,
+          case_id: caseId,
           subject: required(body.subject, "Subject"),
-          assigned_to: actor,
-          status: "draft",
+          assigned_to: assignedTo,
+          status: threadStatus,
           awaiting_party: "staff",
           last_message_at: new Date().toISOString(),
         },
@@ -1191,9 +1226,9 @@ export async function POST(request: Request) {
           thread_id: threadId,
           sender: session.identity.email,
           recipients: [recipient],
-          direction: "outbound",
+          direction,
           body_preview: required(body.body, "Message"),
-          delivery_state: "draft",
+          delivery_state: deliveryState,
           created_by: actor,
         },
         token,
@@ -1201,11 +1236,13 @@ export async function POST(request: Request) {
       await auditEvent(
         org,
         actor,
-        "message.drafted",
+        session.identity.role === "client" ? "message.received" : "message.drafted",
         "email_message",
         messageId,
         session.identity.branchId,
-        `Saved message draft: ${String(body.subject)}`,
+        session.identity.role === "client"
+          ? `Client message: ${String(body.subject)}`
+          : `Saved message draft: ${String(body.subject)}`,
         token,
       );
       return Response.json({ ok: true });

@@ -311,6 +311,17 @@ test("the client portal is titled from its own words", async () => {
   assert.doesNotMatch(page, /client_user_links\s*$/m);
 });
 
+test("portal appointments and messages are restricted to the client's case", async () => {
+  const page = await read("app/page.tsx");
+  const route = await read("app/api/crm/workspace/route.ts");
+  assert.match(page, /Send appointment request/);
+  assert.match(page, /Message your case team/);
+  assert.match(route, /You can only request an appointment on your own case/);
+  assert.match(route, /You can only message the team working on your own case/);
+  assert.match(route, /direction = "inbound"/);
+  assert.match(route, /deliveryState = "received"/);
+});
+
 test("the browser suite is wired into CI and needs no committed key", async () => {
   const workflow = await read(".github/workflows/ci.yml");
   const harness = await read("scripts/verify-features.sh");
