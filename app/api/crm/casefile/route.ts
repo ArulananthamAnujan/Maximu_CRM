@@ -181,6 +181,50 @@ export async function POST(request: Request) {
     const body = (await request.json()) as Json;
     const action = required(body.action, "Action");
 
+    if (action === "invoice_pdf_prepare") {
+      const invoiceId = uuid(body.invoiceId, "Invoice");
+      const caseId = uuid(body.caseId, "Case");
+      const [invoice] = await get<Json[]>(
+        `invoices?select=id,client_id,case_id,invoice_number&id=eq.${invoiceId}&limit=1`,
+        token,
+      );
+      if (!invoice || String(invoice.case_id) !== caseId)
+        throw new LiveAccessError(403, "That invoice is not available in this case.");
+      const existing = await get<Json[]>(
+        `documents?select=id&case_id=eq.${caseId}&metadata->>invoice_id=eq.${invoiceId}&limit=1`,
+        token,
+      );
+      if (existing[0]) return Response.json({ ok: true, documentId: existing[0].id });
+
+      const documentId = crypto.randomUUID();
+      const invoiceNumber = String(invoice.invoice_number || "Invoice");
+      await insert(
+        "documents",
+        {
+          id: documentId,
+          organisation_id: org,
+          client_id: invoice.client_id,
+          case_id: caseId,
+          document_type: "10 Accounts and Receipts",
+          display_name: `${invoiceNumber}.pdf`,
+          state: "requested",
+          requested_by: session.identity.profileId,
+          metadata: {
+            source: "invoice_pdf",
+            invoice_id: invoiceId,
+            invoice_number: invoiceNumber,
+            client_visible: false,
+          },
+        },
+        token,
+      );
+      await audit(session, "invoice.pdf_prepared", "invoice", invoiceId, {
+        caseId,
+        summary: `Prepared a PDF attachment for ${invoiceNumber}`,
+      });
+      return Response.json({ ok: true, documentId });
+    }
+
     if (action === "application_create") {
       const id = crypto.randomUUID();
       const status = applicationStatus(body.status);

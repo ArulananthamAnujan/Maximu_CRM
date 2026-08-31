@@ -322,6 +322,28 @@ test("portal appointments and messages are restricted to the client's case", asy
   assert.match(route, /deliveryState = "received"/);
 });
 
+test("case email is resolved from the profile both when composing and when sending", async () => {
+  const workspace = await read("app/api/crm/workspace/route.ts");
+  const mailbox = await read("app/api/crm/mailbox/route.ts");
+  const page = await read("app/page.tsx");
+  assert.match(workspace, /recipientSource: "case_profile"/);
+  assert.match(workspace, /clients\?select=id,email/);
+  assert.match(mailbox, /Resolve the address again at the moment of dispatch/);
+  assert.match(mailbox, /clients\?select=email/);
+  assert.doesNotMatch(page, /name="to"/);
+});
+
+test("invoice PDFs use the protected Drive document pipeline", async () => {
+  const workspace = await read("app/api/crm/workspace/route.ts");
+  const documents = await read("app/api/crm/documents/route.ts");
+  const page = await read("app/page.tsx");
+  assert.match(workspace, /source: "invoice_pdf"/);
+  assert.match(workspace, /10 Accounts and Receipts/);
+  assert.match(documents, /\.\.\.\(\(document\.metadata/);
+  assert.match(page, /name="invoicePdf"/);
+  assert.match(page, /invoice_pdf_prepare/);
+});
+
 test("the browser suite is wired into CI and needs no committed key", async () => {
   const workflow = await read(".github/workflows/ci.yml");
   const harness = await read("scripts/verify-features.sh");

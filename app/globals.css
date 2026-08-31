@@ -9424,3 +9424,186 @@ body { font-size: 14px; }
   .caseFilterSummary { display: flex; align-items: baseline; gap: 6px; }
   .caseFilterSummary .linkButton { margin-left: auto; }
 }
+
+/* Case files are working surfaces: grouped navigation stays visible while the
+   selected work area gets the width and visual priority. */
+.caseWorkspaceLayout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 24px;
+  max-width: 1380px;
+  margin: 0 auto;
+  align-items: start;
+}
+.caseWorkspaceContent { min-width: 0; padding-bottom: 24px; }
+.caseTabs {
+  position: sticky;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+  margin: 18px 0 0;
+  padding: 14px;
+  border: 1px solid #d8e4e9;
+  border-radius: 13px;
+  background: #fff;
+}
+.caseNavGroup { display: grid; gap: 4px; }
+.caseNavGroup > span {
+  padding: 2px 9px 5px;
+  color: #71828c;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.caseTabs .caseNavGroup button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: #405865;
+  font-size: 12px;
+  text-align: left;
+}
+.caseTabs .caseNavGroup button.active {
+  color: #0f607c;
+  border-color: #c8e0e9;
+  background: #eaf5f8;
+  box-shadow: inset 3px 0 0 #1682a3;
+}
+.caseTabs button b {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #edf2f4;
+  color: #526b79;
+  font-size: 9px;
+  text-align: center;
+}
+.caseTabs button.active b { background: #fff; color: #0f607c; }
+.caseSectionHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 18px 0 16px;
+  padding: 2px 2px 15px;
+  border-bottom: 1px solid #d8e4e9;
+}
+.caseSectionHead h2 {
+  margin: 3px 0 4px;
+  color: var(--ink);
+  font-family: Georgia, serif;
+  font-size: 24px;
+}
+.caseSectionHead p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+.caseQuickActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.caseQuickActions .ghostButton { white-space: nowrap; }
+.caseHome {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(260px, .85fr);
+  grid-template-areas:
+    "priority priority"
+    "health health"
+    "workflow owner"
+    "facts team";
+  gap: 14px;
+  align-items: start;
+}
+.casePriorityBar {
+  grid-area: priority;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 0 !important;
+  padding: 17px 18px;
+  border: 1px solid #bbdbe7;
+  border-radius: 13px;
+  background: linear-gradient(115deg, #eaf7fa, #f7fbfc);
+}
+.casePriorityBar h3 { margin: 3px 0 4px !important; font-size: 17px !important; }
+.casePriorityBar p { margin: 0; color: #526b79; font-size: 11px; }
+.casePriorityBar .primaryButton { flex: 0 0 auto; }
+.caseHome > .drawerHealth { grid-area: health; margin: 0; background: #fff; }
+.caseHome > .lifecyclePanel { grid-area: workflow; margin: 0; padding: 18px; border: 1px solid #d8e4e9; background: #fff; }
+.caseHome > .caseFactsPanel { grid-area: facts; margin: 0; padding: 18px; border: 1px solid #d8e4e9; background: #fff; }
+.caseHome > .assignPanel { grid-area: owner; margin: 0; padding: 18px; border: 1px solid #d8e4e9; background: #fff; }
+.caseHome > .caseTeamPanel { grid-area: team; margin: 0; padding: 18px; border: 1px solid #d8e4e9; background: #fff; }
+.caseWorkspaceContent > .caseWorkPanel,
+.caseWorkspaceContent > .assignPanel,
+.caseWorkspaceContent > .lifecyclePanel,
+.caseWorkspaceContent > .recordTableWrap {
+  margin-top: 0;
+  padding: 18px;
+  border: 1px solid #d8e4e9;
+  background: #fff;
+}
+.caseWindow .caseTabs {
+  top: 116px;
+  z-index: 2;
+  padding: 14px;
+  background: #fff;
+}
+.caseWindow .caseWorkspaceLayout { max-width: 1380px; }
+.caseWindow .caseWorkPanel,
+.caseWindow .assignPanel,
+.caseWindow .lifecyclePanel,
+.caseWindow .drawerHealth { max-width: none; }
+
+@media (max-width: 980px) {
+  .caseWorkspaceLayout { grid-template-columns: 165px minmax(0, 1fr); gap: 16px; }
+  .caseHome {
+    grid-template-columns: 1fr;
+    grid-template-areas: "priority" "health" "workflow" "facts" "owner" "team";
+  }
+}
+
+@media (max-width: 760px) {
+  .caseWorkspaceLayout { display: block; }
+  .caseTabs,
+  .caseWindow .caseTabs {
+    position: sticky;
+    top: 96px;
+    z-index: 2;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 5px;
+    margin: 0 -4px 12px;
+    padding: 9px 4px;
+    overflow-x: auto;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    background: rgba(245, 248, 249, .96);
+  }
+  .caseTabs > button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .caseTabsMore { flex: 0 0 auto; }
+  .caseSectionHead { align-items: flex-start; flex-direction: column; margin-top: 6px; }
+  .caseQuickActions { justify-content: flex-start; }
+  .casePriorityBar { align-items: flex-start; flex-direction: column; }
+  .casePriorityBar .primaryButton { width: 100%; justify-content: center; }
+  .caseSectionHead h2 { font-size: 21px; }
+}
+
+.caseInvoiceTable { min-width: 880px; }
+.invoicePdfActions { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.invoicePdfActions .ghostButton { min-height: 31px; padding: 6px 9px; font-size: 10px; }
+.invoicePdfActions label { cursor: pointer; }
+.invoicePdfActions label.disabled { cursor: not-allowed; opacity: .5; }
+.invoicePdfActions input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.recordModal label > small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.4; }

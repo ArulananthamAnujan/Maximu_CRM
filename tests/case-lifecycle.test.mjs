@@ -84,6 +84,10 @@ async function startStub({
       }
       if (url.pathname === "/rest/v1/cases" && req.method === "GET" && url.searchParams.has("owner_id"))
         return send(200, [{ id: CASE_ID, owner_id: USER.id }]);
+      if (url.pathname === "/rest/v1/cases" && req.method === "GET")
+        return send(200, [{ id: CASE_ID, client_id: CASE_ID, owner_id: USER.id }]);
+      if (url.pathname === "/rest/v1/clients" && req.method === "GET")
+        return send(200, [{ id: CASE_ID, email: "client@example.test", first_name: "Priya", last_name: "Sharma" }]);
       // PostgREST returns the rows an update actually touched when the caller
       // asks for a representation, and an empty array when row-level security
       // hid every one of them. The route relies on that to tell a refused
@@ -344,7 +348,7 @@ test("moving a case without the migration explains what to apply", async () => {
 // invoices_staff_create (row-level security) is what actually decides.
 test("a case officer's invoice request reaches the database rather than being refused up front", async () => {
   const result = await post(
-    { action: "invoice", clientId: CASE_ID, amount: "100" },
+    { action: "invoice", caseId: CASE_ID, subtotal: "100", tax: "10" },
     { level: "staff" },
   );
   assert.equal(result.status, 200);
@@ -376,10 +380,33 @@ test("a case officer cannot change an invoice, template or workflow", async () =
 
 test("a manager may create an invoice", async () => {
   const result = await post(
-    { action: "invoice", clientId: CASE_ID, amount: "100", due: "2026-12-01" },
+    { action: "invoice", caseId: CASE_ID, subtotal: "100", tax: "10", due: "2026-12-01" },
     { level: "branch_admin" },
   );
   assert.equal(result.status, 200);
   const write = result.requests.find((r) => r.path === "/rest/v1/invoices");
-  assert.equal(write.body.total, 100);
+  assert.equal(write.body.subtotal, 100);
+  assert.equal(write.body.tax, 10);
+  assert.equal(write.body.total, 110);
+  const pdfSlot = result.requests.find(
+    (r) => r.path === "/rest/v1/documents" && r.method === "POST",
+  );
+  assert.equal(pdfSlot.body.metadata.source, "invoice_pdf");
+  assert.equal(pdfSlot.body.document_type, "10 Accounts and Receipts");
+});
+
+test("case communication resolves the recipient from the current client profile", async () => {
+  const result = await post({
+    action: "message",
+    caseId: CASE_ID,
+    to: "wrong-person@example.test",
+    subject: "Document update",
+    body: "We have received your passport.",
+  });
+  assert.equal(result.status, 200);
+  const message = result.requests.find(
+    (r) => r.path === "/rest/v1/email_messages" && r.method === "POST",
+  );
+  assert.deepEqual(message.body.recipients, ["client@example.test"]);
+  assert.equal(result.body.recipientSource, "case_profile");
 });

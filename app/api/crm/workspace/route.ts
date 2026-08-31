@@ -225,6 +225,12 @@ export async function GET(request: Request) {
       const key = String(row.invoice_id);
       creditedByInvoice.set(key, (creditedByInvoice.get(key) ?? 0) + Number(row.amount ?? 0));
     }
+    const invoicePdfByInvoice = new Map<string, Json>();
+    for (const row of documents) {
+      const metadata = (row.metadata as Json | null) ?? {};
+      if (metadata.source !== "invoice_pdf" || !metadata.invoice_id) continue;
+      invoicePdfByInvoice.set(String(metadata.invoice_id), row);
+    }
     const branchById = new Map(branches.map((row) => [String(row.id), row]));
     const profileById = new Map(profiles.map((row) => [String(row.id), row]));
     const threadById = new Map(threads.map((row) => [String(row.id), row]));
@@ -358,7 +364,11 @@ export async function GET(request: Request) {
         const credited = creditedByInvoice.get(String(row.id)) ?? 0;
         return {
           id: row.id,
+          invoiceNumber: String(row.invoice_number ?? ""),
           client: fullClientName(clientById.get(String(row.client_id))),
+          currency: String(row.currency ?? "AUD"),
+          subtotal: Number(row.subtotal ?? 0),
+          tax: Number(row.tax ?? 0),
           amount: total,
           paid,
           credited,
@@ -377,6 +387,9 @@ export async function GET(request: Request) {
                 : row.state === "void"
                   ? "Void"
                   : "Unpaid",
+          pdfDocumentId: invoicePdfByInvoice.get(String(row.id))?.drive_file_id
+            ? String(invoicePdfByInvoice.get(String(row.id))?.id ?? "")
+            : "",
         };
       }),
       // Management-only, same read scope as commission claims -- comes back
@@ -1201,7 +1214,26 @@ export async function POST(request: Request) {
         direction = "inbound";
         deliveryState = "received";
       } else {
-        recipient = required(body.to, "Recipient");
+        // Staff never type a recipient for case communication. Resolve it
+        // from the case and its client at send time, so a corrected address
+        // in the case profile is used immediately and an unrelated address
+        // cannot be attached to the wrong file.
+        caseId = required(body.caseId, "Case");
+        const [linkedCase] = await rest<Json[]>(
+          `cases?select=id,client_id,owner_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+          token,
+        );
+        if (!linkedCase)
+          throw new LiveAccessError(403, "That case is not available to you.");
+        clientId = String(linkedCase.client_id);
+        const [linkedClient] = await rest<Json[]>(
+          `clients?select=id,email&id=eq.${encodeURIComponent(clientId)}&limit=1`,
+          token,
+        );
+        if (!linkedClient)
+          throw new LiveAccessError(403, "That client is not available to you.");
+        recipient = requiredEmail(linkedClient.email);
+        assignedTo = String(linkedCase.owner_id || actor);
       }
       await insert(
         "email_threads",
@@ -1245,7 +1277,7 @@ export async function POST(request: Request) {
           : `Saved message draft: ${String(body.subject)}`,
         token,
       );
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, messageId, recipientSource: "case_profile" });
     }
 
     if (action === "invoice") {
@@ -1254,23 +1286,63 @@ export async function POST(request: Request) {
       // database, same as every other staff write in this schema. Changing
       // or voiding an invoice once raised stays manager and above.
       const id = crypto.randomUUID();
-      const total = Number(body.amount ?? 0);
+      const documentId = crypto.randomUUID();
+      const caseId = required(body.caseId, "Case");
+      const [invoiceCase] = await rest<Json[]>(
+        `cases?select=id,client_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+        token,
+      );
+      if (!invoiceCase)
+        throw new LiveAccessError(403, "That case is not available to you.");
+      const clientId = String(invoiceCase.client_id);
+      const subtotal = moneyAmount(body.subtotal ?? body.amount, "Subtotal");
+      const tax = moneyAmount(body.tax ?? 0, "Tax", true);
+      const total = Math.round((subtotal + tax) * 100) / 100;
+      const currency = invoiceCurrency(body.currency);
+      const invoiceType = invoiceTypeValue(body.invoiceType);
+      const invoiceNumber = `INV-${new Date().getUTCFullYear()}-${id.slice(0, 8).toUpperCase()}`;
       await insert(
         "invoices",
         {
           id,
           organisation_id: org,
-          client_id: required(body.clientId, "Client"),
-          case_id: nullable(body.caseId),
-          invoice_number: `INV-${new Date().getUTCFullYear()}-${id.slice(0, 8).toUpperCase()}`,
-          invoice_type: "professional_fee",
-          currency: "AUD",
-          subtotal: total,
+          client_id: clientId,
+          case_id: caseId,
+          invoice_number: invoiceNumber,
+          invoice_type: invoiceType,
+          currency,
+          subtotal,
+          tax,
           total,
           state: "issued",
           issued_on: new Date().toISOString().slice(0, 10),
           due_on: nullable(body.due),
           created_by: actor,
+        },
+        token,
+      );
+      // Every invoice gets a protected file slot, even when the PDF is added
+      // later. The normal document uploader then stores it in the client's
+      // Accounts and Receipts folder and keeps replacement/version history.
+      await insert(
+        "documents",
+        {
+          id: documentId,
+          organisation_id: org,
+          client_id: clientId,
+          case_id: caseId,
+          document_type: "10 Accounts and Receipts",
+          display_name: `${invoiceNumber}.pdf`,
+          state: "requested",
+          requested_by: actor,
+          metadata: {
+            source: "invoice_pdf",
+            invoice_id: id,
+            invoice_number: invoiceNumber,
+            // Shown through the invoice, not as a document request asking the
+            // client to upload Maximus's own invoice back to the agency.
+            client_visible: false,
+          },
         },
         token,
       );
@@ -1281,24 +1353,24 @@ export async function POST(request: Request) {
         "invoice",
         id,
         session.identity.branchId,
-        `Created invoice for $${total.toFixed(2)}`,
+        `Created ${invoiceNumber} for ${currency} ${total.toFixed(2)}`,
         token,
       );
       const [invoiceClient] = await rest<Json[]>(
-        `clients?select=email,first_name,last_name&id=eq.${encodeURIComponent(String(body.clientId))}&limit=1`,
+        `clients?select=email,first_name,last_name&id=eq.${encodeURIComponent(clientId)}&limit=1`,
         token,
       );
       if (invoiceClient) {
         const due = nullable(body.due);
         await notifyClient(org, token, "invoice_request", String(invoiceClient.email ?? ""), {
           client_name: fullClientName(invoiceClient),
-          amount: `$${total.toFixed(2)}`,
+          amount: `${currency} ${total.toFixed(2)}`,
           due_clause: due ? `, due ${due}` : "",
             portal_link: publicOrigin(request),
           sender_name: session.identity.displayName,
         });
       }
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, invoiceId: id, invoiceNumber, documentId });
     }
 
     if (action === "send_portal_access") {
@@ -2158,6 +2230,31 @@ function requiredEmail(value: unknown): string {
   const parsed = required(value, "Email address").toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed))
     throw new InputError("Enter a valid email address.");
+  return parsed;
+}
+function moneyAmount(value: unknown, label: string, allowZero = false): number {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0 || (!allowZero && amount === 0))
+    throw new InputError(`${label} must be a valid amount greater than zero.`);
+  return Math.round(amount * 100) / 100;
+}
+function invoiceCurrency(value: unknown): string {
+  const currency = String(value || "AUD").trim().toUpperCase();
+  if (!["AUD", "USD", "NZD", "GBP", "EUR", "CAD", "INR", "LKR"].includes(currency))
+    throw new InputError("That invoice currency is not supported.");
+  return currency;
+}
+function invoiceTypeValue(value: unknown): string {
+  const parsed = String(value || "professional_fee").trim().toLowerCase();
+  if (![
+    "professional_fee",
+    "service_fee",
+    "tuition",
+    "application_fee",
+    "visa_fee",
+    "disbursement",
+  ].includes(parsed))
+    throw new InputError("That invoice type is not recognised.");
   return parsed;
 }
 function requiredDay(value: unknown, label: string): string {

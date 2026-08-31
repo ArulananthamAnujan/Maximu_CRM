@@ -221,7 +221,11 @@ type MessageRecord = {
 };
 type InvoiceRecord = {
   id: string;
+  invoiceNumber: string;
   client: string;
+  currency: string;
+  subtotal: number;
+  tax: number;
   amount: number;
   paid: number;
   credited: number;
@@ -230,6 +234,7 @@ type InvoiceRecord = {
   issued: string;
   due: string;
   status: string;
+  pdfDocumentId: string;
 };
 type CommissionClaimRecord = {
   id: string;
@@ -749,7 +754,7 @@ const meta: Record<ModuleKey, [string, string, string]> = {
   communications: [
     "Messages",
     "Communication",
-    "Case-linked message drafts. Sending is not connected yet.",
+    "Send and receive case-linked Gmail conversations using the address saved in each client profile.",
   ],
   courseFinder: [
     "Course Finder",
@@ -2533,11 +2538,13 @@ type MailboxStatus = {
 
 function MessagesView({
   items,
+  cases,
   openModal,
   setItems,
   canSend,
 }: {
   items: MessageRecord[];
+  cases: CaseRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: MessageRecord[]) => void;
   // A client's own portal login can raise a message to their case team, but
@@ -2636,7 +2643,7 @@ function MessagesView({
       <div className="panelHead">
         <div>
           <span className="kicker">CASE MESSAGES</span>
-          <h2>Drafts</h2>
+          <h2>Shared case communication</h2>
         </div>
         <div className="panelHeadActions">
           {discardedCount > 0 && (
@@ -2699,7 +2706,7 @@ function MessagesView({
         <EmptyState
           icon={Mail}
           title={discardedCount > 0 ? "Nothing in the outbox" : "No messages"}
-          copy="Compose and save case-linked drafts. Sending is done from your own mailbox."
+          copy="Choose a case and send a message. The CRM uses the email saved in that case profile."
           action="Compose message"
           onAction={() => openModal("message")}
         />
@@ -2714,7 +2721,7 @@ function MessagesView({
               <div>
                 <strong>{m.subject}</strong>
                 <span>
-                  To {m.to} · {messageWhen(m)}
+                  {cases.find((item) => (item.dbId || item.id) === m.caseId)?.name || "Linked case"} · {messageWhen(m)}
                 </span>
               </div>
               <Status value={sent ? "Sent" : m.status} />
@@ -2845,10 +2852,15 @@ function FinanceView({
           items.map((i) => (
             <div className="functionalRow" key={i.id}>
               <div>
-                <strong>{i.client}</strong>
-                <span>Due {i.due || "not set"}</span>
+                <strong>{i.invoiceNumber || i.client}</strong>
+                <span>{i.client} · Due {i.due || "not set"}</span>
               </div>
-              <b>${i.amount.toLocaleString()}</b>
+              <b>{i.currency} {i.amount.toLocaleString()}</b>
+              {i.pdfDocumentId ? (
+                <a className="ghostButton" href={`/api/crm/documents?documentId=${i.pdfDocumentId}`}>
+                  <FileText size={14} /> Invoice PDF
+                </a>
+              ) : null}
               {canManage ? (
                 <>
                   <button
@@ -4073,14 +4085,19 @@ function ClientModuleView({
             <div className="functionalRow" key={i.id}>
               <CircleDollarSign size={18} />
               <div>
-                <strong>{money(i.amount)}</strong>
+                <strong>{i.invoiceNumber || money(i.amount)}</strong>
                 <span>
-                  {i.issued ? `Issued ${i.issued} · ` : ""}Due{" "}
+                  {i.currency} {i.amount.toLocaleString()} · {i.issued ? `Issued ${i.issued} · ` : ""}Due{" "}
                   {i.due || "not set"} · Paid {money(i.paid)} · Balance{" "}
                   {money(i.balance)}
                 </span>
               </div>
               <Status value={i.status} />
+              {i.pdfDocumentId ? (
+                <a className="ghostButton" href={`/api/crm/documents?documentId=${i.pdfDocumentId}`}>
+                  <FileText size={14} /> View invoice
+                </a>
+              ) : null}
               {confirmedIds.has(i.id) ? (
                 <span className="portalConfirmed">
                   <Check size={14} /> Confirmed
@@ -6345,17 +6362,30 @@ type CaseTab =
   | "finance";
 
 const caseTabs: [CaseTab, string][] = [
-  ["overview", "Overview"],
-  ["client", "Client"],
-  ["family", "Family"],
-  ["history", "History"],
+  ["overview", "Case home"],
   ["applications", "Applications"],
   ["visa", "Visa matter"],
   ["documents", "Documents"],
-  ["communication", "Communication"],
-  ["timeline", "Timeline"],
+  ["communication", "Messages"],
+  ["client", "Client details"],
+  ["family", "Family"],
+  ["history", "Background"],
   ["finance", "Finance"],
+  ["timeline", "Activity & notes"],
 ];
+
+const caseTabDescriptions: Record<CaseTab, string> = {
+  overview: "Priorities, ownership, deadlines and the case workflow.",
+  applications: "Institution applications, offers, enrolment and COE progress.",
+  visa: "Visa preparation, lodgement, checks and decision details.",
+  documents: "Outstanding requests, received files and the document checklist.",
+  communication: "The shared client conversation, including imported Gmail messages.",
+  client: "Personal, contact, passport, consent and study-preference details.",
+  family: "Dependants and family members connected to this client.",
+  history: "Education, employment, English tests and previous visa history.",
+  finance: "Invoices and payments recorded against this case.",
+  timeline: "File notes and a complete, time-ordered audit trail.",
+};
 
 type CaseFile = {
   case: Record<string, unknown>;
@@ -6438,14 +6468,16 @@ function FactList({
   title,
   rows,
   empty,
+  className,
 }: {
   title: string;
   rows: [string, unknown][];
   empty?: string;
+  className?: string;
 }) {
   const filled = rows.filter(([, value]) => text(value));
   return (
-    <section className="caseWorkPanel">
+    <section className={`caseWorkPanel${className ? ` ${className}` : ""}`}>
       <span className="kicker">{title.toUpperCase()}</span>
       {filled.length === 0 ? (
         <p className="caseWorkEmpty">{empty ?? "Nothing recorded yet."}</p>
@@ -6545,8 +6577,8 @@ function CaseDrawerBody({
   // migration file -- and the rest move behind one control.
   const compact = useCompactScreen();
   const primaryTabs: CaseTab[] = direct
-    ? ["overview", "visa", "documents", "finance"]
-    : ["overview", "applications", "documents", "finance"];
+    ? ["overview", "visa", "documents", "communication"]
+    : ["overview", "applications", "documents", "communication"];
   const shownTabs = compact
     ? availableTabs.filter(([key]) => primaryTabs.includes(key) || key === tab)
     : availableTabs;
@@ -6706,6 +6738,47 @@ function CaseDrawerBody({
   const client = file?.client ?? {};
   const clientId = String(item.clientId ?? "");
   const visa = file?.visaMatter ?? null;
+  const activeTabLabel =
+    availableTabs.find(([key]) => key === tab)?.[1] ?? "Case home";
+  const outstandingDocuments = checklist.filter(
+    (entry) => entry.status !== "completed" && entry.status !== "waived",
+  ).length;
+  const nextWork =
+    outstandingDocuments > 0
+      ? `${outstandingDocuments} document${outstandingDocuments === 1 ? "" : "s"} still required`
+      : stage === "enquiry"
+        ? "Complete the client details and convert this enquiry"
+        : stage === "student"
+          ? direct
+            ? "Prepare the visa matter and confirm the document plan"
+            : "Create or update the first institution application"
+          : stage === "application"
+            ? "Review application progress and prepare the visa stage"
+            : stage === "visa"
+              ? needsExpiry
+                ? "Record the visa expiry date before progressing"
+                : "Monitor the visa decision and record every update"
+              : stage === "deferred"
+                ? "Review the deferment and resume the case when ready"
+                : "Review the completed file and its final records";
+  const tabCount = (key: CaseTab) => {
+    if (key === "applications") return file?.applications.length ?? 0;
+    if (key === "family") return file?.dependants.length ?? 0;
+    if (key === "documents") return outstandingDocuments;
+    if (key === "communication") return file?.communications.length ?? 0;
+    if (key === "finance") return file?.invoices.length ?? 0;
+    return 0;
+  };
+  const navGroups: { label: string; tabs: CaseTab[] }[] = [
+    {
+      label: "Daily work",
+      tabs: direct
+        ? ["overview", "visa", "documents", "communication"]
+        : ["overview", "applications", "visa", "documents", "communication"],
+    },
+    { label: "Client profile", tabs: ["client", "family", "history"] },
+    { label: "Records", tabs: ["finance", "timeline"] },
+  ];
 
   return (
     <div className="drawerBackdrop" onClick={close}>
@@ -6732,48 +6805,118 @@ function CaseDrawerBody({
           </button>
         </div>
 
-        <nav className="caseTabs" role="tablist">
-          {shownTabs.map(([key, label]) => (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={tab === key}
-              className={tab === key ? "active" : ""}
-              onClick={() => setTab(key)}
-            >
-              {label}
-              {key === "applications" && file?.applications.length
-                ? ` (${file.applications.length})`
-                : ""}
-              {key === "family" && file?.dependants.length
-                ? ` (${file.dependants.length})`
-                : ""}
-            </button>
-          ))}
-          {moreTabs.length > 0 && (
-            <select
-              className="caseTabsMore"
-              aria-label="More case sections"
-              title="More case sections"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) setTab(e.target.value as CaseTab);
-              }}
-            >
-              <option value="">More…</option>
-              {moreTabs.map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          )}
-        </nav>
+        <div className="caseWorkspaceLayout">
+          <nav className="caseTabs" role="tablist" aria-label="Case sections">
+            {compact ? (
+              <>
+                {shownTabs.map(([key, label]) => (
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={tab === key}
+                    className={tab === key ? "active" : ""}
+                    onClick={() => setTab(key)}
+                  >
+                    {label}
+                    {tabCount(key) > 0 ? <b>{tabCount(key)}</b> : null}
+                  </button>
+                ))}
+                {moreTabs.length > 0 && (
+                  <select
+                    className="caseTabsMore"
+                    aria-label="More case sections"
+                    title="More case sections"
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) setTab(e.target.value as CaseTab);
+                    }}
+                  >
+                    <option value="">More…</option>
+                    {moreTabs.map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}{tabCount(key) > 0 ? ` (${tabCount(key)})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </>
+            ) : (
+              navGroups.map((group) => {
+                const tabs = group.tabs
+                  .map((key) => availableTabs.find(([candidate]) => candidate === key))
+                  .filter(Boolean) as [CaseTab, string][];
+                if (tabs.length === 0) return null;
+                return (
+                  <div className="caseNavGroup" key={group.label}>
+                    <span>{group.label}</span>
+                    {tabs.map(([key, label]) => (
+                      <button
+                        key={key}
+                        role="tab"
+                        aria-selected={tab === key}
+                        className={tab === key ? "active" : ""}
+                        onClick={() => setTab(key)}
+                      >
+                        <span>{label}</span>
+                        {tabCount(key) > 0 ? <b>{tabCount(key)}</b> : null}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })
+            )}
+          </nav>
 
-        {caseError && <p className="caseWorkError">{caseError}</p>}
+          <main className="caseWorkspaceContent">
+            <header className="caseSectionHead">
+              <div>
+                <span className="kicker">CASE WORKSPACE</span>
+                <h2>{activeTabLabel}</h2>
+                <p>{caseTabDescriptions[tab]}</p>
+              </div>
+              <div className="caseQuickActions">
+                <button className="ghostButton" onClick={() => setTab("communication")}>
+                  <Mail size={14} /> Message
+                </button>
+                <button className="ghostButton" onClick={() => setTab("documents")}>
+                  <FileCheck2 size={14} /> Documents
+                </button>
+                <button className="ghostButton" onClick={() => edit(item)} disabled={!canModify}>
+                  <Pencil size={14} /> Edit case
+                </button>
+              </div>
+            </header>
+
+            {caseError && <p className="caseWorkError">{caseError}</p>}
 
         {tab === "overview" && (
-          <>
+          <div className="caseHome">
+            <section className="casePriorityBar">
+              <div>
+                <span className="kicker">NEXT PRIORITY</span>
+                <h3>{nextWork}</h3>
+                <p>
+                  {stageLabelFor(stage, direct)} · {item.owner || "No owner assigned"}
+                  {item.due ? ` · due ${item.due}` : " · no deadline set"}
+                </p>
+              </div>
+              <button
+                className="primaryButton"
+                onClick={() =>
+                  setTab(
+                    outstandingDocuments > 0
+                      ? "documents"
+                      : direct
+                        ? "visa"
+                        : stage === "visa"
+                          ? "visa"
+                          : "applications",
+                  )
+                }
+              >
+                Open work area <ArrowRight size={15} />
+              </button>
+            </section>
             <div className="drawerHealth">
               <div>
                 <small>Health</small>
@@ -6790,6 +6933,7 @@ function CaseDrawerBody({
             </div>
             <FactList
               title="Case"
+              className="caseFactsPanel"
               rows={[
                 ["Matter type", item.matterType || "Not set"],
                 [
@@ -6848,7 +6992,7 @@ function CaseDrawerBody({
                 </div>
               </section>
             )}
-            <section className="caseWorkPanel">
+            <section className="caseWorkPanel caseTeamPanel">
               <div className="caseWorkPanelHead">
                 <div>
                   <span className="kicker">CASE TEAM</span>
@@ -7048,7 +7192,7 @@ function CaseDrawerBody({
                 </div>
               )}
             </section>
-          </>
+          </div>
         )}
 
         {tab === "client" && (
@@ -7467,24 +7611,12 @@ function CaseDrawerBody({
                 </div>
               </div>
             )}
-            <RecordTable
-              title="Invoices"
-              rows={(file?.invoices ?? []).map((row) => ({
-                ...row,
-                raised_by:
-                  staff.find((person) => person.id === row.created_by)
-                    ?.display_name || "Unknown",
-              }))}
-              columns={[
-                ["Invoice", "invoice_number"],
-                ["Type", "invoice_type"],
-                ["Total", "total"],
-                ["Paid", "paid"],
-                ["State", "state"],
-                ["Due", "due_on"],
-                ["Raised by", "raised_by"],
-              ]}
-              empty="No invoices raised for this case."
+            <CaseInvoices
+              invoices={file?.invoices ?? []}
+              documents={file?.documents ?? []}
+              caseId={caseId}
+              storageConnected={storageConnected}
+              onChanged={reload}
             />
           </>
         )}
@@ -7510,6 +7642,8 @@ function CaseDrawerBody({
             <Trash2 size={15} />
             {canAssign ? "Archive" : "Request archive"}
           </button>
+        </div>
+          </main>
         </div>
       </aside>
     </div>
@@ -7618,44 +7752,120 @@ function HistorySection({
   );
 }
 
-function RecordTable({
-  title,
-  rows,
-  columns,
-  empty,
+function CaseInvoices({
+  invoices,
+  documents,
+  caseId,
+  storageConnected,
+  onChanged,
 }: {
-  title: string;
-  rows: Record<string, unknown>[];
-  columns: [string, string][];
-  empty?: string;
+  invoices: Record<string, unknown>[];
+  documents: Record<string, unknown>[];
+  caseId: string;
+  storageConnected: boolean;
+  onChanged: () => Promise<void>;
 }) {
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+
+  const pdfFor = (invoiceId: string) =>
+    documents.find((document) => {
+      const metadata = (document.metadata as Record<string, unknown> | null) ?? {};
+      return metadata.source === "invoice_pdf" && String(metadata.invoice_id) === invoiceId;
+    });
+
+  const storePdf = async (invoice: Record<string, unknown>, chosen: File) => {
+    const invoiceId = String(invoice.id ?? "");
+    if (chosen.type !== "application/pdf" && !chosen.name.toLowerCase().endsWith(".pdf")) {
+      setError("Invoice attachments must be PDF files.");
+      return;
+    }
+    setBusy(invoiceId);
+    setError("");
+    try {
+      let documentId = String(pdfFor(invoiceId)?.id ?? "");
+      if (!documentId) {
+        const prepared = await fetch("/api/crm/casefile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "invoice_pdf_prepare", invoiceId, caseId }),
+        });
+        const preparedResult = await prepared.json().catch(() => ({}));
+        if (!prepared.ok)
+          throw new Error(preparedResult.error || "The invoice PDF slot could not be prepared.");
+        documentId = String(preparedResult.documentId || "");
+      }
+      const upload = new FormData();
+      upload.append("documentId", documentId);
+      upload.append("file", chosen);
+      const response = await fetch("/api/crm/documents", { method: "POST", body: upload });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "The invoice PDF could not be stored.");
+      await onChanged();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The invoice PDF could not be stored.");
+    } finally {
+      setBusy("");
+    }
+  };
+
   return (
     <section className="caseWorkPanel">
-      <span className="kicker">{title.toUpperCase()}</span>
-      {rows.length === 0 ? (
-        <p className="caseWorkEmpty">{empty ?? "Nothing recorded yet."}</p>
+      <span className="kicker">INVOICES</span>
+      {invoices.length === 0 ? (
+        <p className="caseWorkEmpty">No invoices raised for this case.</p>
       ) : (
         <div className="recordTableWrap">
-          <table className="recordTable">
+          <table className="recordTable caseInvoiceTable">
             <thead>
               <tr>
-                {columns.map(([label]) => (
-                  <th key={label}>{label}</th>
-                ))}
+                <th>Invoice</th><th>Type</th><th>Total</th><th>Paid</th><th>State</th><th>Due</th><th>PDF</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, index) => (
-                <tr key={String(row.id ?? index)}>
-                  {columns.map(([label, key]) => (
-                    <td key={label}>{humanise(row[key]) || "—"}</td>
-                  ))}
-                </tr>
-              ))}
+              {invoices.map((invoice) => {
+                const invoiceId = String(invoice.id ?? "");
+                const pdf = pdfFor(invoiceId);
+                const stored = Boolean(pdf?.drive_file_id);
+                return (
+                  <tr key={invoiceId}>
+                    <td>{humanise(invoice.invoice_number) || "—"}</td>
+                    <td>{humanise(invoice.invoice_type)}</td>
+                    <td>{String(invoice.currency || "AUD")} {Number(invoice.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td>{Number(invoice.paid || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td><Status value={String(invoice.state || "issued")} /></td>
+                    <td>{day(invoice.due_on) || "Not set"}</td>
+                    <td>
+                      <div className="invoicePdfActions">
+                        {stored ? (
+                          <a className="ghostButton" href={`/api/crm/documents?documentId=${String(pdf?.id)}`}>
+                            <Download size={13} /> View PDF
+                          </a>
+                        ) : null}
+                        <label className={`ghostButton${!storageConnected ? " disabled" : ""}`}>
+                          <Cloud size={13} />
+                          {busy === invoiceId ? "Storing…" : stored ? "Replace" : "Add PDF"}
+                          <input
+                            type="file"
+                            accept="application/pdf,.pdf"
+                            disabled={!storageConnected || busy === invoiceId}
+                            onChange={(event) => {
+                              const chosen = event.target.files?.[0];
+                              if (chosen) void storePdf(invoice, chosen);
+                              event.currentTarget.value = "";
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
+      {error ? <p className="caseWorkError">{error}</p> : null}
     </section>
   );
 }
@@ -8481,7 +8691,7 @@ function RecordModal({
       : "Schedule appointment",
     document: "Request document",
     visaChecklist: "Document checklist",
-    message: isClientMessage ? "Message your case team" : "Compose draft",
+    message: isClientMessage ? "Message your case team" : "Send case message",
     invoice: "Create invoice",
     template: "Create template",
     workflow: "Status configuration",
@@ -8619,6 +8829,9 @@ function RecordModal({
                     required
                     defaultValue={editing?.email}
                   />
+                  {editing ? (
+                    <small>All future messages for this case use this address automatically.</small>
+                  ) : null}
                 </label>
                 <label>
                   Mobile *
@@ -8994,17 +9207,30 @@ function RecordModal({
                   To
                   <input value="Your Maximus case team" disabled />
                 </label>
-              ) : (
+              ) : presetCase ? (
                 <label>
-                  To
-                  <input
-                    name="to"
-                    type="email"
-                    defaultValue={presetCase?.email ?? ""}
-                    required
-                  />
+                  Client
+                  <input value={presetCase.name} disabled />
+                  <input type="hidden" name="caseId" value={presetCase.dbId || presetCase.id} />
                 </label>
-              )}
+              ) : null}
+              {!isClientMessage && !presetCase ? (
+                <label>
+                  Case
+                  <select name="caseId" required defaultValue="">
+                    <option value="">Select case</option>
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.dbId || c.id}>{c.name} · {c.id}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {!isClientMessage ? (
+                <p className="modalNotice full">
+                  <Mail size={14} />
+                  The recipient is taken automatically from this client&apos;s case profile. Edit the case profile if the address changes.
+                </p>
+              ) : null}
               {isClientMessage && cases.length === 1 ? (
                 <label>
                   Case
@@ -9015,7 +9241,7 @@ function RecordModal({
                     value={clientCase.dbId || clientCase.id}
                   />
                 </label>
-              ) : (
+              ) : isClientMessage ? (
                 <label>
                   {isClientMessage ? "Case" : "Linked case"}
                   <select
@@ -9033,7 +9259,7 @@ function RecordModal({
                     ))}
                   </select>
                 </label>
-              )}
+              ) : null}
               <label className="full">
                 Subject
                 <input name="subject" required />
@@ -9054,28 +9280,46 @@ function RecordModal({
             <>
               {presetCase ? (
                 <label>
-                  Client
-                  <input value={presetCase.name} disabled />
-                  <input type="hidden" name="clientId" value={presetCase.clientId || ""} />
+                  Case
+                  <input value={`${presetCase.name} · ${presetCase.id}`} disabled />
                   <input type="hidden" name="caseId" value={presetCase.dbId || presetCase.id} />
                 </label>
               ) : (
                 <label>
-                  Client
-                  <select name="clientId" required>
-                    <option value="">Select client</option>
+                  Case
+                  <select name="caseId" required>
+                    <option value="">Select case</option>
                     {cases.map((c) => (
-                      <option key={c.id} value={c.clientId}>
-                        {c.name}
+                      <option key={c.id} value={c.dbId || c.id}>
+                        {c.name} · {c.id}
                       </option>
                     ))}
                   </select>
                 </label>
               )}
               <label>
-                Amount
+                Invoice type
+                <select name="invoiceType" defaultValue="professional_fee">
+                  <option value="professional_fee">Professional fee</option>
+                  <option value="service_fee">Service fee</option>
+                  <option value="tuition">Tuition</option>
+                  <option value="application_fee">Application fee</option>
+                  <option value="visa_fee">Visa fee</option>
+                  <option value="disbursement">Disbursement</option>
+                </select>
+              </label>
+              <label>
+                Currency
+                <select name="currency" defaultValue="AUD">
+                  {['AUD', 'USD', 'NZD', 'GBP', 'EUR', 'CAD', 'INR', 'LKR'].map((currency) => (
+                    <option key={currency}>{currency}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Subtotal
                 <input
-                  name="amount"
+                  name="subtotal"
                   type="number"
                   min="0"
                   step="0.01"
@@ -9083,8 +9327,17 @@ function RecordModal({
                 />
               </label>
               <label>
+                Tax / GST
+                <input name="tax" type="number" min="0" step="0.01" defaultValue="0" required />
+              </label>
+              <label>
                 Due date
                 <input name="due" type="date" />
+              </label>
+              <label className="full">
+                Invoice PDF
+                <input name="invoicePdf" type="file" accept="application/pdf,.pdf" />
+                <small>The PDF is stored in this client&apos;s Google Drive Accounts and Receipts folder.</small>
               </label>
             </>
           )}
@@ -9145,12 +9398,20 @@ function RecordModal({
                 ? "Sending request…"
                 : isClientMessage
                   ? "Sending message…"
-                  : "Saving securely…"
+                  : type === "message"
+                    ? "Sending message…"
+                    : type === "invoice"
+                      ? "Saving invoice…"
+                      : "Saving securely…"
               : isClientAppointment
                 ? "Send appointment request"
                 : isClientMessage
                   ? "Send message"
-                  : "Save complete record"}
+                  : type === "message"
+                    ? "Send message"
+                    : type === "invoice"
+                      ? "Create invoice"
+                      : "Save complete record"}
           </button>
         </footer>
       </form>
@@ -9445,6 +9706,7 @@ export default function Home() {
   const submitRecord = async (
     kind: Exclude<ModalType, null>,
     payload: Record<string, unknown>,
+    attachment?: File,
   ) => {
     setSaving(true);
     try {
@@ -9456,6 +9718,42 @@ export default function Home() {
       const result = await response.json().catch(() => ({}));
       if (!response.ok)
         throw new Error(result.error || "The record could not be saved.");
+
+      if (kind === "message" && role !== "client") {
+        const sent = await fetch("/api/crm/mailbox", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "send_message", messageId: result.messageId }),
+        });
+        const sentResult = await sent.json().catch(() => ({}));
+        if (!sent.ok) {
+          setModal(null);
+          setPresetCaseId("");
+          await loadWorkspace();
+          throw new Error(sentResult.error || "The message was saved but Gmail could not send it.");
+        }
+      }
+
+      if (kind === "invoice" && attachment) {
+        if (!result.documentId) {
+          setModal(null);
+          setPresetCaseId("");
+          await loadWorkspace();
+          throw new Error("The invoice was created but its PDF storage record is unavailable.");
+        }
+        const upload = new FormData();
+        upload.append("documentId", String(result.documentId));
+        upload.append("file", attachment);
+        const stored = await fetch("/api/crm/documents", { method: "POST", body: upload });
+        const storedResult = await stored.json().catch(() => ({}));
+        if (!stored.ok) {
+          setModal(null);
+          setPresetCaseId("");
+          await loadWorkspace();
+          throw new Error(storedResult.error || "The invoice was created but its PDF could not be stored.");
+        }
+      }
+
       setModal(null);
       setEditing(null);
       setDuplicates(null);
@@ -9467,7 +9765,13 @@ export default function Home() {
           ? "Appointment request sent to your case team"
           : role === "client" && kind === "message"
             ? "Message sent to your case team"
-            : `${kind[0].toUpperCase() + kind.slice(1)} saved to Supabase`,
+            : kind === "message"
+              ? "Message sent and added to the shared case conversation"
+              : kind === "invoice"
+                ? attachment
+                  ? "Invoice created and PDF stored in the client Drive folder"
+                  : "Invoice created with a Drive PDF slot ready"
+                : `${kind[0].toUpperCase() + kind.slice(1)} saved`,
       );
       return true;
     } catch (reason) {
@@ -9514,6 +9818,20 @@ export default function Home() {
           ([, value]) => typeof value === "string",
         ),
       ) as Record<string, unknown>;
+    const invoicePdfValue = modal === "invoice" ? f.get("invoicePdf") : null;
+    const invoicePdf =
+      invoicePdfValue instanceof File && invoicePdfValue.size > 0
+        ? invoicePdfValue
+        : undefined;
+    if (
+      invoicePdf &&
+      invoicePdf.type !== "application/pdf" &&
+      !invoicePdf.name.toLowerCase().endsWith(".pdf")
+    ) {
+      setFormError("Invoice attachments must be PDF files.");
+      setSaving(false);
+      return;
+    }
     payload.action = modal;
     // The portal asks; staff confirm. The workspace accepts only the actions
     // built for a client account.
@@ -9548,7 +9866,7 @@ export default function Home() {
         return;
       }
     }
-    await submitRecord(modal, payload);
+    await submitRecord(modal, payload, invoicePdf);
   };
 
   // The three honest answers to "this looks like somebody you already have".
@@ -10050,6 +10368,7 @@ export default function Home() {
     content = (
       <MessagesView
         items={messages}
+        cases={cases}
         openModal={open}
         setItems={syncMessages}
         // This screen is only ever reached by staff -- the client portal has

@@ -173,13 +173,32 @@ export async function POST(request: Request) {
       const message = messages[0];
       if (!message) throw new LiveAccessError(403, "That message could not be found.");
 
-      const threads = await supabaseRequest<{ id: string; subject: string }[]>(
-        `/rest/v1/email_threads?select=id,subject&id=eq.${message.thread_id}&limit=1`,
+      const threads = await supabaseRequest<
+        { id: string; subject: string; client_id: string | null; case_id: string | null }[]
+      >(
+        `/rest/v1/email_threads?select=id,subject,client_id,case_id&id=eq.${message.thread_id}&limit=1`,
         { method: "GET" },
         token,
       );
       const thread = threads[0];
       if (!thread) throw new LiveAccessError(403, "That message's thread could not be found.");
+
+      // Resolve the address again at the moment of dispatch. A draft can sit
+      // for days; if staff corrected the case profile in the meantime, Gmail
+      // must use that current address rather than the stale one stored when
+      // the draft was composed.
+      let recipients = message.recipients ?? [];
+      if (thread.case_id && thread.client_id) {
+        const clients = await supabaseRequest<{ email: string | null }[]>(
+          `/rest/v1/clients?select=email&id=eq.${encodeURIComponent(thread.client_id)}&limit=1`,
+          { method: "GET" },
+          token,
+        );
+        const current = String(clients[0]?.email ?? "").trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(current))
+          throw new InputError("This case profile does not have a valid email address.");
+        recipients = [current];
+      }
 
       let refreshToken: string;
       try {
@@ -194,7 +213,7 @@ export async function POST(request: Request) {
       const fresh = await gmailRefreshAccessToken(refreshToken);
       const raw = buildRawMessage({
         from: connection.email,
-        to: message.recipients ?? [],
+        to: recipients,
         cc: message.cc ?? [],
         subject: thread.subject,
         body: message.body_preview ?? "",
@@ -224,6 +243,7 @@ export async function POST(request: Request) {
             delivery_state: "sent",
             sent_at: now,
             provider_message_id: sent.id,
+            recipients,
           }),
         },
         token,
