@@ -65,6 +65,25 @@ test("every portal list provides client-safe bulk tools", async () => {
   ]) assert.match(page, new RegExp(contract));
 });
 
+test("course finder is student-readable, filterable and source-aware", async () => {
+  const page = await read("app/page.tsx");
+  const route = await read("app/api/crm/course-finder/route.ts");
+  const migration = await read("supabase/migrations/0030_course_catalog_live_sync.sql");
+  for (const label of [
+    "Field of study",
+    "Maximum annual tuition",
+    "Maximum duration",
+    "Source checked in the last 6 months",
+    "courseCardGrid",
+    "CourseApplicationFields",
+  ]) assert.match(page, new RegExp(label));
+  assert.doesNotMatch(route.split("export async function POST")[0], /Course Finder is available to staff only/);
+  assert.match(route, /search_course_catalog_v2/);
+  assert.match(migration, /courses_portal_read/);
+  assert.match(migration, /course_catalog_sync_runs/);
+  assert.match(migration, /stale_count/);
+});
+
 test("worker applies baseline browser and API security headers", async () => {
   const worker = await read("worker/index.ts");
   for (const header of ["Content-Security-Policy", "X-Content-Type-Options", "X-Frame-Options", "Permissions-Policy", "Cache-Control"])

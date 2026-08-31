@@ -371,6 +371,7 @@ const clientNavGroups = [
     label: "My journey",
     items: [
       ["portal", "Journey", GraduationCap],
+      ["courseFinder", "Find a course", School],
       ["calendar", "Appointments", CalendarDays],
       ["documents", "Documents", FolderOpen],
       ["communications", "Messages", Mail],
@@ -593,7 +594,7 @@ const roleConfig: Record<
     legacy: "Student login",
     scope: "Only the linked personal journey and documents",
     initials: "CL",
-    modules: ["portal", "calendar", "documents", "communications", "finance"],
+    modules: ["portal", "courseFinder", "calendar", "documents", "communications", "finance"],
   },
 };
 
@@ -663,6 +664,11 @@ const clientMeta: Partial<Record<ModuleKey, [string, string, string]>> = {
     "My journey",
     "Maximus",
     "Where your application has got to, and what we need from you next.",
+  ],
+  courseFinder: [
+    "Find a course",
+    "Study options",
+    "Search and compare current courses, fees, intakes and entry requirements.",
   ],
   calendar: [
     "My appointments",
@@ -1020,6 +1026,49 @@ function downloadDocumentFiles(documentIds: string[]) {
       anchor.click();
     }, index * 180);
   });
+}
+
+function matchesSearch(query: string, values: unknown[]) {
+  const needle = query.trim().toLocaleLowerCase();
+  if (!needle) return true;
+  return values.some((value) =>
+    String(value ?? "").toLocaleLowerCase().includes(needle),
+  );
+}
+
+function ListFilterBar({
+  query,
+  onQuery,
+  placeholder,
+  children,
+  resultCount,
+}: {
+  query: string;
+  onQuery: (value: string) => void;
+  placeholder: string;
+  children?: React.ReactNode;
+  resultCount: number;
+}) {
+  return (
+    <div className="listFilterBar">
+      <label className="listFilterSearch">
+        <Search size={16} aria-hidden="true" />
+        <input
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          placeholder={placeholder}
+          aria-label={placeholder}
+        />
+        {query && (
+          <button type="button" onClick={() => onQuery("")} aria-label="Clear search">
+            <X size={14} />
+          </button>
+        )}
+      </label>
+      {children}
+      <span className="filterResultCount">{resultCount.toLocaleString()} shown</span>
+    </div>
+  );
 }
 function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
   const [portal, setPortal] = useState<"staff" | "client">("staff"),
@@ -2135,8 +2184,13 @@ function ApplicationsBoard({
   onOpen: (caseId: string) => void;
 }) {
   const [showArchived, setShowArchived] = useState(false);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
   const archivedCount = rows.filter((row) => row.archived).length;
-  const shown = showArchived ? rows : rows.filter((row) => !row.archived);
+  const statuses = [...new Set(rows.map((row) => row.status).filter(Boolean))].sort();
+  const shown = (showArchived ? rows : rows.filter((row) => !row.archived))
+    .filter((row) => !status || row.status === status)
+    .filter((row) => matchesSearch(query, [row.client, row.institution, row.course, row.campus, row.intake, row.reference, row.owner, row.caseNumber]));
   const selection = useBulkSelection(shown);
   return (
     <article className="panel listPanel">
@@ -2156,6 +2210,9 @@ function ApplicationsBoard({
           </button>
         )}
       </div>
+      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search student, institution, course, intake or reference" resultCount={shown.length}>
+        <label className="compactFilter">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+      </ListFilterBar>
       {shown.length === 0 ? (
         <BoardEmpty what="applications" />
       ) : (
@@ -2235,7 +2292,13 @@ function VisaMattersBoard({
   rows: VisaMatterRow[];
   onOpen: (caseId: string) => void;
 }) {
-  const selection = useBulkSelection(rows);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const statuses = [...new Set(rows.map((row) => row.status).filter(Boolean))].sort();
+  const shown = rows
+    .filter((row) => !status || row.status === status)
+    .filter((row) => matchesSearch(query, [row.client, row.subclass, row.matterType, row.destination, row.currentVisa, row.trn, row.reference, row.agent, row.owner, row.marn, row.caseNumber]));
+  const selection = useBulkSelection(shown);
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -2244,7 +2307,10 @@ function VisaMattersBoard({
           <h2>Visa matters</h2>
         </div>
       </div>
-      {rows.length === 0 ? (
+      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search client, visa subclass, TRN, MARN or destination" resultCount={shown.length}>
+        <label className="compactFilter">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+      </ListFilterBar>
+      {shown.length === 0 ? (
         <BoardEmpty what="visa matters" />
       ) : (
         <>
@@ -2277,7 +2343,7 @@ function VisaMattersBoard({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {shown.map((row) => (
                 <tr key={row.id}>
                   <td className="selectionColumn"><RowSelection checked={selection.selectedIds.has(row.id)} onChange={() => selection.toggle(row.id)} label={`Select ${row.client || "visa matter"}`} /></td>
                   <td>{row.client || "—"}</td>
@@ -2344,7 +2410,15 @@ function TasksView({
   openModal: (x: ModalType) => void;
   onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
 }) {
-  const selection = useBulkSelection(tasks);
+  const [query, setQuery] = useState("");
+  const [state, setState] = useState("open");
+  const [priority, setPriority] = useState("");
+  const shown = tasks
+    .filter((task) => state === "all" || (state === "done" ? task.completed : !task.completed))
+    .filter((task) => !priority || task.priority === priority)
+    .filter((task) => matchesSearch(query, [task.title, task.priority, task.due, cases.find((c) => c.dbId === task.caseId)?.name]));
+  const priorities = [...new Set(tasks.map((task) => task.priority).filter(Boolean))].sort();
+  const selection = useBulkSelection(shown);
   const run = async (operation: string, extra: Record<string, unknown> = {}) => {
     await onBulkAction("task", operation, selection.selected.map((item) => item.id), extra);
     selection.clear();
@@ -2361,7 +2435,11 @@ function TasksView({
           New task
         </button>
       </div>
-      {tasks.length === 0 ? (
+      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search task, client or due date" resultCount={shown.length}>
+        <label className="compactFilter">Status<select value={state} onChange={(event) => setState(event.target.value)}><option value="open">Open</option><option value="done">Completed</option><option value="all">All</option></select></label>
+        <label className="compactFilter">Priority<select value={priority} onChange={(event) => setPriority(event.target.value)}><option value="">All priorities</option>{priorities.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+      </ListFilterBar>
+      {shown.length === 0 ? (
         <EmptyState
           icon={Check}
           title="No tasks"
@@ -2387,7 +2465,7 @@ function TasksView({
             <Trash2 size={14} /> Delete
           </button>
         </BulkActionBar>
-        {tasks.map((t) => (
+        {shown.map((t) => (
           <div className="functionalRow bulkEnabled" key={t.id}>
             <RowSelection checked={selection.selectedIds.has(t.id)} onChange={() => selection.toggle(t.id)} label={`Select ${t.title}`} />
             <button
@@ -2441,9 +2519,15 @@ function CalendarView({
   const [calendarNow] = useState(() => new Date());
   const [connection, setConnection] = useState<MailboxStatus | null>(null);
   const [connectionError, setConnectionError] = useState("");
+  const [query, setQuery] = useState("");
+  const [type, setType] = useState("");
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     today = calendarNow.getDay();
-  const selection = useBulkSelection(items);
+  const types = [...new Set(items.map((item) => item.type).filter(Boolean))].sort();
+  const shown = items
+    .filter((item) => !type || item.type === type)
+    .filter((item) => matchesSearch(query, [item.title, item.client, item.type, item.date, item.time]));
+  const selection = useBulkSelection(shown);
 
   const loadConnection = async () => {
     try {
@@ -2583,6 +2667,9 @@ function CalendarView({
               </button>
             </div>
           </div>
+          <ListFilterBar query={query} onQuery={setQuery} placeholder="Search appointment, client or date" resultCount={shown.length}>
+            <label className="compactFilter">Type<select value={type} onChange={(event) => setType(event.target.value)}><option value="">All types</option>{types.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+          </ListFilterBar>
           <div className="weekGrid">
             {days.map((day, index) => (
               <div className={today === index + 1 ? "today" : ""} key={day}>
@@ -2596,7 +2683,7 @@ function CalendarView({
                     ).padStart(2, "0")}
                   </b>
                 </header>
-                {items
+                {shown
                   .filter(
                     (a) =>
                       new Date(`${a.date}T00:00:00`).getDay() === index + 1,
@@ -2616,7 +2703,7 @@ function CalendarView({
                       <small>{a.client || "Internal"}</small>
                     </button>
                   ))}
-                {!items.some(
+                {!shown.some(
                   (a) => new Date(`${a.date}T00:00:00`).getDay() === index + 1,
                 ) ? (
                   <span className="freeDay">No CRM events</span>
@@ -2633,7 +2720,7 @@ function CalendarView({
             </div>
             <CalendarCheck2 size={19} />
           </div>
-          {items.length === 0 ? (
+          {shown.length === 0 ? (
             <div className="agendaEmpty">
               <CalendarDays size={28} />
               <strong>Your schedule is clear</strong>
@@ -2663,7 +2750,7 @@ function CalendarView({
                 <Trash2 size={14} /> Cancel selected
               </button>
             </BulkActionBar>
-            {items.slice(0, 6).map((a) => (
+            {shown.slice(0, 12).map((a) => (
               <div className="agendaItem" key={a.id}>
                 <RowSelection checked={selection.selectedIds.has(a.id)} onChange={() => selection.toggle(a.id)} label={`Select ${a.title}`} />
                 <div className="dateTile">
@@ -2707,10 +2794,15 @@ function DocumentsView({
   // An archived document is kept for the retention period but is not part of
   // the working file, so it is out of the way until it is asked for.
   const [showArchived, setShowArchived] = useState(false);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
   const archivedCount = items.filter((d) => d.status === "archived").length;
-  const shown = showArchived
+  const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
+  const shown = (showArchived
     ? items
-    : items.filter((d) => d.status !== "archived");
+    : items.filter((d) => d.status !== "archived"))
+    .filter((item) => !status || item.status === status)
+    .filter((item) => matchesSearch(query, [item.client, item.title, item.folder, item.fileName, item.status]));
   // Every file, grouped by the client it belongs to -- an archive to browse
   // and download from, not where a request gets started. Requesting a
   // document happens from that client's own case now, so it is never out of
@@ -2742,6 +2834,9 @@ function DocumentsView({
             )}
           </div>
         </div>
+        <ListFilterBar query={query} onQuery={setQuery} placeholder="Search client, document, folder or filename" resultCount={shown.length}>
+          <label className="compactFilter">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+        </ListFilterBar>
         {shown.length === 0 ? (
           <EmptyState
             icon={FolderOpen}
@@ -2858,6 +2953,8 @@ function MessagesView({
 }) {
   // A discarded draft is kept for the record but is not part of the outbox.
   const [showDiscarded, setShowDiscarded] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [mailbox, setMailbox] = useState<MailboxStatus | null>(null);
   const [mailboxError, setMailboxError] = useState("");
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -2942,7 +3039,10 @@ function MessagesView({
   const discarded = (message: MessageRecord) =>
     message.status.toLowerCase() === "discarded";
   const discardedCount = items.filter(discarded).length;
-  const shown = showDiscarded ? items : items.filter((m) => !discarded(m));
+  const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
+  const shown = (showDiscarded ? items : items.filter((m) => !discarded(m)))
+    .filter((item) => !statusFilter || item.status === statusFilter)
+    .filter((item) => matchesSearch(query, [item.subject, item.body, item.status, messageWhen(item), cases.find((entry) => (entry.dbId || entry.id) === item.caseId)?.name]));
   const selectable = shown.filter((message) =>
     !sentIds.has(message.id) && message.status.toLowerCase() !== "sent",
   );
@@ -2974,6 +3074,9 @@ function MessagesView({
           </button>
         </div>
       </div>
+      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search client, subject or message content" resultCount={shown.length}>
+        <label className="compactFilter">Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+      </ListFilterBar>
       {canSend && mailbox?.oauthConfigured ? (
         <p className="modalNotice">
           {mailbox.connected ? (
@@ -3124,8 +3227,17 @@ function FinanceView({
   onCreditNote: (invoice: InvoiceRecord) => void;
   onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
 }) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [type, setType] = useState("");
   const total = items.reduce((s, x) => s + x.amount, 0);
-  const selection = useBulkSelection(items);
+  const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
+  const types = [...new Set(items.map((item) => item.type).filter(Boolean))].sort();
+  const shown = items
+    .filter((item) => !status || item.status === status)
+    .filter((item) => !type || item.type === type)
+    .filter((item) => matchesSearch(query, [item.invoiceNumber, item.client, item.type, item.status, item.due, item.amount]));
+  const selection = useBulkSelection(shown);
   return (
     <>
       <div className="miniStats">
@@ -3173,7 +3285,11 @@ function FinanceView({
             </button>
           )}
         </div>
-        {items.length === 0 ? (
+        <ListFilterBar query={query} onQuery={setQuery} placeholder="Search invoice number, client, type or due date" resultCount={shown.length}>
+          <label className="compactFilter">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+          <label className="compactFilter">Type<select value={type} onChange={(event) => setType(event.target.value)}><option value="">All types</option>{types.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+        </ListFilterBar>
+        {shown.length === 0 ? (
           <EmptyState
             icon={CircleDollarSign}
             title="No invoices"
@@ -3206,7 +3322,7 @@ function FinanceView({
               }}><Trash2 size={14} /> Void selected</button>
             )}
           </BulkActionBar>
-          {items.map((i) => (
+          {shown.map((i) => (
             <div className="functionalRow bulkEnabled" key={i.id}>
               <RowSelection checked={selection.selectedIds.has(i.id)} onChange={() => selection.toggle(i.id)} label={`Select invoice ${i.invoiceNumber || i.client}`} />
               <div>
@@ -4258,14 +4374,22 @@ function ClientModuleView({
   const [portalError, setPortalError] = useState("");
   const [confirming, setConfirming] = useState("");
   const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
-  const ownAppointments = appointments.filter((x) => Boolean(client) && x.client === client?.name);
+  const [appointmentQuery, setAppointmentQuery] = useState("");
+  const [documentQuery, setDocumentQuery] = useState("");
+  const [messageQuery, setMessageQuery] = useState("");
+  const [invoiceQuery, setInvoiceQuery] = useState("");
+  const ownAppointments = appointments
+    .filter((x) => Boolean(client) && x.client === client?.name)
+    .filter((x) => matchesSearch(appointmentQuery, [x.title, x.date, x.time, x.type]));
   const ownDocuments = documents.filter(
     (x) => Boolean(client) && x.client === client?.name && x.clientVisible !== false && x.status !== "archived",
-  );
-  const ownMessages = messages.filter((x) => Boolean(client) && x.caseId === client?.id);
+  ).filter((x) => matchesSearch(documentQuery, [x.title, x.folder, x.fileName, x.status]));
+  const ownMessages = messages
+    .filter((x) => Boolean(client) && x.caseId === client?.id)
+    .filter((x) => matchesSearch(messageQuery, [x.subject, x.body, x.status, messageWhen(x)]));
   const ownInvoices = invoices.filter(
     (x) => Boolean(client) && x.client === client?.name && CLIENT_INVOICE_TYPES.includes(x.type),
-  );
+  ).filter((x) => matchesSearch(invoiceQuery, [x.invoiceNumber, x.type, x.status, x.due, x.amount]));
   const appointmentSelection = useBulkSelection(ownAppointments);
   const documentSelection = useBulkSelection(ownDocuments);
   const messageSelection = useBulkSelection(ownMessages);
@@ -4353,6 +4477,7 @@ function ClientModuleView({
             <h2>Documents Maximus has asked for</h2>
           </div>
         </div>
+        <ListFilterBar query={documentQuery} onQuery={setDocumentQuery} placeholder="Search my documents" resultCount={own.length} />
         {own.length ? (
           <>
           <div className="listSelectionTools">
@@ -4442,6 +4567,7 @@ function ClientModuleView({
             Request appointment
           </button>
         </div>
+        <ListFilterBar query={appointmentQuery} onQuery={setAppointmentQuery} placeholder="Search my appointments" resultCount={own.length} />
         {own.length ? (
           <>
           <div className="listSelectionTools">
@@ -4492,6 +4618,7 @@ function ClientModuleView({
             New message
           </button>
         </div>
+        <ListFilterBar query={messageQuery} onQuery={setMessageQuery} placeholder="Search my messages" resultCount={own.length} />
         {own.length ? (
           <>
           <div className="listSelectionTools">
@@ -4565,6 +4692,7 @@ function ClientModuleView({
           </div>
           <LockKeyhole size={18} />
         </div>
+        <ListFilterBar query={invoiceQuery} onQuery={setInvoiceQuery} placeholder="Search my invoices" resultCount={own.length} />
         {own.length ? (
           <>
           <div className="listSelectionTools">
@@ -4758,11 +4886,24 @@ type CourseFinderCourse = {
   entry_requirements: string | null;
   scholarship: string | null;
   source_key: string | null;
+  external_code?: string | null;
+  source_url?: string | null;
+  institution_source_url?: string | null;
+  catalogue_verified_at?: string | null;
   source_updated_at: string | null;
   legacy_data: Record<string, string | null> | null;
 };
 type CourseFacet = { value: string; amount: number };
 type CourseInstitution = { id: string; name: string; country: string; city: string | null };
+type CourseCatalogueHealth = {
+  course_count: number;
+  institution_count: number;
+  country_count: number;
+  stale_count: number;
+  missing_fee_count: number;
+  missing_website_count: number;
+  last_verified_at: string | null;
+};
 
 function cleanCatalogueText(value: string | null | undefined, fallback = "Not supplied") {
   if (!value?.trim()) return fallback;
@@ -4795,16 +4936,24 @@ function catalogueLevelLabel(value: string | null | undefined) {
  * always been free text; this is the canonical list it was never backed by.
  */
 function CourseFinderView({ canManage }: { canManage: boolean }) {
+  const [catalogueNow] = useState(() => Date.now());
   const [courses, setCourses] = useState<CourseFinderCourse[]>([]);
   const [countries, setCountries] = useState<CourseFacet[]>([]);
   const [levels, setLevels] = useState<CourseFacet[]>([]);
+  const [fields, setFields] = useState<CourseFacet[]>([]);
   const [institutions, setInstitutions] = useState<CourseInstitution[]>([]);
+  const [health, setHealth] = useState<CourseCatalogueHealth | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("");
   const [level, setLevel] = useState("");
+  const [field, setField] = useState("");
+  const [intake, setIntake] = useState("");
+  const [maxFee, setMaxFee] = useState("");
+  const [maxDuration, setMaxDuration] = useState("");
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [institution, setInstitution] = useState("");
   const [institutionQuery, setInstitutionQuery] = useState("");
   const [institutionOpen, setInstitutionOpen] = useState(false);
@@ -4839,6 +4988,11 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
       if (query.trim()) params.set("q", query.trim());
       if (country) params.set("country", country);
       if (level) params.set("level", level);
+      if (field) params.set("field", field);
+      if (intake.trim()) params.set("intake", intake.trim());
+      if (maxFee) params.set("maxFee", maxFee);
+      if (maxDuration) params.set("maxDuration", maxDuration);
+      if (verifiedOnly) params.set("verified", "true");
       if (institution) params.set("institution", institution);
       const response = await fetch(`/api/crm/course-finder?${params}`, { cache: "no-store", signal });
       const result = await response.json();
@@ -4847,7 +5001,9 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
       setCourses(result.courses || []);
       setCountries(result.countries || []);
       setLevels(result.levels || []);
+      setFields(result.fields || []);
       setInstitutions(result.institutions || []);
+      setHealth(result.health || null);
       setTotal(Number(result.total) || 0);
       setError("");
     } catch (reason) {
@@ -4858,7 +5014,7 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
     } finally {
       setLoaded(true);
     }
-  }, [query, country, level, institution, page]);
+  }, [query, country, level, field, intake, maxFee, maxDuration, verifiedOnly, institution, page]);
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(() => void load(controller.signal), 250);
@@ -4888,10 +5044,21 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
         </div>
         <span className="catalogueCount">{total.toLocaleString()} courses</span>
       </div>
-      <div className="courseFinderFilters legacyFinderFilters">
-        <label className="searchField">Course, institution or campus<input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search Bachelor of Nursing, Monash…" /></label>
+      {health && (
+        <div className="catalogueHealthStrip">
+          <span><b>{health.country_count.toLocaleString()}</b> countries</span>
+          <span><b>{health.institution_count.toLocaleString()}</b> institutions</span>
+          <span><b>{health.course_count.toLocaleString()}</b> active courses</span>
+          <span className={health.stale_count ? "catalogueNeedsReview" : "catalogueCurrent"}>
+            <RefreshCw size={14} /> {health.stale_count ? `${health.stale_count.toLocaleString()} need source review` : "Sources current"}
+          </span>
+        </div>
+      )}
+      <div className="courseFinderFilters courseFinderFilterGrid">
+        <label className="searchField courseFinderMainSearch">Course, institution, campus or course code<input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search Bachelor of Nursing, Monash, CRICOS code…" /></label>
         <label>Destination<select value={country} onChange={(e) => { setCountry(e.target.value); setPage(1); }}><option value="">All countries</option>{countries.map((item) => <option value={item.value} key={item.value}>{item.value} ({item.amount.toLocaleString()})</option>)}</select></label>
         <label>Study level<select value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); }}><option value="">All levels</option>{levels.map((item) => <option value={item.value} key={item.value}>{catalogueLevelLabel(item.value)} ({item.amount.toLocaleString()})</option>)}</select></label>
+        <label>Field of study<select value={field} onChange={(e) => { setField(e.target.value); setPage(1); }}><option value="">All fields</option>{fields.map((item) => <option value={item.value} key={item.value}>{cleanCatalogueText(item.value)} ({item.amount.toLocaleString()})</option>)}</select></label>
         <div className="institutionPicker">
           <label htmlFor="course-institution-search">Institution</label>
           <div className="institutionPickerControl">
@@ -4919,12 +5086,55 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
             {availableInstitutions.length === 0 && <p>No institutions match this search.</p>}
           </div>}
         </div>
+        <label>Intake<input value={intake} onChange={(event) => { setIntake(event.target.value); setPage(1); }} placeholder="February, July, 2027…" /></label>
+        <label>Maximum annual tuition<input type="number" min="0" step="1000" value={maxFee} onChange={(event) => { setMaxFee(event.target.value); setPage(1); }} placeholder="e.g. 40000" /></label>
+        <label>Maximum duration<select value={maxDuration} onChange={(event) => { setMaxDuration(event.target.value); setPage(1); }}><option value="">Any duration</option><option value="12">Up to 1 year</option><option value="24">Up to 2 years</option><option value="36">Up to 3 years</option><option value="48">Up to 4 years</option></select></label>
+        <label className="verifiedCourseFilter"><input type="checkbox" checked={verifiedOnly} onChange={(event) => { setVerifiedOnly(event.target.checked); setPage(1); }} /> Source checked in the last 6 months</label>
+        {(query || country || level || field || institution || intake || maxFee || maxDuration || verifiedOnly) && (
+          <button type="button" className="ghostButton clearCourseFilters" onClick={() => { setQuery(""); setCountry(""); setLevel(""); setField(""); setInstitution(""); setInstitutionQuery(""); setIntake(""); setMaxFee(""); setMaxDuration(""); setVerifiedOnly(false); setPage(1); }}>Clear all filters</button>
+        )}
       </div>
       {error && <p className="caseWorkError">{error}</p>}
       {courses.length === 0 ? (
         <EmptyState icon={School} title="No matching courses" copy="Try removing a filter or using a broader course name." />
       ) : (
-        <div className="legacyCourseTable"><div className="legacyCourseHead"><span>Country</span><span>Institution / campus</span><span>Course</span><span>Level</span><span>Duration</span><span>Intake</span><span>Tuition fee</span><span /></div>{courses.map((course) => <div className={`legacyCourseRecord ${expanded === course.id ? "open" : ""}`} key={course.id}><div className="legacyCourseRow"><span data-label="Country"><b>{cleanCatalogueText(course.country)}</b></span><span data-label="Institution / campus"><b>{cleanCatalogueText(course.institution_name)}</b><small>{cleanCatalogueText(course.campus || course.institution_city, "Campus not supplied")}</small></span><span data-label="Course"><b>{cleanCatalogueText(course.name)}</b></span><span data-label="Level">{catalogueLevelLabel(course.level)}</span><span data-label="Duration">{course.duration_months ? `${course.duration_months} months` : "—"}</span><span className="courseIntake" data-label="Intake">{cleanCatalogueText(course.intake_months, "—")}</span><span className="courseFee" data-label="Tuition fee"><b>{course.tuition_fee ? `${cleanCatalogueText(course.currency, "")} ${Number(course.tuition_fee).toLocaleString()}` : "On request"}</b></span><button className="ghostButton courseDetailsButton" onClick={() => setExpanded(expanded === course.id ? null : course.id)}>{expanded === course.id ? "Close" : "Full details"}</button></div>{expanded === course.id && <CourseFinderDetails course={course} canManage={canManage} />}</div>)}</div>
+        <div className="courseCardGrid">
+          {courses.map((course) => {
+            const verifiedAt = course.catalogue_verified_at || course.source_updated_at;
+            const current = verifiedAt ? catalogueNow - new Date(verifiedAt).valueOf() < 180 * 86400000 : false;
+            return (
+              <article className={`courseResultCard ${expanded === course.id ? "open" : ""}`} key={course.id}>
+                <header>
+                  <div className="courseInstitutionMark"><School size={19} /></div>
+                  <div>
+                    <span>{cleanCatalogueText(course.country)} · {cleanCatalogueText(course.campus || course.institution_city, "Campus to confirm")}</span>
+                    <strong>{cleanCatalogueText(course.institution_name)}</strong>
+                  </div>
+                  <span className={current ? "sourceCurrentBadge" : "sourceReviewBadge"}>{current ? "Source checked" : "Verify with provider"}</span>
+                </header>
+                <div className="courseCardBody">
+                  <div className="courseCardTitle">
+                    <span>{catalogueLevelLabel(course.level)}</span>
+                    <h3>{cleanCatalogueText(course.name)}</h3>
+                    <p>{cleanCatalogueText(course.field_of_study, "Field of study not classified")}{course.external_code ? ` · ${course.external_code}` : ""}</p>
+                  </div>
+                  <div className="courseQuickFacts">
+                    <div><Clock3 size={16} /><span>Duration<b>{course.duration_months ? `${course.duration_months} months` : "Confirm"}</b></span></div>
+                    <div><CalendarDays size={16} /><span>Intakes<b>{cleanCatalogueText(course.intake_months, "Confirm")}</b></span></div>
+                    <div><CircleDollarSign size={16} /><span>Tuition<b>{course.tuition_fee ? `${cleanCatalogueText(course.currency, "")} ${Number(course.tuition_fee).toLocaleString()}` : "On request"}</b></span></div>
+                    <div><GraduationCap size={16} /><span>English<b>{course.ielts_overall ? `IELTS ${course.ielts_overall}` : course.pte_overall ? `PTE ${course.pte_overall}` : "See requirements"}</b></span></div>
+                  </div>
+                  {(course.scholarship || course.application_deadline) && <div className="courseHighlights">{course.scholarship && <span><Sparkles size={14} /> {cleanCatalogueText(course.scholarship)}</span>}{course.application_deadline && <span><Clock3 size={14} /> Apply by {cleanCatalogueText(course.application_deadline)}</span>}</div>}
+                </div>
+                <footer>
+                  {(course.website || course.institution_website || course.source_url || course.institution_source_url) && <a className="ghostButton" href={course.website || course.institution_website || course.source_url || course.institution_source_url || "#"} target="_blank" rel="noreferrer">Official course page <ArrowRight size={14} /></a>}
+                  <button className="primaryButton courseDetailsButton" onClick={() => setExpanded(expanded === course.id ? null : course.id)}>{expanded === course.id ? "Close details" : "Compare full details"}</button>
+                </footer>
+                {expanded === course.id && <CourseFinderDetails course={course} canManage={canManage} />}
+              </article>
+            );
+          })}
+        </div>
       )}
       {total > pageSize && <div className="cataloguePager"><button className="ghostButton" disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button><span>Page {page} of {Math.ceil(total / pageSize)}</span><button className="ghostButton" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>Next</button></div>}
       {canManage && <p className="catalogueAdminNote">Catalogue maintenance is restricted to administrators; staff can safely search and advise.</p>}
@@ -4933,11 +5143,17 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
 }
 
 function CourseFinderDetails({ course, canManage }: { course: CourseFinderCourse; canManage: boolean }) {
-  const money = (value: number | null) => value === null ? "Not supplied" : `${course.currency} ${Number(value).toLocaleString()}`;
-  const english = (score: number | null, band: string | null) => [score, band].filter((value) => value !== null && value !== "").join(" · ") || "Not supplied";
+  const money = (value: number | null, applicationFee = false) =>
+    value === null || value <= 0
+      ? "Not supplied"
+      : applicationFee && course.tuition_fee && value > course.tuition_fee
+        ? "Verify with provider"
+        : `${course.currency} ${Number(value).toLocaleString()}`;
+  const english = (score: number | null, band: string | null) =>
+    [score && score > 0 ? score : null, band].filter((value) => value !== null && value !== "").join(" · ") || "Not supplied";
   return <div className="legacyCourseDetails">
     <section><h4>Course information</h4><dl><div><dt>Country</dt><dd>{cleanCatalogueText(course.country)}</dd></div><div><dt>Institution</dt><dd>{cleanCatalogueText(course.institution_name)}</dd></div><div><dt>Campus</dt><dd>{cleanCatalogueText(course.campus)}</dd></div><div><dt>Course level</dt><dd>{catalogueLevelLabel(course.level)}</dd></div><div><dt>Field of study</dt><dd>{cleanCatalogueText(course.field_of_study)}</dd></div><div><dt>Duration</dt><dd>{course.duration_months ? `${course.duration_months} months` : "Not supplied"}</dd></div><div><dt>Intake</dt><dd>{cleanCatalogueText(course.intake_months)}</dd></div><div><dt>Application deadline</dt><dd>{cleanCatalogueText(course.application_deadline)}</dd></div></dl></section>
-    <section><h4>Fees and commercial information</h4><dl><div><dt>Tuition fee</dt><dd>{money(course.tuition_fee)}</dd></div><div><dt>Application fee</dt><dd>{money(course.application_fee)}</dd></div><div><dt>Currency</dt><dd>{cleanCatalogueText(course.currency)}</dd></div><div><dt>Expected commission</dt><dd>{cleanCatalogueText(course.expected_commission)}</dd></div><div><dt>Scholarship</dt><dd>{cleanCatalogueText(course.scholarship)}</dd></div></dl></section>
+    <section><h4>Fees and commercial information</h4><dl><div><dt>Tuition fee</dt><dd>{money(course.tuition_fee)}</dd></div><div><dt>Application fee</dt><dd>{money(course.application_fee, true)}</dd></div><div><dt>Currency</dt><dd>{cleanCatalogueText(course.currency)}</dd></div><div><dt>Expected commission</dt><dd>{cleanCatalogueText(course.expected_commission)}</dd></div><div><dt>Scholarship</dt><dd>{cleanCatalogueText(course.scholarship)}</dd></div></dl></section>
     <section><h4>English and academic requirements</h4><dl><div><dt>IELTS score / bands</dt><dd>{english(course.ielts_overall, course.ielts_band)}</dd></div><div><dt>TOEFL score / bands</dt><dd>{english(course.toefl_overall, course.toefl_band)}</dd></div><div><dt>PTE score / bands</dt><dd>{english(course.pte_overall, course.pte_band)}</dd></div><div><dt>Duolingo score</dt><dd>{course.duolingo_score ?? "Not supplied"}</dd></div><div><dt>GPA requirement</dt><dd>{cleanCatalogueText(course.gpa_score)}</dd></div></dl>{course.entry_requirements && <div className="requirementNote"><b>Complete entry requirements</b><p>{cleanCatalogueText(course.entry_requirements)}</p></div>}</section>
     <section><h4>Links and source</h4><dl><div><dt>Catalogue status</dt><dd>{course.active ? "Active" : "Inactive"}</dd></div><div><dt>Last source update</dt><dd>{course.source_updated_at ? new Date(course.source_updated_at).toLocaleDateString() : course.legacy_data?.updated_date || "Not supplied"}</dd></div>{canManage && <><div><dt>Legacy course ID</dt><dd>{course.source_key || "Not supplied"}</dd></div><div><dt>Legacy institution ID</dt><dd>{course.legacy_data?.legacy_university_id || "Not supplied"}</dd></div><div><dt>Created by / date</dt><dd>{[course.legacy_data?.created_by, course.legacy_data?.created_date].filter(Boolean).join(" · ") || "Not supplied"}</dd></div><div><dt>Updated by / date</dt><dd>{[course.legacy_data?.updated_by, course.legacy_data?.updated_date].filter(Boolean).join(" · ") || "Not supplied"}</dd></div></>}</dl>{(course.website || course.institution_website) ? <a className="primaryButton courseWebsiteLink" href={course.website || course.institution_website || "#"} target="_blank" rel="noreferrer">Open official website</a> : <p className="courseMissingValue">Official website not supplied</p>}</section>
   </div>;
@@ -8586,6 +8802,89 @@ function ArchiveForm({
   );
 }
 
+function CourseApplicationFields() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<CourseFinderCourse[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [institution, setInstitution] = useState("");
+  const [course, setCourse] = useState("");
+  const [campus, setCampus] = useState("");
+  const [intake, setIntake] = useState("");
+  const [selectedSource, setSelectedSource] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      if (query.trim().length < 2) {
+        setResults([]);
+        setSearching(false);
+        return;
+      }
+      setSearching(true);
+      try {
+        const params = new URLSearchParams({ q: query.trim(), limit: "8", page: "1" });
+        const response = await fetch(`/api/crm/course-finder?${params}`, { cache: "no-store", signal: controller.signal });
+        const result = await response.json();
+        if (response.ok) setResults(result.courses || []);
+      } catch (reason) {
+        if (!(reason instanceof DOMException && reason.name === "AbortError")) setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query]);
+
+  const choose = (item: CourseFinderCourse) => {
+    setInstitution(cleanCatalogueText(item.institution_name, ""));
+    setCourse(cleanCatalogueText(item.name, ""));
+    setCampus(cleanCatalogueText(item.campus || item.institution_city, ""));
+    setIntake(cleanCatalogueText(item.intake_months, ""));
+    setSelectedSource(item.catalogue_verified_at || item.source_updated_at || "");
+    setQuery(`${cleanCatalogueText(item.institution_name, "")} · ${cleanCatalogueText(item.name, "")}`);
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <div className="courseApplicationPicker wide">
+        <label htmlFor="application-course-search">Find a course in the catalogue</label>
+        <div className="institutionPickerControl">
+          <Search size={16} />
+          <input id="application-course-search" value={query} onFocus={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} placeholder="Search institution, course, campus or code…" autoComplete="off" />
+          {searching && <RefreshCw className="spin" size={15} />}
+        </div>
+        {open && query.trim().length >= 2 && (
+          <div className="courseApplicationOptions">
+            {results.map((item) => (
+              <button type="button" key={item.id} onClick={() => choose(item)}>
+                <strong>{cleanCatalogueText(item.name)}</strong>
+                <span>{cleanCatalogueText(item.institution_name)} · {cleanCatalogueText(item.country)} · {cleanCatalogueText(item.campus || item.institution_city, "Campus to confirm")}</span>
+                <small>{[catalogueLevelLabel(item.level), item.intake_months, item.tuition_fee ? `${item.currency} ${Number(item.tuition_fee).toLocaleString()}` : null].filter(Boolean).join(" · ")}</small>
+              </button>
+            ))}
+            {!searching && results.length === 0 && <p>No catalogue result. Broaden the search or enter the confirmed details below.</p>}
+          </div>
+        )}
+        {selectedSource && <small className="catalogueSelectionSource"><Check size={13} /> Catalogue fields filled automatically · source checked {new Date(selectedSource).toLocaleDateString()}</small>}
+      </div>
+      <label>
+        Institution *<input name="institution" required value={institution} onChange={(event) => setInstitution(event.target.value)} />
+      </label>
+      <label>
+        Course *<input name="course" required value={course} onChange={(event) => setCourse(event.target.value)} />
+      </label>
+      <label>
+        Campus<input name="campus" value={campus} onChange={(event) => setCampus(event.target.value)} />
+      </label>
+      <label>
+        Intake<input name="intake" value={intake} onChange={(event) => setIntake(event.target.value)} placeholder="e.g. February 2027" />
+      </label>
+    </>
+  );
+}
+
 function ApplicationsTab({
   applications,
   caseId,
@@ -8699,20 +8998,7 @@ function ApplicationsTab({
             if (ok) setAdding(false);
           }}
         >
-          <label>
-            Institution *<input name="institution" required />
-          </label>
-          <label>
-            Course *<input name="course" required />
-          </label>
-          <label>
-            Campus
-            <input name="campus" />
-          </label>
-          <label>
-            Intake
-            <input name="intake" placeholder="e.g. February 2027" />
-          </label>
+          <CourseApplicationFields />
           <label>
             Application reference
             <input name="reference" />
@@ -10931,6 +11217,8 @@ export default function Home() {
     content =
       active === "portal" ? (
         <PortalView cases={cases} journeyHistory={journeyHistory} declarations={declarations} />
+      ) : active === "courseFinder" ? (
+        <CourseFinderView canManage={false} />
       ) : (
         <ClientModuleView
           module={active}
