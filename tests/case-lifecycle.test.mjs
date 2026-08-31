@@ -17,6 +17,7 @@ const PROFILE = {
   active: true,
 };
 const CASE_ID = "44444444-4444-4444-8444-444444444444";
+const SECOND_ID = "66666666-6666-4666-8666-666666666666";
 const TARGET_STAFF = {
   id: "55555555-5555-4555-8555-555555555555",
   display_name: "Ravi Kumar",
@@ -376,6 +377,55 @@ test("a case officer cannot change an invoice, template or workflow", async () =
     );
     assert.equal(result.status, 403, `${resource} should be refused`);
   }
+});
+
+test("bulk task completion updates every selected record in one request", async () => {
+  const result = await post({
+    action: "bulk_mutate",
+    resource: "task",
+    operation: "toggle",
+    ids: [CASE_ID, SECOND_ID],
+    completed: true,
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.succeeded, 2);
+  assert.equal(result.body.failed, 0);
+  const writes = result.requests.filter(
+    (request) => request.path === "/rest/v1/tasks" && request.method === "PATCH",
+  );
+  assert.equal(writes.length, 2);
+  assert.ok(writes.every((request) => request.body.status === "completed"));
+});
+
+test("bulk finance and configuration changes keep manager permissions", async () => {
+  for (const resource of ["invoice", "template", "workflow"]) {
+    const result = await post(
+      {
+        action: "bulk_mutate",
+        resource,
+        operation: resource === "workflow" ? "toggle" : "delete",
+        ids: [CASE_ID, SECOND_ID],
+        active: false,
+      },
+      { level: "staff" },
+    );
+    assert.equal(result.status, 403, `${resource} bulk change should be refused`);
+  }
+});
+
+test("bulk lifecycle movement applies to every selected case", async () => {
+  const result = await post({
+    action: "bulk_lifecycle",
+    caseIds: [CASE_ID, SECOND_ID],
+    stage: "visa",
+  });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.succeeded, 2);
+  const moves = result.requests.filter(
+    (request) => request.path === "/rest/v1/rpc/move_case_lifecycle",
+  );
+  assert.equal(moves.length, 2);
+  assert.ok(moves.every((request) => request.body.target_stage === "visa"));
 });
 
 test("a manager may create an invoice", async () => {

@@ -18,6 +18,7 @@ import {
   CircleDollarSign,
   Clock3,
   Command,
+  Copy,
   Download,
   FileCheck2,
   FileText,
@@ -870,6 +871,156 @@ function EmptyState({
     </div>
   );
 }
+
+/** Shared selection behaviour for operational lists. Keeping it here makes
+ * every bulk-enabled screen use the same select-all, clear and stale-record
+ * handling instead of each page inventing a slightly different interaction. */
+function useBulkSelection<T extends { id: string }>(items: T[]) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const membership = items.map((item) => item.id).join("|");
+  const [selectionMembership, setSelectionMembership] = useState(membership);
+  if (selectionMembership !== membership) {
+    setSelectionMembership(membership);
+    setSelectedIds(new Set());
+  }
+  const selected = items.filter((item) => selectedIds.has(item.id));
+  const toggle = (id: string) =>
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelectedIds(
+      selected.length === items.length
+        ? new Set()
+        : new Set(items.map((item) => item.id)),
+    );
+  const clear = () => setSelectedIds(new Set());
+  return {
+    selected,
+    selectedIds,
+    toggle,
+    toggleAll,
+    clear,
+    allSelected: items.length > 0 && selected.length === items.length,
+  };
+}
+
+function SelectAllControl({
+  checked,
+  onChange,
+  label = "Select all shown records",
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label?: string;
+}) {
+  return (
+    <label className="bulkSelectAll">
+      <input type="checkbox" checked={checked} onChange={onChange} />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function BulkActionBar({
+  count,
+  onClear,
+  children,
+}: {
+  count: number;
+  onClear: () => void;
+  children: React.ReactNode;
+}) {
+  if (!count) return null;
+  return (
+    <div className="bulkActionBar" role="region" aria-label="Bulk actions">
+      <strong>{count} selected</strong>
+      <div className="bulkActionChoices">{children}</div>
+      <button type="button" className="linkButton" onClick={onClear}>
+        Clear selection
+      </button>
+    </div>
+  );
+}
+
+function RowSelection({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+}) {
+  return (
+    <label className="bulkRowSelect" onClick={(event) => event.stopPropagation()}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        aria-label={label}
+      />
+    </label>
+  );
+}
+
+function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
+  if (!rows.length) return;
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  const cell = (value: unknown) => {
+    const text = value == null ? "" : Array.isArray(value) ? value.join(" | ") : String(value);
+    return `"${text.replaceAll('"', '""')}"`;
+  };
+  const csv = [
+    columns.map(cell).join(","),
+    ...rows.map((row) => columns.map((column) => cell(row[column])).join(",")),
+  ].join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadCalendarFile(filename: string, appointments: AppointmentRecord[]) {
+  if (!appointments.length) return;
+  const escapeIcs = (value: string) =>
+    value.replaceAll("\\", "\\\\").replaceAll(",", "\\,").replaceAll(";", "\\;").replaceAll("\n", "\\n");
+  const events = appointments.flatMap((appointment) => {
+    const start = `${appointment.date.replaceAll("-", "")}T${appointment.time.replaceAll(":", "").padEnd(6, "0")}`;
+    return [
+      "BEGIN:VEVENT",
+      `UID:${appointment.id}@maximus-crm`,
+      `DTSTART:${start}`,
+      `SUMMARY:${escapeIcs(appointment.title)}`,
+      `DESCRIPTION:${escapeIcs(`${appointment.type} appointment with Maximus`)}`,
+      "END:VEVENT",
+    ];
+  });
+  const calendar = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Maximus CRM//Client appointments//EN", ...events, "END:VCALENDAR"].join("\r\n");
+  const url = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadDocumentFiles(documentIds: string[]) {
+  documentIds.forEach((documentId, index) => {
+    window.setTimeout(() => {
+      const anchor = document.createElement("a");
+      anchor.href = `/api/crm/documents?documentId=${encodeURIComponent(documentId)}`;
+      anchor.download = "";
+      anchor.rel = "noopener";
+      anchor.click();
+    }, index * 180);
+  });
+}
 function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
   const [portal, setPortal] = useState<"staff" | "client">("staff"),
     [error, setError] = useState(""),
@@ -1523,6 +1674,8 @@ function CaseWorkspace({
   staff,
   canBulkAssign,
   onBulkAssign,
+  onBulkStage,
+  onBulkArchive,
 }: {
   title: string;
   // Which screen this is, so a saved view is offered back only on the same
@@ -1536,6 +1689,8 @@ function CaseWorkspace({
   staff: StaffRecord[];
   canBulkAssign: boolean;
   onBulkAssign: (records: CaseRecord[], ownerId: string) => Promise<void>;
+  onBulkStage: (records: CaseRecord[], stage: LifecycleStage) => Promise<void>;
+  onBulkArchive: (records: CaseRecord[]) => Promise<void>;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [assigning, setAssigning] = useState(false);
@@ -1621,6 +1776,11 @@ function CaseWorkspace({
       prev.size === shown.length ? new Set() : new Set(shown.map((c) => c.id)),
     );
   const selectedRecords = shown.filter((c) => selectedIds.has(c.id));
+  const bulkStageOptions = LIFECYCLE_STAGES.filter((stage) =>
+    selectedRecords.every((record) =>
+      allowedStageMoves(record.lifecycleStage).includes(stage),
+    ),
+  );
 
   const saveCurrentView = async () => {
     const name = window.prompt("Name this view (for example, \"My waiting cases\")");
@@ -1800,9 +1960,11 @@ function CaseWorkspace({
         />
       ) : (
         <>
-          {canBulkAssign && selectedIds.size > 0 && (
-            <div className="bulkActionBar">
-              <span>{selectedIds.size} selected</span>
+          <BulkActionBar
+            count={selectedRecords.length}
+            onClear={() => setSelectedIds(new Set())}
+          >
+            {canBulkAssign && (
               <select
                 aria-label="Assign selected cases to"
                 disabled={assigning}
@@ -1826,23 +1988,76 @@ function CaseWorkspace({
                     </option>
                   ))}
               </select>
-              <button className="linkButton" onClick={() => setSelectedIds(new Set())}>
-                Clear
-              </button>
-            </div>
-          )}
+            )}
+            <select
+              aria-label="Move selected cases to stage"
+              disabled={assigning}
+              defaultValue=""
+              onChange={async (event) => {
+                const stage = event.target.value as LifecycleStage;
+                if (!stage) return;
+                setAssigning(true);
+                await onBulkStage(selectedRecords, stage);
+                setAssigning(false);
+                setSelectedIds(new Set());
+                event.target.value = "";
+              }}
+            >
+              <option value="">Move stage…</option>
+              {bulkStageOptions.map((stage) => (
+                <option key={stage} value={stage}>{stageLabelFor(stage, cases[0]?.serviceType === "direct_visa")}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="ghostButton"
+              onClick={() =>
+                downloadCsv(
+                  `${module}-selected.csv`,
+                  selectedRecords.map((record) => ({
+                    caseNumber: record.id,
+                    client: record.name,
+                    email: record.email,
+                    phone: record.phone,
+                    matter: record.type,
+                    stage: record.lifecycleStage,
+                    owner: record.owner,
+                    branch: record.branch,
+                    due: record.due,
+                    health: record.health,
+                    status: record.status,
+                  })),
+                )
+              }
+            >
+              <Download size={14} /> Export selected
+            </button>
+            <button
+              type="button"
+              className="ghostButton dangerAction"
+              disabled={assigning}
+              onClick={async () => {
+                const verb = canBulkAssign ? "archive" : "request archive for";
+                if (!confirm(`${verb[0].toUpperCase()}${verb.slice(1)} ${selectedRecords.length} selected case${selectedRecords.length === 1 ? "" : "s"}?`)) return;
+                setAssigning(true);
+                await onBulkArchive(selectedRecords);
+                setAssigning(false);
+                setSelectedIds(new Set());
+              }}
+            >
+              Archive selected
+            </button>
+          </BulkActionBar>
           <div className="richTable">
             <div className="richHeaderWrap">
-              {canBulkAssign && (
-                <span className="rowCheckboxCell">
-                  <input
-                    type="checkbox"
-                    aria-label="Select all shown cases"
-                    checked={selectedIds.size > 0 && selectedIds.size === shown.length}
-                    onChange={toggleAll}
-                  />
-                </span>
-              )}
+              <span className="rowCheckboxCell">
+                <input
+                  type="checkbox"
+                  aria-label="Select all shown cases"
+                  checked={selectedRecords.length > 0 && selectedRecords.length === shown.length}
+                  onChange={toggleAll}
+                />
+              </span>
               <div className="richHeader">
                 <span>Client</span>
                 <span>Matter</span>
@@ -1854,16 +2069,14 @@ function CaseWorkspace({
             </div>
             {shown.map((c) => (
               <div className="richRowWrap" key={c.id}>
-                {canBulkAssign && (
-                  <span className="rowCheckboxCell">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${c.name}`}
-                      checked={selectedIds.has(c.id)}
-                      onChange={() => toggleOne(c.id)}
-                    />
-                  </span>
-                )}
+                <span className="rowCheckboxCell">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${c.name}`}
+                    checked={selectedIds.has(c.id)}
+                    onChange={() => toggleOne(c.id)}
+                  />
+                </span>
                 <button className="richRow" onClick={() => onSelect(c)}>
                   <span className="clientCell">
                     <b>{c.name}</b>
@@ -1924,6 +2137,7 @@ function ApplicationsBoard({
   const [showArchived, setShowArchived] = useState(false);
   const archivedCount = rows.filter((row) => row.archived).length;
   const shown = showArchived ? rows : rows.filter((row) => !row.archived);
+  const selection = useBulkSelection(shown);
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -1945,10 +2159,20 @@ function ApplicationsBoard({
       {shown.length === 0 ? (
         <BoardEmpty what="applications" />
       ) : (
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        </div>
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          <button className="ghostButton" onClick={() => downloadCsv("applications-selected.csv", selection.selected as unknown as Record<string, unknown>[])}>
+            <Download size={14} /> Export selected
+          </button>
+        </BulkActionBar>
         <div className="recordTableWrap">
           <table className="recordTable boardTable">
             <thead>
               <tr>
+                <th scope="col" className="selectionColumn"><span className="srOnly">Select</span></th>
                 <th scope="col">Student</th>
                 <th scope="col">Institution</th>
                 <th scope="col">Course</th>
@@ -1967,6 +2191,7 @@ function ApplicationsBoard({
             <tbody>
               {shown.map((row) => (
                 <tr key={row.id} className={row.archived ? "archivedRow" : ""}>
+                  <td className="selectionColumn"><RowSelection checked={selection.selectedIds.has(row.id)} onChange={() => selection.toggle(row.id)} label={`Select ${row.client || "application"}`} /></td>
                   <td>{row.client || "—"}</td>
                   <td>{row.institution || "—"}</td>
                   <td>{row.course || "—"}</td>
@@ -1997,6 +2222,7 @@ function ApplicationsBoard({
             </tbody>
           </table>
         </div>
+        </>
       )}
     </article>
   );
@@ -2009,6 +2235,7 @@ function VisaMattersBoard({
   rows: VisaMatterRow[];
   onOpen: (caseId: string) => void;
 }) {
+  const selection = useBulkSelection(rows);
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -2020,10 +2247,20 @@ function VisaMattersBoard({
       {rows.length === 0 ? (
         <BoardEmpty what="visa matters" />
       ) : (
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        </div>
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          <button className="ghostButton" onClick={() => downloadCsv("visa-matters-selected.csv", selection.selected as unknown as Record<string, unknown>[])}>
+            <Download size={14} /> Export selected
+          </button>
+        </BulkActionBar>
         <div className="recordTableWrap">
           <table className="recordTable boardTable">
             <thead>
               <tr>
+                <th scope="col" className="selectionColumn"><span className="srOnly">Select</span></th>
                 <th scope="col">Client</th>
                 <th scope="col">Subclass</th>
                 <th scope="col">Destination</th>
@@ -2042,6 +2279,7 @@ function VisaMattersBoard({
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id}>
+                  <td className="selectionColumn"><RowSelection checked={selection.selectedIds.has(row.id)} onChange={() => selection.toggle(row.id)} label={`Select ${row.client || "visa matter"}`} /></td>
                   <td>{row.client || "—"}</td>
                   <td>{row.subclass || row.matterType || "—"}</td>
                   <td>{row.destination || "—"}</td>
@@ -2087,6 +2325,7 @@ function VisaMattersBoard({
             </tbody>
           </table>
         </div>
+        </>
       )}
     </article>
   );
@@ -2097,12 +2336,19 @@ function TasksView({
   cases,
   setTasks,
   openModal,
+  onBulkAction,
 }: {
   tasks: TaskRecord[];
   cases: CaseRecord[];
   setTasks: (x: TaskRecord[]) => void;
   openModal: (x: ModalType) => void;
+  onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
 }) {
+  const selection = useBulkSelection(tasks);
+  const run = async (operation: string, extra: Record<string, unknown> = {}) => {
+    await onBulkAction("task", operation, selection.selected.map((item) => item.id), extra);
+    selection.clear();
+  };
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -2124,8 +2370,26 @@ function TasksView({
           onAction={() => openModal("task")}
         />
       ) : (
-        tasks.map((t) => (
-          <div className="functionalRow" key={t.id}>
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        </div>
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          <button className="ghostButton" onClick={() => void run("toggle", { completed: true })}>
+            <Check size={14} /> Mark complete
+          </button>
+          <button className="ghostButton" onClick={() => void run("toggle", { completed: false })}>
+            Reopen
+          </button>
+          <button className="ghostButton dangerAction" onClick={() => {
+            if (confirm(`Delete ${selection.selected.length} selected task${selection.selected.length === 1 ? "" : "s"}?`)) void run("delete");
+          }}>
+            <Trash2 size={14} /> Delete
+          </button>
+        </BulkActionBar>
+        {tasks.map((t) => (
+          <div className="functionalRow bulkEnabled" key={t.id}>
+            <RowSelection checked={selection.selectedIds.has(t.id)} onChange={() => selection.toggle(t.id)} label={`Select ${t.title}`} />
             <button
               className={`taskCheck ${t.completed ? "done" : ""}`}
               onClick={() =>
@@ -2155,7 +2419,8 @@ function TasksView({
               <Trash2 size={16} />
             </button>
           </div>
-        ))
+        ))}
+        </>
       )}
     </article>
   );
@@ -2165,17 +2430,20 @@ function CalendarView({
   openModal,
   setItems,
   setActive,
+  onBulkAction,
 }: {
   items: AppointmentRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: AppointmentRecord[]) => void;
   setActive: (x: ModuleKey) => void;
+  onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
 }) {
   const [calendarNow] = useState(() => new Date());
   const [connection, setConnection] = useState<MailboxStatus | null>(null);
   const [connectionError, setConnectionError] = useState("");
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     today = calendarNow.getDay();
+  const selection = useBulkSelection(items);
 
   const loadConnection = async () => {
     try {
@@ -2382,8 +2650,22 @@ function CalendarView({
               </button>
             </div>
           ) : (
-            items.slice(0, 6).map((a) => (
+            <>
+            <div className="listSelectionTools compactSelectionTools">
+              <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+            </div>
+            <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+              <button className="ghostButton dangerAction" onClick={async () => {
+                if (!confirm(`Cancel ${selection.selected.length} selected appointment${selection.selected.length === 1 ? "" : "s"}? Connected Google Calendar events will also be cancelled.`)) return;
+                await onBulkAction("appointment", "delete", selection.selected.map((item) => item.id));
+                selection.clear();
+              }}>
+                <Trash2 size={14} /> Cancel selected
+              </button>
+            </BulkActionBar>
+            {items.slice(0, 6).map((a) => (
               <div className="agendaItem" key={a.id}>
+                <RowSelection checked={selection.selectedIds.has(a.id)} onChange={() => selection.toggle(a.id)} label={`Select ${a.title}`} />
                 <div className="dateTile">
                   <b>{a.date?.slice(8, 10) || "–"}</b>
                   <span>{a.time || "TBC"}</span>
@@ -2403,7 +2685,8 @@ function CalendarView({
                   <Trash2 size={15} />
                 </button>
               </div>
-            ))
+            ))}
+            </>
           )}
         </aside>
       </section>
@@ -2414,10 +2697,12 @@ function DocumentsView({
   items,
   setItems,
   storageConnected,
+  onBulkAction,
 }: {
   items: DocumentRecord[];
   setItems: (x: DocumentRecord[]) => void;
   storageConnected: boolean;
+  onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
 }) {
   // An archived document is kept for the retention period but is not part of
   // the working file, so it is out of the way until it is asked for.
@@ -2435,6 +2720,7 @@ function DocumentsView({
     const key = d.client || "No client";
     byClient.set(key, [...(byClient.get(key) ?? []), d]);
   }
+  const selection = useBulkSelection(shown);
   return (
     <section className="moduleGrid">
       <article className="panel widePanel">
@@ -2471,11 +2757,27 @@ function DocumentsView({
             }
           />
         ) : (
-          [...byClient.entries()].map(([client, docs]) => (
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+          </div>
+          <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+            <button className="ghostButton" onClick={() => downloadCsv("documents-selected.csv", selection.selected.map((document) => ({
+              client: document.client, title: document.title, folder: document.folder,
+              fileName: document.fileName, status: document.status, createdAt: document.createdAt,
+            })))}><Download size={14} /> Export index</button>
+            <button className="ghostButton dangerAction" onClick={async () => {
+              if (!confirm(`Archive ${selection.selected.length} selected document record${selection.selected.length === 1 ? "" : "s"}? Files stay in Drive for retention.`)) return;
+              await onBulkAction("document", "delete", selection.selected.map((item) => item.id));
+              selection.clear();
+            }}><Trash2 size={14} /> Archive selected</button>
+          </BulkActionBar>
+          {[...byClient.entries()].map(([client, docs]) => (
             <div className="documentClientGroup" key={client}>
               <h3 className="documentClientGroupHead">{client}</h3>
               {docs.map((d) => (
-                <div className="functionalRow" key={d.id}>
+                <div className="functionalRow bulkEnabled" key={d.id}>
+                  <RowSelection checked={selection.selectedIds.has(d.id)} onChange={() => selection.toggle(d.id)} label={`Select ${d.title}`} />
                   <div className="docIcon">
                     <FileText size={18} />
                   </div>
@@ -2497,7 +2799,8 @@ function DocumentsView({
                 </div>
               ))}
             </div>
-          ))
+          ))}
+          </>
         )}
       </article>
       <aside className="panel drivePanel">
@@ -2542,6 +2845,7 @@ function MessagesView({
   openModal,
   setItems,
   canSend,
+  onBulkAction,
 }: {
   items: MessageRecord[];
   cases: CaseRecord[];
@@ -2550,6 +2854,7 @@ function MessagesView({
   // A client's own portal login can raise a message to their case team, but
   // only staff ever dispatch mail as the agency.
   canSend: boolean;
+  onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
 }) {
   // A discarded draft is kept for the record but is not part of the outbox.
   const [showDiscarded, setShowDiscarded] = useState(false);
@@ -2638,6 +2943,10 @@ function MessagesView({
     message.status.toLowerCase() === "discarded";
   const discardedCount = items.filter(discarded).length;
   const shown = showDiscarded ? items : items.filter((m) => !discarded(m));
+  const selectable = shown.filter((message) =>
+    !sentIds.has(message.id) && message.status.toLowerCase() !== "sent",
+  );
+  const selection = useBulkSelection(selectable);
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -2711,10 +3020,34 @@ function MessagesView({
           onAction={() => openModal("message")}
         />
       ) : (
-        shown.map((m) => {
+        <>
+        {selectable.length > 0 && (
+          <div className="listSelectionTools">
+            <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} label="Select all shown drafts" />
+          </div>
+        )}
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          <button className="ghostButton" onClick={async () => {
+            await onBulkAction("message", "toggle", selection.selected.map((item) => item.id), { completed: true });
+            selection.clear();
+          }}>Mark ready</button>
+          <button className="ghostButton" onClick={async () => {
+            await onBulkAction("message", "toggle", selection.selected.map((item) => item.id), { completed: false });
+            selection.clear();
+          }}>Return to draft</button>
+          <button className="ghostButton dangerAction" onClick={async () => {
+            if (!confirm(`Discard ${selection.selected.length} selected draft${selection.selected.length === 1 ? "" : "s"}?`)) return;
+            await onBulkAction("message", "delete", selection.selected.map((item) => item.id));
+            selection.clear();
+          }}><Trash2 size={14} /> Discard</button>
+        </BulkActionBar>
+        {shown.map((m) => {
           const sent = sentIds.has(m.id) || m.status.toLowerCase() === "sent";
           return (
-            <div className="functionalRow" key={m.id}>
+            <div className="functionalRow bulkEnabled" key={m.id}>
+              {!sent ? (
+                <RowSelection checked={selection.selectedIds.has(m.id)} onChange={() => selection.toggle(m.id)} label={`Select ${m.subject}`} />
+              ) : <span className="bulkSelectionSpacer" />}
               <div className="docIcon">
                 <Mail size={17} />
               </div>
@@ -2766,7 +3099,8 @@ function MessagesView({
               )}
             </div>
           );
-        })
+        })}
+        </>
       )}
     </article>
   );
@@ -2778,6 +3112,7 @@ function FinanceView({
   canManage,
   onRefund,
   onCreditNote,
+  onBulkAction,
 }: {
   items: InvoiceRecord[];
   openModal: (x: ModalType) => void;
@@ -2787,8 +3122,10 @@ function FinanceView({
   canManage: boolean;
   onRefund: (invoice: InvoiceRecord) => void;
   onCreditNote: (invoice: InvoiceRecord) => void;
+  onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
 }) {
   const total = items.reduce((s, x) => s + x.amount, 0);
+  const selection = useBulkSelection(items);
   return (
     <>
       <div className="miniStats">
@@ -2849,8 +3186,29 @@ function FinanceView({
             onAction={canManage ? () => openModal("invoice") : undefined}
           />
         ) : (
-          items.map((i) => (
-            <div className="functionalRow" key={i.id}>
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+          </div>
+          <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+            <button className="ghostButton" onClick={() => downloadCsv("invoices-selected.csv", selection.selected.map((invoice) => ({
+              invoiceNumber: invoice.invoiceNumber, client: invoice.client,
+              type: invoice.type, currency: invoice.currency, subtotal: invoice.subtotal,
+              tax: invoice.tax, total: invoice.amount, paid: invoice.paid,
+              balance: invoice.balance, issued: invoice.issued, due: invoice.due,
+              status: invoice.status,
+            })))}><Download size={14} /> Export selected</button>
+            {canManage && (
+              <button className="ghostButton dangerAction" onClick={async () => {
+                if (!confirm(`Void ${selection.selected.length} selected invoice${selection.selected.length === 1 ? "" : "s"}? This keeps the accounting history and cannot be changed back here.`)) return;
+                await onBulkAction("invoice", "delete", selection.selected.map((item) => item.id));
+                selection.clear();
+              }}><Trash2 size={14} /> Void selected</button>
+            )}
+          </BulkActionBar>
+          {items.map((i) => (
+            <div className="functionalRow bulkEnabled" key={i.id}>
+              <RowSelection checked={selection.selectedIds.has(i.id)} onChange={() => selection.toggle(i.id)} label={`Select invoice ${i.invoiceNumber || i.client}`} />
               <div>
                 <strong>{i.invoiceNumber || i.client}</strong>
                 <span>{i.client} · Due {i.due || "not set"}</span>
@@ -2903,7 +3261,8 @@ function FinanceView({
                 <Status value={i.status} />
               )}
             </div>
-          ))
+          ))}
+          </>
         )}
       </article>
     </>
@@ -3017,13 +3376,16 @@ function TemplatesView({
   openModal,
   setItems,
   canManage,
+  onBulkAction,
 }: {
   items: TemplateRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: TemplateRecord[]) => void;
   // Approved templates are writable only by manager level and above.
   canManage: boolean;
+  onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
 }) {
+  const selection = useBulkSelection(items);
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -3054,8 +3416,23 @@ function TemplatesView({
           onAction={canManage ? () => openModal("template") : undefined}
         />
       ) : (
-        items.map((t) => (
-          <div className="functionalRow" key={t.id}>
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        </div>
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          <button className="ghostButton" onClick={() => navigator.clipboard?.writeText(selection.selected.map((item) => `${item.name}\n${item.content}`).join("\n\n---\n\n")).then(() => alert("Selected templates copied."))}>
+            Copy selected
+          </button>
+          {canManage && <button className="ghostButton dangerAction" onClick={async () => {
+            if (!confirm(`Delete ${selection.selected.length} selected template${selection.selected.length === 1 ? "" : "s"}?`)) return;
+            await onBulkAction("template", "delete", selection.selected.map((item) => item.id));
+            selection.clear();
+          }}><Trash2 size={14} /> Delete</button>}
+        </BulkActionBar>
+        {items.map((t) => (
+          <div className="functionalRow bulkEnabled" key={t.id}>
+            <RowSelection checked={selection.selectedIds.has(t.id)} onChange={() => selection.toggle(t.id)} label={`Select ${t.name}`} />
             <div className="docIcon">
               <FileText size={17} />
             </div>
@@ -3086,7 +3463,8 @@ function TemplatesView({
               </button>
             )}
           </div>
-        ))
+        ))}
+        </>
       )}
     </article>
   );
@@ -3094,12 +3472,13 @@ function TemplatesView({
 
 function TemplatesWorkspace({
   items, checklistTemplates, emailTemplates, openModal, setItems,
-  canManage, reloadChecklist, reloadEmails,
+  canManage, reloadChecklist, reloadEmails, onBulkAction,
 }: {
   items: TemplateRecord[]; checklistTemplates: ChecklistTemplateRecord[];
   emailTemplates: EmailTemplateRecord[]; openModal: (x: ModalType) => void;
   setItems: (x: TemplateRecord[]) => void; canManage: boolean;
   reloadChecklist: () => Promise<void>; reloadEmails: () => Promise<void>;
+  onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
 }) {
   const [section, setSection] = useState<"documents" | "emails" | "content">("documents");
   const sections = [
@@ -3130,7 +3509,7 @@ function TemplatesWorkspace({
       </div>
       {section === "documents" && <DocumentChecklistTemplatesPanel templates={checklistTemplates} canManage={canManage} reload={reloadChecklist} />}
       {section === "emails" && <EmailTemplatesPanel templates={emailTemplates} canManage={canManage} reload={reloadEmails} />}
-      {section === "content" && <TemplatesView items={items} openModal={openModal} setItems={setItems} canManage={canManage} />}
+      {section === "content" && <TemplatesView items={items} openModal={openModal} setItems={setItems} canManage={canManage} onBulkAction={onBulkAction} />}
     </section>
   );
 }
@@ -3139,12 +3518,15 @@ function WorkflowView({
   openModal,
   setItems,
   canManage,
+  onBulkAction,
 }: {
   items: WorkflowRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: WorkflowRecord[]) => void;
   canManage: boolean;
+  onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
 }) {
+  const selection = useBulkSelection(items);
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -3180,8 +3562,20 @@ function WorkflowView({
           onAction={canManage ? () => openModal("workflow") : undefined}
         />
       ) : (
-        items.map((w) => (
-          <div className="functionalRow" key={w.id}>
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        </div>
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          {canManage && <>
+            <button className="ghostButton" onClick={async () => { await onBulkAction("workflow", "toggle", selection.selected.map((item) => item.id), { active: true }); selection.clear(); }}>Activate</button>
+            <button className="ghostButton" onClick={async () => { await onBulkAction("workflow", "toggle", selection.selected.map((item) => item.id), { active: false }); selection.clear(); }}>Deactivate</button>
+          </>}
+          <button className="ghostButton" onClick={() => downloadCsv("workflow-templates-selected.csv", selection.selected.map((item) => ({ name: item.name, stages: item.stages, active: item.active })))}><Download size={14} /> Export</button>
+        </BulkActionBar>
+        {items.map((w) => (
+          <div className="functionalRow bulkEnabled" key={w.id}>
+            <RowSelection checked={selection.selectedIds.has(w.id)} onChange={() => selection.toggle(w.id)} label={`Select ${w.name}`} />
             <div className="workflowIcon">
               <Workflow size={17} />
             </div>
@@ -3209,7 +3603,8 @@ function WorkflowView({
               </button>
             )}
           </div>
-        ))
+        ))}
+        </>
       )}
     </article>
   );
@@ -3270,6 +3665,18 @@ function DocumentChecklistTemplatesPanel({
   const byCategory = new Map<string, ChecklistTemplateRecord[]>();
   for (const t of visibleTemplates)
     byCategory.set(t.category, [...(byCategory.get(t.category) ?? []), t]);
+  const checklistSelection = useBulkSelection(
+    visibleTemplates.map((item) => ({ ...item, id: item.key })),
+  );
+
+  const bulkSetActive = async (active: boolean) => {
+    const ok = await send({
+      action: "bulk_update",
+      templateIds: checklistSelection.selected.map((item) => item.key),
+      active,
+    });
+    if (ok) checklistSelection.clear();
+  };
 
   return (
     <article className="panel listPanel checklistTemplatesPanel">
@@ -3351,7 +3758,18 @@ function DocumentChecklistTemplatesPanel({
       ) : visibleTemplates.length === 0 ? (
         <EmptyState icon={Search} title="No matching document requests" copy="Clear a filter or search with a broader phrase." />
       ) : (
-        [...byCategory.entries()].map(([category, items]) => (
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={checklistSelection.allSelected} onChange={checklistSelection.toggleAll} />
+        </div>
+        <BulkActionBar count={checklistSelection.selected.length} onClear={checklistSelection.clear}>
+          {canManage && <>
+            <button className="ghostButton" disabled={busy} onClick={() => void bulkSetActive(true)}>Activate selected</button>
+            <button className="ghostButton" disabled={busy} onClick={() => void bulkSetActive(false)}>Deactivate selected</button>
+          </>}
+          <button className="ghostButton" onClick={() => downloadCsv("document-checklist-selected.csv", checklistSelection.selected.map((item) => ({ category: item.category, title: item.title, guidance: item.guidance, status: item.active ? "Active" : "Inactive" })))}><Download size={14} /> Export</button>
+        </BulkActionBar>
+        {[...byCategory.entries()].map(([category, items]) => (
           <div key={category}>
             <h3 className="documentClientGroupHead">{category}</h3>
             {items.map((item) =>
@@ -3395,7 +3813,8 @@ function DocumentChecklistTemplatesPanel({
                   </button>
                 </form>
               ) : (
-                <div className="functionalRow" key={item.key}>
+                <div className="functionalRow bulkEnabled" key={item.key}>
+                  <RowSelection checked={checklistSelection.selectedIds.has(item.key)} onChange={() => checklistSelection.toggle(item.key)} label={`Select ${item.title}`} />
                   <div className="docIcon">
                     <FileCheck2 size={17} />
                   </div>
@@ -3431,7 +3850,8 @@ function DocumentChecklistTemplatesPanel({
               ),
             )}
           </div>
-        ))
+        ))}
+        </>
       )}
     </article>
   );
@@ -3838,6 +4258,18 @@ function ClientModuleView({
   const [portalError, setPortalError] = useState("");
   const [confirming, setConfirming] = useState("");
   const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
+  const ownAppointments = appointments.filter((x) => Boolean(client) && x.client === client?.name);
+  const ownDocuments = documents.filter(
+    (x) => Boolean(client) && x.client === client?.name && x.clientVisible !== false && x.status !== "archived",
+  );
+  const ownMessages = messages.filter((x) => Boolean(client) && x.caseId === client?.id);
+  const ownInvoices = invoices.filter(
+    (x) => Boolean(client) && x.client === client?.name && CLIENT_INVOICE_TYPES.includes(x.type),
+  );
+  const appointmentSelection = useBulkSelection(ownAppointments);
+  const documentSelection = useBulkSelection(ownDocuments);
+  const messageSelection = useBulkSelection(ownMessages);
+  const invoiceSelection = useBulkSelection(ownInvoices);
   // Acknowledging a document or invoice request reached them -- recorded on
   // the case history and told to the case owner. It never changes the
   // record's own state, so the confirmation is tracked locally rather than
@@ -3862,6 +4294,16 @@ function ClientModuleView({
     } finally {
       setConfirming("");
     }
+  };
+  const confirmSelectedReceipts = async (
+    kind: "confirm_document" | "confirm_invoice",
+    ids: string[],
+    clear: () => void,
+  ) => {
+    for (const id of ids.filter((itemId) => !confirmedIds.has(itemId))) {
+      await confirmReceipt(kind, id);
+    }
+    clear();
   };
   // A client supplies a document that was asked of them. The API and the
   // database both limit this to their own requested documents.
@@ -3902,9 +4344,7 @@ function ClientModuleView({
       </article>
     );
   if (module === "documents") {
-    const own = documents.filter(
-      (x) => x.client === client.name && x.clientVisible !== false && x.status !== "archived",
-    );
+    const own = ownDocuments;
     return (
       <article className="panel listPanel">
         <div className="panelHead">
@@ -3914,8 +4354,26 @@ function ClientModuleView({
           </div>
         </div>
         {own.length ? (
-          own.map((d) => (
-            <div className="functionalRow" key={d.id}>
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={documentSelection.allSelected} onChange={documentSelection.toggleAll} label="Select all my documents" />
+          </div>
+          <BulkActionBar count={documentSelection.selected.length} onClear={documentSelection.clear}>
+            <button className="ghostButton" onClick={() => downloadCsv("my-documents-selected.csv", documentSelection.selected as unknown as Record<string, unknown>[])}>
+              <Download size={14} /> Export selected
+            </button>
+            {documentSelection.selected.some((item) => Boolean(item.fileName)) && (
+              <button className="ghostButton" onClick={() => downloadDocumentFiles(documentSelection.selected.filter((item) => Boolean(item.fileName)).map((item) => item.id))}>
+                <Download size={14} /> Download files
+              </button>
+            )}
+            <button className="ghostButton" disabled={Boolean(confirming)} onClick={() => void confirmSelectedReceipts("confirm_document", documentSelection.selected.map((item) => item.id), documentSelection.clear)}>
+              <Check size={14} /> Confirm received
+            </button>
+          </BulkActionBar>
+          {own.map((d) => (
+            <div className="functionalRow bulkEnabled" key={d.id}>
+              <RowSelection checked={documentSelection.selectedIds.has(d.id)} onChange={() => documentSelection.toggle(d.id)} label={`Select ${d.title}`} />
               <FileText size={18} />
               <div>
                 <strong>{d.title}</strong>
@@ -3956,7 +4414,8 @@ function ClientModuleView({
                 </label>
               ) : null}
             </div>
-          ))
+          ))}
+          </>
         ) : (
           <p className="restrictedEmpty">
             No documents are linked to this client account.
@@ -3967,7 +4426,7 @@ function ClientModuleView({
     );
   }
   if (module === "calendar") {
-    const own = appointments.filter((x) => x.client === client.name);
+    const own = ownAppointments;
     return (
       <article className="panel listPanel">
         <div className="panelHead">
@@ -3984,8 +4443,21 @@ function ClientModuleView({
           </button>
         </div>
         {own.length ? (
-          own.map((a) => (
-            <div className="functionalRow" key={a.id}>
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={appointmentSelection.allSelected} onChange={appointmentSelection.toggleAll} label="Select all my appointments" />
+          </div>
+          <BulkActionBar count={appointmentSelection.selected.length} onClear={appointmentSelection.clear}>
+            <button className="ghostButton" onClick={() => downloadCalendarFile("maximus-appointments.ics", appointmentSelection.selected)}>
+              <CalendarDays size={14} /> Add to calendar
+            </button>
+            <button className="ghostButton" onClick={() => downloadCsv("my-appointments-selected.csv", appointmentSelection.selected as unknown as Record<string, unknown>[])}>
+              <Download size={14} /> Export selected
+            </button>
+          </BulkActionBar>
+          {own.map((a) => (
+            <div className="functionalRow bulkEnabled" key={a.id}>
+              <RowSelection checked={appointmentSelection.selectedIds.has(a.id)} onChange={() => appointmentSelection.toggle(a.id)} label={`Select ${a.title}`} />
               <CalendarDays size={18} />
               <div>
                 <strong>{a.title}</strong>
@@ -3995,7 +4467,8 @@ function ClientModuleView({
               </div>
               <Status value={a.type} />
             </div>
-          ))
+          ))}
+          </>
         ) : (
           <p className="restrictedEmpty">No appointments are scheduled.</p>
         )}
@@ -4003,7 +4476,7 @@ function ClientModuleView({
     );
   }
   if (module === "communications") {
-    const own = messages.filter((x) => x.caseId === client.id);
+    const own = ownMessages;
     return (
       <article className="panel listPanel">
         <div className="panelHead">
@@ -4020,8 +4493,21 @@ function ClientModuleView({
           </button>
         </div>
         {own.length ? (
-          own.map((m) => (
-            <div className="functionalRow" key={m.id}>
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={messageSelection.allSelected} onChange={messageSelection.toggleAll} label="Select all my messages" />
+          </div>
+          <BulkActionBar count={messageSelection.selected.length} onClear={messageSelection.clear}>
+            <button className="ghostButton" onClick={() => downloadCsv("my-messages-selected.csv", messageSelection.selected as unknown as Record<string, unknown>[])}>
+              <Download size={14} /> Export selected
+            </button>
+            <button className="ghostButton" onClick={() => void navigator.clipboard.writeText(messageSelection.selected.map((item) => `${item.subject}\n${item.body || ""}`).join("\n\n---\n\n"))}>
+              <Copy size={14} /> Copy messages
+            </button>
+          </BulkActionBar>
+          {own.map((m) => (
+            <div className="functionalRow bulkEnabled" key={m.id}>
+              <RowSelection checked={messageSelection.selectedIds.has(m.id)} onChange={() => messageSelection.toggle(m.id)} label={`Select ${m.subject}`} />
               <Mail size={18} />
               <div>
                 <strong>{m.subject}</strong>
@@ -4029,7 +4515,8 @@ function ClientModuleView({
               </div>
               <Status value={m.status} />
             </div>
-          ))
+          ))}
+          </>
         ) : (
           <p className="restrictedEmpty">
             No messages are linked to your case.
@@ -4041,9 +4528,7 @@ function ClientModuleView({
   // Only what this client has been billed. A commission claim raised against a
   // partner or an institution is never a client's business and never appears
   // here, whatever else the finance module holds.
-  const own = invoices.filter(
-    (x) => x.client === client.name && CLIENT_INVOICE_TYPES.includes(x.type),
-  );
+  const own = ownInvoices;
   const billed = own.reduce((sum, i) => sum + i.amount, 0);
   const paid = own.reduce((sum, i) => sum + i.paid, 0);
   const outstanding = own.reduce((sum, i) => sum + i.balance, 0);
@@ -4081,8 +4566,26 @@ function ClientModuleView({
           <LockKeyhole size={18} />
         </div>
         {own.length ? (
-          own.map((i) => (
-            <div className="functionalRow" key={i.id}>
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={invoiceSelection.allSelected} onChange={invoiceSelection.toggleAll} label="Select all my invoices" />
+          </div>
+          <BulkActionBar count={invoiceSelection.selected.length} onClear={invoiceSelection.clear}>
+            <button className="ghostButton" onClick={() => downloadCsv("my-invoices-selected.csv", invoiceSelection.selected as unknown as Record<string, unknown>[])}>
+              <Download size={14} /> Export selected
+            </button>
+            {invoiceSelection.selected.some((item) => Boolean(item.pdfDocumentId)) && (
+              <button className="ghostButton" onClick={() => downloadDocumentFiles(invoiceSelection.selected.flatMap((item) => item.pdfDocumentId ? [item.pdfDocumentId] : []))}>
+                <FileText size={14} /> Download invoice PDFs
+              </button>
+            )}
+            <button className="ghostButton" disabled={Boolean(confirming)} onClick={() => void confirmSelectedReceipts("confirm_invoice", invoiceSelection.selected.map((item) => item.id), invoiceSelection.clear)}>
+              <Check size={14} /> Confirm received
+            </button>
+          </BulkActionBar>
+          {own.map((i) => (
+            <div className="functionalRow bulkEnabled" key={i.id}>
+              <RowSelection checked={invoiceSelection.selectedIds.has(i.id)} onChange={() => invoiceSelection.toggle(i.id)} label={`Select invoice ${i.invoiceNumber || i.id}`} />
               <CircleDollarSign size={18} />
               <div>
                 <strong>{i.invoiceNumber || money(i.amount)}</strong>
@@ -4113,7 +4616,8 @@ function ClientModuleView({
                 </button>
               )}
             </div>
-          ))
+          ))}
+          </>
         ) : (
           <p className="restrictedEmpty">
             You have not been invoiced for anything yet.
@@ -5733,6 +6237,19 @@ function AdminView({
       (!staffBranch || person.branch_id === staffBranch)
     );
   });
+  const selectableProfiles = visibleProfiles.filter(
+    (person) => person.id !== currentProfileId,
+  );
+  const staffSelection = useBulkSelection(selectableProfiles);
+
+  const bulkUpdateStaff = async (changes: Record<string, unknown>) => {
+    const result = await send({
+      action: "bulk_update_profiles",
+      profileIds: staffSelection.selected.map((person) => person.id),
+      ...changes,
+    });
+    if (result) staffSelection.clear();
+  };
 
   return (
     <section className="adminStack">
@@ -5895,10 +6412,41 @@ function AdminView({
         ) : visibleProfiles.length === 0 ? (
           <p className="boardEmpty">No staff match these filters.</p>
         ) : (
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={staffSelection.allSelected} onChange={staffSelection.toggleAll} label="Select all shown staff except yourself" />
+          </div>
+          <BulkActionBar count={staffSelection.selected.length} onClear={staffSelection.clear}>
+            <select
+              aria-label="Move selected staff to branch"
+              defaultValue=""
+              disabled={working}
+              onChange={(event) => {
+                if (!event.target.value) return;
+                void bulkUpdateStaff({ branchId: event.target.value });
+                event.target.value = "";
+              }}
+            >
+              <option value="">Move to branch…</option>
+              {adminBranches.filter((branch) => branch.active).map((branch) => (
+                <option key={branch.id} value={branch.id}>{branch.name}</option>
+              ))}
+            </select>
+            <button className="ghostButton" disabled={working} onClick={() => void bulkUpdateStaff({ active: true })}>Reactivate</button>
+            <button className="ghostButton dangerAction" disabled={working} onClick={() => {
+              if (confirm(`Deactivate ${staffSelection.selected.length} selected staff account${staffSelection.selected.length === 1 ? "" : "s"}? Their history will be retained.`)) void bulkUpdateStaff({ active: false });
+            }}>Deactivate</button>
+            <button className="ghostButton" onClick={() => downloadCsv("staff-selected.csv", staffSelection.selected.map((person) => ({
+              name: person.display_name, email: person.email, level: person.level,
+              branch: branchName(person.branch_id), department: person.department,
+              status: person.active ? "Active" : "Deactivated",
+            })))}><Download size={14} /> Export</button>
+          </BulkActionBar>
           <div className="recordTableWrap">
             <table className="recordTable boardTable">
               <thead>
                 <tr>
+                  <th scope="col" className="selectionColumn"><span className="srOnly">Select</span></th>
                   <th scope="col">Name</th>
                   <th scope="col">Email</th>
                   <th scope="col">Level</th>
@@ -5914,6 +6462,11 @@ function AdminView({
                     key={person.id}
                     className={person.active ? "" : "archivedRow"}
                   >
+                    <td className="selectionColumn">
+                      {person.id === currentProfileId ? <span className="bulkSelectionSpacer" /> : (
+                        <RowSelection checked={staffSelection.selectedIds.has(person.id)} onChange={() => staffSelection.toggle(person.id)} label={`Select ${person.display_name}`} />
+                      )}
+                    </td>
                     <td>{person.display_name}</td>
                     <td>{person.email}</td>
                     <td>
@@ -5995,6 +6548,7 @@ function AdminView({
               </tbody>
             </table>
           </div>
+          </>
         )}
         <p className="coverageIntro">
           Deactivating somebody keeps their history and stops them signing in.
@@ -10136,6 +10690,70 @@ export default function Home() {
       );
     }
   }
+  async function bulkMutateRemote(
+    resource: string,
+    operation: string,
+    ids: string[],
+    extra: Record<string, unknown> = {},
+  ) {
+    if (!ids.length) return;
+    try {
+      const response = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "bulk_mutate",
+          resource,
+          operation,
+          ids,
+          ...extra,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "The bulk update was rejected.");
+      await loadWorkspace();
+      const succeeded = Number(result.succeeded ?? ids.length);
+      const failed = Number(result.failed ?? 0);
+      const requested = Number(result.requested ?? 0);
+      say(
+        (requested > 0
+          ? `${requested} archive request${requested === 1 ? "" : "s"} sent to management`
+          : `${succeeded} record${succeeded === 1 ? "" : "s"} updated`) +
+          (failed ? `; ${failed} could not be changed.` : "."),
+      );
+    } catch (reason) {
+      await loadWorkspace();
+      say(reason instanceof Error ? reason.message : "The bulk update could not be saved.");
+    }
+  }
+  const bulkMoveCases = async (
+    records: CaseRecord[],
+    stage: LifecycleStage,
+  ) => {
+    const ids = records.map((record) => record.dbId).filter(Boolean) as string[];
+    if (!ids.length) return say("None of the selected cases could be identified.");
+    try {
+      const response = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "bulk_lifecycle", caseIds: ids, stage }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The cases could not be moved.");
+      await loadWorkspace();
+      const succeeded = Number(result.succeeded ?? ids.length);
+      const failed = Number(result.failed ?? 0);
+      say(`${succeeded} case${succeeded === 1 ? "" : "s"} moved to ${stageLabels[stage].toLowerCase()}` + (failed ? `; ${failed} could not be moved.` : "."));
+    } catch (reason) {
+      await loadWorkspace();
+      say(reason instanceof Error ? reason.message : "The cases could not be moved.");
+    }
+  };
+  const bulkArchiveCases = async (records: CaseRecord[]) => {
+    const ids = records.map((record) => record.dbId).filter(Boolean) as string[];
+    await bulkMutateRemote("case", "archive", ids);
+  };
   async function postOperation(
     action: string,
     extra: Record<string, unknown> = {},
@@ -10345,6 +10963,7 @@ export default function Home() {
         cases={cases}
         setTasks={syncTasks}
         openModal={open}
+        onBulkAction={bulkMutateRemote}
       />
     );
   else if (active === "calendar")
@@ -10354,6 +10973,7 @@ export default function Home() {
         openModal={open}
         setItems={syncAppointments}
         setActive={setActive}
+        onBulkAction={bulkMutateRemote}
       />
     );
   else if (active === "documents")
@@ -10362,6 +10982,7 @@ export default function Home() {
         items={documents}
         setItems={syncDocuments}
         storageConnected={storageConnected}
+        onBulkAction={bulkMutateRemote}
       />
     );
   else if (active === "communications")
@@ -10374,6 +10995,7 @@ export default function Home() {
         // This screen is only ever reached by staff -- the client portal has
         // its own communications screen elsewhere in this render.
         canSend={true}
+        onBulkAction={bulkMutateRemote}
       />
     );
   else if (active === "courseFinder")
@@ -10414,6 +11036,7 @@ export default function Home() {
               reason: reason || undefined,
             });
           }}
+          onBulkAction={bulkMutateRemote}
         />
         <CommissionClaimsPanel
           items={commissionClaims}
@@ -10450,7 +11073,7 @@ export default function Home() {
       <TemplatesWorkspace items={templates} checklistTemplates={checklistTemplates}
         emailTemplates={emailTemplates} openModal={open} setItems={syncTemplates}
         canManage={canManageFinance} reloadChecklist={loadChecklistTemplates}
-        reloadEmails={loadEmailTemplates} />
+        reloadEmails={loadEmailTemplates} onBulkAction={bulkMutateRemote} />
     );
   else if (active === "workflows")
     content = (
@@ -10459,6 +11082,7 @@ export default function Home() {
         openModal={open}
         setItems={syncWorkflows}
         canManage={canManageFinance}
+        onBulkAction={bulkMutateRemote}
       />
     );
   else if (active === "reports")
@@ -10602,6 +11226,8 @@ export default function Home() {
         staff={staff}
         canBulkAssign={canManageFinance}
         onBulkAssign={bulkAssignCases}
+        onBulkStage={bulkMoveCases}
+        onBulkArchive={bulkArchiveCases}
       />
     );
     // These two screens lead with the records themselves. The case list stays

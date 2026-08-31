@@ -70,6 +70,20 @@ export async function POST(request: Request) {
       if (body.guidance !== undefined) changes.guidance = optional(body.guidance);
       if (typeof body.active === "boolean") changes.active = body.active;
       await patch("document_checklist_templates", uuid(body.templateId, "Template"), changes, token);
+    } else if (action === "bulk_update") {
+      const templateIds = uuidList(body.templateIds, "Templates");
+      if (typeof body.active !== "boolean")
+        throw new InputError("Choose whether the selected templates should be active.");
+      let succeeded = 0;
+      for (const templateId of templateIds) {
+        await patch("document_checklist_templates", templateId, { active: body.active }, token);
+        succeeded += 1;
+      }
+      return appendRefreshCookies(
+        Response.json({ ok: true, succeeded, failed: 0 }),
+        session.refreshed,
+        request,
+      );
     } else {
       throw new InputError("Unsupported document checklist action.");
     }
@@ -113,6 +127,13 @@ function uuid(value: unknown, label: string) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed))
     throw new InputError(`${label} is invalid.`);
   return parsed;
+}
+function uuidList(value: unknown, label: string) {
+  if (!Array.isArray(value) || value.length === 0)
+    throw new InputError(`Select at least one ${label.toLowerCase()}.`);
+  if (value.length > 100)
+    throw new InputError("Bulk actions are limited to 100 templates at a time.");
+  return Array.from(new Set(value.map((item) => uuid(item, label))));
 }
 class InputError extends Error {}
 function apiError(error: unknown): Response {

@@ -1812,6 +1812,147 @@ export async function POST(request: Request) {
       });
     }
 
+    if (action === "bulk_lifecycle") {
+      if (session.identity.role === "client")
+        throw new LiveAccessError(403, "Case stages are available to staff only.");
+      const caseIds = uuidList(body.caseIds, "Cases");
+      const stage = required(body.stage, "Stage") as LifecycleStage;
+      if (!LIFECYCLE_STAGES.includes(stage))
+        throw new InputError("That is not a valid case stage.");
+      if (!(await lifecycleReady(token)))
+        throw new InputError(LIFECYCLE_MIGRATION_HINT);
+      let succeeded = 0;
+      const errors: string[] = [];
+      for (const caseId of caseIds) {
+        try {
+          await supabaseRequest<Json[]>(
+            "/rest/v1/rpc/move_case_lifecycle",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                target_case: caseId,
+                target_stage: stage,
+                transition_reason: nullable(body.reason),
+              }),
+            },
+            token,
+          );
+          succeeded += 1;
+        } catch (error) {
+          errors.push(databaseError(error, "Case could not be moved.").message);
+        }
+      }
+      return Response.json({
+        ok: succeeded > 0,
+        succeeded,
+        failed: caseIds.length - succeeded,
+        errors: Array.from(new Set(errors)).slice(0, 3),
+        error: succeeded > 0 ? undefined : errors[0],
+      }, { status: succeeded > 0 ? 200 : 400 });
+    }
+
+    if (action === "bulk_mutate") {
+      if (session.identity.role === "client")
+        throw new LiveAccessError(
+          403,
+          "Client records can only be changed through approved portal actions.",
+        );
+      const resource = required(body.resource, "Resource");
+      const operation = required(body.operation, "Operation");
+      const ids = uuidList(body.ids, "Records");
+      if (["invoice", "template", "workflow"].includes(resource))
+        requireManager(session.identity.role, `change ${resource} records`);
+
+      let succeeded = 0;
+      let requested = 0;
+      const errors: string[] = [];
+      for (const id of ids) {
+        try {
+          if (resource === "task" && operation === "toggle") {
+            const completed = Boolean(body.completed);
+            await patchRow("tasks", id, {
+              status: completed ? "completed" : "open",
+              completed_at: completed ? new Date().toISOString() : null,
+            }, token);
+          } else if (resource === "task" && operation === "delete") {
+            await deleteRow("tasks", id, token);
+          } else if (resource === "case" && operation === "archive") {
+            if (session.identity.role === "staff") {
+              await supabaseRequest(
+                "/rest/v1/rpc/request_case_archive",
+                {
+                  method: "POST",
+                  body: JSON.stringify({
+                    target_case: id,
+                    request_reason: nullable(body.reason),
+                  }),
+                },
+                token,
+              );
+              requested += 1;
+            } else {
+              await patchRow("cases", id, {
+                health: "closed",
+                closed_at: new Date().toISOString(),
+                outcome: "archived",
+              }, token);
+            }
+          } else if (resource === "appointment" && operation === "delete") {
+            const [cancelled] = await rest<
+              { owner_id: string | null; google_calendar_event_id: string | null }[]
+            >(
+              `appointments?select=owner_id,google_calendar_event_id&id=eq.${encodeURIComponent(id)}&limit=1`,
+              token,
+            );
+            await deleteRow("appointments", id, token);
+            if (cancelled)
+              await cancelAppointmentOnCalendar(
+                cancelled.owner_id,
+                cancelled.google_calendar_event_id,
+                token,
+              );
+          } else if (resource === "document" && operation === "delete") {
+            await patchRow("documents", id, { state: "archived" }, token);
+          } else if (resource === "message" && operation === "toggle") {
+            await patchRow("email_messages", id, {
+              delivery_state: body.completed ? "ready" : "draft",
+            }, token);
+          } else if (resource === "message" && operation === "delete") {
+            await patchRow("email_messages", id, { delivery_state: "discarded" }, token);
+          } else if (resource === "invoice" && operation === "delete") {
+            await patchRow("invoices", id, { state: "void" }, token);
+          } else if (resource === "template" && operation === "delete") {
+            await deleteRow("content_templates", id, token);
+          } else if (resource === "workflow" && operation === "toggle") {
+            await patchRow("workflow_templates", id, { active: Boolean(body.active) }, token);
+          } else {
+            throw new InputError("That bulk action is not supported for this record type.");
+          }
+          await auditEvent(
+            org,
+            actor,
+            `${resource}.bulk_${operation}`,
+            resource,
+            id,
+            session.identity.branchId,
+            `Bulk ${operation} ${resource}`,
+            token,
+          );
+          succeeded += 1;
+        } catch (error) {
+          errors.push(databaseError(error, "Record could not be updated.").message);
+        }
+      }
+      return Response.json({
+        ok: succeeded > 0,
+        succeeded,
+        requested,
+        failed: ids.length - succeeded,
+        errors: Array.from(new Set(errors)).slice(0, 3),
+        error: succeeded > 0 ? undefined : errors[0],
+      }, { status: succeeded > 0 ? 200 : 400 });
+    }
+
     if (action === "mutate") {
       if (session.identity.role === "client")
         throw new LiveAccessError(
@@ -2362,6 +2503,17 @@ function requireManager(role: string, action: string): void {
       403,
       `Only a manager or administrator can ${action}.`,
     );
+}
+
+function uuidList(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.length === 0)
+    throw new InputError(`Select at least one ${label.toLowerCase()}.`);
+  if (value.length > 100)
+    throw new InputError("Bulk actions are limited to 100 records at a time.");
+  const ids = Array.from(new Set(value.map((item) => String(item))));
+  if (ids.some((id) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)))
+    throw new InputError(`${label} contains an invalid record identifier.`);
+  return ids;
 }
 
 class InputError extends Error {}

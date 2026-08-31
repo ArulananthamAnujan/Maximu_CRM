@@ -28,6 +28,43 @@ test("all live CRM routes authenticate through Supabase sessions", async () => {
   ]) assert.match(await read(route), /liveSession\(request\)/, route);
 });
 
+test("bulk actions are server-authorised and bounded", async () => {
+  const page = await read("app/page.tsx");
+  const workspace = await read("app/api/crm/workspace/route.ts");
+  const admin = await read("app/api/crm/admin/route.ts");
+  const checklists = await read("app/api/crm/document-checklist-templates/route.ts");
+  for (const source of [workspace, admin, checklists]) {
+    assert.match(source, /Bulk actions are limited to 100/);
+  }
+  assert.match(workspace, /action === "bulk_mutate"/);
+  assert.match(workspace, /action === "bulk_lifecycle"/);
+  assert.match(workspace, /requireManager\(session\.identity\.role/);
+  assert.match(admin, /action === "bulk_update_profiles"/);
+  assert.match(checklists, /action === "bulk_update"/);
+  for (const label of [
+    "Export selected",
+    "Mark complete",
+    "Archive selected",
+    "Void selected",
+    "Deactivate selected",
+  ]) assert.match(page, new RegExp(label));
+});
+
+test("every portal list provides client-safe bulk tools", async () => {
+  const page = await read("app/page.tsx");
+  for (const contract of [
+    "Select all my documents",
+    "Download files",
+    "Select all my appointments",
+    "Add to calendar",
+    "Select all my messages",
+    "Copy messages",
+    "Select all my invoices",
+    "Download invoice PDFs",
+    "Confirm received",
+  ]) assert.match(page, new RegExp(contract));
+});
+
 test("worker applies baseline browser and API security headers", async () => {
   const worker = await read("worker/index.ts");
   for (const header of ["Content-Security-Policy", "X-Content-Type-Options", "X-Frame-Options", "Permissions-Policy", "Cache-Control"])

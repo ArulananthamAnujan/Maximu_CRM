@@ -164,6 +164,43 @@ export async function POST(request: Request) {
       // somewhere rather than in no branch at all.
       const branchId = optionalUuid(body.branchId) ?? session.identity.branchId;
       await insert("staff_invitations", { id: crypto.randomUUID(), organisation_id: org, email: email(body.email), role_id: roleId, branch_id: branchId, display_name: optional(body.displayName), department: optional(body.department), level: optional(body.level), invited_by: session.identity.profileId, status: "pending" }, token);
+    } else if (action === "bulk_update_profiles") {
+      const targets = uuidList(body.profileIds, "Staff accounts");
+      const changes: Json = {};
+      if (typeof body.branchId === "string" || body.branchId === null)
+        changes.branch_id = optionalUuid(body.branchId);
+      if (typeof body.active === "boolean") changes.active = body.active;
+      if (Object.keys(changes).length === 0)
+        throw new InputError("Choose a branch or account status to change.");
+      let succeeded = 0;
+      const errors: string[] = [];
+      for (const target of targets) {
+        try {
+          if (target === session.identity.profileId)
+            throw new InputError("Your own account was not changed.");
+          const [person] = await get(
+            `profiles?select=id,level,active&id=eq.${target}&limit=1`,
+            token,
+          ) as { id: string; level: string; active: boolean }[];
+          if (!person) throw new InputError("A selected staff account no longer exists.");
+          // Super Admin deactivation stays an individual action so the existing
+          // last-administrator protection cannot be bypassed by a group edit.
+          if (changes.active === false && person.level === "super_admin")
+            throw new InputError("Super Admin accounts must be deactivated individually.");
+          await patch("profiles", target, changes, token);
+          succeeded += 1;
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : "A staff account could not be changed.");
+        }
+      }
+      return appendRefreshCookies(Response.json({
+        ok: succeeded > 0,
+        succeeded,
+        failed: targets.length - succeeded,
+        errors: Array.from(new Set(errors)).slice(0, 3),
+        error: succeeded > 0 ? undefined : errors[0],
+        message: `${succeeded} staff account${succeeded === 1 ? "" : "s"} updated${targets.length - succeeded ? `; ${targets.length - succeeded} could not be changed.` : "."}`,
+      }, { status: succeeded > 0 ? 200 : 400 }), session.refreshed, request);
     } else if (action === "update_profile") {
       const target = uuid(body.profileId, "Profile");
       if (target === session.identity.profileId && body.active === false) throw new InputError("You cannot deactivate your own account.");
@@ -326,6 +363,11 @@ async function patch(table: string, id: string, value: Json, token: string) { aw
 function optional(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : null; }
 function required(value: unknown, label: string) { const parsed = optional(value); if (!parsed) throw new InputError(`${label} is required.`); return parsed; }
 function uuid(value: unknown, label: string) { const parsed = required(value, label); if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed)) throw new InputError(`${label} is invalid.`); return parsed; }
+function uuidList(value: unknown, label: string) {
+  if (!Array.isArray(value) || value.length === 0) throw new InputError(`Select at least one ${label.toLowerCase()}.`);
+  if (value.length > 100) throw new InputError("Bulk actions are limited to 100 accounts at a time.");
+  return Array.from(new Set(value.map((item) => uuid(item, label))));
+}
 function optionalUuid(value: unknown) { const parsed = optional(value); return parsed ? uuid(parsed, "Identifier") : null; }
 function email(value: unknown) { const parsed = required(value, "Email").toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed)) throw new InputError("Email is invalid."); return parsed; }
 function slug(value: unknown, label: string) { const parsed = required(value, label).toLowerCase().replace(/[^a-z0-9_]+/g, "_"); if (!parsed) throw new InputError(`${label} is invalid.`); return parsed; }
