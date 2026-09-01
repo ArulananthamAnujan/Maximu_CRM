@@ -10,6 +10,13 @@ where cc.application_id = a.id and cc.branch_id is null;
 create index if not exists commission_claims_branch_idx
   on public.commission_claims(organisation_id, branch_id, status);
 
+-- Older imported cases predate the canonical lifecycle progress function and
+-- can otherwise show 0% while already at Student, Application or Completed.
+-- The lifecycle is authoritative; optional workflow-template stages are not.
+update public.cases
+set progress = public.lifecycle_progress(lifecycle_stage)
+where progress is distinct from public.lifecycle_progress(lifecycle_stage);
+
 -- The legacy-compatible role boundary is deliberately expressed in reusable
 -- database functions. The application may hide controls for clarity, but RLS
 -- remains the authority even when somebody calls the API directly.

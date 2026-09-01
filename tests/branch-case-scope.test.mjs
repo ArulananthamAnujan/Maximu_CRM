@@ -117,3 +117,15 @@ test("migration can be safely reapplied after an interrupted release", () => {
     );
   }
 });
+
+test("case lists use the authoritative lifecycle and canonical progress", () => {
+  assert.match(workspace, /stage: lifecycleLabel\(row\.lifecycle_stage\)/);
+  assert.doesNotMatch(
+    workspace,
+    /stage: stage\.name \?\? client\.current_lifecycle/,
+  );
+  assert.match(
+    sql,
+    /set progress = public\.lifecycle_progress\(lifecycle_stage\)/,
+  );
+});
