@@ -59,6 +59,19 @@ test("operations protection creates backups and verifies restorability and heade
   assert.match(integrations, /Monitoring and incident alerts/);
 });
 
+test("Next responses apply the full production security-header set", () => {
+  const config = read("next.config.ts");
+  for (const header of [
+    "Content-Security-Policy",
+    "X-Content-Type-Options",
+    "X-Frame-Options",
+    "Referrer-Policy",
+    "Permissions-Policy",
+    "Strict-Transport-Security",
+  ]) assert.match(config, new RegExp(header));
+  assert.match(config, /source: "\/:path\*"/);
+});
+
 test("course sources distinguish official coverage from stale legacy data", () => {
   for (const source of ["au_cricos", "us_college_scorecard", "uk_discover_uni", "ca_ircc_dli", "nz_nzqa", "ae_caa"])
     assert.match(migration, new RegExp(source));
