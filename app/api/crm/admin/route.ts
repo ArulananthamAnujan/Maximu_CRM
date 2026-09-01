@@ -1,4 +1,9 @@
-import { appendRefreshCookies, LiveAccessError, liveSession } from "@/server/supabase-session";
+import {
+  appendRefreshCookies,
+  LiveAccessError,
+  liveSession,
+  type LiveIdentity,
+} from "@/server/supabase-session";
 import {
   serviceRoleKey,
   SupabaseError,
@@ -49,6 +54,7 @@ export async function POST(request: Request) {
       const address = email(body.email);
       const level = staffLevel(body.level, session.identity.role);
       const branchId = optionalUuid(body.branchId) ?? session.identity.branchId;
+      assertManagedBranch(session.identity, branchId, "create staff");
       const department = optional(body.department);
       const roleId = optionalUuid(body.roleId) ?? (await defaultRoleId(level, org, token));
 
@@ -149,13 +155,17 @@ export async function POST(request: Request) {
     }
 
     if (action === "revoke_invitation") {
-      await patch("staff_invitations", uuid(body.invitationId, "Invitation"),
+      const invitationId = uuid(body.invitationId, "Invitation");
+      await assertInvitationBranch(invitationId, session.identity, token);
+      await patch("staff_invitations", invitationId,
         { status: "revoked" }, token);
     } else if (action === "resend_invitation") {
       // Whatever state it was in -- still pending, revoked, or expired -- a
       // resend puts it back in front of that person with a fresh week to
       // accept it.
-      await patch("staff_invitations", uuid(body.invitationId, "Invitation"), {
+      const invitationId = uuid(body.invitationId, "Invitation");
+      await assertInvitationBranch(invitationId, session.identity, token);
+      await patch("staff_invitations", invitationId, {
         status: "pending",
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       }, token);
@@ -164,12 +174,15 @@ export async function POST(request: Request) {
       // Defaults to the inviter's own branch, so an invited person lands
       // somewhere rather than in no branch at all.
       const branchId = optionalUuid(body.branchId) ?? session.identity.branchId;
+      assertManagedBranch(session.identity, branchId, "create invitations");
       await insert("staff_invitations", { id: crypto.randomUUID(), organisation_id: org, email: email(body.email), role_id: roleId, branch_id: branchId, display_name: optional(body.displayName), department: optional(body.department), level: optional(body.level), invited_by: session.identity.profileId, status: "pending" }, token);
     } else if (action === "bulk_update_profiles") {
       const targets = uuidList(body.profileIds, "Staff accounts");
       const changes: Json = {};
       if (typeof body.branchId === "string" || body.branchId === null)
         changes.branch_id = optionalUuid(body.branchId);
+      if (Object.hasOwn(changes, "branch_id"))
+        assertManagedBranch(session.identity, changes.branch_id as string | null, "move staff");
       if (typeof body.active === "boolean") changes.active = body.active;
       if (Object.keys(changes).length === 0)
         throw new InputError("Choose a branch or account status to change.");
@@ -180,10 +193,11 @@ export async function POST(request: Request) {
           if (target === session.identity.profileId)
             throw new InputError("Your own account was not changed.");
           const [person] = await get(
-            `profiles?select=id,level,active&id=eq.${target}&limit=1`,
+            `profiles?select=id,level,active,branch_id&id=eq.${target}&limit=1`,
             token,
-          ) as { id: string; level: string; active: boolean }[];
+          ) as { id: string; level: string; active: boolean; branch_id: string | null }[];
           if (!person) throw new InputError("A selected staff account no longer exists.");
+          assertManagedBranch(session.identity, person.branch_id, "manage staff");
           // Super Admin deactivation stays an individual action so the existing
           // last-administrator protection cannot be bypassed by a group edit.
           if (changes.active === false && person.level === "super_admin")
@@ -205,10 +219,19 @@ export async function POST(request: Request) {
     } else if (action === "update_profile") {
       const target = uuid(body.profileId, "Profile");
       if (target === session.identity.profileId && body.active === false) throw new InputError("You cannot deactivate your own account.");
+      const [managedProfile] = await get(
+        `profiles?select=id,branch_id&id=eq.${target}&limit=1`,
+        token,
+      ) as { id: string; branch_id: string | null }[];
+      if (!managedProfile) throw new LiveAccessError(403, "That staff account is outside your branch.");
+      assertManagedBranch(session.identity, managedProfile.branch_id, "manage staff");
       const changes: Json = {};
       if (typeof body.displayName === "string") changes.display_name = required(body.displayName, "Display name");
       if (typeof body.department === "string" || body.department === null) changes.department = optional(body.department);
-      if (typeof body.branchId === "string" || body.branchId === null) changes.branch_id = optionalUuid(body.branchId);
+      if (typeof body.branchId === "string" || body.branchId === null) {
+        changes.branch_id = optionalUuid(body.branchId);
+        assertManagedBranch(session.identity, changes.branch_id as string | null, "move staff");
+      }
       if (typeof body.active === "boolean") changes.active = body.active;
       if (body.level) {
         if (session.identity.role !== "super_admin") throw new LiveAccessError(403, "Only a Super Admin can change account levels.");
@@ -342,7 +365,9 @@ export async function POST(request: Request) {
       const changes: Json = {};
       if (body.name) changes.name = required(body.name, "Branch name");
       if (typeof body.active === "boolean") changes.active = body.active;
-      await patch("branches", uuid(body.branchId, "Branch"), changes, token);
+      const branchId = uuid(body.branchId, "Branch");
+      assertManagedBranch(session.identity, branchId, "change a branch");
+      await patch("branches", branchId, changes, token);
     } else {
       throw new InputError("Unsupported administration action.");
     }
@@ -397,6 +422,24 @@ function temporary() {
 }
 
 function requireAdmin(role: string) { if (role !== "super_admin" && role !== "admin") throw new LiveAccessError(403, "Administrator access is required."); }
+function assertManagedBranch(identity: LiveIdentity, branchId: string | null, action: string) {
+  if (identity.role === "super_admin") return;
+  if (!identity.branchId || branchId !== identity.branchId)
+    throw new LiveAccessError(403, `A Branch Admin can only ${action} within their own branch.`);
+}
+async function assertInvitationBranch(
+  invitationId: string,
+  identity: LiveIdentity,
+  token: string,
+) {
+  if (identity.role === "super_admin") return;
+  const [invitation] = await get(
+    `staff_invitations?select=id,branch_id&id=eq.${invitationId}&limit=1`,
+    token,
+  ) as { id: string; branch_id: string | null }[];
+  if (!invitation) throw new LiveAccessError(403, "That invitation is outside your branch.");
+  assertManagedBranch(identity, invitation.branch_id, "manage invitations");
+}
 async function get(query: string, token: string) { return supabaseRequest(`/rest/v1/${query}`, { method: "GET" }, token); }
 async function insert(table: string, value: Json, token: string, prefer = "return=minimal") { await supabaseRequest(`/rest/v1/${table}`, { method: "POST", headers: { Prefer: prefer }, body: JSON.stringify(value) }, token); }
 async function patch(table: string, id: string, value: Json, token: string) { await supabaseRequest(`/rest/v1/${table}?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(value) }, token); }

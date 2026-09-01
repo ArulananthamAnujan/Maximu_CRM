@@ -126,7 +126,7 @@ test("record creation preserves branch security and exposes form failures", asyn
   const page = await read("app/page.tsx");
   const workspace = await read("app/api/crm/workspace/route.ts");
   assert.match(workspace, /sourceLevel !== "super_admin"/);
-  assert.match(workspace, /return null;/);
+  assert.match(workspace, /Your staff account needs a branch/);
   assert.match(workspace, /date_of_birth: nullableDay\(body\.dob\)/);
   assert.match(workspace, /custom_fields: intakeFields/);
   assert.match(page, /setFormError\(message\)/);

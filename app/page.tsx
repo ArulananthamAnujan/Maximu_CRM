@@ -621,6 +621,7 @@ const roleConfig: Record<
     initials: "AD",
     modules: [
       "dashboard",
+      "ai",
       "work",
       "calendar",
       "enquiries",
@@ -644,10 +645,11 @@ const roleConfig: Record<
   staff: {
     label: "Staff",
     legacy: "Employee teams",
-    scope: "Assigned branch and assigned client records",
+    scope: "Assigned cases and approved case-team collaborations",
     initials: "ST",
     modules: [
       "dashboard",
+      "ai",
       "work",
       "calendar",
       "enquiries",
@@ -660,6 +662,11 @@ const roleConfig: Record<
       "documents",
       "communications",
       "courseFinder",
+      "templates",
+      "finance",
+      "reports",
+      "workflows",
+      "compliance",
     ],
   },
   client: {
@@ -676,12 +683,12 @@ const permissionRows = [
   ["Staff invitations, activation and roles", true, true, false, false],
   ["All organisation cases", true, false, false, false],
   ["Assigned branch cases", true, true, false, false],
-  ["Assigned client cases", true, true, true, false],
+  ["Assigned or collaborated cases", true, true, true, false],
   ["Own journey and next steps", false, false, false, true],
   ["Documents", true, true, true, true],
   ["Gmail and internal communication", true, true, true, true],
-  ["Finance and commissions", true, true, "view", true],
-  ["Reports, audit and login activity", true, true, false, false],
+  ["Case invoices, receipts and payments", true, true, true, true],
+  ["Reports and case audit history", true, true, true, false],
 ] as const;
 
 const featureCoverage = [
@@ -6292,8 +6299,8 @@ function ReadinessPanel() {
 }
 
 const STAFF_LEVELS: [string, string][] = [
-  ["staff", "Staff — the cases assigned to them"],
-  ["partner", "Partner — external agent, assigned cases only"],
+  ["staff", "Staff — assigned and collaborated cases"],
+  ["partner", "Partner — assigned and collaborated cases"],
   ["manager", "Manager — their branch's cases and finance"],
   ["branch_admin", "Branch Manager — their branch, staff and finance"],
   ["super_admin", "Super Admin — everything, every branch"],
@@ -7263,7 +7270,7 @@ function AdminView({
               <span>{row[0]}</span>
               {row.slice(1).map((value, i) => (
                 <b key={i} className={value ? "allowed" : "denied"}>
-                  {value === "view" ? (
+                  {String(value) === "view" ? (
                     "View"
                   ) : value ? (
                     <Check size={15} />
@@ -10733,9 +10740,11 @@ export default function Home() {
     );
   const role = identity?.role || "staff",
     signedIn = Boolean(identity),
-    // Invoices, templates and workflows are writable only by manager level and
-    // above; the database enforces the same rule.
-    canManageFinance = role === "super_admin" || role === "admin";
+    // Every internal case-team member can complete finance work for a case
+    // they are allowed to work on. Branch-wide commissions, masters and staff
+    // redistribution remain management functions.
+    canManageBranch = role === "super_admin" || role === "admin",
+    canManageCaseFinance = role !== "client";
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 2600);
@@ -11164,7 +11173,11 @@ export default function Home() {
       // something the CRM should hand out, and every export is recorded.
       const mine =
         role === "staff"
-          ? cases.filter((c) => c.ownerId === identity?.profileId)
+          ? cases.filter(
+              (c) =>
+                c.ownerId === identity?.profileId ||
+                c.collaboratorIds?.includes(identity?.profileId ?? ""),
+            )
           : cases;
       const ids = new Set(mine.map((c) => c.dbId || c.id));
       const scope =
@@ -11613,7 +11626,9 @@ export default function Home() {
             CLIENT_INVOICE_TYPES.includes(invoice.type) &&
             cases.some(
               (c) =>
-                c.name === invoice.client && c.ownerId === identity?.profileId,
+                c.name === invoice.client &&
+                (c.ownerId === identity?.profileId ||
+                  c.collaboratorIds?.includes(identity?.profileId ?? "")),
             ),
         )
       : invoices;
@@ -11718,7 +11733,7 @@ export default function Home() {
           items={visibleInvoices}
           openModal={open}
           setItems={syncInvoices}
-          canManage={canManageFinance}
+          canManage={canManageCaseFinance}
           onRefund={(invoice) => {
             if (
               confirm(
@@ -11770,7 +11785,7 @@ export default function Home() {
         />
         <CommissionClaimsPanel
           items={commissionClaims}
-          canManage={canManageFinance}
+          canManage={canManageBranch}
           onCreate={(data) =>
             void postOperation("create_commission_claim", {
               partnerName: data.partnerName,
@@ -11802,7 +11817,7 @@ export default function Home() {
     content = (
       <TemplatesWorkspace items={templates} checklistTemplates={checklistTemplates}
         emailTemplates={emailTemplates} openModal={open} setItems={syncTemplates}
-        canManage={canManageFinance} reloadChecklist={loadChecklistTemplates}
+        canManage={canManageBranch} reloadChecklist={loadChecklistTemplates}
         reloadEmails={loadEmailTemplates} onBulkAction={bulkMutateRemote} />
     );
   else if (active === "workflows")
@@ -11811,7 +11826,7 @@ export default function Home() {
         items={workflows}
         openModal={open}
         setItems={syncWorkflows}
-        canManage={canManageFinance}
+        canManage={canManageBranch}
         onBulkAction={bulkMutateRemote}
       />
     );
@@ -11819,7 +11834,7 @@ export default function Home() {
     content = (
       <ReportsView
         exportData={exportData}
-        canSeeFinance={canManageFinance}
+        canSeeFinance={canManageCaseFinance}
         serviceMode={serviceMode}
       />
     );
@@ -11896,7 +11911,13 @@ export default function Home() {
       active === "enquiries"
         ? atStage("enquiry")
         : active === "students"
-          ? atStage("student")
+          ? // Students is the enduring Study Abroad directory, not a
+            // temporary pipeline bucket. A converted student must remain
+            // findable here after applications are submitted or the case
+            // reaches the visa stage.
+            cases.filter(
+              (c) => inStream(c) && c.lifecycleStage !== "enquiry",
+            )
           : active === "applications"
             ? atStage("application")
             : active === "visas"
@@ -11915,10 +11936,14 @@ export default function Home() {
                   )
                 : atStage("visa")
               : active === "direct_visas"
-                ? // "Clients" is Direct Visa's name for the stage Study Abroad
-                  // calls "Students" -- the same lifecycle stage, not the visa
-                  // stage a migration matter reaches later.
-                  atStage("student")
+                ? // Clients is the enduring Direct Visa directory. Keep a
+                  // person visible here throughout application, lodgement,
+                  // deferral and completion; the other screens are focused
+                  // operational views of the same case, not replacements for
+                  // the client record.
+                  cases.filter(
+                    (c) => inStream(c) && c.lifecycleStage !== "enquiry",
+                  )
                 : active === "case_complete"
                   ? atStage("completed")
                   : active === "defer"
@@ -11944,7 +11969,9 @@ export default function Home() {
                 ? "Cases at the application or visa stage"
                 : "Cases at the visa stage"
               : active === "direct_visas"
-                ? "Cases at the client stage"
+                ? "Client directory"
+                : active === "students"
+                  ? "Student directory"
                 : meta[active][0]
         }
         module={active}
@@ -11954,7 +11981,7 @@ export default function Home() {
         openModal={open}
         onSelect={openCaseWorkspace}
         staff={staff}
-        canBulkAssign={canManageFinance}
+        canBulkAssign={canManageBranch}
         onBulkAssign={bulkAssignCases}
         onBulkStage={bulkMoveCases}
         onBulkArchive={bulkArchiveCases}
@@ -11974,7 +12001,7 @@ export default function Home() {
           />
           {caseList}
         </>
-      ) : active === "visas" || active === "direct_visas" ? (
+      ) : active === "visas" ? (
         <>
           <VisaMattersBoard
             rows={visaMatterRows.filter((row) =>
