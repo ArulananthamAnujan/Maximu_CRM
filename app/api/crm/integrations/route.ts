@@ -134,17 +134,17 @@ export async function GET(request: Request) {
         purpose: "Adding a member of staff from inside the CRM.",
         state: serviceRoleKey() ? "connected" : "not_configured",
         detail: serviceRoleKey()
-          ? "Staff & Masters creates the login and the CRM account together, and hands you a one-time password."
+          ? "Staff & Masters creates the login and CRM account, then emails the username and a secure one-time password-setup link. No reusable password is disclosed."
           : "Staff & Masters records the invitation instead. Create the Supabase login for that address yourself (Authentication -> Users -> Add user); their CRM account is set up the first time they sign in.",
         setup: ["SUPABASE_SERVICE_ROLE_KEY"],
       },
       {
         key: "gmail",
-        name: "Gmail sending",
-        purpose: "Send case-linked email from the CRM.",
+        name: "Gmail inbox and sending",
+        purpose: "Read and search the connected personal inbox and send case-linked email from the CRM.",
         state: gmailReady ? "connected" : "not_configured",
         detail: gmailReady
-          ? "Each member of staff connects their own Gmail account from Messages and sends drafts as themselves."
+          ? "Each member of staff connects their own Gmail account from Messages, reads and searches their inbox, and sends case-linked drafts as themselves."
           : "GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are not set, so nobody can connect a Gmail account yet. Drafts are still recorded against the case — send from your own mailbox and mark the draft ready until this is configured.",
         setup: ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"],
       },
