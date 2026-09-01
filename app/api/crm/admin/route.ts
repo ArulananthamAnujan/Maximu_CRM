@@ -10,6 +10,7 @@ import {
   supabaseAdminRequest,
   supabaseRequest,
 } from "@/server/supabase";
+import { emailConfigured, sendEmail } from "@/server/email";
 
 export const dynamic = "force-dynamic";
 type Json = Record<string, unknown>;
@@ -88,9 +89,8 @@ export async function POST(request: Request) {
 
       if (!serviceRoleKey()) return await recordInvitation();
 
-      // A password they must change, generated here and shown once -- but only
-      // meaningful for a login created here. Connecting a pre-existing one
-      // (below) hands nothing over, because nobody here knows its password.
+      // The random password is never disclosed. The staff member receives a
+      // one-time recovery/setup link and chooses their own password.
       const temporaryPassword = temporary();
       let created: { id?: string };
       let connectedExisting = false;
@@ -137,20 +137,38 @@ export async function POST(request: Request) {
           profile_id: created.id, role_id: roleId, branch_id: branchId,
         }, token, "resolution=merge-duplicates,return=minimal").catch(() => undefined);
 
-      if (connectedExisting)
-        return appendRefreshCookies(Response.json({
-          ok: true,
-          created: "connected",
+      const generated = await supabaseAdminRequest<{
+        action_link?: string;
+        properties?: { action_link?: string };
+      }>("/auth/v1/admin/generate_link", {
+        method: "POST",
+        body: JSON.stringify({
+          type: "recovery",
           email: address,
-          message: `${displayName}'s existing login is now connected. They can sign in with the password they already have.`,
-        }), session.refreshed, request);
+          options: { redirect_to: `${new URL(request.url).origin}/auth/google-callback` },
+        }),
+      });
+      const setupLink = generated.action_link || generated.properties?.action_link || "";
+      let emailSent = false;
+      if (setupLink && emailConfigured()) {
+        await sendEmail({
+          to: address,
+          subject: "Set up your Maximus CRM account",
+          text: `Hello ${displayName},\n\nYour Maximus CRM username is ${address}. Set your password using this secure one-time link:\n${setupLink}\n\nAfter signing in, you can change your password from your account menu.`,
+          html: `<p>Hello ${displayName},</p><p>Your Maximus CRM username is <strong>${address}</strong>.</p><p><a href="${setupLink}">Set your password securely</a></p><p>After signing in, you can change your password from your account menu.</p>`,
+        });
+        emailSent = true;
+      }
 
       return appendRefreshCookies(Response.json({
         ok: true,
-        created: "account",
+        created: connectedExisting ? "connected" : "account",
         email: address,
-        temporaryPassword,
-        message: `${displayName} can sign in now. Give them this one-time password and ask them to change it.`,
+        emailSent,
+        setupLink: emailSent ? undefined : setupLink,
+        message: emailSent
+          ? `${displayName}'s secure account setup email was sent to ${address}.`
+          : `${displayName}'s account was created, but automatic email delivery is not configured. Use the secure setup link shown below.`,
       }), session.refreshed, request);
     }
 

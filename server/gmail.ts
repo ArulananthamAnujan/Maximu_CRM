@@ -4,9 +4,8 @@
  * This is deliberately not a shared organisation mailbox: each connection in
  * mailbox_connections belongs to one profile, carries that person's own
  * OAuth refresh token, and a message is only ever sent as the person who
- * composed it. Nothing here reads anyone's inbox -- the scope requested is
- * gmail.send only, so a connected account can be used to send a case-linked
- * draft and nothing else.
+ * composed it. The signed-in owner may read and search their own inbox; only
+ * case-linked conversations are copied into the branch-shared CRM history.
  *
  * Runs on Cloudflare Workers, so token exchange and the send call are made
  * directly against Google's REST endpoints rather than through the Node
@@ -187,6 +186,7 @@ export async function gmailSend(options: {
 export type GmailMessage = {
   id: string;
   threadId: string;
+  labelIds?: string[];
   internalDate?: string;
   snippet?: string;
   payload?: {

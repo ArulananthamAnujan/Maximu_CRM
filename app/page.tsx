@@ -3150,6 +3150,13 @@ function MessagesView({
   const [whatsappConfigured, setWhatsappConfigured] = useState(false);
   const [smsConfigured, setSmsConfigured] = useState(false);
   const [mailboxError, setMailboxError] = useState("");
+  const [gmailMessages, setGmailMessages] = useState<Array<{
+    id: string; threadId: string; from: string; to: string; subject: string;
+    date: string; snippet: string; body: string; unread: boolean; inbox: boolean; sent: boolean;
+  }>>([]);
+  const [gmailSearch, setGmailSearch] = useState("");
+  const [gmailLoading, setGmailLoading] = useState(false);
+  const [openGmailId, setOpenGmailId] = useState<string | null>(null);
   const [sendingId, setSendingId] = useState<string | null>(null);
   // Sent locally, ahead of the next full refresh -- kept separate from the
   // shared items/setItems wiring so a send can never collide with the
@@ -3220,6 +3227,24 @@ function MessagesView({
           ? reason.message
           : "Your Gmail account could not be disconnected.",
       );
+    }
+  };
+
+  const loadGmailInbox = async (search = gmailSearch) => {
+    setGmailLoading(true);
+    setMailboxError("");
+    try {
+      const params = new URLSearchParams({ view: "inbox" });
+      if (search.trim()) params.set("q", search.trim());
+      const response = await fetch(`/api/crm/mailbox?${params}`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Gmail could not be loaded.");
+      setMailbox(result);
+      setGmailMessages(result.messages ?? []);
+    } catch (reason) {
+      setMailboxError(reason instanceof Error ? reason.message : "Gmail could not be loaded.");
+    } finally {
+      setGmailLoading(false);
     }
   };
 
@@ -3326,6 +3351,37 @@ function MessagesView({
         </p>
       )}
       {mailboxError && <p className="caseWorkError">{mailboxError}</p>}
+      {canSend && mailbox?.connected && (
+        <section className="gmailPortalInbox" aria-label="Connected Gmail inbox">
+          <div className="panelHead">
+            <div><span className="kicker">CONNECTED MAILBOX</span><h3>Gmail inbox</h3></div>
+            <button className="ghostButton" disabled={gmailLoading} onClick={() => void loadGmailInbox()}>
+              <RefreshCw size={15} /> {gmailLoading ? "Loading…" : "Refresh inbox"}
+            </button>
+          </div>
+          <form className="listFilterBar" onSubmit={(event) => { event.preventDefault(); void loadGmailInbox(gmailSearch); }}>
+            <Search size={16} />
+            <input value={gmailSearch} onChange={(event) => setGmailSearch(event.target.value)} placeholder="Search Gmail exactly as you would in Gmail" />
+            <button className="ghostButton" disabled={gmailLoading}>Search</button>
+          </form>
+          {gmailMessages.length === 0 ? (
+            <p className="coverageIntro">Select “Refresh inbox” to load the latest 50 messages from {mailbox.email}.</p>
+          ) : (
+            <div className="gmailMessageList">
+              {gmailMessages.map((message) => (
+                <article key={message.id} className={message.unread ? "gmailMessage unread" : "gmailMessage"}>
+                  <button onClick={() => setOpenGmailId(openGmailId === message.id ? null : message.id)}>
+                    <span><b>{message.sent ? `To: ${message.to}` : message.from}</b><small>{new Date(message.date).toLocaleString()}</small></span>
+                    <strong>{message.subject}</strong>
+                    <p>{message.snippet}</p>
+                  </button>
+                  {openGmailId === message.id && <div className="gmailMessageBody"><pre>{message.body || message.snippet}</pre></div>}
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
       {shown.length === 0 ? (
         <EmptyState
           icon={Mail}
@@ -6487,8 +6543,8 @@ function ReadinessPanel() {
 }
 
 const STAFF_LEVELS: [string, string][] = [
-  ["staff", "Staff — assigned and collaborated cases"],
-  ["partner", "Partner — assigned and collaborated cases"],
+  ["staff", "Staff — every case in their branch"],
+  ["partner", "Partner — every case in their branch"],
   ["manager", "Manager — their branch's cases and finance"],
   ["branch_admin", "Branch Manager — their branch, staff and finance"],
   ["super_admin", "Super Admin — everything, every branch"],
@@ -6837,7 +6893,7 @@ function AdminView({
   const [staffBranch, setStaffBranch] = useState("");
   const [handover, setHandover] = useState<{
     message: string;
-    password?: string;
+    setupLink?: string;
   } | null>(null);
 
   const read = async () => {
@@ -6921,7 +6977,7 @@ function AdminView({
       if (!response.ok) throw new Error(result.error || "That did not save.");
       await reload();
       setError("");
-      return result as { message?: string; temporaryPassword?: string };
+      return result as { message?: string; setupLink?: string };
     } catch (reason) {
       const message =
         reason instanceof Error ? reason.message : "That did not save.";
@@ -7048,12 +7104,12 @@ function AdminView({
         {handover && (
           <div className="handoverPanel">
             <strong>{handover.message}</strong>
-            {handover.password && (
+            {handover.setupLink && (
               <>
-                <code>{handover.password}</code>
+                <code>{handover.setupLink}</code>
                 <small>
-                  This is shown once and is not stored anywhere you can read it
-                  again. If it is lost, reset the password in Supabase.
+                  Automatic email delivery is not configured. Share this
+                  one-time setup link securely; no password is exposed.
                 </small>
               </>
             )}
@@ -7081,7 +7137,7 @@ function AdminView({
                 setAdding(false);
                 setHandover({
                   message: result.message ?? "Staff account created.",
-                  password: result.temporaryPassword,
+                  setupLink: result.setupLink,
                 });
               }
             }}
@@ -8411,7 +8467,7 @@ function CaseDrawerBody({
                     }
                     title={
                       !canModify
-                        ? "This case is assigned to somebody else. Ask a manager to reassign it to you."
+                        ? "You do not have access to modify this branch record."
                         : needsExpiryFor(next)
                           ? "Record the visa expiry date above first"
                           : undefined
@@ -8959,7 +9015,7 @@ function CaseDrawerBody({
             title={
               canModify
                 ? undefined
-                : "This case is assigned to somebody else. Ask a manager to reassign it to you."
+                : "You do not have access to modify this branch record."
             }
           >
             <Pencil size={15} />
@@ -11954,6 +12010,22 @@ export default function Home() {
     setAlerts([]);
     setStorageConnected(false);
   };
+  const changePassword = async () => {
+    const password = window.prompt("Enter a new password (at least 12 characters with a letter and number):");
+    if (!password) return;
+    const confirmation = window.prompt("Enter the new password again:");
+    if (password !== confirmation) {
+      window.alert("The passwords do not match.");
+      return;
+    }
+    const response = await fetch("/api/auth/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    const result = await response.json().catch(() => ({}));
+    window.alert(response.ok ? "Your password has been changed." : result.error || "The password could not be changed.");
+  };
   if (!sessionReady)
     return (
       <main className="sessionLoading">
@@ -11982,20 +12054,15 @@ export default function Home() {
     ).values(),
   ).sort((a, b) => a.name.localeCompare(b.name));
 
-  // A case officer's ledger is the fees for the clients they are accountable
-  // for. Commission claims against partners and institutions are management
-  // finance and are not part of it.
+  // Every staff member can work on branch client finance. Commission claims
+  // remain management-only because they are organisation counterparties, not
+  // student case operations.
   const visibleInvoices =
     role === "staff"
       ? invoices.filter(
           (invoice) =>
             CLIENT_INVOICE_TYPES.includes(invoice.type) &&
-            cases.some(
-              (c) =>
-                c.name === invoice.client &&
-                (c.ownerId === identity?.profileId ||
-                  c.collaboratorIds?.includes(identity?.profileId ?? "")),
-            ),
+            cases.some((c) => c.name === invoice.client),
         )
       : invoices;
   const screenMeta =
@@ -12512,6 +12579,14 @@ export default function Home() {
                 </span>
                 <button
                   className="iconButton"
+                  onClick={() => void changePassword()}
+                  aria-label="Change password"
+                  title="Change password"
+                >
+                  <LockKeyhole size={17} />
+                </button>
+                <button
+                  className="iconButton"
                   onClick={() => void signOut()}
                   aria-label="Sign out"
                   title="Sign out"
@@ -12670,9 +12745,7 @@ export default function Home() {
           schemaWarning={schemaWarning}
           storageConnected={storageConnected}
           canAssign={Boolean(role === "super_admin" || role === "admin" || selected?.ownerId === identity?.profileId)}
-          canModify={Boolean(
-            role !== "staff" || selected?.ownerId === identity?.profileId || selected?.collaboratorIds?.includes(identity?.profileId ?? "")
-          )}
+          canModify={true}
           item={selected}
           close={() => {
             if (caseWindowId) window.close();

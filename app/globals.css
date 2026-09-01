@@ -8422,6 +8422,19 @@ body {
   color: var(--muted);
 }
 /* The one-time password handed over when a staff account is created. */
+.gmailPortalInbox { margin: 1rem 0 1.25rem; border: 1px solid var(--border); border-radius: 16px; padding: 1rem; background: var(--surface); }
+.gmailPortalInbox .listFilterBar { display: flex; gap: .65rem; align-items: center; margin: .75rem 0; }
+.gmailPortalInbox .listFilterBar input { flex: 1; }
+.gmailMessageList { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; max-height: 640px; overflow-y: auto; }
+.gmailMessage { border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 92%, var(--ink) 8%); }
+.gmailMessage:last-child { border-bottom: 0; }
+.gmailMessage.unread { background: var(--surface); }
+.gmailMessage > button { width: 100%; border: 0; background: transparent; color: inherit; padding: .85rem 1rem; text-align: left; cursor: pointer; display: grid; grid-template-columns: minmax(180px, .8fr) minmax(220px, 1fr) 1.6fr; gap: 1rem; align-items: center; }
+.gmailMessage > button span { display: flex; flex-direction: column; min-width: 0; }
+.gmailMessage > button small, .gmailMessage > button p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; }
+.gmailMessageBody { padding: 1rem; border-top: 1px solid var(--border); background: var(--surface); }
+.gmailMessageBody pre { margin: 0; white-space: pre-wrap; font: inherit; line-height: 1.55; }
+@media (max-width: 900px) { .gmailMessage > button { grid-template-columns: 1fr; gap: .3rem; } }
 .handoverPanel {
   border: 1px solid #a7d3b6;
   background: #f1faf4;

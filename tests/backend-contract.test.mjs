@@ -308,14 +308,14 @@ test("an invited person can actually become a staff account", async () => {
   assert.match(login, /profileForUser\(session\.access_token, session\.user\.id\)/);
 });
 
-test("the service-role key is used on one path and never as a filter", async () => {
+test("the service-role key is used only for bounded staff-auth operations and never as a filter", async () => {
   const supabase = await read("server/supabase.ts");
   assert.match(supabase, /export async function supabaseAdminRequest/);
   const admin = await read("app/api/crm/admin/route.ts");
   // Admin calls create/undo/find a login and can retire a removed staff login
   // so its real email is available for a future account.
   const uses = admin.match(/supabaseAdminRequest/g) ?? [];
-  assert.equal(uses.length, 5, "unexpected service-role calls");
+  assert.equal(uses.length, 6, "unexpected service-role calls");
   assert.match(admin, /supabaseAdminRequest<\{ id\?: string \}>\("\/auth\/v1\/admin\/users"/);
   assert.match(admin, /supabaseAdminRequest<\{ users\?:/);
   // Only a Super Admin makes another administrator.
@@ -325,6 +325,40 @@ test("the service-role key is used on one path and never as a filter", async () 
   assert.match(readme, /SUPABASE_SERVICE_ROLE_KEY/);
   const example = await read(".env.example");
   assert.match(example, /SUPABASE_SERVICE_ROLE_KEY=/);
+});
+
+test("branch staff share their branch workspace and every material change is attributed", async () => {
+  const sql = await read("supabase/migrations/0035_branch_workspace_and_audit.sql");
+  assert.match(sql, /c\.branch_id=public\.current_user_branch\(\)/);
+  assert.match(sql, /create or replace function public\.can_modify_case/);
+  assert.doesNotMatch(sql.split("create or replace function public.can_modify_case")[1].split("$$;")[0], /owner_id|case_collaborators/);
+  assert.match(sql, /create or replace function public\.audit_branch_workspace_change/);
+  assert.match(sql, /auth\.uid\(\)/);
+  assert.match(sql, /'changed_fields'/);
+  assert.match(sql, /education_applications/);
+  assert.match(sql, /email_messages/);
+});
+
+test("staff onboarding emails a secure setup link and every user can change password", async () => {
+  const admin = await read("app/api/crm/admin/route.ts");
+  assert.match(admin, /type: "recovery"/);
+  assert.match(admin, /Set up your Maximus CRM account/);
+  assert.doesNotMatch(admin, /temporaryPassword,\s*message:/);
+  const password = await read("app/api/auth/password/route.ts");
+  assert.match(password, /\/auth\/v1\/user/);
+  assert.match(password, /password\.length < 12/);
+});
+
+test("a connected Gmail account exposes a searchable personal inbox", async () => {
+  const gmail = await read("server/gmail.ts");
+  assert.match(gmail, /gmail\.readonly/);
+  const mailbox = await read("app/api/crm/mailbox/route.ts");
+  assert.match(mailbox, /searchParams\.get\("view"\) === "inbox"/);
+  assert.match(mailbox, /gmailSearchMessages/);
+  assert.match(mailbox, /gmailGetMessage/);
+  const page = await read("app/page.tsx");
+  assert.match(page, /Gmail inbox/);
+  assert.match(page, /Search Gmail exactly as you would in Gmail/);
 });
 
 test("a case officer writes only to the cases assigned to them", async () => {

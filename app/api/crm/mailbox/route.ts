@@ -33,19 +33,48 @@ export async function GET(request: Request) {
     const session = await liveSession(request);
     if (session.identity.role === "client")
       throw new LiveAccessError(403, "The mailbox connection is available to staff only.");
-    const rows = await supabaseRequest<{ email: string; active: boolean }[]>(
-      `/rest/v1/mailbox_connections?select=email,active&profile_id=eq.${session.identity.profileId}&provider=eq.gmail&limit=1`,
+    const rows = await supabaseRequest<{ email: string; active: boolean; token_reference: string | null }[]>(
+      `/rest/v1/mailbox_connections?select=email,active,token_reference&profile_id=eq.${session.identity.profileId}&provider=eq.gmail&limit=1`,
       { method: "GET" },
       session.accessToken,
     );
     const connection = rows[0];
-    return appendRefreshCookies(
-      Response.json({
+    const result: Json = {
         ok: true,
         oauthConfigured: gmailOAuthConfigured(),
         connected: Boolean(connection?.active),
         email: connection?.email ?? null,
-      }),
+    };
+    const url = new URL(request.url);
+    if (url.searchParams.get("view") === "inbox" && connection?.active && connection.token_reference) {
+      const fresh = await gmailRefreshAccessToken(await reveal(connection.token_reference));
+      const search = String(url.searchParams.get("q") || "").trim();
+      const matches = await gmailSearchMessages({
+        accessToken: fresh.access_token,
+        query: search || "in:anywhere",
+        maxResults: 50,
+      });
+      const messages = await Promise.all(matches.map(async (match) => {
+        const message = await gmailGetMessage({ accessToken: fresh.access_token, id: match.id });
+        return {
+          id: message.id,
+          threadId: message.threadId,
+          from: gmailHeader(message, "From"),
+          to: gmailHeader(message, "To"),
+          cc: gmailHeader(message, "Cc"),
+          subject: gmailHeader(message, "Subject") || "(no subject)",
+          date: message.internalDate ? new Date(Number(message.internalDate)).toISOString() : gmailHeader(message, "Date"),
+          snippet: message.snippet || "",
+          body: gmailTextBody(message.payload),
+          unread: message.labelIds?.includes("UNREAD") ?? false,
+          inbox: message.labelIds?.includes("INBOX") ?? false,
+          sent: message.labelIds?.includes("SENT") ?? false,
+        };
+      }));
+      result.messages = messages;
+    }
+    return appendRefreshCookies(
+      Response.json(result),
       session.refreshed,
       request,
     );

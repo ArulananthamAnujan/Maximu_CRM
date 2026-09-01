@@ -43,6 +43,28 @@ export default function GoogleCallbackPage() {
           setError(result.error || "Google sign-in could not be completed.");
           return;
         }
+        if (params.get("type") === "recovery") {
+          const password = window.prompt("Create your password (at least 12 characters with a letter and number):");
+          if (!password) {
+            setError("Your account is verified, but you still need to create a password. Use Change password after signing in.");
+            return;
+          }
+          const confirmation = window.prompt("Enter your new password again:");
+          if (password !== confirmation) {
+            setError("The passwords did not match. Use Change password after signing in.");
+            return;
+          }
+          const changed = await fetch("/api/auth/password", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password }),
+          });
+          if (!changed.ok) {
+            const detail = await changed.json().catch(() => ({}));
+            setError(detail.error || "Your password could not be created.");
+            return;
+          }
+        }
         window.location.replace("/");
       } catch {
         setError("Google sign-in could not be completed.");
