@@ -279,7 +279,6 @@ export async function GET(request: Request) {
         const caseIntake = (row.custom_fields as Json | null) ?? {};
         const latestApplication = applicationByCase.get(String(row.id)) ?? {};
         const visaMatter = visaMatterByCase.get(String(row.id)) ?? {};
-        const stage = stageById.get(String(row.current_stage_id)) ?? {};
         const owner = profileById.get(String(row.owner_id)) ?? {};
         const branch = branchById.get(String(row.branch_id)) ?? {};
         const name = [client.first_name, client.last_name]
@@ -302,7 +301,11 @@ export async function GET(request: Request) {
             "",
           type: row.matter_type || row.service_type,
           target: row.target ?? "",
-          stage: stage.name ?? client.current_lifecycle ?? "Enquiry",
+          // The lifecycle column is the authoritative pipeline position.
+          // current_stage_id belongs to optional workflow templates and may be
+          // null (or describe a sub-stage), while client.current_lifecycle can
+          // reflect another case belonging to the same returning client.
+          stage: lifecycleLabel(row.lifecycle_stage),
           owner: owner.display_name ?? "",
           ownerId: row.owner_id ?? "",
           collaboratorIds: collaboratorsByCase.get(String(row.id)) ?? [],
@@ -2836,6 +2839,11 @@ function normalHealth(value: unknown): "healthy" | "attention" | "critical" {
 // due_at, completed_at, submitted_at and the like are timestamptz: read as
 // UTC, they need converting to the organisation's timezone or the calendar
 // date shown can be a day off the one the event actually happened on.
+function lifecycleLabel(value: unknown): string {
+  const label = String(value ?? "enquiry").replaceAll("_", " ");
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+}
+
 function dateOnly(value: unknown): string {
   return orgDate(value);
 }

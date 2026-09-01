@@ -10,6 +10,13 @@ where cc.application_id = a.id and cc.branch_id is null;
 create index if not exists commission_claims_branch_idx
   on public.commission_claims(organisation_id, branch_id, status);
 
+-- Older imported cases predate the canonical lifecycle progress function and
+-- can otherwise show 0% while already at Student, Application or Completed.
+-- The lifecycle is authoritative; optional workflow-template stages are not.
+update public.cases
+set progress = public.lifecycle_progress(lifecycle_stage)
+where progress is distinct from public.lifecycle_progress(lifecycle_stage);
+
 -- The legacy-compatible role boundary is deliberately expressed in reusable
 -- database functions. The application may hide controls for clarity, but RLS
 -- remains the authority even when somebody calls the API directly.
@@ -380,6 +387,7 @@ for select to authenticated using (
 );
 drop policy if exists invoices_finance_write on public.invoices;
 drop policy if exists invoices_staff_create on public.invoices;
+drop policy if exists invoices_case_team_write on public.invoices;
 create policy invoices_case_team_write on public.invoices
 for all to authenticated using (
   organisation_id = public.current_organisation_id()
@@ -394,6 +402,7 @@ for all to authenticated using (
 );
 
 drop policy if exists payments_finance_write on public.payments;
+drop policy if exists payments_case_team_write on public.payments;
 create policy payments_case_team_write on public.payments
 for all to authenticated using (
   organisation_id = public.current_organisation_id()
@@ -440,6 +449,7 @@ for all to authenticated using (
 );
 
 drop policy if exists invoice_reminders_admin on public.invoice_reminders;
+drop policy if exists invoice_reminders_case_team on public.invoice_reminders;
 create policy invoice_reminders_case_team on public.invoice_reminders
 for all to authenticated using (
   organisation_id = public.current_organisation_id()
@@ -462,6 +472,7 @@ for all to authenticated using (
 );
 
 drop policy if exists payment_receipts_admin on public.payment_receipts;
+drop policy if exists payment_receipts_case_team on public.payment_receipts;
 create policy payment_receipts_case_team on public.payment_receipts
 for all to authenticated using (
   organisation_id = public.current_organisation_id()
@@ -594,6 +605,7 @@ for select to authenticated using (
 
 drop policy if exists audit_admin_read on public.audit_events;
 drop policy if exists audit_case_read on public.audit_events;
+drop policy if exists audit_internal_scoped_read on public.audit_events;
 create policy audit_internal_scoped_read on public.audit_events
 for select to authenticated using (
   organisation_id = public.current_organisation_id()
@@ -617,6 +629,7 @@ for select to authenticated using (
 );
 
 drop policy if exists commission_claims_internal on public.commission_claims;
+drop policy if exists commission_claims_scoped on public.commission_claims;
 create policy commission_claims_scoped on public.commission_claims
 for all to authenticated using (
   organisation_id = public.current_organisation_id()
