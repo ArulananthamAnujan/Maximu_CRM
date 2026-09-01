@@ -105,3 +105,15 @@ test("record boards appear only on their operational pages", () => {
   assert.match(page, /\) : active === "visas" \? \([\s\S]*?<VisaMattersBoard/);
   assert.doesNotMatch(page, /active === "visas" \|\| active === "direct_visas"/);
 });
+
+test("migration can be safely reapplied after an interrupted release", () => {
+  const policies = [...sql.matchAll(/create policy\s+(\w+)\s+on\s+public\.(\w+)/g)];
+  assert.ok(policies.length > 20, "expected the migration policy set");
+  for (const [, policy, table] of policies) {
+    assert.match(
+      sql,
+      new RegExp(`drop policy if exists ${policy} on public\\.${table}`),
+      `${policy} must be dropped before it is recreated`,
+    );
+  }
+});

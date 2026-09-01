@@ -380,6 +380,7 @@ for select to authenticated using (
 );
 drop policy if exists invoices_finance_write on public.invoices;
 drop policy if exists invoices_staff_create on public.invoices;
+drop policy if exists invoices_case_team_write on public.invoices;
 create policy invoices_case_team_write on public.invoices
 for all to authenticated using (
   organisation_id = public.current_organisation_id()
@@ -394,6 +395,7 @@ for all to authenticated using (
 );
 
 drop policy if exists payments_finance_write on public.payments;
+drop policy if exists payments_case_team_write on public.payments;
 create policy payments_case_team_write on public.payments
 for all to authenticated using (
   organisation_id = public.current_organisation_id()
@@ -440,6 +442,7 @@ for all to authenticated using (
 );
 
 drop policy if exists invoice_reminders_admin on public.invoice_reminders;
+drop policy if exists invoice_reminders_case_team on public.invoice_reminders;
 create policy invoice_reminders_case_team on public.invoice_reminders
 for all to authenticated using (
   organisation_id = public.current_organisation_id()
@@ -462,6 +465,7 @@ for all to authenticated using (
 );
 
 drop policy if exists payment_receipts_admin on public.payment_receipts;
+drop policy if exists payment_receipts_case_team on public.payment_receipts;
 create policy payment_receipts_case_team on public.payment_receipts
 for all to authenticated using (
   organisation_id = public.current_organisation_id()
@@ -594,6 +598,7 @@ for select to authenticated using (
 
 drop policy if exists audit_admin_read on public.audit_events;
 drop policy if exists audit_case_read on public.audit_events;
+drop policy if exists audit_internal_scoped_read on public.audit_events;
 create policy audit_internal_scoped_read on public.audit_events
 for select to authenticated using (
   organisation_id = public.current_organisation_id()
@@ -617,6 +622,7 @@ for select to authenticated using (
 );
 
 drop policy if exists commission_claims_internal on public.commission_claims;
+drop policy if exists commission_claims_scoped on public.commission_claims;
 create policy commission_claims_scoped on public.commission_claims
 for all to authenticated using (
   organisation_id = public.current_organisation_id()
