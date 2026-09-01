@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./figma-system.css";
 
 export const metadata: Metadata = {
   title: "Maximus CRM | Education & Migration Operations",
