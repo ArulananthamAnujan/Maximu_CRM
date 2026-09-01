@@ -120,6 +120,11 @@ type CaseRecord = {
   completedAt: string;
   reopenedAt: string;
   createdAt: string;
+  destinationCountry: string;
+  intake: string;
+  source: string;
+  applicationStatus: string;
+  visaCategory: string;
 };
 // One student can hold several offers at once, so an application is a record in
 // its own right rather than something inferred from the case it belongs to.
@@ -140,6 +145,9 @@ type ApplicationRow = {
   deadlineOn: string;
   owner: string;
   branch: string;
+  associate: string;
+  partner: string;
+  notes: string;
   archived: boolean;
 };
 type VisaMatterRow = {
@@ -329,6 +337,69 @@ type LiveIdentity = {
   sourceLevel: string;
   role: AppRole;
 };
+
+const STUDY_MATTER_TYPES = [
+  "Education enquiry",
+  "Student admission",
+  "Student visa",
+];
+
+const DIRECT_VISA_MATTER_TYPES = [
+  "Migration enquiry",
+  "Student Subclass 500",
+  "Visitor Subclass 600",
+  "Temporary Graduate Subclass 485",
+  "Training Visa Subclass 407",
+  "407 Training Visa",
+  "Employer Sponsored Subclass 482",
+  "482 Work Visa",
+  "408 Temporary work activity",
+  "485 Visa",
+  "Offshore",
+  "Subclass 408",
+  "EOI / ROI",
+  "EOI lodgement",
+  "ACS Skill Assessment",
+  "PSA Registration",
+  "JRP Registration",
+  "JRWA Registration",
+  "CPA Skill Assessment",
+  "Skill Assessment",
+  "Skill assessment program",
+  "Engineers Australia Skill Assessment",
+  "494 Regional Work Visa",
+  "500 Student Dependent",
+  "Partner visa 820/801",
+  "Partner visa 309/100",
+  "Protection Visa 866",
+  "600 Visitor Visa",
+];
+
+const DESTINATION_COUNTRIES = [
+  "Australia",
+  "Bangladesh",
+  "Bhutan",
+  "Canada",
+  "China",
+  "Finland",
+  "France",
+  "Georgia",
+  "India",
+  "Ireland",
+  "Malaysia",
+  "Malta",
+  "Nepal",
+  "New Zealand",
+  "Pakistan",
+  "Poland",
+  "Singapore",
+  "South Korea",
+  "Sri Lanka",
+  "Sweden",
+  "United Arab Emirates",
+  "United Kingdom",
+  "United States",
+];
 
 if (
   typeof window !== "undefined" &&
@@ -1456,14 +1527,36 @@ function WorkspaceDashboard({
   onOpenCase: (x: CaseRecord) => void;
   serviceMode: ServiceMode;
 }) {
+  const [dashboardSearch, setDashboardSearch] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("");
+  const [countryFilter, setCountryFilter] = useState("");
+  const [intakeFilter, setIntakeFilter] = useState("");
+  const [visaTypeFilter, setVisaTypeFilter] = useState("");
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
   const direct = serviceMode === "direct_visa",
     // Classify by the recorded service stream, never by the matter label: a
     // "Student visa" matter belongs to study abroad, not migration.
-    workspaceCases = cases.filter((c) =>
+    allWorkspaceCases = cases.filter((c) =>
       direct
         ? c.serviceType === "direct_visa"
         : c.serviceType !== "direct_visa",
     ),
+    workspaceCases = allWorkspaceCases.filter((c) => {
+      const searchable = `${c.name} ${c.id} ${c.email} ${c.phone} ${c.target} ${c.matterType}`.toLowerCase();
+      const created = c.createdAt?.slice(0, 10) ?? "";
+      return (
+        (!dashboardSearch || searchable.includes(dashboardSearch.toLowerCase())) &&
+        (!branchFilter || c.branch === branchFilter) &&
+        (!ownerFilter || c.owner === ownerFilter) &&
+        (!countryFilter || c.destinationCountry === countryFilter) &&
+        (!intakeFilter || c.intake.toLowerCase().includes(intakeFilter.toLowerCase())) &&
+        (!visaTypeFilter || c.visaCategory === visaTypeFilter) &&
+        (!createdFrom || created >= createdFrom) &&
+        (!createdTo || created <= createdTo)
+      );
+    }),
     attention = workspaceCases.filter((c) => c.health !== "healthy").length,
     waiting = workspaceCases.filter((c) => c.status === "waiting").length,
     completed = workspaceCases.filter((c) => c.status === "completed").length,
@@ -1477,7 +1570,21 @@ function WorkspaceDashboard({
       .filter((appointment) => appointment.date >= today)
       .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)),
     nextAppointments = upcomingAppointments.slice(0, 3),
-    openList = direct ? "direct_visas" : "students";
+    openList = direct ? "direct_visas" : "students",
+    branchOptions = [...new Set(allWorkspaceCases.map((c) => c.branch).filter(Boolean))].sort(),
+    ownerOptions = [...new Set(allWorkspaceCases.map((c) => c.owner).filter(Boolean))].sort(),
+    countryOptions = [...new Set(allWorkspaceCases.map((c) => c.destinationCountry).filter(Boolean))].sort(),
+    visaTypeOptions = [...new Set(allWorkspaceCases.map((c) => c.visaCategory).filter(Boolean))].sort(),
+    categoryCounts = [...workspaceCases.reduce((map, record) => {
+      const key = direct ? record.visaCategory || "Uncategorised" : humanise(record.lifecycleStage);
+      map.set(key, (map.get(key) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>())].sort((a, b) => b[1] - a[1]),
+    statusCounts = [...workspaceCases.reduce((map, record) => {
+      const key = direct ? record.stage || "Not set" : humanise(record.applicationStatus || record.stage || "Not set");
+      map.set(key, (map.get(key) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>())].sort((a, b) => b[1] - a[1]);
   return (
     <>
       <section
@@ -1529,6 +1636,24 @@ function WorkspaceDashboard({
           </div>
         </div>
       </section>
+      <section className="dashboardFilters" aria-label="Dashboard filters">
+        <div className="dashboardFilterSearch">
+          <Search size={16} />
+          <input value={dashboardSearch} onChange={(event) => setDashboardSearch(event.target.value)} placeholder="Search client, case, email, mobile or target" />
+        </div>
+        <select aria-label="Filter dashboard by branch" value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="">All branches</option>{branchOptions.map((value) => <option key={value}>{value}</option>)}</select>
+        <select aria-label="Filter dashboard by staff" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}><option value="">All staff</option>{ownerOptions.map((value) => <option key={value}>{value}</option>)}</select>
+        <select aria-label="Filter dashboard by country" value={countryFilter} onChange={(event) => setCountryFilter(event.target.value)}><option value="">All countries</option>{countryOptions.map((value) => <option key={value}>{value}</option>)}</select>
+        {direct ? (
+          <select aria-label="Filter dashboard by visa category" value={visaTypeFilter} onChange={(event) => setVisaTypeFilter(event.target.value)}><option value="">All visa categories</option>{visaTypeOptions.map((value) => <option key={value}>{value}</option>)}</select>
+        ) : (
+          <input aria-label="Filter dashboard by intake" value={intakeFilter} onChange={(event) => setIntakeFilter(event.target.value)} placeholder="Intake" />
+        )}
+        <label>Created from<input type="date" value={createdFrom} onChange={(event) => setCreatedFrom(event.target.value)} /></label>
+        <label>Created to<input type="date" value={createdTo} onChange={(event) => setCreatedTo(event.target.value)} /></label>
+        <button className="ghostButton" onClick={() => { setDashboardSearch(""); setBranchFilter(""); setOwnerFilter(""); setCountryFilter(""); setIntakeFilter(""); setVisaTypeFilter(""); setCreatedFrom(""); setCreatedTo(""); }}>Reset</button>
+        <span>{workspaceCases.length} of {allWorkspaceCases.length} records</span>
+      </section>
       <section className="operationsBrief" aria-label="Today's priorities">
         <div className="sectionIntro">
           <div>
@@ -1557,6 +1682,20 @@ function WorkspaceDashboard({
             <ArrowRight size={15} />
           </button>
         </div>
+      </section>
+      <section className="dashboardBreakdowns" aria-label="Operational breakdowns">
+        <article className="panel">
+          <div className="panelHead"><div><span className="kicker">WORKLOAD MIX</span><h2>{direct ? "Visa category summary" : "Journey stage summary"}</h2></div></div>
+          <div className="summaryRows">
+            {categoryCounts.length ? categoryCounts.map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>) : <p>No categorised records yet.</p>}
+          </div>
+        </article>
+        <article className="panel">
+          <div className="panelHead"><div><span className="kicker">STATUS VISIBILITY</span><h2>{direct ? "Client status summary" : "Application status summary"}</h2></div></div>
+          <div className="summaryRows">
+            {statusCounts.length ? statusCounts.map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>) : <p>No status updates recorded yet.</p>}
+          </div>
+        </article>
       </section>
       <section className="signalGrid">
         <button className="signal ocean" onClick={() => setActive(openList)}>
@@ -2192,7 +2331,7 @@ function ApplicationsBoard({
   const statuses = [...new Set(rows.map((row) => row.status).filter(Boolean))].sort();
   const shown = (showArchived ? rows : rows.filter((row) => !row.archived))
     .filter((row) => !status || row.status === status)
-    .filter((row) => matchesSearch(query, [row.client, row.institution, row.course, row.campus, row.intake, row.reference, row.owner, row.caseNumber]));
+    .filter((row) => matchesSearch(query, [row.client, row.institution, row.course, row.campus, row.intake, row.reference, row.owner, row.caseNumber, row.associate, row.partner]));
   const selection = useBulkSelection(shown);
   return (
     <article className="panel listPanel">
@@ -2238,6 +2377,7 @@ function ApplicationsBoard({
                 <th scope="col">Campus</th>
                 <th scope="col">Intake</th>
                 <th scope="col">Reference</th>
+                <th scope="col">Partner / associate</th>
                 <th scope="col">Status</th>
                 <th scope="col">Submitted</th>
                 <th scope="col">Offer</th>
@@ -2257,6 +2397,7 @@ function ApplicationsBoard({
                   <td>{row.campus || "—"}</td>
                   <td>{row.intake || "—"}</td>
                   <td>{row.reference || "—"}</td>
+                  <td>{[row.partner, row.associate].filter(Boolean).join(" · ") || "—"}</td>
                   <td>
                     {humanise(row.status)}
                     {row.archived ? " · withdrawn" : ""}
@@ -7519,6 +7660,13 @@ function CaseDrawerBody({
       if (!response.ok) throw new Error(result.error || "That did not save.");
       setCaseError("");
       await reload();
+      // Status, deadlines and intake changes made inside a case must also be
+      // visible on the dashboard and module lists immediately.
+      await refresh();
+      window.localStorage.setItem(
+        "maximus.workspaceRefresh",
+        window.localStorage.getItem("maximus.workspaceRefresh") === "1" ? "0" : "1",
+      );
       return true;
     } catch (reason_) {
       setCaseError(
@@ -8062,6 +8210,7 @@ function CaseDrawerBody({
                 ["Preferred name", client.preferred_name],
                 ["Email", client.email],
                 ["Mobile", client.mobile],
+                ["Alternate mobile", (client.custom_fields as Record<string, unknown> | null)?.alternatePhone],
                 ["Date of birth", day(client.date_of_birth)],
                 ["Nationality", client.nationality],
                 ["Country of birth", client.country_of_birth],
@@ -8077,6 +8226,8 @@ function CaseDrawerBody({
               title="Passport and consent"
               rows={[
                 ["Passport country", client.passport_country],
+                ["Passport number", client.passport_masked],
+                ["Passport issue", (client.custom_fields as Record<string, unknown> | null)?.passportIssue],
                 ["Passport expiry", day(client.passport_expiry)],
                 [
                   "Privacy consent",
@@ -8084,6 +8235,24 @@ function CaseDrawerBody({
                 ],
                 ["Marketing consent", client.marketing_consent ? "Yes" : "No"],
               ]}
+            />
+            <FactList
+              title="Address and intake declarations"
+              rows={[
+                ["Street", (client.address as Record<string, unknown> | null)?.line1],
+                ["City", (client.address as Record<string, unknown> | null)?.city],
+                ["State / province", (client.address as Record<string, unknown> | null)?.state],
+                ["Postcode", (client.address as Record<string, unknown> | null)?.postcode],
+                ["Visited another country", (client.custom_fields as Record<string, unknown> | null)?.visitedOtherCountry],
+                ["Travel country", (client.custom_fields as Record<string, unknown> | null)?.travelCountry],
+                ["Travel date", (client.custom_fields as Record<string, unknown> | null)?.travelDate],
+                ["Travel purpose", (client.custom_fields as Record<string, unknown> | null)?.travelPurpose],
+                ["Visa refusal", (client.custom_fields as Record<string, unknown> | null)?.hasVisaRefusal],
+                ["Refusal details", (client.custom_fields as Record<string, unknown> | null)?.refusalDetails],
+                ["History gap", [(client.custom_fields as Record<string, unknown> | null)?.gapFrom, (client.custom_fields as Record<string, unknown> | null)?.gapTo].filter(Boolean).join(" to ")],
+                ["Gap reason", (client.custom_fields as Record<string, unknown> | null)?.gapReason],
+              ]}
+              empty="No address, travel, refusal or gap information recorded."
             />
             {file?.intake.preferences && (
               <FactList
@@ -9003,6 +9172,7 @@ function ApplicationsTab({
                 <th>Course</th>
                 <th>Intake</th>
                 <th>Reference</th>
+                <th>Partner / associate</th>
                 <th>Status</th>
                 <th>Deadline</th>
                 <th />
@@ -9015,6 +9185,10 @@ function ApplicationsTab({
                   <td>{text(row.course)}</td>
                   <td>{text(row.intake) || "—"}</td>
                   <td>{text(row.application_reference) || "—"}</td>
+                  <td>{[
+                    text((row.details as Record<string, unknown> | null)?.partner),
+                    text((row.details as Record<string, unknown> | null)?.associate),
+                  ].filter(Boolean).join(" · ") || "—"}</td>
                   <td>
                     <select
                       value={text(row.status)}
@@ -9083,6 +9257,12 @@ function ApplicationsTab({
               reference: data.get("reference"),
               status: data.get("status"),
               deadline: data.get("deadline"),
+              submittedOn: data.get("submittedOn"),
+              offerOn: data.get("offerOn"),
+              coeOn: data.get("coeOn"),
+              associate: data.get("associate"),
+              partner: data.get("partner"),
+              notes: data.get("notes"),
             });
             if (ok) setAdding(false);
           }}
@@ -9105,6 +9285,30 @@ function ApplicationsTab({
           <label>
             Deadline
             <input name="deadline" type="date" />
+          </label>
+          <label>
+            Submitted date
+            <input name="submittedOn" type="date" />
+          </label>
+          <label>
+            Offer received date
+            <input name="offerOn" type="date" />
+          </label>
+          <label>
+            CoE received date
+            <input name="coeOn" type="date" />
+          </label>
+          <label>
+            Associate / sub-agent
+            <input name="associate" />
+          </label>
+          <label>
+            Institution partner
+            <input name="partner" />
+          </label>
+          <label className="wide">
+            Application notes
+            <input name="notes" />
           </label>
           <div className="formActions">
             <button className="primaryButton" disabled={working}>
@@ -9739,11 +9943,10 @@ function RecordModal({
                 </label>
               </section>
               <p className="modalNotice">
-                <AlertTriangle size={14} />
-                This opens the file. Academic history, tests, employment,
-                passport details and family are recorded in the case file
-                afterwards, where they are stored as proper records rather than
-                loose fields.
+                <Check size={14} />
+                {editing
+                  ? "Update the case contact and workflow information here. Structured history remains available in the case workspace."
+                  : "Capture the complete applicant picture now. Optional sections can be skipped and completed later without losing the case."}
               </p>
               <div className="intakeFields">
                 <label>
@@ -9787,22 +9990,12 @@ function RecordModal({
                     value={matterType}
                     onChange={(e) => setMatterType(e.target.value)}
                   >
-                    <option>Education enquiry</option>
-                    <option>Migration enquiry</option>
-                    <option>Student admission</option>
-                    <option>Student visa</option>
-                    <option>407 Training Visa</option>
-                    <option>408 Temporary work activity</option>
-                    <option>482 Work Visa</option>
-                    <option>485 Visa</option>
-                    <option>494 Regional Work Visa</option>
-                    <option>500 Student Dependent</option>
-                    <option>600 Visitor Visa</option>
-                    <option>Partner visa 820/801</option>
-                    <option>Partner visa 309/100</option>
-                    <option>Protection Visa 866</option>
-                    <option>Skill assessment program</option>
-                    <option>EOI lodgement</option>
+                    {(workspace === "Direct Visa"
+                      ? DIRECT_VISA_MATTER_TYPES
+                      : STUDY_MATTER_TYPES
+                    ).map((option) => (
+                      <option key={option}>{option}</option>
+                    ))}
                   </select>
                 </label>
                 <label>
@@ -9887,6 +10080,11 @@ function RecordModal({
                     <option>Referral</option>
                     <option>Website</option>
                     <option>Social media</option>
+                    <option>Facebook</option>
+                    <option>WhatsApp</option>
+                    <option>Email marketing</option>
+                    <option>Phone enquiry</option>
+                    <option>Education expo</option>
                     <option>Agent</option>
                     <option>Existing client</option>
                   </select>
@@ -9899,6 +10097,119 @@ function RecordModal({
                   />
                 </label>
               </div>
+              {!editing && (
+                <div className="completeIntakeSections">
+                  <details open>
+                    <summary>Personal, contact and passport details</summary>
+                    <div className="intakeFields">
+                      <label>Alternate mobile<input name="alternatePhone" placeholder="+61 412 345 678" /></label>
+                      <label>Gender<select name="gender" defaultValue=""><option value="">Select gender</option><option>Male</option><option>Female</option><option>Other</option><option>Prefer not to say</option></select></label>
+                      <label>Marital status<select name="maritalStatus" defaultValue=""><option value="">Select status</option><option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option><option>Separated</option></select></label>
+                      <label>Country of birth<input name="countryOfBirth" /></label>
+                      <label>Current country<input name="currentCountry" /></label>
+                      <label>Preferred language<input name="preferredLanguage" /></label>
+                      <label className="wide">Residential address<input name="addressLine" placeholder="Street address" /></label>
+                      <label>City<input name="city" /></label>
+                      <label>State / province<input name="state" /></label>
+                      <label>Postcode<input name="postcode" /></label>
+                      <label>Passport number<input name="passportNumber" autoComplete="off" /></label>
+                      <label>Passport country<input name="passportCountry" /></label>
+                      <label>Passport issue date<input name="passportIssue" type="date" /></label>
+                      <label>Passport expiry date<input name="passportExpiry" type="date" /></label>
+                    </div>
+                  </details>
+
+                  <details open>
+                    <summary>{workspace === "Direct Visa" ? "Migration history and declarations" : "Study preferences and proposed application"}</summary>
+                    {workspace === "Study Abroad" ? (
+                      <div className="intakeFields">
+                        <label>Destination country<select name="destinationCountry" defaultValue=""><option value="">Select country</option>{DESTINATION_COUNTRIES.map((country) => <option key={country}>{country}</option>)}</select></label>
+                        <label>Study level<select name="studyLevel" defaultValue=""><option value="">Select level</option><option>Certificate III</option><option>Certificate IV</option><option>Diploma</option><option>Advanced Diploma</option><option>Bachelor Degree</option><option>Graduate Certificate</option><option>Graduate Diploma</option><option>Master Degree</option><option>Master by Research</option><option>PhD</option></select></label>
+                        <label>Preferred institution<input name="preferredInstitution" /></label>
+                        <label>Preferred course<input name="preferredCourse" /></label>
+                        <label>Target intake<input name="intake" placeholder="e.g. February 2027" /></label>
+                        <label>Annual budget<input name="annualBudget" type="number" min="0" step="0.01" /></label>
+                        <label>Funding source<input name="fundingSource" /></label>
+                        <label>Application institution<input name="applicationInstitution" /></label>
+                        <label>Application course<input name="applicationCourse" /></label>
+                        <label>Campus<input name="applicationCampus" /></label>
+                        <label>Application reference<input name="applicationReference" /></label>
+                        <label>Application status<select name="applicationStatus" defaultValue="draft">{APPLICATION_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{humanise(option)}</option>)}</select></label>
+                        <label>Application deadline<input name="applicationDeadline" type="date" /></label>
+                        <label>Associate / sub-agent<input name="associate" /></label>
+                        <label>Institution partner<input name="partner" /></label>
+                        <label className="checkboxLabel"><input name="accommodationRequired" type="checkbox" />Accommodation required</label>
+                        <label className="checkboxLabel"><input name="scholarshipRequired" type="checkbox" />Scholarship required</label>
+                      </div>
+                    ) : (
+                      <div className="intakeFields">
+                        <label>Destination country<select name="migrationDestination" defaultValue="Australia"><option>Australia</option>{DESTINATION_COUNTRIES.filter((country) => country !== "Australia").map((country) => <option key={country}>{country}</option>)}</select></label>
+                        <label>Current visa status<input name="currentVisaStatus" /></label>
+                        <label>Visited another country?<select name="visitedOtherCountry" defaultValue=""><option value="">Select</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+                        <label>Country visited<input name="travelCountry" /></label>
+                        <label>Date visited<input name="travelDate" type="date" /></label>
+                        <label>Purpose of travel<input name="travelPurpose" /></label>
+                        <label>Previous visa country<input name="previousVisaCountry" /></label>
+                        <label>Previous visa type<input name="previousVisaType" /></label>
+                        <label>Previous visa outcome<select name="previousVisaOutcome" defaultValue=""><option value="">Select outcome</option><option>Approved</option><option>Rejected</option><option>Withdrawn</option><option>Pending</option></select></label>
+                        <label>Previous application date<input name="previousVisaApplied" type="date" /></label>
+                        <label>Any visa refusal?<select name="hasVisaRefusal" defaultValue=""><option value="">Select</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+                        <label className="wide">Refusal details<input name="refusalDetails" /></label>
+                        <label>Gap from<input name="gapFrom" type="date" /></label>
+                        <label>Gap to<input name="gapTo" type="date" /></label>
+                        <label className="wide">Study / work gap reason<input name="gapReason" /></label>
+                      </div>
+                    )}
+                  </details>
+
+                  <details>
+                    <summary>Education, English test and employment</summary>
+                    <div className="intakeFields">
+                      <label>Highest qualification<input name="qualification" /></label>
+                      <label>Institution / board<input name="educationInstitution" /></label>
+                      <label>Field / stream<input name="fieldOfStudy" /></label>
+                      <label>Country<input name="educationCountry" /></label>
+                      <label>Started<input name="educationStart" type="date" /></label>
+                      <label>Completed<input name="educationEnd" type="date" /></label>
+                      <label>Result / grade<input name="educationResult" /></label>
+                      <label>English test<select name="testType" defaultValue=""><option value="">No test recorded</option><option>IELTS</option><option>PTE</option><option>TOEFL</option><option>Duolingo</option><option>CELPIP</option><option>OET</option></select></label>
+                      <label>Test date<input name="testDate" type="date" /></label>
+                      <label>Overall<input name="testOverall" type="number" step="0.01" /></label>
+                      <label>Listening<input name="testListening" type="number" step="0.01" /></label>
+                      <label>Reading<input name="testReading" type="number" step="0.01" /></label>
+                      <label>Writing<input name="testWriting" type="number" step="0.01" /></label>
+                      <label>Speaking<input name="testSpeaking" type="number" step="0.01" /></label>
+                      <label>Employer<input name="employer" /></label>
+                      <label>Position<input name="jobTitle" /></label>
+                      <label>Employment country<input name="employmentCountry" /></label>
+                      <label>Employment start<input name="employmentStart" type="date" /></label>
+                      <label>Employment end<input name="employmentEnd" type="date" /></label>
+                      <label>Hours per week<input name="hoursPerWeek" type="number" step="0.5" min="0" /></label>
+                      <label className="wide">Main duties<input name="duties" /></label>
+                    </div>
+                  </details>
+
+                  <details>
+                    <summary>Spouse, partner and child</summary>
+                    <div className="intakeFields">
+                      <label>Spouse / partner full name<input name="spouseFullName" /></label>
+                      <label>Date of birth<input name="spouseDob" type="date" /></label>
+                      <label>Email<input name="spouseEmail" type="email" /></label>
+                      <label>Mobile<input name="spousePhone" /></label>
+                      <label>Nationality<input name="spouseNationality" /></label>
+                      <label>Passport number<input name="spousePassport" autoComplete="off" /></label>
+                      <label>Passport expiry<input name="spousePassportExpiry" type="date" /></label>
+                      <label>Visa status<input name="spouseVisaStatus" /></label>
+                      <label className="checkboxLabel"><input name="spouseIncluded" type="checkbox" />Included in this application</label>
+                      <label>Child full name<input name="childFullName" /></label>
+                      <label>Child date of birth<input name="childDob" type="date" /></label>
+                      <label>Child nationality<input name="childNationality" /></label>
+                      <label className="checkboxLabel"><input name="childIncluded" type="checkbox" />Child included in this application</label>
+                    </div>
+                    <small>Additional family members can be added as individual records in the case workspace.</small>
+                  </details>
+                </div>
+              )}
             </div>
           )}
           {type === "task" && (
@@ -10574,6 +10885,13 @@ export default function Home() {
     const timer = window.setTimeout(() => void loadWorkspace(), 0);
     return () => window.clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    const receiveWorkspaceUpdate = (event: StorageEvent) => {
+      if (event.key === "maximus.workspaceRefresh") void loadWorkspace();
+    };
+    window.addEventListener("storage", receiveWorkspaceUpdate);
+    return () => window.removeEventListener("storage", receiveWorkspaceUpdate);
+  });
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {

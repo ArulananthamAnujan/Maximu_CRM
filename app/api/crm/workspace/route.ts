@@ -234,6 +234,17 @@ export async function GET(request: Request) {
     const branchById = new Map(branches.map((row) => [String(row.id), row]));
     const profileById = new Map(profiles.map((row) => [String(row.id), row]));
     const threadById = new Map(threads.map((row) => [String(row.id), row]));
+    const applicationByCase = new Map<string, Json>();
+    for (const application of applications) {
+      const key = String(application.case_id);
+      if (!application.archived_at && !applicationByCase.has(key))
+        applicationByCase.set(key, application);
+    }
+    const visaMatterByCase = new Map<string, Json>();
+    for (const matter of visaMatters) {
+      const key = String(matter.case_id);
+      if (!visaMatterByCase.has(key)) visaMatterByCase.set(key, matter);
+    }
     const collaboratorsByCase = new Map<string, string[]>();
     for (const row of collaborators) {
       const key = String(row.case_id);
@@ -264,6 +275,10 @@ export async function GET(request: Request) {
       })),
       cases: cases.map((row) => {
         const client = clientById.get(String(row.client_id)) ?? {};
+        const clientIntake = (client.custom_fields as Json | null) ?? {};
+        const caseIntake = (row.custom_fields as Json | null) ?? {};
+        const latestApplication = applicationByCase.get(String(row.id)) ?? {};
+        const visaMatter = visaMatterByCase.get(String(row.id)) ?? {};
         const stage = stageById.get(String(row.current_stage_id)) ?? {};
         const owner = profileById.get(String(row.owner_id)) ?? {};
         const branch = branchById.get(String(row.branch_id)) ?? {};
@@ -308,6 +323,16 @@ export async function GET(request: Request) {
           completedAt: dateOnly(row.completed_at),
           reopenedAt: dateOnly(row.reopened_at),
           createdAt: row.opened_at,
+          destinationCountry:
+            visaMatter.destination_country ??
+            caseIntake.destinationCountry ??
+            caseIntake.migrationDestination ??
+            clientIntake.destinationCountry ??
+            "",
+          intake: latestApplication.intake ?? caseIntake.intake ?? clientIntake.intake ?? "",
+          source: client.source ?? "",
+          applicationStatus: latestApplication.status ?? "",
+          visaCategory: row.matter_type ?? visaMatter.visa_subclass ?? "",
         };
       }),
       tasks: tasks.map((row) => ({
@@ -460,6 +485,7 @@ export async function GET(request: Request) {
       applications: applications.map((row) => {
         const parent = caseById.get(String(row.case_id)) ?? {};
         const client = clientById.get(String(parent.client_id)) ?? {};
+        const details = (row.details as Json | null) ?? {};
         return {
           id: String(row.id),
           caseId: String(row.case_id),
@@ -477,6 +503,9 @@ export async function GET(request: Request) {
           deadlineOn: dateOnly(row.deadline_at),
           owner: profileById.get(String(parent.owner_id))?.display_name ?? "",
           branch: branchById.get(String(parent.branch_id))?.name ?? "",
+          associate: details.associate ?? "",
+          partner: details.partner ?? "",
+          notes: details.notes ?? "",
           archived: Boolean(row.archived_at),
         };
       }),
@@ -913,13 +942,31 @@ export async function POST(request: Request) {
         current_lifecycle: "enquiry",
         date_of_birth: nullableDay(body.dob),
         nationality: nullable(body.nationality),
+        gender: nullable(body.gender),
+        marital_status: nullable(body.maritalStatus)?.toLowerCase() ?? null,
+        country_of_birth: nullable(body.countryOfBirth),
+        current_country: nullable(body.currentCountry),
+        passport_country: nullable(body.passportCountry),
+        passport_expiry: nullableDay(body.passportExpiry),
+        preferred_language: nullable(body.preferredLanguage),
+        address: {
+          line1: nullable(body.addressLine),
+          city: nullable(body.city),
+          state: nullable(body.state),
+          postcode: nullable(body.postcode),
+        },
         source: nullable(body.source),
         custom_fields: intakeFields(body, [
           "action", "name", "email", "phone", "dob", "nationality", "source",
           "branchId", "type", "target", "stage", "due", "health", "progress",
         ]),
         updated_at: now,
-      };
+      } as Json;
+      const passportNumber = nullable(body.passportNumber);
+      if (passportNumber) {
+        client.passport_number_encrypted = await protect(passportNumber);
+        client.passport_masked = maskPassport(passportNumber);
+      }
       if (!existingClientId) await insert("clients", client, token);
       try {
         await insert(
@@ -962,6 +1009,24 @@ export async function POST(request: Request) {
             { method: "DELETE" },
             token,
           ).catch(() => undefined);
+        throw error;
+      }
+      try {
+        await persistCompleteIntake({
+          body,
+          token,
+          organisationId: org,
+          clientId,
+          caseId,
+          serviceType: kind,
+          includeClientRecords: !existingClientId,
+        });
+      } catch (error) {
+        // Do not leave a half-created case if one of the structured intake
+        // records fails. A returning client's existing profile is preserved.
+        await deleteRow("cases", caseId, token).catch(() => undefined);
+        if (!existingClientId)
+          await deleteRow("clients", clientId, token).catch(() => undefined);
         throw error;
       }
       await auditEvent(
@@ -2232,6 +2297,263 @@ async function ownClientId(profileId: string, token: string) {
     token,
   );
   return rows[0]?.client_id ?? null;
+}
+
+async function persistCompleteIntake({
+  body,
+  token,
+  organisationId,
+  clientId,
+  caseId,
+  serviceType,
+  includeClientRecords,
+}: {
+  body: Json;
+  token: string;
+  organisationId: string;
+  clientId: string;
+  caseId: string;
+  serviceType: string;
+  includeClientRecords: boolean;
+}) {
+  if (includeClientRecords) {
+    const addDependant = async (relationship: string, prefix: "spouse" | "child") => {
+      const fullName = nullable(body[`${prefix}FullName`]);
+      if (!fullName) return;
+      const id = crypto.randomUUID();
+      const passport = nullable(body[`${prefix}Passport`]);
+      const value: Json = {
+        id,
+        organisation_id: organisationId,
+        client_id: clientId,
+        relationship,
+        full_name: fullName,
+        date_of_birth: nullableDay(body[`${prefix}Dob`]),
+        nationality: nullable(body[`${prefix}Nationality`]),
+        passport_expiry: nullableDay(body[`${prefix}PassportExpiry`]),
+        visa_status: nullable(body[`${prefix}VisaStatus`]),
+        included_in_application: checked(body[`${prefix}Included`]),
+        details: {
+          email: nullable(body[`${prefix}Email`]),
+          mobile: nullable(body[`${prefix}Phone`]),
+        },
+      };
+      if (passport) {
+        value.passport_number_encrypted = await protect(passport);
+        value.passport_masked = maskPassport(passport);
+      }
+      await insert("dependants", value, token);
+    };
+    await addDependant("spouse", "spouse");
+    await addDependant("child", "child");
+
+    const educationInstitution = nullable(body.educationInstitution);
+    const qualification = nullable(body.qualification);
+    if (educationInstitution && qualification)
+      await insert(
+        "client_education_history",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          country_code: nullable(body.educationCountry),
+          institution: educationInstitution,
+          qualification,
+          field_of_study: nullable(body.fieldOfStudy),
+          started_on: nullableDay(body.educationStart),
+          completed_on: nullableDay(body.educationEnd),
+          result: nullable(body.educationResult),
+          details: {},
+        },
+        token,
+      );
+
+    const employer = nullable(body.employer);
+    const jobTitle = nullable(body.jobTitle);
+    if (employer && jobTitle)
+      await insert(
+        "client_employment_history",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          employer,
+          job_title: jobTitle,
+          country_code: nullable(body.employmentCountry),
+          started_on: nullableDay(body.employmentStart),
+          ended_on: nullableDay(body.employmentEnd),
+          hours_per_week: nullableNumber(body.hoursPerWeek),
+          duties: nullable(body.duties),
+          details: {},
+        },
+        token,
+      );
+
+    const testType = nullable(body.testType);
+    if (testType)
+      await insert(
+        "english_tests",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          test_type: testType,
+          test_date: nullableDay(body.testDate),
+          overall: nullableNumber(body.testOverall),
+          listening: nullableNumber(body.testListening),
+          reading: nullableNumber(body.testReading),
+          writing: nullableNumber(body.testWriting),
+          speaking: nullableNumber(body.testSpeaking),
+          details: {},
+        },
+        token,
+      );
+
+    if (serviceType === "study_abroad" && nullable(body.destinationCountry))
+      await insert(
+        "study_preferences",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          destination_countries: [nullable(body.destinationCountry)],
+          study_levels: stringArray(body.studyLevel),
+          preferred_institutions: stringArray(body.preferredInstitution),
+          fields_of_study: stringArray(body.preferredCourse),
+          target_intakes: stringArray(body.intake),
+          annual_budget: nullableNumber(body.annualBudget),
+          funding_source: nullable(body.fundingSource),
+          accommodation_required: checked(body.accommodationRequired),
+          scholarship_required: checked(body.scholarshipRequired),
+          notes: nullable(body.remarks),
+        },
+        token,
+      );
+
+    const previousVisaCountry = nullable(body.previousVisaCountry);
+    const previousVisaType = nullable(body.previousVisaType);
+    if (previousVisaCountry && previousVisaType)
+      await insert(
+        "visa_history",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          country_code: previousVisaCountry,
+          visa_type: previousVisaType,
+          status: nullable(body.previousVisaOutcome) ?? "unknown",
+          applied_on: nullableDay(body.previousVisaApplied),
+          refusal_reason: nullable(body.refusalDetails),
+          details: {},
+        },
+        token,
+      );
+
+    const declarations: Array<[string, unknown, unknown]> = [
+      ["travel_history", body.visitedOtherCountry, [body.travelCountry, body.travelDate, body.travelPurpose].filter(Boolean).join(" · ")],
+      ["visa_refusal", body.hasVisaRefusal, body.refusalDetails],
+      ["history_gap", body.gapReason ? "yes" : "no", [body.gapFrom, body.gapTo, body.gapReason].filter(Boolean).join(" · ")],
+    ];
+    for (const [type, answer, details] of declarations) {
+      if (!nullable(answer) && !nullable(details)) continue;
+      await insert(
+        "client_declarations",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          declaration_type: type,
+          response: nullable(answer) ? nullable(answer)?.toLowerCase() === "yes" : null,
+          details: nullable(details),
+          declared_at: new Date().toISOString(),
+        },
+        token,
+      );
+    }
+  }
+
+  const applicationInstitution = nullable(body.applicationInstitution);
+  const applicationCourse = nullable(body.applicationCourse);
+  if (serviceType === "study_abroad" && applicationInstitution && applicationCourse) {
+    const status = completeApplicationStatus(body.applicationStatus);
+    const now = new Date().toISOString();
+    await insert(
+      "education_applications",
+      {
+        id: crypto.randomUUID(),
+        organisation_id: organisationId,
+        case_id: caseId,
+        institution: applicationInstitution,
+        course: applicationCourse,
+        campus: nullable(body.applicationCampus),
+        intake: nullable(body.intake),
+        application_reference: nullable(body.applicationReference),
+        status,
+        deadline_at: nullableDay(body.applicationDeadline),
+        ...(["submitted", "offer_received", "offer_accepted", "coe_received"].includes(status) ? { submitted_at: now } : {}),
+        ...(["offer_received", "offer_accepted", "coe_received"].includes(status) ? { offer_received_at: now } : {}),
+        ...(status === "coe_received" ? { coe_received_at: now } : {}),
+        details: {
+          associate: nullable(body.associate),
+          partner: nullable(body.partner),
+        },
+      },
+      token,
+    );
+  }
+
+  if (serviceType === "direct_visa")
+    await insert(
+      "visa_matters",
+      {
+        id: crypto.randomUUID(),
+        organisation_id: organisationId,
+        case_id: caseId,
+        destination_country: nullable(body.migrationDestination) ?? "Australia",
+        visa_subclass: nullable(body.matterType),
+        status: "assessment",
+        current_visa_expiry: nullableDay(body.visaExpiry),
+        details: {
+          current_visa_status: nullable(body.currentVisaStatus),
+          travel_country: nullable(body.travelCountry),
+          travel_date: nullable(body.travelDate),
+          travel_purpose: nullable(body.travelPurpose),
+          gap_from: nullable(body.gapFrom),
+          gap_to: nullable(body.gapTo),
+          gap_reason: nullable(body.gapReason),
+        },
+      },
+      token,
+    );
+}
+
+function stringArray(value: unknown): string[] {
+  const parsed = nullable(value);
+  return parsed ? [parsed] : [];
+}
+
+function checked(value: unknown): boolean {
+  return value === true || value === "true" || value === "on" || value === "yes";
+}
+
+function nullableNumber(value: unknown): number | null {
+  const parsed = nullable(value);
+  if (!parsed) return null;
+  const number = Number(parsed);
+  if (!Number.isFinite(number)) throw new InputError("A numeric intake value is invalid.");
+  return number;
+}
+
+function completeApplicationStatus(value: unknown): string {
+  const parsed = nullable(value) ?? "draft";
+  const allowed = ["draft", "submitted", "offer_received", "offer_accepted", "coe_received", "deferred", "withdrawn", "rejected"];
+  if (!allowed.includes(parsed)) throw new InputError("Application status is invalid.");
+  return parsed;
+}
+
+function maskPassport(value: string): string {
+  const clean = value.replace(/\s+/g, "");
+  return `${"•".repeat(Math.max(0, clean.length - 4))}${clean.slice(-4)}`;
 }
 
 async function rest<T>(query: string, token: string): Promise<T> {

@@ -245,14 +245,20 @@ export async function POST(request: Request) {
         status,
         deadline_at: optionalDate(body.deadline),
         // Each later status implies the ones before it already happened.
-        ...(["submitted", "offer_received", "coe_received"].includes(status)
-          ? { submitted_at: now }
+        ...(["submitted", "offer_received", "offer_accepted", "coe_received"].includes(status)
+          ? { submitted_at: optionalDate(body.submittedOn) ?? now }
           : {}),
-        ...(["offer_received", "coe_received"].includes(status)
-          ? { offer_received_at: now }
+        ...(["offer_received", "offer_accepted", "coe_received"].includes(status)
+          ? { offer_received_at: optionalDate(body.offerOn) ?? now }
           : {}),
-        ...(status === "coe_received" ? { coe_received_at: now } : {}),
-        details: {},
+        ...(status === "coe_received"
+          ? { coe_received_at: optionalDate(body.coeOn) ?? now }
+          : {}),
+        details: {
+          associate: optional(body.associate),
+          partner: optional(body.partner),
+          notes: optional(body.notes),
+        },
       };
       await insert("education_applications", value, token);
       await audit(session, "application.created", "education_application", id, {

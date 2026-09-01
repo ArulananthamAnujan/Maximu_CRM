@@ -4954,6 +4954,27 @@ body {
   background: #fbfdff;
   overflow: hidden;
 }
+.completeIntakeSections {
+  display: grid;
+  gap: 10px;
+}
+.completeIntakeSections > details > small {
+  display: block;
+  padding: 0 15px 14px;
+  color: #62788c;
+}
+.intakeFields .checkboxLabel {
+  align-self: end;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+.intakeFields .checkboxLabel input {
+  width: auto;
+  margin: 0;
+}
 .legacyIntake summary {
   cursor: pointer;
   list-style: none;
@@ -9475,6 +9496,36 @@ body { font-size: 14px; }
 .operationsBrief .sectionIntro { margin-bottom: 13px; }
 .operationsBrief .sectionIntro h2 { margin: 3px 0 0; font-size: 19px; }
 .operationsBrief .sectionIntro p { font-size: 12px; }
+.dashboardFilters {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.6fr) repeat(3, minmax(135px, .7fr)) minmax(120px, .6fr) minmax(132px, .65fr) minmax(132px, .65fr) auto auto;
+  gap: 9px;
+  align-items: end;
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.dashboardFilters input, .dashboardFilters select { width: 100%; min-height: 39px; padding: 0 10px; border: 1px solid #cfdee6; border-radius: 8px; background: #fff; color: var(--ink); font-size: 12px; }
+.dashboardFilters label { display: grid; gap: 4px; color: var(--muted); font-size: 9px; font-weight: 800; text-transform: uppercase; }
+.dashboardFilterSearch { display: flex; align-items: center; gap: 8px; min-height: 39px; padding: 0 10px; border: 1px solid #cfdee6; border-radius: 8px; color: var(--muted); }
+.dashboardFilterSearch input { min-height: 0; padding: 0; border: 0; outline: 0; }
+.dashboardFilters > span { align-self: center; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.dashboardBreakdowns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0; }
+.summaryRows { display: grid; gap: 7px; }
+.summaryRows > div { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 11px; border-radius: 8px; background: #f6f9fa; }
+.summaryRows span { color: #405d6f; font-size: 12px; }
+.summaryRows strong { min-width: 30px; color: #173f63; font-size: 15px; text-align: right; }
+@media (max-width: 1120px) {
+  .dashboardFilters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dashboardFilterSearch { grid-column: span 3; }
+}
+@media (max-width: 760px) {
+  .dashboardFilters { grid-template-columns: 1fr; }
+  .dashboardFilterSearch { grid-column: auto; }
+  .dashboardBreakdowns { grid-template-columns: 1fr; }
+}
 .priorityStrip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .priorityStrip > button {
   min-width: 0;
