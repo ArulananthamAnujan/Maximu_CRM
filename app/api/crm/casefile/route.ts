@@ -55,6 +55,7 @@ export async function GET(request: Request) {
       declarations,
       collaborators,
       communications,
+      whatsappCommunications,
     ] = await Promise.all([
       get<Json[]>(`clients?select=*&id=eq.${clientId}&limit=1`, token),
       get<Json[]>(
@@ -118,6 +119,10 @@ export async function GET(request: Request) {
         `email_messages?select=id,sender,recipients,direction,body_preview,sent_at,created_at,delivery_state,email_threads!inner(case_id,subject)&email_threads.case_id=eq.${caseId}&order=created_at.desc&limit=200`,
         token,
       ),
+      get<Json[]>(
+        `whatsapp_messages?select=id,sender,recipient,direction,body,sent_at,received_at,created_at,delivery_state&case_id=eq.${caseId}&order=created_at.desc&limit=200`,
+        token,
+      ),
     ]);
 
     return appendRefreshCookies(
@@ -143,8 +148,9 @@ export async function GET(request: Request) {
           name: (row.profiles as Json | null)?.display_name ?? "Team member",
           email: (row.profiles as Json | null)?.email ?? "",
         })),
-        communications: communications.map((row) => ({
+        communications: [...communications.map((row) => ({
           id: row.id,
+          channel: "email",
           sender: row.sender,
           recipients: row.recipients,
           direction: row.direction,
@@ -152,7 +158,17 @@ export async function GET(request: Request) {
           sentAt: row.sent_at ?? row.created_at,
           status: row.delivery_state,
           subject: (row.email_threads as Json | null)?.subject ?? "Message",
-        })),
+        })), ...whatsappCommunications.map((row) => ({
+          id: row.id,
+          channel: "whatsapp",
+          sender: row.sender,
+          recipients: [row.recipient],
+          direction: row.direction,
+          body: row.body,
+          sentAt: row.sent_at ?? row.received_at ?? row.created_at,
+          status: row.delivery_state,
+          subject: "WhatsApp",
+        }))].sort((a, b) => String(b.sentAt ?? "").localeCompare(String(a.sentAt ?? ""))),
         intake: {
           education,
           employment,

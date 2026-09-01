@@ -9,6 +9,8 @@ import { aiConfigured } from "@/server/ai";
 import { emailConfigured } from "@/server/email";
 import { protectionConfigured } from "@/server/protected-fields";
 import { gmailOAuthConfigured } from "@/server/gmail";
+import { whatsappConfigured } from "@/server/whatsapp";
+import { smsConfigured } from "@/server/sms";
 
 /**
  * What is actually connected, checked rather than claimed. Drive is probed for
@@ -160,9 +162,27 @@ export async function GET(request: Request) {
         key: "whatsapp",
         name: "WhatsApp",
         purpose: "Client messaging over WhatsApp Business.",
-        state: "not_built",
-        detail: "Not implemented.",
-        setup: [],
+        state: whatsappConfigured() ? "connected" : "not_configured",
+        detail: whatsappConfigured()
+          ? "WhatsApp Business Cloud API is configured for case conversations, delivery receipts and campaigns."
+          : "The CRM workflow is built. Connect a WhatsApp Business phone number and webhook before sending messages.",
+        setup: [
+          "WHATSAPP_ACCESS_TOKEN",
+          "WHATSAPP_PHONE_NUMBER_ID",
+          "WHATSAPP_GRAPH_API_VERSION",
+          "WHATSAPP_WEBHOOK_VERIFY_TOKEN",
+          "WHATSAPP_APP_SECRET",
+        ],
+      },
+      {
+        key: "sms",
+        name: "SMS",
+        purpose: "Case-linked individual and campaign text messages.",
+        state: smsConfigured() ? "connected" : "not_configured",
+        detail: smsConfigured()
+          ? "Twilio SMS is configured for case drafts and reviewed campaigns."
+          : "The CRM workflow is built. Connect a Twilio sender or Messaging Service before sending SMS.",
+        setup: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID"],
       },
       {
         key: "google_signin",

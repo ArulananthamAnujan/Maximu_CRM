@@ -24,6 +24,16 @@ interface Env {
   RESEND_API_KEY?: string;
   RESEND_API_BASE?: string;
   RESEND_FROM_EMAIL?: string;
+  WHATSAPP_ACCESS_TOKEN?: string;
+  WHATSAPP_PHONE_NUMBER_ID?: string;
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN?: string;
+  WHATSAPP_APP_SECRET?: string;
+  WHATSAPP_GRAPH_API_VERSION?: string;
+  WHATSAPP_GRAPH_API_BASE?: string;
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
+  TWILIO_FROM_NUMBER?: string;
+  TWILIO_MESSAGING_SERVICE_SID?: string;
   IMAGES: {
     input(stream: ReadableStream): {
       transform(options: Record<string, unknown>): {
@@ -125,6 +135,31 @@ const worker = {
       apiKey: env.RESEND_API_KEY,
       apiBase: env.RESEND_API_BASE,
       from: env.RESEND_FROM_EMAIL,
+    };
+    (
+      globalThis as typeof globalThis & {
+        __MAXIMUS_WHATSAPP__?: Partial<{
+          accessToken: string; phoneNumberId: string; verifyToken: string;
+          appSecret: string; apiVersion: string; apiBase: string;
+        }>;
+      }
+    ).__MAXIMUS_WHATSAPP__ = {
+      accessToken: env.WHATSAPP_ACCESS_TOKEN,
+      phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID,
+      verifyToken: env.WHATSAPP_WEBHOOK_VERIFY_TOKEN,
+      appSecret: env.WHATSAPP_APP_SECRET,
+      apiVersion: env.WHATSAPP_GRAPH_API_VERSION,
+      apiBase: env.WHATSAPP_GRAPH_API_BASE,
+    };
+    (
+      globalThis as typeof globalThis & {
+        __MAXIMUS_SMS__?: { accountSid?: string; authToken?: string; fromNumber?: string; messagingServiceSid?: string };
+      }
+    ).__MAXIMUS_SMS__ = {
+      accountSid: env.TWILIO_ACCOUNT_SID,
+      authToken: env.TWILIO_AUTH_TOKEN,
+      fromNumber: env.TWILIO_FROM_NUMBER,
+      messagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
     };
     const url = new URL(request.url);
 

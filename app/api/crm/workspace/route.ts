@@ -67,12 +67,16 @@ export async function GET(request: Request) {
     const [
       clients,
       cases,
+      enquiries,
       stages,
       tasks,
       appointments,
       documents,
       threads,
       messages,
+      whatsappMessages,
+      smsMessages,
+      campaigns,
       invoices,
       commissionClaims,
       creditNotes,
@@ -95,6 +99,7 @@ export async function GET(request: Request) {
         degraded,
       ),
       safeRest(`cases?select=*&order=opened_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
+      safeRest(`enquiries?select=*&order=created_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
       safeRest("workflow_stages?select=*&order=position.asc", token, degraded),
       safeRest(`tasks?select=*&order=created_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
       safeRest(
@@ -110,6 +115,21 @@ export async function GET(request: Request) {
       ),
       safeRest(
         `email_messages?select=*&order=sent_at.desc.nullslast&limit=${RECORD_LIMIT}`,
+        token,
+        degraded,
+      ),
+      safeRest(
+        `whatsapp_messages?select=*&order=created_at.desc&limit=${RECORD_LIMIT}`,
+        token,
+        degraded,
+      ),
+      safeRest(
+        `sms_messages?select=*&order=created_at.desc&limit=${RECORD_LIMIT}`,
+        token,
+        degraded,
+      ),
+      safeRest(
+        "communication_campaigns?select=*&order=created_at.desc&limit=200",
         token,
         degraded,
       ),
@@ -211,6 +231,14 @@ export async function GET(request: Request) {
     }
 
     const clientById = new Map(clients.map((row) => [String(row.id), row]));
+    const enquiryByCase = new Map<string, Json>();
+    const enquiryByClient = new Map<string, Json>();
+    for (const enquiry of enquiries) {
+      const caseKey = enquiry.case_id ? String(enquiry.case_id) : "";
+      if (caseKey && !enquiryByCase.has(caseKey)) enquiryByCase.set(caseKey, enquiry);
+      const key = String(enquiry.client_id);
+      if (!enquiryByClient.has(key)) enquiryByClient.set(key, enquiry);
+    }
     const caseById = new Map(cases.map((row) => [String(row.id), row]));
     // Ordered newest first above, so the first entry seen for a client is the
     // most recently granted visa they hold.
@@ -276,6 +304,9 @@ export async function GET(request: Request) {
       cases: cases.map((row) => {
         const client = clientById.get(String(row.client_id)) ?? {};
         const clientIntake = (client.custom_fields as Json | null) ?? {};
+        // New enquiries are tied to their case. The client fallback keeps
+        // pre-0033 data readable until the migration backfill is applied.
+        const enquiry = enquiryByCase.get(String(row.id)) ?? enquiryByClient.get(String(row.client_id)) ?? {};
         const caseIntake = (row.custom_fields as Json | null) ?? {};
         const latestApplication = applicationByCase.get(String(row.id)) ?? {};
         const visaMatter = visaMatterByCase.get(String(row.id)) ?? {};
@@ -334,6 +365,9 @@ export async function GET(request: Request) {
             "",
           intake: latestApplication.intake ?? caseIntake.intake ?? clientIntake.intake ?? "",
           source: client.source ?? "",
+          campaign: enquiry.campaign ?? "",
+          leadScore: Number(enquiry.score ?? 0),
+          lostReason: enquiry.lost_reason ?? "",
           applicationStatus: latestApplication.status ?? "",
           visaCategory: row.matter_type ?? visaMatter.visa_subclass ?? "",
         };
@@ -373,10 +407,11 @@ export async function GET(request: Request) {
         due: (row.metadata as Json | null)?.due_on ?? "",
         clientVisible: (row.metadata as Json | null)?.client_visible !== false,
       })),
-      messages: messages.map((row) => {
+      messages: [...messages.map((row) => {
         const thread = threadById.get(String(row.thread_id)) ?? {};
         return {
           id: row.id,
+          channel: "email",
           to: Array.isArray(row.recipients) ? row.recipients.join(", ") : "",
           subject: thread.subject ?? "Message",
           body: row.body_preview ?? "",
@@ -387,7 +422,40 @@ export async function GET(request: Request) {
           createdAt: row.created_at ?? null,
           sentAt: row.sent_at ?? null,
         };
-      }),
+      }), ...whatsappMessages.map((row) => ({
+        id: row.id,
+        channel: "whatsapp",
+        to: row.recipient ?? "",
+        subject: "WhatsApp",
+        body: row.body ?? "",
+        caseId: row.case_id ?? "",
+        status: row.delivery_state ?? "draft",
+        createdAt: row.created_at ?? null,
+        sentAt: row.sent_at ?? row.received_at ?? null,
+      })), ...smsMessages.map((row) => ({
+        id: row.id,
+        channel: "sms",
+        to: row.recipient ?? "",
+        subject: "SMS",
+        body: row.body ?? "",
+        caseId: row.case_id ?? "",
+        status: row.delivery_state ?? "draft",
+        createdAt: row.created_at ?? null,
+        sentAt: row.sent_at ?? row.received_at ?? null,
+      }))].sort((a, b) => String(b.sentAt ?? b.createdAt ?? "").localeCompare(String(a.sentAt ?? a.createdAt ?? ""))),
+      campaigns: campaigns.map((row) => ({
+        id: row.id,
+        name: String(row.name ?? ""),
+        channel: String(row.channel ?? "email"),
+        subject: String(row.subject ?? ""),
+        body: String(row.body ?? ""),
+        status: String(row.status ?? "draft"),
+        scheduledAt: row.scheduled_at ? String(row.scheduled_at) : "",
+        recipientCount: Number(row.recipient_count ?? 0),
+        sentCount: Number(row.sent_count ?? 0),
+        failedCount: Number(row.failed_count ?? 0),
+        createdAt: String(row.created_at ?? ""),
+      })),
       invoices: invoices.map((row) => {
         const total = Number(row.total ?? 0);
         const paid = Number(row.paid ?? 0);
@@ -457,10 +525,20 @@ export async function GET(request: Request) {
         id: row.id,
         partnerName: String(row.partner_name ?? ""),
         institution: String(row.institution ?? ""),
+        counterpartyType: String(row.counterparty_type ?? "partner"),
+        counterpartyEmail: String(row.counterparty_email ?? ""),
+        invoiceNumber: String(row.invoice_number ?? ""),
         currency: String(row.currency ?? "AUD"),
+        netAmount: Number(row.net_amount ?? row.expected_amount ?? 0),
+        taxRate: Number(row.tax_rate ?? 0),
+        taxAmount: Number(row.tax_amount ?? 0),
         expectedAmount: Number(row.expected_amount ?? 0),
         receivedAmount: Number(row.received_amount ?? 0),
+        pendingAmount: Math.max(0, Number(row.expected_amount ?? 0) - Number(row.received_amount ?? 0)),
+        studentCount: Number(row.student_count ?? 0),
+        caseIds: Array.isArray(row.case_ids) ? row.case_ids.map(String) : [],
         status: String(row.status ?? "expected"),
+        issuedOn: row.issued_on ? String(row.issued_on) : "",
         dueOn: row.due_on ? String(row.due_on) : "",
       })),
       templates: templates.map((row) => ({
@@ -895,6 +973,17 @@ export async function POST(request: Request) {
         caseChanges.owner_id = ownerId;
       }
       await patchRow("cases", caseId, caseChanges, token);
+      const [enquiry] = await rest<Json[]>(
+        `enquiries?select=id&case_id=eq.${encodeURIComponent(caseId)}&order=created_at.desc&limit=1`,
+        token,
+      );
+      if (enquiry?.id)
+        await patchRow("enquiries", String(enquiry.id), {
+          source: nullable(body.source), campaign: nullable(body.campaign),
+          status: nullable(body.stage)?.toLowerCase().replace(/\s+/g, "_") || "new",
+          score: leadScore(body), next_follow_up_at: nullableDate(body.due),
+          lost_reason: nullable(body.lostReason),
+        }, token);
       await auditEvent(
         org,
         actor,
@@ -1033,6 +1122,43 @@ export async function POST(request: Request) {
           serviceType: kind,
           includeClientRecords: !existingClientId,
         });
+        const firstFollowUp = combinedDateTime(body.due, body.followUpTime, "12:00");
+        if (firstFollowUp) {
+          await insert("tasks", {
+            id: crypto.randomUUID(), organisation_id: org, case_id: caseId,
+            title: nullable(body.followUpRemarks) ?? `Follow up with ${displayName}`,
+            description: nullable(body.followUpRemarks), assigned_to: ownerId,
+            assigned_by: actor, priority: "medium", status: "open", due_at: firstFollowUp,
+          }, token);
+        }
+        const appointmentAt = combinedDateTime(body.appointmentDate, body.appointmentTime, "09:00");
+        if (appointmentAt) {
+          await insert("appointments", {
+            id: crypto.randomUUID(), organisation_id: org, case_id: caseId,
+            owner_id: ownerId, title: nullable(body.appointmentRemarks) ?? `Initial consultation with ${displayName}`,
+            appointment_type: "Initial consultation", starts_at: appointmentAt,
+            ends_at: new Date(new Date(appointmentAt).getTime() + 60 * 60 * 1000).toISOString(),
+            status: "scheduled", requested_by: actor, responded_by: actor,
+            responded_at: new Date().toISOString(), response_note: nullable(body.appointmentRemarks),
+          }, token);
+        }
+        if (nullable(body.remarks)) {
+          await insert("case_notes", {
+            id: crypto.randomUUID(), organisation_id: org, case_id: caseId,
+            author_id: actor, body: nullable(body.remarks), visibility: "case_team",
+          }, token);
+        }
+        const followUp = nullableDate(body.due) ?? new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+        await insert("enquiries", {
+          id: crypto.randomUUID(), organisation_id: org, client_id: clientId,
+          case_id: caseId,
+          branch_id: branchId, assigned_to: ownerId, source: nullable(body.source),
+          campaign: nullable(body.campaign), priority: "medium",
+          status: nullable(body.stage)?.toLowerCase().replace(/\s+/g, "_") || "new",
+          score: leadScore(body), next_follow_up_at: followUp,
+          lost_reason: nullable(body.lostReason),
+          converted_at: null,
+        }, token);
       } catch (error) {
         // Do not leave a half-created case if one of the structured intake
         // records fails. A returning client's existing profile is preserved.
@@ -1298,6 +1424,52 @@ export async function POST(request: Request) {
     if (action === "message") {
       const threadId = crypto.randomUUID();
       const messageId = crypto.randomUUID();
+      if (session.identity.role !== "client" && ["whatsapp","sms"].includes(nullable(body.channel) ?? "")) {
+        const caseId = required(body.caseId, "Case");
+        const [linkedCase] = await rest<Json[]>(
+          `cases?select=id,client_id,branch_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+          token,
+        );
+        if (!linkedCase)
+          throw new LiveAccessError(403, "That case is not available to you.");
+        const clientId = String(linkedCase.client_id);
+        const [linkedClient] = await rest<Json[]>(
+          `clients?select=id,mobile&id=eq.${encodeURIComponent(clientId)}&limit=1`,
+          token,
+        );
+        const mobile = String(linkedClient?.mobile ?? "").trim();
+        const channel=nullable(body.channel)==="sms"?"sms":"whatsapp";
+        if (!mobile)
+          throw new InputError(`Add the client's mobile number before composing ${channel === "sms" ? "SMS" : "WhatsApp"}.`);
+        await insert(
+          channel === "sms" ? "sms_messages" : "whatsapp_messages",
+          {
+            id: messageId,
+            organisation_id: org,
+            branch_id: linkedCase.branch_id ?? session.identity.branchId,
+            case_id: caseId,
+            client_id: clientId,
+            direction: "outbound",
+            sender: session.identity.email,
+            recipient: mobile,
+            body: required(body.body, "Message"),
+            delivery_state: "draft",
+            created_by: actor,
+          },
+          token,
+        );
+        await auditEvent(
+          org,
+          actor,
+          `${channel}.drafted`,
+          `${channel}_message`,
+          messageId,
+          session.identity.branchId,
+          `Saved case-linked ${channel === "sms" ? "SMS" : "WhatsApp"} draft`,
+          token,
+        );
+        return Response.json({ ok: true, messageId, recipientSource: "case_profile" });
+      }
       let clientId = nullable(body.clientId);
       let caseId = nullable(body.caseId);
       let recipient = nullable(body.to);
@@ -2360,6 +2532,13 @@ async function persistCompleteIntake({
         details: {
           email: nullable(body[`${prefix}Email`]),
           mobile: nullable(body[`${prefix}Phone`]),
+          ...(prefix === "spouse" ? {
+            passport_issue: nullableDay(body.spousePassportIssue),
+            visa_expiry: nullableDay(body.spouseVisaExpiry),
+            marriage_date: nullableDay(body.marriageDate),
+            marriage_type: nullable(body.marriageType),
+            marriage_registered: nullable(body.marriageRegistered),
+          } : {}),
         },
       };
       if (passport) {
@@ -2387,7 +2566,7 @@ async function persistCompleteIntake({
           started_on: nullableDay(body.educationStart),
           completed_on: nullableDay(body.educationEnd),
           result: nullable(body.educationResult),
-          details: {},
+          details: { backlogs: nullableNumber(body.educationBacklogs) },
         },
         token,
       );
@@ -2433,6 +2612,24 @@ async function persistCompleteIntake({
         token,
       );
 
+    const aptitudeTestType = nullable(body.aptitudeTestType);
+    if (aptitudeTestType)
+      await insert(
+        "english_tests",
+        {
+          id: crypto.randomUUID(), organisation_id: organisationId, client_id: clientId,
+          test_type: aptitudeTestType, test_date: nullableDay(body.aptitudeTestDate),
+          overall: nullableNumber(body.aptitudeOverall),
+          details: {
+            quantitative: nullableNumber(body.aptitudeQuantitative),
+            analytical: nullableNumber(body.aptitudeAnalytical),
+            verbal: nullableNumber(body.aptitudeVerbal),
+            category: "aptitude",
+          },
+        },
+        token,
+      );
+
     if (serviceType === "study_abroad" && nullable(body.destinationCountry))
       await insert(
         "study_preferences",
@@ -2440,7 +2637,7 @@ async function persistCompleteIntake({
           id: crypto.randomUUID(),
           organisation_id: organisationId,
           client_id: clientId,
-          destination_countries: [nullable(body.destinationCountry)],
+          destination_countries: [nullable(body.destinationCountry), nullable(body.secondaryDestination)].filter(Boolean),
           study_levels: stringArray(body.studyLevel),
           preferred_institutions: stringArray(body.preferredInstitution),
           fields_of_study: stringArray(body.preferredCourse),
@@ -2449,7 +2646,7 @@ async function persistCompleteIntake({
           funding_source: nullable(body.fundingSource),
           accommodation_required: checked(body.accommodationRequired),
           scholarship_required: checked(body.scholarshipRequired),
-          notes: nullable(body.remarks),
+          notes: [nullable(body.remarks), body.proposedCourseStart ? `Proposed course: ${body.proposedCourseStart} to ${body.proposedCourseEnd || "not supplied"}` : null].filter(Boolean).join(" · ") || null,
         },
         token,
       );
@@ -2833,8 +3030,29 @@ function nullableDate(value: unknown): string | null {
   const parsed = nullable(value);
   return parsed ? new Date(`${parsed}T12:00:00Z`).toISOString() : null;
 }
+function combinedDateTime(dateValue: unknown, timeValue: unknown, fallbackTime: string): string | null {
+  const day = nullable(dateValue);
+  if (!day) return null;
+  const time = nullable(timeValue) ?? fallbackTime;
+  const parsed = new Date(`${day}T${time}:00`);
+  if (Number.isNaN(parsed.getTime())) throw new InputError("Date or time is invalid.");
+  return parsed.toISOString();
+}
 function normalHealth(value: unknown): "healthy" | "attention" | "critical" {
   return value === "critical" || value === "attention" ? value : "healthy";
+}
+function leadScore(body: Json): number {
+  const supplied = Number(body.leadScore);
+  if (Number.isFinite(supplied) && supplied >= 0 && supplied <= 100)
+    return Math.round(supplied);
+  let score = 0;
+  if (nullable(body.email)) score += 20;
+  if (nullable(body.phone)) score += 15;
+  if (nullable(body.target)) score += 20;
+  if (nullable(body.destinationCountry ?? body.migrationDestination)) score += 15;
+  if (nullable(body.intake ?? body.targetIntake)) score += 15;
+  if (nullable(body.fundingSource ?? body.annualBudget)) score += 15;
+  return Math.min(100, score);
 }
 // due_at, completed_at, submitted_at and the like are timestamptz: read as
 // UTC, they need converting to the organisation's timezone or the calendar

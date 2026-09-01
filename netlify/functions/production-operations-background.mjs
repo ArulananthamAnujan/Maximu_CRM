@@ -5,7 +5,10 @@ const TABLES = [
   "education_applications", "visa_matters", "tasks", "appointments", "documents",
   "email_threads", "email_messages", "invoices", "payments", "payment_receipts",
   "credit_notes", "invoice_reminders", "reconciliation_runs", "audit_events",
+  "commission_claims", "commission_payments", "commission_receipts",
   "organisation_settings", "course_source_registry",
+  "whatsapp_messages", "sms_messages", "communication_campaigns", "campaign_recipients", "public_intake_links",
+  "legacy_external_keys", "import_batches", "import_rows",
 ];
 const env = (name) => globalThis.Netlify?.env?.get(name) ?? "";
 const base = () => String(env("SUPABASE_URL")).replace(/\/$/, "");

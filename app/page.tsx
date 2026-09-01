@@ -123,6 +123,9 @@ type CaseRecord = {
   destinationCountry: string;
   intake: string;
   source: string;
+  campaign: string;
+  leadScore: number;
+  lostReason: string;
   applicationStatus: string;
   visaCategory: string;
 };
@@ -222,6 +225,7 @@ type DocumentRecord = {
 };
 type MessageRecord = {
   id: string;
+  channel: "email" | "whatsapp" | "sms";
   to: string;
   subject: string;
   body: string;
@@ -229,6 +233,19 @@ type MessageRecord = {
   status: string;
   createdAt: string | null;
   sentAt: string | null;
+};
+type CampaignRecord = {
+  id: string;
+  name: string;
+  channel: "email" | "whatsapp" | "sms";
+  subject: string;
+  body: string;
+  status: string;
+  scheduledAt: string;
+  recipientCount: number;
+  sentCount: number;
+  failedCount: number;
+  createdAt: string;
 };
 type InvoiceRecord = {
   id: string;
@@ -251,10 +268,20 @@ type CommissionClaimRecord = {
   id: string;
   partnerName: string;
   institution: string;
+  counterpartyType: string;
+  counterpartyEmail: string;
+  invoiceNumber: string;
   currency: string;
+  netAmount: number;
+  taxRate: number;
+  taxAmount: number;
   expectedAmount: number;
   receivedAmount: number;
+  pendingAmount: number;
+  studentCount: number;
+  caseIds: string[];
   status: string;
+  issuedOn: string;
   dueOn: string;
 };
 type JourneyMilestone = {
@@ -3095,13 +3122,16 @@ type MailboxStatus = {
 
 function MessagesView({
   items,
+  campaigns,
   cases,
   openModal,
   setItems,
   canSend,
   onBulkAction,
+  onCampaignChange,
 }: {
   items: MessageRecord[];
+  campaigns: CampaignRecord[];
   cases: CaseRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: MessageRecord[]) => void;
@@ -3109,12 +3139,16 @@ function MessagesView({
   // only staff ever dispatch mail as the agency.
   canSend: boolean;
   onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
+  onCampaignChange: () => Promise<void>;
 }) {
   // A discarded draft is kept for the record but is not part of the outbox.
   const [showDiscarded, setShowDiscarded] = useState(false);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [channelFilter, setChannelFilter] = useState("");
   const [mailbox, setMailbox] = useState<MailboxStatus | null>(null);
+  const [whatsappConfigured, setWhatsappConfigured] = useState(false);
+  const [smsConfigured, setSmsConfigured] = useState(false);
   const [mailboxError, setMailboxError] = useState("");
   const [sendingId, setSendingId] = useState<string | null>(null);
   // Sent locally, ahead of the next full refresh -- kept separate from the
@@ -3150,6 +3184,22 @@ function MessagesView({
     };
   }, [canSend]);
 
+  useEffect(() => {
+    if (!canSend) return;
+    void fetch("/api/crm/sms", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((result) => setSmsConfigured(Boolean(result.configured)))
+      .catch(() => setSmsConfigured(false));
+  }, [canSend]);
+
+  useEffect(() => {
+    if (!canSend) return;
+    void fetch("/api/crm/whatsapp", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((result) => setWhatsappConfigured(Boolean(result.configured)))
+      .catch(() => setWhatsappConfigured(false));
+  }, [canSend]);
+
   const disconnectMailbox = async () => {
     if (!confirm("Disconnect your Gmail account? You can reconnect at any time."))
       return;
@@ -3173,19 +3223,19 @@ function MessagesView({
     }
   };
 
-  const sendNow = async (messageId: string) => {
-    setSendingId(messageId);
+  const sendNow = async (message: MessageRecord) => {
+    setSendingId(message.id);
     setMailboxError("");
     try {
-      const response = await fetch("/api/crm/mailbox", {
+      const response = await fetch(message.channel === "whatsapp" ? "/api/crm/whatsapp" : message.channel === "sms" ? "/api/crm/sms" : "/api/crm/mailbox", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "send_message", messageId }),
+        body: JSON.stringify({ action: "send_message", messageId: message.id }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok)
         throw new Error(result.error || "The message could not be sent.");
-      setSentIds((prev) => new Set(prev).add(messageId));
+      setSentIds((prev) => new Set(prev).add(message.id));
     } catch (reason) {
       setMailboxError(
         reason instanceof Error ? reason.message : "The message could not be sent.",
@@ -3200,13 +3250,15 @@ function MessagesView({
   const discardedCount = items.filter(discarded).length;
   const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
   const shown = (showDiscarded ? items : items.filter((m) => !discarded(m)))
+    .filter((item) => !channelFilter || item.channel === channelFilter)
     .filter((item) => !statusFilter || item.status === statusFilter)
     .filter((item) => matchesSearch(query, [item.subject, item.body, item.status, messageWhen(item), cases.find((entry) => (entry.dbId || entry.id) === item.caseId)?.name]));
   const selectable = shown.filter((message) =>
-    !sentIds.has(message.id) && message.status.toLowerCase() !== "sent",
+    message.channel === "email" && !sentIds.has(message.id) && message.status.toLowerCase() !== "sent",
   );
   const selection = useBulkSelection(selectable);
   return (
+    <>
     <article className="panel listPanel">
       <div className="panelHead">
         <div>
@@ -3234,6 +3286,7 @@ function MessagesView({
         </div>
       </div>
       <ListFilterBar query={query} onQuery={setQuery} placeholder="Search client, subject or message content" resultCount={shown.length}>
+        <label className="compactFilter">Channel<select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value)}><option value="">All channels</option><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></select></label>
         <label className="compactFilter">Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
       </ListFilterBar>
       {canSend && mailbox?.oauthConfigured ? (
@@ -3316,16 +3369,16 @@ function MessagesView({
               <div>
                 <strong>{m.subject}</strong>
                 <span>
-                  {cases.find((item) => (item.dbId || item.id) === m.caseId)?.name || "Linked case"} · {messageWhen(m)}
+                  {humanise(m.channel)} · {cases.find((item) => (item.dbId || item.id) === m.caseId)?.name || "Linked case"} · {messageWhen(m)}
                 </span>
               </div>
               <Status value={sent ? "Sent" : m.status} />
               {sent ? null : (
                 <>
-                  {canSend && mailbox?.connected && (
+                  {canSend && ((m.channel === "email" && mailbox?.connected) || (m.channel === "whatsapp" && whatsappConfigured) || (m.channel === "sms" && smsConfigured)) && (
                     <button
                       className="ghostButton"
-                      onClick={() => void sendNow(m.id)}
+                      onClick={() => void sendNow(m)}
                       disabled={sendingId === m.id}
                     >
                       <Send size={14} />
@@ -3364,6 +3417,68 @@ function MessagesView({
         })}
         </>
       )}
+    </article>
+    {canSend && <CampaignsPanel items={campaigns} cases={cases} onChange={onCampaignChange} />}
+    </>
+  );
+}
+
+function CampaignsPanel({ items, cases, onChange }: {
+  items: CampaignRecord[];
+  cases: CaseRecord[];
+  onChange: () => Promise<void>;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [working, setWorking] = useState("");
+  const [error, setError] = useState("");
+  const send = async (payload: Record<string, unknown>) => {
+    setWorking(String(payload.campaignId || "create"));
+    setError("");
+    try {
+      const response = await fetch("/api/crm/campaigns", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The campaign action failed.");
+      await onChange();
+      setCreating(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The campaign action failed.");
+    } finally {
+      setWorking("");
+    }
+  };
+  return (
+    <article className="panel listPanel">
+      <div className="panelHead">
+        <div><span className="kicker">CAMPAIGNS</span><h2>Email, SMS and WhatsApp campaigns</h2></div>
+        <button className="primaryButton" onClick={() => setCreating(!creating)}><Plus size={16} /> {creating ? "Close" : "New campaign"}</button>
+      </div>
+      <p className="coverageIntro">Build a reviewed recipient list from cases you can access. Each delivery is recorded against the campaign; free-form address uploads are not accepted.</p>
+      {creating && (
+        <form className="stackedForm" onSubmit={(event) => {
+          event.preventDefault();
+          const data = new FormData(event.currentTarget);
+          void send({ action: "create", name: data.get("name"), channel: data.get("channel"), subject: data.get("subject"), body: data.get("body"), caseIds: data.getAll("caseIds") });
+        }}>
+          <label>Campaign name *<input name="name" required /></label>
+          <label>Channel *<select name="channel" defaultValue="email"><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></select></label>
+          <label>Subject (required for email)<input name="subject" /></label>
+          <label>Recipients *<select name="caseIds" multiple required size={Math.min(8, Math.max(3, cases.length))}>{cases.map((item) => <option key={item.dbId || item.id} value={item.dbId || item.id}>{item.name} · {item.id}</option>)}</select><small className="fieldHint">Use Ctrl/Cmd to select multiple cases.</small></label>
+          <label className="wide">Message *<textarea name="body" required placeholder="Use {{client_name}} and {{case_number}} where needed." /></label>
+          <button className="primaryButton" disabled={Boolean(working)}><Check size={15} /> Save draft campaign</button>
+        </form>
+      )}
+      {error && <p className="caseWorkError">{error}</p>}
+      {items.length === 0 ? <p className="caseWorkEmpty">No campaigns have been created yet.</p> : items.map((item) => (
+        <div className="functionalRow" key={item.id}>
+          <div><strong>{item.name}</strong><span>{humanise(item.channel)} · {item.recipientCount} recipients · {item.sentCount} sent{item.failedCount ? ` · ${item.failedCount} failed` : ""}</span></div>
+          <Status value={item.status} />
+          {["draft", "failed"].includes(item.status.toLowerCase()) ? <button className="primaryButton" disabled={working === item.id} onClick={() => {
+            if (confirm(`Send “${item.name}” to ${item.recipientCount} selected case${item.recipientCount === 1 ? "" : "s"}?`)) void send({ action: "launch", campaignId: item.id });
+          }}><Send size={14} /> {working === item.id ? "Sending…" : "Review & send"}</button> : null}
+        </div>
+      ))}
     </article>
   );
 }
@@ -3544,14 +3659,20 @@ function FinanceView({
  * existed with no way in or out of it: raised nowhere, received nowhere. */
 function CommissionClaimsPanel({
   items,
+  cases,
   canManage,
   onCreate,
   onMarkReceived,
+  onSendInvoice,
+  onSendReceipt,
 }: {
   items: CommissionClaimRecord[];
+  cases: CaseRecord[];
   canManage: boolean;
-  onCreate: (data: { partnerName: string; institution: string; expectedAmount: number; dueOn: string }) => void;
+  onCreate: (data: { counterpartyType: string; partnerName: string; institution: string; counterpartyEmail: string; netAmount: number; taxRate: number; currency: string; dueOn: string; caseIds: string[] }) => void;
   onMarkReceived: (claim: CommissionClaimRecord) => void;
+  onSendInvoice: (claim: CommissionClaimRecord) => void;
+  onSendReceipt: (claim: CommissionClaimRecord) => void;
 }) {
   const [adding, setAdding] = useState(false);
   if (!canManage) return null;
@@ -3574,28 +3695,62 @@ function CommissionClaimsPanel({
             event.preventDefault();
             const data = new FormData(event.currentTarget);
             onCreate({
+              counterpartyType: String(data.get("counterpartyType") || "partner"),
               partnerName: String(data.get("partnerName") || ""),
               institution: String(data.get("institution") || ""),
-              expectedAmount: Number(data.get("expectedAmount") || 0),
+              counterpartyEmail: String(data.get("counterpartyEmail") || ""),
+              netAmount: Number(data.get("netAmount") || 0),
+              taxRate: Number(data.get("taxRate") || 0),
+              currency: String(data.get("currency") || "AUD"),
               dueOn: String(data.get("dueOn") || ""),
+              caseIds: data.getAll("caseIds").map(String),
             });
             setAdding(false);
           }}
         >
           <label>
-            Partner *<input name="partnerName" required />
+            Account type
+            <select name="counterpartyType" defaultValue="partner">
+              <option value="partner">Partner invoice</option>
+              <option value="university">University invoice</option>
+            </select>
+          </label>
+          <label>
+            Partner / university *<input name="partnerName" required />
           </label>
           <label>
             Institution
             <input name="institution" />
           </label>
           <label>
-            Expected amount *
-            <input name="expectedAmount" type="number" min="0.01" step="0.01" required />
+            Accounts email
+            <input name="counterpartyEmail" type="email" />
+          </label>
+          <label>
+            Net commission *
+            <input name="netAmount" type="number" min="0.01" step="0.01" required />
+          </label>
+          <label>
+            Tax %
+            <input name="taxRate" type="number" min="0" max="100" step="0.01" defaultValue="0" />
+          </label>
+          <label>
+            Currency
+            <select name="currency" defaultValue="AUD">
+              {["AUD", "USD", "GBP", "CAD", "NZD", "AED", "EUR", "INR", "LKR"].map((currency) => <option key={currency}>{currency}</option>)}
+            </select>
           </label>
           <label>
             Due
             <input name="dueOn" type="date" />
+          </label>
+          <label>
+            Students included
+            <select name="caseIds" multiple size={Math.min(8, Math.max(3, cases.length))}>
+              {cases.filter((caseItem) => caseItem.dbId).map((caseItem) => (
+                <option key={caseItem.id} value={caseItem.dbId}>{caseItem.name} · {caseItem.id}</option>
+              ))}
+            </select>
           </label>
           <div className="formActions">
             <button className="primaryButton">
@@ -3617,26 +3772,30 @@ function CommissionClaimsPanel({
         items.map((claim) => (
           <div className="functionalRow" key={claim.id}>
             <div>
-              <strong>{claim.partnerName}</strong>
+              <strong>{claim.invoiceNumber || "Commission invoice"} · {claim.partnerName}</strong>
               <span>
-                {claim.institution || "No institution set"}
+                {claim.counterpartyType === "university" ? "University" : "Partner"}
+                {claim.institution ? ` · ${claim.institution}` : ""}
+                {` · ${claim.studentCount} student${claim.studentCount === 1 ? "" : "s"}`}
                 {claim.dueOn ? ` · Due ${claim.dueOn}` : ""}
               </span>
+              <span>Net {claim.currency} {claim.netAmount.toLocaleString()} · Tax {claim.taxRate}% ({claim.taxAmount.toLocaleString()})</span>
             </div>
             <b>
-              ${claim.receivedAmount.toLocaleString()} / $
-              {claim.expectedAmount.toLocaleString()}
+              {claim.currency} {claim.receivedAmount.toLocaleString()} received · {claim.pendingAmount.toLocaleString()} pending
             </b>
-            {claim.status === "received" ? (
-              <Status value="Received" />
-            ) : (
+            <div className="rowActions">
+              <button className="ghostButton" onClick={() => onSendInvoice(claim)}>Send invoice</button>
+              {claim.receivedAmount > 0 ? <button className="ghostButton" onClick={() => onSendReceipt(claim)}>Send receipt</button> : null}
+              {claim.status !== "received" ? (
               <button
                 className="ghostButton"
                 onClick={() => onMarkReceived(claim)}
               >
-                Mark received
+                Add payment
               </button>
-            )}
+              ) : <Status value="Received" />}
+            </div>
           </div>
         ))
       )}
@@ -4933,6 +5092,18 @@ type AgencyReport = {
     deferred: number;
     deferralRate: number;
   };
+  leads: {
+    total: number;
+    averageScore: number;
+    missedFollowUps: number;
+    byStatus: Record<string, number>;
+    bySource: Record<string, number>;
+    lostReasons: Record<string, number>;
+  };
+  campaignPerformance: {
+    id: string; name: string; channel: string; status: string;
+    recipients: number; sent: number; failed: number; deliveryRate: number; createdAt: string;
+  }[];
   visas: {
     matters: number;
     lodged: number;
@@ -5433,6 +5604,8 @@ function ReportsView({
   const {
     pipeline,
     conversion,
+    leads,
+    campaignPerformance,
     visas,
     deadlines,
     workload,
@@ -5554,6 +5727,21 @@ function ReportsView({
             </table>
           </div>
         )}
+      </article>
+
+      <article className="panel listPanel">
+        <div className="panelHead"><div><span className="kicker">LEADS & FOLLOW-UP</span><h2>Enquiry operations</h2></div></div>
+        <div className="miniStats inline">
+          <article><span>Enquiries recorded</span><strong>{leads.total}</strong><small>Lead records</small></article>
+          <article><span>Average lead score</span><strong>{leads.averageScore}</strong><small>Out of 100</small></article>
+          <article><span>Missed follow-ups</span><strong>{leads.missedFollowUps}</strong><small>Past SLA date and not converted</small></article>
+        </div>
+        <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>{Object.entries(leads.byStatus).map(([label, count]) => <tr key={label}><td>{humanise(label)}</td><td>{count}</td></tr>)}</tbody></table></div>
+      </article>
+
+      <article className="panel listPanel">
+        <div className="panelHead"><div><span className="kicker">CAMPAIGN PERFORMANCE</span><h2>Email and WhatsApp delivery</h2></div></div>
+        {campaignPerformance.length === 0 ? <p className="caseWorkEmpty">No campaigns have been launched yet.</p> : <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Campaign</th><th>Channel</th><th>Recipients</th><th>Sent</th><th>Failed</th><th>Delivery</th><th>Status</th></tr></thead><tbody>{campaignPerformance.map((item) => <tr key={item.id}><td>{item.name}</td><td>{humanise(item.channel)}</td><td>{item.recipients}</td><td>{item.sent}</td><td>{item.failed}</td><td>{item.deliveryRate}%</td><td><Status value={item.status} /></td></tr>)}</tbody></table></div>}
       </article>
 
       <article className="panel listPanel">
@@ -6508,6 +6696,112 @@ function MergeClientsPanel() {
   );
 }
 
+const LEGACY_IMPORT_TYPES = [
+  ["study_records", "Original Study Abroad enquiry / student export (automatic)"],
+  ["direct_visa_records", "Original Direct Visa enquiry / client export (automatic)"],
+  ["clients", "Clients / students / enquiries"],
+  ["cases", "Study Abroad and Direct Visa cases"],
+  ["applications", "Education applications"],
+  ["visa_matters", "Visa applications"],
+  ["notes", "History, notes and remarks"],
+  ["tasks", "Tasks and follow-ups"],
+  ["appointments", "Appointments"],
+  ["communications", "Email, SMS and WhatsApp history"],
+  ["documents", "Document metadata"],
+  ["invoices", "Client invoices"],
+  ["payments", "Payments"],
+  ["commission_claims", "Partner and university commission invoices"],
+  ["commission_payments", "Commission payments and receipts"],
+] as const;
+
+function legacyHeader(value: unknown): string {
+  return String(value ?? "").trim().replace(/^\uFEFF/, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+}
+
+function parseLegacyCsv(text: string): Record<string, unknown>[] {
+  const rows: string[][] = [];
+  let row: string[] = [], cell = "", quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (char === '"' && quoted && text[index + 1] === '"') { cell += '"'; index += 1; }
+    else if (char === '"') quoted = !quoted;
+    else if (char === "," && !quoted) { row.push(cell); cell = ""; }
+    else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && text[index + 1] === "\n") index += 1;
+      row.push(cell); if (row.some((value) => value.trim())) rows.push(row); row = []; cell = "";
+    } else cell += char;
+  }
+  row.push(cell); if (row.some((value) => value.trim())) rows.push(row);
+  const headers = (rows.shift() ?? []).map(legacyHeader);
+  return rows.map((values) => Object.fromEntries(headers.map((header, index) => [header, values[index]?.trim() ?? ""])));
+}
+
+async function readLegacyWorkbook(file: File): Promise<Record<string, unknown>[]> {
+  if (/\.csv$/i.test(file.name)) return parseLegacyCsv(await file.text());
+  const ExcelJS = await import("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await file.arrayBuffer());
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return [];
+  const cells = (row: import("exceljs").Row) => row.values as unknown[];
+  const headers = cells(sheet.getRow(1)).slice(1).map(legacyHeader);
+  const rows: Record<string, unknown>[] = [];
+  sheet.eachRow((excelRow, rowNumber) => {
+    if (rowNumber === 1) return;
+    const values = cells(excelRow).slice(1);
+    const record = Object.fromEntries(headers.map((header, index) => [header, values[index] instanceof Date ? (values[index] as Date).toISOString() : values[index] ?? ""]));
+    if (Object.values(record).some((value) => String(value).trim())) rows.push(record);
+  });
+  return rows;
+}
+
+function LegacyImportPanel({ branches }: { branches: AdminBranch[] }) {
+  const [entityType, setEntityType] = useState("clients");
+  const [branchId, setBranchId] = useState("");
+  const [batchId, setBatchId] = useState("");
+  const [summary, setSummary] = useState("");
+  const [errors, setErrors] = useState<string[]>([]);
+  const [working, setWorking] = useState(false);
+  const validateFile = async (file: File) => {
+    setWorking(true); setErrors([]); setBatchId("");
+    try {
+      const rows = await readLegacyWorkbook(file);
+      if (!rows.length) throw new Error("The selected export has no data rows.");
+      const response = await fetch("/api/crm/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "validate", entityType, branchId: branchId || null, fileName: file.name, sourceSystem: "legacy_maximus", rows }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The export could not be validated.");
+      setSummary(`${result.total} rows checked · ${result.valid} ready · ${result.invalid} need correction`);
+      setErrors((result.errors ?? []).flatMap((item: { row: number; errors: string[] }) => item.errors.map((error) => `Row ${item.row}: ${error}`)));
+      if (!result.invalid) setBatchId(result.batchId);
+    } catch (reason) { setErrors([reason instanceof Error ? reason.message : "The export could not be read."]); }
+    finally { setWorking(false); }
+  };
+  const commit = async () => {
+    setWorking(true); setErrors([]);
+    try {
+      const response = await fetch("/api/crm/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "commit", batchId }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The import could not be completed.");
+      setSummary(`${result.imported} ${humanise(entityType)} records imported with their legacy identifiers preserved.`); setBatchId("");
+    } catch (reason) { setErrors([reason instanceof Error ? reason.message : "The import could not be completed."]); }
+    finally { setWorking(false); }
+  };
+  return (
+    <article className="panel listPanel">
+      <div className="panelHead"><div><span className="kicker">OLD CRM MIGRATION</span><h2>Import legacy Excel or CSV exports</h2></div></div>
+      <p className="coverageIntro">Use either automatic mode for the original combined Enquiry, Student or Client Excel export. The detailed modes support separate module exports. Stable old CRM IDs reconnect every row instead of restarting client progress.</p>
+      <div className="stackedForm">
+        <label>Export type<select value={entityType} onChange={(event) => { setEntityType(event.target.value); setBatchId(""); setSummary(""); setErrors([]); }}>{LEGACY_IMPORT_TYPES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+        <label>Default branch<select value={branchId} onChange={(event) => setBranchId(event.target.value)}><option value="">Use branch column / my branch</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
+        <label>Old CRM export<input type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" disabled={working} onChange={(event) => { const file = event.target.files?.[0]; if (file) void validateFile(file); }} /></label>
+        {summary && <p className="coverageIntro">{summary}</p>}
+        {errors.length > 0 && <div className="caseWorkError" role="alert">{errors.slice(0, 25).map((error) => <div key={error}>{error}</div>)}</div>}
+        {batchId && <button className="primaryButton" disabled={working} onClick={() => void commit()}><Check size={15} /> {working ? "Importing…" : "Import validated records"}</button>}
+      </div>
+    </article>
+  );
+}
+
 /**
  * Staff & Masters. This is where an agency owner adds a person to the team,
  * which is the one thing the screen never used to do: it showed role artwork
@@ -6669,6 +6963,7 @@ function AdminView({
 
   return (
     <section className="adminStack">
+      <LegacyImportPanel branches={adminBranches} />
       {isOwner && settings ? (
         <article className="panel listPanel">
           <div className="panelHead"><div><span className="kicker">MASTER CONFIGURATION</span><h2>Organisation defaults</h2></div></div>
@@ -7404,7 +7699,7 @@ type CaseFile = {
   notes: CaseNote[];
   invoices: Record<string, unknown>[];
   collaborators: { profileId: string; name: string; email: string; addedAt: string }[];
-  communications: { id: string; sender: string; recipients: string[]; direction: string; body: string; sentAt: string; status: string; subject: string }[];
+  communications: { id: string; channel?: string; sender: string; recipients: string[]; direction: string; body: string; sentAt: string; status: string; subject: string }[];
   intake: {
     education: Record<string, unknown>[];
     employment: Record<string, unknown>[];
@@ -10072,6 +10367,11 @@ function RecordModal({
                     <option>Waiting for Documents</option>
                     <option>Documents Received</option>
                     <option>Confirmed</option>
+                    <option>Prospect</option>
+                    <option>Looking for Employer</option>
+                    <option>Not Responding</option>
+                    <option>Processed</option>
+                    <option>Cancelled</option>
                     <option>Not Interested</option>
                   </select>
                 </label>
@@ -10079,6 +10379,11 @@ function RecordModal({
                   Next follow-up
                   <input name="due" type="date" defaultValue={editing?.due} />
                 </label>
+                {!editing && <label>Follow-up time<input name="followUpTime" type="time" /></label>}
+                {!editing && <label className="wide">Follow-up remarks<input name="followUpRemarks" placeholder="What must happen at the next contact" /></label>}
+                {!editing && <label>First appointment date<input name="appointmentDate" type="date" /></label>}
+                {!editing && <label>First appointment time<input name="appointmentTime" type="time" /></label>}
+                {!editing && <label className="wide">Appointment remarks<input name="appointmentRemarks" placeholder="Purpose, preparation or location" /></label>}
                 <label>
                   Source
                   <select name="source">
@@ -10095,6 +10400,18 @@ function RecordModal({
                     <option>Agent</option>
                     <option>Existing client</option>
                   </select>
+                </label>
+                <label>
+                  Campaign / referral source
+                  <input name="campaign" defaultValue={editing?.campaign} placeholder="e.g. August seminar or partner name" />
+                </label>
+                <label>
+                  Lead score
+                  <input name="leadScore" type="number" min="0" max="100" defaultValue={editing?.leadScore || ""} placeholder="Calculated automatically if blank" />
+                </label>
+                <label className="wide">
+                  Lost / cancelled reason
+                  <input name="lostReason" defaultValue={editing?.lostReason} placeholder="Required operational context when an enquiry is lost" />
                 </label>
                 <label className="wide">
                   Remarks
@@ -10135,6 +10452,9 @@ function RecordModal({
                         <label>Preferred institution<input name="preferredInstitution" /></label>
                         <label>Preferred course<input name="preferredCourse" /></label>
                         <label>Target intake<input name="intake" placeholder="e.g. February 2027" /></label>
+                        <label>Proposed course start<input name="proposedCourseStart" type="date" /></label>
+                        <label>Proposed course end<input name="proposedCourseEnd" type="date" /></label>
+                        <label>Second destination choice<select name="secondaryDestination" defaultValue=""><option value="">No second choice</option>{DESTINATION_COUNTRIES.map((country) => <option key={country}>{country}</option>)}</select></label>
                         <label>Annual budget<input name="annualBudget" type="number" min="0" step="0.01" /></label>
                         <label>Funding source<input name="fundingSource" /></label>
                         <label>Application institution<input name="applicationInstitution" /></label>
@@ -10179,6 +10499,7 @@ function RecordModal({
                       <label>Started<input name="educationStart" type="date" /></label>
                       <label>Completed<input name="educationEnd" type="date" /></label>
                       <label>Result / grade<input name="educationResult" /></label>
+                      <label>Backlogs / failed subjects<input name="educationBacklogs" type="number" min="0" /></label>
                       <label>English test<select name="testType" defaultValue=""><option value="">No test recorded</option><option>IELTS</option><option>PTE</option><option>TOEFL</option><option>Duolingo</option><option>CELPIP</option><option>OET</option></select></label>
                       <label>Test date<input name="testDate" type="date" /></label>
                       <label>Overall<input name="testOverall" type="number" step="0.01" /></label>
@@ -10186,6 +10507,12 @@ function RecordModal({
                       <label>Reading<input name="testReading" type="number" step="0.01" /></label>
                       <label>Writing<input name="testWriting" type="number" step="0.01" /></label>
                       <label>Speaking<input name="testSpeaking" type="number" step="0.01" /></label>
+                      <label>Aptitude test<select name="aptitudeTestType" defaultValue=""><option value="">No aptitude test</option><option>GRE</option><option>GMAT</option><option>SAT</option><option>Other</option></select></label>
+                      <label>Test date<input name="aptitudeTestDate" type="date" /></label>
+                      <label>Overall score<input name="aptitudeOverall" type="number" step="0.01" /></label>
+                      <label>Quantitative<input name="aptitudeQuantitative" type="number" step="0.01" /></label>
+                      <label>Analytical<input name="aptitudeAnalytical" type="number" step="0.01" /></label>
+                      <label>Verbal<input name="aptitudeVerbal" type="number" step="0.01" /></label>
                       <label>Employer<input name="employer" /></label>
                       <label>Position<input name="jobTitle" /></label>
                       <label>Employment country<input name="employmentCountry" /></label>
@@ -10205,8 +10532,13 @@ function RecordModal({
                       <label>Mobile<input name="spousePhone" /></label>
                       <label>Nationality<input name="spouseNationality" /></label>
                       <label>Passport number<input name="spousePassport" autoComplete="off" /></label>
+                      <label>Passport issue date<input name="spousePassportIssue" type="date" /></label>
                       <label>Passport expiry<input name="spousePassportExpiry" type="date" /></label>
                       <label>Visa status<input name="spouseVisaStatus" /></label>
+                      <label>Visa expiry<input name="spouseVisaExpiry" type="date" /></label>
+                      <label>Marriage date<input name="marriageDate" type="date" /></label>
+                      <label>Marriage type<input name="marriageType" placeholder="Arranged, civil or other" /></label>
+                      <label>Marriage registration<select name="marriageRegistered" defaultValue=""><option value="">Select</option><option value="yes">Registered</option><option value="no">Not registered</option></select></label>
                       <label className="checkboxLabel"><input name="spouseIncluded" type="checkbox" />Included in this application</label>
                       <label>Child full name<input name="childFullName" /></label>
                       <label>Child date of birth<input name="childDob" type="date" /></label>
@@ -10449,6 +10781,16 @@ function RecordModal({
           )}
           {type === "message" && (
             <>
+              {!isClientMessage ? (
+                <label>
+                  Channel
+                  <select name="channel" defaultValue="email">
+                    <option value="email">Email</option>
+                    <option value="whatsapp">WhatsApp</option>
+                    <option value="sms">SMS</option>
+                  </select>
+                </label>
+              ) : null}
               {isClientMessage ? (
                 <label>
                   To
@@ -10475,7 +10817,7 @@ function RecordModal({
               {!isClientMessage ? (
                 <p className="modalNotice full">
                   <Mail size={14} />
-                  The recipient is taken automatically from this client&apos;s case profile. Edit the case profile if the address changes.
+                  The recipient is taken automatically from this client&apos;s case profile—email for Email and mobile for WhatsApp. Edit the case profile if either changes.
                 </p>
               ) : null}
               {isClientMessage && cases.length === 1 ? (
@@ -10703,6 +11045,7 @@ export default function Home() {
     [appointments, setAppointments] = useState<AppointmentRecord[]>([]),
     [documents, setDocuments] = useState<DocumentRecord[]>([]),
     [messages, setMessages] = useState<MessageRecord[]>([]),
+    [campaigns, setCampaigns] = useState<CampaignRecord[]>([]),
     [invoices, setInvoices] = useState<InvoiceRecord[]>([]),
     [commissionClaims, setCommissionClaims] = useState<CommissionClaimRecord[]>([]),
     [journeyHistory, setJourneyHistory] = useState<JourneyMilestone[]>([]),
@@ -10851,6 +11194,7 @@ export default function Home() {
       setAppointments(result.appointments || []);
       setDocuments(result.documents || []);
       setMessages(result.messages || []);
+      setCampaigns(result.campaigns || []);
       setInvoices(result.invoices || []);
       setCommissionClaims(result.commissionClaims || []);
       setJourneyHistory(result.journeyHistory || []);
@@ -10890,8 +11234,10 @@ export default function Home() {
       setSessionReady(true);
     }
   };
+  const loadWorkspaceRef = useRef(loadWorkspace);
+  loadWorkspaceRef.current = loadWorkspace;
   useEffect(() => {
-    const timer = window.setTimeout(() => void loadWorkspace(), 0);
+    const timer = window.setTimeout(() => void loadWorkspaceRef.current(), 0);
     return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {
@@ -10954,6 +11300,22 @@ export default function Home() {
     setFormError("");
     setModal(x);
     setQuickOpen(false);
+  };
+  const generateIntakeLink = async () => {
+    setQuickOpen(false);
+    try {
+      const response = await fetch("/api/crm/intake-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serviceType: serviceMode === "study" ? "study_abroad" : "direct_visa" }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "The secure intake link could not be created.");
+      window.prompt("Secure enquiry link (valid for 30 days). Copy and send it to the prospective client:", result.url);
+      say("Secure enquiry link created and recorded");
+    } catch (reason) {
+      say(reason instanceof Error ? reason.message : "The secure intake link could not be created.");
+    }
   };
   // Opening a document request or an invoice from within the case it
   // belongs to, rather than picking that same case back out of every case
@@ -11719,6 +12081,7 @@ export default function Home() {
     content = (
       <MessagesView
         items={messages}
+        campaigns={campaigns}
         cases={cases}
         openModal={open}
         setItems={syncMessages}
@@ -11726,6 +12089,7 @@ export default function Home() {
         // its own communications screen elsewhere in this render.
         canSend={true}
         onBulkAction={bulkMutateRemote}
+        onCampaignChange={loadWorkspace}
       />
     );
   else if (active === "courseFinder")
@@ -11789,30 +12153,46 @@ export default function Home() {
         />
         <CommissionClaimsPanel
           items={commissionClaims}
+          cases={cases}
           canManage={canManageBranch}
           onCreate={(data) =>
             void postOperation("create_commission_claim", {
+              counterpartyType: data.counterpartyType,
               partnerName: data.partnerName,
               institution: data.institution,
-              expectedAmount: data.expectedAmount,
+              counterpartyEmail: data.counterpartyEmail,
+              netAmount: data.netAmount,
+              taxRate: data.taxRate,
+              currency: data.currency,
               dueOn: data.dueOn,
+              caseIds: data.caseIds,
             })
           }
           onMarkReceived={(claim) => {
             const receivedAmount = window.prompt(
-              `Amount received from ${claim.partnerName}?`,
-              String(claim.expectedAmount),
+              `Amount received from ${claim.partnerName}? Pending ${claim.currency} ${claim.pendingAmount.toFixed(2)}`,
+              String(claim.pendingAmount),
             );
             if (receivedAmount === null) return;
             const parsed = Number(receivedAmount);
-            if (!Number.isFinite(parsed) || parsed <= 0) {
-              say("Enter an amount greater than zero.");
+            if (!Number.isFinite(parsed) || parsed <= 0 || parsed > claim.pendingAmount) {
+              say("Enter an amount no greater than the pending commission.");
               return;
             }
+            const reference = window.prompt("Payment reference (optional)", "") ?? "";
             void postOperation("record_commission_received", {
               claimId: claim.id,
               receivedAmount: parsed,
+              reference,
             });
+          }}
+          onSendInvoice={(claim) => {
+            const recipient = window.prompt("Send commission invoice to", claim.counterpartyEmail);
+            if (recipient) void postOperation("send_commission_invoice", { claimId: claim.id, recipient });
+          }}
+          onSendReceipt={(claim) => {
+            const recipient = window.prompt("Send latest commission receipt to", claim.counterpartyEmail);
+            if (recipient) void postOperation("send_commission_receipt", { claimId: claim.id, recipient });
           }}
         />
       </>
@@ -12226,6 +12606,9 @@ export default function Home() {
                           {String(l)}
                         </button>
                       ))}
+                      <button onClick={() => void generateIntakeLink()}>
+                        <Link2 size={16} /> Generate enquiry link
+                      </button>
                     </div>
                   )}
                 </div>

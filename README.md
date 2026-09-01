@@ -96,25 +96,29 @@ Working and covered by the checks above: the case pipeline, the case file,
 applications, visa matters, dependants, documents in the Shared Drive, the
 client portal, administration, reporting, imports and retention.
 
-Not built, and labelled as such in the interface rather than implied:
+Integration and feature readiness (external services still require their own credentials):
 
 | Area | State |
 |---|---|
 | Sending email as a staff member | Built. A staff member connects their own Gmail (Integrations, or the mailbox screen); until then, drafts are still recorded against the case and can be sent from your own mailbox by hand. |
 | Client email notices | Built. The CRM emails a client itself -- a document requested, an invoice raised, a new portal login -- through Resend (`RESEND_API_KEY`, `RESEND_FROM_EMAIL`). Wording is editable per organisation under Templates. Until configured, the underlying request or invoice is still recorded; the email is simply not sent. |
-| WhatsApp | Not implemented. |
-| Campaigns | Not implemented. Templates are reusable wording, not a campaign engine. |
+| WhatsApp | Built. Case-linked drafts, direct sending through WhatsApp Business Cloud API, signed inbound webhooks and delivery/read status updates. Configure the five `WHATSAPP_*` values listed in `.env.example`. |
+| SMS | Built. Case-linked drafts and reviewed campaigns send through Twilio's Messages API when the `TWILIO_*` sender settings are configured. |
+| Secure enquiry links | Built. Staff can create a hashed, expiring Study Abroad or Direct Visa intake link; submissions create the linked client, case, owner, follow-up and audit record. |
+| Campaigns | Built. Staff can create an explicit recipient list from cases they are permitted to access, review it, and send an audited email, SMS or WhatsApp campaign. |
+| Partner and university commission invoices | Built. Numbered invoices retain student membership, net commission, tax, total, partial payments, received/pending balances and numbered receipts. Invoices and receipts can be emailed through the configured Resend account. Legacy commission invoice/payment exports are resumable and idempotent. |
 | Google sign-in | Built. The Google button redirects through Supabase's own Google OAuth provider, which is switched on separately in the Supabase dashboard -- see "Google sign-in setup" below. |
 | AI assistant | Built. Drafts and summarises against one case at a time from that case's own facts, with nothing written until a person chooses to save it. Needs `ANTHROPIC_API_KEY`; until set, the assistant screen has nothing to call. |
 | Course Finder | Built: a searchable institution/course catalogue with country and level filters. The 61,000+ row legacy Maximus export is imported separately -- see "Importing the legacy Course Finder" below. |
-| Lead scoring, follow-up SLA automation, structured lost-lead reasons, campaign performance | Not implemented. |
+| Lead scoring, follow-up SLA automation, structured lost-lead reasons, campaign performance | Built. New enquiries receive a calculated or staff-set score, a follow-up SLA date, structured status/reason fields and reportable campaign delivery metrics. |
 
 **Integrations** (owner and branch manager) reports this from the running
 deployment rather than from this table: the Shared Drive is probed for real --
 an assertion is signed, exchanged for a token and used to read the drive back --
 so credentials that are present but wrong show as broken there instead of at the
-moment somebody tries to upload a passport. Anything marked *Not built* is
-absent from the code: no configuration turns it on.
+moment somebody tries to upload a passport. The CRM reports configuration
+truthfully at runtime; a workflow is never shown as connected merely because
+its screen exists.
 
 ## Who can do what
 
@@ -124,8 +128,8 @@ a case officer.
 | | Super Admin | Branch Manager | Case officer | Client |
 |---|---|---|---|---|
 | See every branch | Yes | No | No | No |
-| See their branch's cases | Yes | Yes | Yes, read-only unless assigned | No |
-| Work a case (edit, move, defer, case file) | Yes | Their branch | **Only cases assigned to them** | No |
+| See their branch's cases | Yes | Yes | **Only assigned or collaborated cases** | No |
+| Work a case (edit, move, defer, case file) | Yes | Their branch | **Only assigned or collaborated cases** | No |
 | Reassign a case | Yes | Yes | No | No |
 | Archive a case | Yes | Yes | Request only — managers are notified | No |
 | Client fees | All | Their branch | Only their own clients' fees | Their own invoices |
@@ -135,10 +139,10 @@ a case officer.
 
 Every export writes an audit entry naming who exported what.
 
-A case officer can still *see* a colleague's case, because cover and handover
-depend on it. What they cannot do is change it: the database refuses, and the
-refusal says to ask a manager for a reassignment rather than failing silently.
-Reassigning a case is what grants access, and taking it away removes it.
+A case officer sees and works only cases assigned to them or cases where a
+manager has explicitly added them as a collaborator. Branch managers retain
+the complete branch view. Assignment and collaboration are enforced by the
+database, not merely by hidden navigation.
 
 This is enforced in PostgreSQL by `public.can_modify_client`, not in the
 interface, so it holds for anything that talks to the database.

@@ -33,7 +33,7 @@ export async function GET(request: Request) {
         ? streamParam
         : null;
 
-    const [allCases, allApplications, allVisas, tasks, allDocuments, invoices, profiles, branches] =
+    const [allCases, allApplications, allVisas, tasks, allDocuments, invoices, profiles, branches, enquiries, campaigns] =
       await Promise.all([
         rest("cases?select=id,branch_id,owner_id,service_type,matter_type,lifecycle_stage,health,opened_at,closed_at,due_at,visa_expiry_on&limit=5000", token),
         rest("education_applications?select=id,case_id,status,submitted_at,offer_received_at,coe_received_at,deadline_at,archived_at&limit=5000", token),
@@ -43,6 +43,8 @@ export async function GET(request: Request) {
         rest("invoices?select=id,state,total,paid,currency,due_on&limit=5000", token),
         rest("profiles?select=id,display_name,branch_id,level,active&active=eq.true&limit=500", token),
         rest("branches?select=id,name,code&limit=200", token),
+        rest("enquiries?select=id,client_id,case_id,branch_id,assigned_to,source,campaign,status,score,next_follow_up_at,lost_reason,created_at,converted_at&limit=5000", token),
+        rest("communication_campaigns?select=id,name,channel,status,recipient_count,sent_count,failed_count,created_at&limit=1000", token),
       ]);
 
     const cases = stream
@@ -60,6 +62,9 @@ export async function GET(request: Request) {
           (row) => row.case_id == null || caseIds.has(String(row.case_id)),
         )
       : allDocuments;
+    const scopedEnquiries = stream
+      ? enquiries.filter((row) => row.case_id && caseIds.has(String(row.case_id)))
+      : enquiries;
 
     const now = Date.now();
     const days = (value: unknown): number | null => {
@@ -131,6 +136,21 @@ export async function GET(request: Request) {
         deferred,
         deferralRate: rate(deferred, submitted),
       },
+      leads: {
+        total: scopedEnquiries.length,
+        averageScore: scopedEnquiries.length ? Math.round(scopedEnquiries.reduce((sum, row) => sum + Number(row.score ?? 0), 0) / scopedEnquiries.length) : 0,
+        missedFollowUps: scopedEnquiries.filter((row) => !row.converted_at && overdue(row.next_follow_up_at)).length,
+        byStatus: tally(scopedEnquiries, "status"),
+        bySource: tally(scopedEnquiries, "source"),
+        lostReasons: tally(scopedEnquiries.filter((row) => row.lost_reason), "lost_reason"),
+      },
+      campaignPerformance: campaigns.map((row) => ({
+        id: row.id, name: row.name, channel: row.channel, status: row.status,
+        recipients: Number(row.recipient_count ?? 0), sent: Number(row.sent_count ?? 0),
+        failed: Number(row.failed_count ?? 0),
+        deliveryRate: rate(Number(row.sent_count ?? 0), Number(row.recipient_count ?? 0)),
+        createdAt: row.created_at,
+      })),
       visas: {
         matters: visas.length,
         lodged,

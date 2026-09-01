@@ -1,5 +1,6 @@
 import { appendRefreshCookies, LiveAccessError, liveSession } from "@/server/supabase-session";
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
+import { EmailProviderError, sendEmail } from "@/server/email";
 
 export const dynamic = "force-dynamic";
 type Json = Record<string, unknown>;
@@ -143,24 +144,84 @@ export async function POST(request: Request) {
       await insert("invoice_reminders", { id: crypto.randomUUID(), organisation_id: org, invoice_id: uuid(body.invoiceId, "Invoice"), reminder_type: optional(body.reminderType) || "manual", delivery_channel: "email", status: "queued", sent_by: actor }, token);
     } else if (action === "create_commission_claim") {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can raise a commission claim.");
+      const counterpartyType = (optional(body.counterpartyType) || "partner").toLowerCase();
+      if (!["partner", "university"].includes(counterpartyType)) throw new InputError("Commission counterparty must be a partner or university.");
+      const caseIds = Array.isArray(body.caseIds) ? [...new Set(body.caseIds.map((id) => uuid(id, "Case")))] : [];
+      if (caseIds.length > 500) throw new InputError("Select no more than 500 students per commission invoice.");
+      if (caseIds.length) {
+        const accessible = await rest<Json[]>(`cases?select=id&id=in.(${caseIds.join(",")})`, token);
+        if (accessible.length !== caseIds.length) throw new LiveAccessError(403, "One or more selected students are outside your branch access.");
+      }
+      const netAmount = positiveNumber(body.netAmount ?? body.expectedAmount, "Net commission");
+      const taxRate = nonNegativeNumber(body.taxRate ?? 0, "Tax rate");
+      if (taxRate > 100) throw new InputError("Tax rate cannot exceed 100%.");
+      const taxAmount = Math.round(netAmount * taxRate) / 100;
+      const total = Math.round((netAmount + taxAmount) * 100) / 100;
+      const claimId = crypto.randomUUID();
+      const invoiceNumber = `COM-${new Date().getUTCFullYear()}-${claimId.slice(0, 8).toUpperCase()}`;
       await insert("commission_claims", {
-        id: crypto.randomUUID(),
+        id: claimId,
         organisation_id: org,
         branch_id: session.identity.branchId,
         application_id: optionalUuid(body.applicationId),
-        partner_name: required(body.partnerName, "Partner"),
+        partner_name: required(body.partnerName, counterpartyType === "university" ? "University" : "Partner"),
         institution: optional(body.institution),
+        counterparty_type: counterpartyType,
+        counterparty_email: optional(body.counterpartyEmail),
+        invoice_number: invoiceNumber,
         currency: optional(body.currency) || "AUD",
-        expected_amount: positiveNumber(body.expectedAmount, "Expected amount"),
+        net_amount: netAmount,
+        tax_rate: taxRate,
+        tax_amount: taxAmount,
+        expected_amount: total,
+        issued_on: optionalDate(body.issuedOn) || new Date().toISOString(),
         due_on: optionalDate(body.dueOn),
+        student_count: caseIds.length,
+        case_ids: caseIds,
+        details: { case_ids: caseIds },
       }, token);
+      await insert("audit_events", { organisation_id: org, actor_id: actor, action: "commission.invoice_created", resource_type: "commission_claim", resource_id: claimId, summary: `Raised ${invoiceNumber} for ${total.toFixed(2)}`, after_data: { invoice_number: invoiceNumber, counterparty_type: counterpartyType, net_amount: netAmount, tax_rate: taxRate, tax_amount: taxAmount, total, case_ids: caseIds } }, token);
+      return appendRefreshCookies(Response.json({ ok: true, claimId, invoiceNumber, total }), session.refreshed, request);
     } else if (action === "record_commission_received") {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can record a commission receipt.");
-      const receivedAmount = positiveNumber(body.receivedAmount, "Received amount");
-      await patch("commission_claims", uuid(body.claimId, "Commission claim"), {
-        received_amount: receivedAmount,
-        status: "received",
-      }, token);
+      const amount = positiveNumber(body.receivedAmount, "Received amount");
+      const claimId = uuid(body.claimId, "Commission claim");
+      const [claim] = await rest<Json[]>(`commission_claims?select=id,invoice_number,expected_amount,received_amount,currency&id=eq.${claimId}&limit=1`, token);
+      if (!claim) throw new InputError("Commission invoice was not found.");
+      const pending = Math.max(0, Number(claim.expected_amount ?? 0) - Number(claim.received_amount ?? 0));
+      if (amount > pending + 0.001) throw new InputError(`Payment exceeds the pending commission of ${pending.toFixed(2)}.`);
+      const paymentId = crypto.randomUUID();
+      const receiptId = crypto.randomUUID();
+      const receiptNumber = `CR-${new Date().getUTCFullYear()}-${receiptId.slice(0, 8).toUpperCase()}`;
+      await insert("commission_payments", { id: paymentId, organisation_id: org, claim_id: claimId, amount, currency: optional(body.currency) || claim.currency || "AUD", payment_reference: optional(body.reference), paid_at: optionalDate(body.paidAt) || new Date().toISOString(), recorded_by: actor }, token);
+      await insert("commission_receipts", { id: receiptId, organisation_id: org, payment_id: paymentId, receipt_number: receiptNumber, issued_by: actor }, token);
+      const receivedAmount = Math.round((Number(claim.received_amount ?? 0) + amount) * 100) / 100;
+      await patch("commission_claims", claimId, { received_amount: receivedAmount, status: receivedAmount + 0.001 >= Number(claim.expected_amount ?? 0) ? "received" : "part_received" }, token);
+      await insert("audit_events", { organisation_id: org, actor_id: actor, action: "commission.payment_recorded", resource_type: "commission_payment", resource_id: paymentId, summary: `Recorded commission payment and issued ${receiptNumber}`, after_data: { claim_id: claimId, invoice_number: claim.invoice_number, amount, receipt_number: receiptNumber } }, token);
+      return appendRefreshCookies(Response.json({ ok: true, paymentId, receiptId, receiptNumber, receivedAmount }), session.refreshed, request);
+    } else if (action === "send_commission_invoice" || action === "send_commission_receipt") {
+      if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can send commission accounts.");
+      const claimId = uuid(body.claimId, "Commission claim");
+      const [claim] = await rest<Json[]>(`commission_claims?select=*&id=eq.${claimId}&limit=1`, token);
+      if (!claim) throw new InputError("Commission invoice was not found.");
+      const recipient = required(body.recipient || claim.counterparty_email, "Counterparty email");
+      if (!/^\S+@\S+\.\S+$/.test(recipient)) throw new InputError("Counterparty email is invalid.");
+      const name = String(claim.partner_name || claim.institution || "Accounts team");
+      const invoiceNumber = String(claim.invoice_number || "Commission invoice");
+      const total = Number(claim.expected_amount ?? 0);
+      const received = Number(claim.received_amount ?? 0);
+      let subject = `${invoiceNumber} from Maximus Education`;
+      let text = `Dear ${name},\n\nCommission invoice ${invoiceNumber}\nNet commission: ${claim.currency || "AUD"} ${Number(claim.net_amount ?? total).toFixed(2)}\nTax (${Number(claim.tax_rate ?? 0).toFixed(2)}%): ${claim.currency || "AUD"} ${Number(claim.tax_amount ?? 0).toFixed(2)}\nTotal: ${claim.currency || "AUD"} ${total.toFixed(2)}\nDue: ${claim.due_on || "On receipt"}\nStudents: ${Number(claim.student_count ?? 0)}\n\nRegards,\nMaximus Education`;
+      if (action === "send_commission_receipt") {
+        const payments = await rest<Json[]>(`commission_payments?select=id,amount,paid_at&claim_id=eq.${claimId}&order=paid_at.desc&limit=1`, token);
+        if (!payments[0]) throw new InputError("Record a payment before sending a receipt.");
+        const receipts = await rest<Json[]>(`commission_receipts?select=receipt_number,issued_at&payment_id=eq.${payments[0].id}&limit=1`, token);
+        subject = `Receipt ${receipts[0]?.receipt_number || ""} for ${invoiceNumber}`.trim();
+        text = `Dear ${name},\n\nReceipt: ${receipts[0]?.receipt_number || "Recorded receipt"}\nCommission invoice: ${invoiceNumber}\nPayment received: ${claim.currency || "AUD"} ${Number(payments[0].amount).toFixed(2)}\nTotal received: ${claim.currency || "AUD"} ${received.toFixed(2)}\nPending: ${claim.currency || "AUD"} ${Math.max(0, total - received).toFixed(2)}\n\nRegards,\nMaximus Education`;
+      }
+      await sendEmail({ to: recipient, subject, text, html: escapeHtml(text).replace(/\n/g, "<br>") });
+      await insert("audit_events", { organisation_id: org, actor_id: actor, action: action === "send_commission_invoice" ? "commission.invoice_sent" : "commission.receipt_sent", resource_type: "commission_claim", resource_id: claimId, summary: `${subject} sent to ${recipient}`, after_data: { recipient } }, token);
+      return appendRefreshCookies(Response.json({ ok: true, recipient }), session.refreshed, request);
     } else if (action === "link_client_account") {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can link client accounts.");
       await insert("client_user_links", { profile_id: uuid(body.profileId, "Profile"), client_id: uuid(body.clientId, "Client") }, token, "resolution=merge-duplicates,return=minimal");
@@ -196,11 +257,14 @@ function uuid(value: unknown, label: string) { const parsed = required(value, la
 function optionalUuid(value: unknown) { const parsed = optional(value); return parsed ? uuid(parsed, "Identifier") : null; }
 function optionalDate(value: unknown) { const parsed = optional(value); if (!parsed) return null; const date = new Date(parsed); if (Number.isNaN(date.getTime())) throw new InputError("Date is invalid."); return date.toISOString(); }
 function positiveNumber(value: unknown, label: string) { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed <= 0) throw new InputError(`${label} must be greater than zero.`); return parsed; }
+function nonNegativeNumber(value: unknown, label: string) { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < 0) throw new InputError(`${label} cannot be negative.`); return parsed; }
 function safePath(value: unknown) { const parsed = optional(value); return parsed?.startsWith("/") && !parsed.startsWith("//") ? parsed : null; }
 function isObject(value: unknown): value is Json { return typeof value === "object" && value !== null && !Array.isArray(value); }
+function escapeHtml(value: string) { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character); }
 class InputError extends Error {}
 function apiError(error: unknown): Response {
   if (error instanceof InputError) return Response.json({ ok: false, error: error.message }, { status: 400 });
+  if (error instanceof EmailProviderError) return Response.json({ ok: false, error: error.message }, { status: error.status });
   if (error instanceof LiveAccessError) return Response.json({ ok: false, error: error.message }, { status: error.status });
   if (error instanceof SupabaseError) return Response.json({ ok: false, error: "The database rejected this operation." }, { status: error.status >= 400 && error.status < 500 ? error.status : 503 });
   console.error(error); return Response.json({ ok: false, error: "The operation could not be completed." }, { status: 500 });

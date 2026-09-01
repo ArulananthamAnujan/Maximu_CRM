@@ -418,7 +418,8 @@ test("the README says how to make CI an actual merge gate", async () => {
   const readme = (await read("README.md")).replace(/\s+/g, " ");
   assert.match(readme, /Require status checks to pass/i);
   assert.match(readme, /Browser end-to-end/);
-  // And is honest about what is not built.
+  // And is honest about what is built and what remains configuration work.
   assert.match(readme, /What is and is not built/i);
-  assert.match(readme, /WhatsApp \| Not implemented/i);
+  assert.match(readme, /WhatsApp \| Built/i);
+  assert.match(readme, /Campaigns \| Built/i);
 });
