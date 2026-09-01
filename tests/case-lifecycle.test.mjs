@@ -23,6 +23,7 @@ const TARGET_STAFF = {
   display_name: "Ravi Kumar",
   level: "staff",
   active: true,
+  branch_id: PROFILE.branch_id,
 };
 
 /**
@@ -84,9 +85,9 @@ async function startStub({
         return send(200, [{ id: CASE_ID, lifecycle_stage: "visa" }]);
       }
       if (url.pathname === "/rest/v1/cases" && req.method === "GET" && url.searchParams.has("owner_id"))
-        return send(200, [{ id: CASE_ID, owner_id: USER.id }]);
+        return send(200, [{ id: CASE_ID, owner_id: USER.id, branch_id: PROFILE.branch_id }]);
       if (url.pathname === "/rest/v1/cases" && req.method === "GET")
-        return send(200, [{ id: CASE_ID, client_id: CASE_ID, owner_id: USER.id }]);
+        return send(200, [{ id: CASE_ID, client_id: CASE_ID, owner_id: USER.id, branch_id: PROFILE.branch_id }]);
       if (url.pathname === "/rest/v1/clients" && req.method === "GET")
         return send(200, [{ id: CASE_ID, email: "client@example.test", first_name: "Priya", last_name: "Sharma" }]);
       // PostgREST returns the rows an update actually touched when the caller
@@ -341,12 +342,8 @@ test("moving a case without the migration explains what to apply", async () => {
   assert.doesNotMatch(result.body.error, /schema cache/);
 });
 
-// content_templates and workflow_templates stay writable only by manager
-// level and above (migration 0005), gated here before the request ever
-// reaches the database. Invoices are different since migration 0026: a case
-// officer may now raise one for a client they can already modify, so the
-// route no longer gatekeeps this itself -- it forwards the request and
-// invoices_staff_create (row-level security) is what actually decides.
+// Content and workflow masters stay writable only by management. Case finance
+// follows the exact case-team boundary from migration 0032.
 test("a case officer's invoice request reaches the database rather than being refused up front", async () => {
   const result = await post(
     { action: "invoice", caseId: CASE_ID, subtotal: "100", tax: "10" },
@@ -369,8 +366,13 @@ test("a case officer is refused template creation with a clear reason", async ()
   assert.match(result.body.error, /manager or administrator/i);
 });
 
-test("a case officer cannot change an invoice, template or workflow", async () => {
-  for (const resource of ["invoice", "template", "workflow"]) {
+test("a case officer can change permitted case invoices but not configuration", async () => {
+  const invoice = await post(
+    { action: "mutate", resource: "invoice", operation: "delete", id: CASE_ID },
+    { level: "staff" },
+  );
+  assert.equal(invoice.status, 200);
+  for (const resource of ["template", "workflow"]) {
     const result = await post(
       { action: "mutate", resource, operation: "delete", id: CASE_ID },
       { level: "staff" },
@@ -397,8 +399,18 @@ test("bulk task completion updates every selected record in one request", async 
   assert.ok(writes.every((request) => request.body.status === "completed"));
 });
 
-test("bulk finance and configuration changes keep manager permissions", async () => {
-  for (const resource of ["invoice", "template", "workflow"]) {
+test("bulk case finance is available while configuration keeps manager permissions", async () => {
+  const invoice = await post(
+    {
+      action: "bulk_mutate",
+      resource: "invoice",
+      operation: "delete",
+      ids: [CASE_ID, SECOND_ID],
+    },
+    { level: "staff" },
+  );
+  assert.equal(invoice.status, 200);
+  for (const resource of ["template", "workflow"]) {
     const result = await post(
       {
         action: "bulk_mutate",

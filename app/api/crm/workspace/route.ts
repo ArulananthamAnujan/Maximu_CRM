@@ -316,7 +316,7 @@ export async function GET(request: Request) {
           status:
             row.lifecycle_stage === "completed" || row.closed_at
               ? "completed"
-              : row.health === "attention"
+              : row.lifecycle_stage === "deferred" || row.health === "attention"
                 ? "waiting"
                 : "active",
           deferredApplications: deferredByCase.get(String(row.id)) ?? 0,
@@ -881,8 +881,16 @@ export async function POST(request: Request) {
       // progress value must not reset it to zero.
       if (body.progress !== undefined && body.progress !== "")
         caseChanges.progress = Number(body.progress);
-      if (typeof body.ownerId === "string" && body.ownerId.trim())
-        caseChanges.owner_id = await resolveOwnerId(body.ownerId, actor, token);
+      if (typeof body.ownerId === "string" && body.ownerId.trim()) {
+        const ownerId = await resolveOwnerId(body.ownerId, actor, token);
+        const [subject] = await rest<Json[]>(
+          `cases?select=id,branch_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+          token,
+        );
+        if (!subject) throw new LiveAccessError(403, "That case is not available to you.");
+        await ensureOwnerInBranch(ownerId, nullable(subject.branch_id), token);
+        caseChanges.owner_id = ownerId;
+      }
       await patchRow("cases", caseId, caseChanges, token);
       await auditEvent(
         org,
@@ -902,7 +910,6 @@ export async function POST(request: Request) {
       const emailAddress = requiredEmail(body.email);
       const visaExpiry = requiredDay(body.visaExpiry, "Visa expiry date");
       const lifecycleEnabled = await lifecycleReady(token);
-      const ownerId = await resolveOwnerId(body.ownerId, actor, token);
       const parts = displayName.split(/\s+/);
       const firstName = parts.shift() || displayName;
       const lastName = parts.join(" ") || "—";
@@ -912,6 +919,8 @@ export async function POST(request: Request) {
         session.identity.sourceLevel,
         token,
       );
+      const ownerId = await resolveOwnerId(body.ownerId, actor, token);
+      await ensureOwnerInBranch(ownerId, branchId, token);
       // A second case for somebody already on file. The duplicate check offers
       // this so that a returning client keeps one record, one document folder
       // and one history instead of gaining a second of each.
@@ -1751,7 +1760,7 @@ export async function POST(request: Request) {
         throw new LiveAccessError(403, "Only an administrator can reassign cases in bulk.");
       const ownerId = required(body.ownerId, "Staff member");
       const candidates = await rest<Json[]>(
-        `profiles?select=id,display_name,level,active&id=eq.${encodeURIComponent(ownerId)}&limit=1`,
+        `profiles?select=id,display_name,level,active,branch_id&id=eq.${encodeURIComponent(ownerId)}&limit=1`,
         token,
       );
       const candidate = candidates[0];
@@ -1773,16 +1782,28 @@ export async function POST(request: Request) {
       let succeeded = 0;
       const failedCaseIds: string[] = [];
       for (const caseId of caseIds) {
-        if (!manager) {
-          const owned = await rest<Json[]>(
-            `cases?select=id,owner_id&id=eq.${encodeURIComponent(caseId)}&owner_id=eq.${encodeURIComponent(actor)}&limit=1`,
-            token,
+        const [subject] = await rest<Json[]>(
+          `cases?select=id,owner_id,branch_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+          token,
+        );
+        if (!subject) {
+          if (action === "bulk_assign") {
+            failedCaseIds.push(caseId);
+            continue;
+          }
+          throw new LiveAccessError(403, "That case is not available to you.");
+        }
+        if (!manager && subject.owner_id !== actor)
+          throw new LiveAccessError(
+            403,
+            "You can transfer only a case currently assigned to you.",
           );
-          if (!owned[0])
-            throw new LiveAccessError(
-              403,
-              "You can transfer only a case currently assigned to you.",
-            );
+        if (!candidate.branch_id || candidate.branch_id !== subject.branch_id) {
+          if (action === "bulk_assign") {
+            failedCaseIds.push(caseId);
+            continue;
+          }
+          throw new InputError("Cases can only be assigned to staff in the same branch.");
         }
         try {
           await patchRow("cases", caseId, { owner_id: ownerId }, token);
@@ -1835,7 +1856,7 @@ export async function POST(request: Request) {
       const caseId = required(body.caseId, "Case");
       const profileId = required(body.profileId, "Staff member");
       const [subject] = await rest<Json[]>(
-        `cases?select=id,owner_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+        `cases?select=id,owner_id,branch_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
         token,
       );
       if (!subject) throw new LiveAccessError(403, "That case is not available.");
@@ -1847,11 +1868,13 @@ export async function POST(request: Request) {
         throw new InputError("The case owner is already part of the case team.");
       if (action === "add_collaborator") {
         const [candidate] = await rest<Json[]>(
-          `profiles?select=id,level,active&id=eq.${encodeURIComponent(profileId)}&limit=1`,
+          `profiles?select=id,level,active,branch_id&id=eq.${encodeURIComponent(profileId)}&limit=1`,
           token,
         );
         if (!candidate || candidate.active !== true || candidate.level === "student")
           throw new InputError("Choose an active staff member from this organisation.");
+        if (!candidate.branch_id || candidate.branch_id !== subject.branch_id)
+          throw new InputError("Case collaborators must belong to the same branch.");
         await supabaseRequest(
           "/rest/v1/case_collaborators",
           {
@@ -1966,7 +1989,7 @@ export async function POST(request: Request) {
       const resource = required(body.resource, "Resource");
       const operation = required(body.operation, "Operation");
       const ids = uuidList(body.ids, "Records");
-      if (["invoice", "template", "workflow"].includes(resource))
+      if (["template", "workflow"].includes(resource))
         requireManager(session.identity.role, `change ${resource} records`);
 
       let succeeded = 0;
@@ -2068,8 +2091,6 @@ export async function POST(request: Request) {
       const resource = required(body.resource, "Resource");
       const id = required(body.id, "Record id");
       const operation = required(body.operation, "Operation");
-      if (resource === "invoice")
-        requireManager(session.identity.role, "change an invoice");
       if (resource === "template")
         requireManager(session.identity.role, "change a template");
       if (resource === "workflow")
@@ -2707,12 +2728,15 @@ async function resolveBranchId(
   sourceLevel: string,
   token: string,
 ): Promise<string | null> {
+  // Branch-scoped accounts always create work in their own branch, regardless
+  // of a branch id posted by a modified browser request.
+  if (sourceLevel !== "super_admin" && sourceLevel !== "platform_owner") {
+    if (!fallback)
+      throw new InputError("Your staff account needs a branch before it can create cases.");
+    return fallback;
+  }
   if (typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value)) return value;
   if (fallback) return fallback;
-  // A branch-scoped user with no branch assignment may create an unassigned
-  // record, but must never be silently placed into a branch they cannot access.
-  if (sourceLevel !== "super_admin" && sourceLevel !== "platform_owner")
-    return null;
   const branches = await rest<Array<{ id: string }>>(
     "branches?select=id&active=eq.true&order=name.asc&limit=1",
     token,
@@ -2720,6 +2744,23 @@ async function resolveBranchId(
   if (!branches[0])
     throw new Error("Create an active branch before adding CRM records.");
   return branches[0].id;
+}
+
+async function ensureOwnerInBranch(
+  ownerId: string,
+  branchId: string | null,
+  token: string,
+): Promise<void> {
+  if (!branchId)
+    throw new InputError("Choose a branch before assigning the case.");
+  const [owner] = await rest<Json[]>(
+    `profiles?select=id,branch_id,active,level&id=eq.${encodeURIComponent(ownerId)}&limit=1`,
+    token,
+  );
+  if (!owner || owner.active !== true || owner.level === "student")
+    throw new InputError("Choose an active staff member for this case.");
+  if (owner.branch_id !== branchId)
+    throw new InputError("Cases can only be assigned to staff in the same branch.");
 }
 function nullableDay(value: unknown): string | null {
   const parsed = nullable(value);

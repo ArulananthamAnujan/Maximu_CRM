@@ -95,7 +95,6 @@ export async function POST(request: Request) {
         }),
       }, token);
     } else if (action === "record_payment") {
-      if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can record payments.");
       const amount = positiveNumber(body.amount, "Amount");
       const invoiceId = uuid(body.invoiceId, "Invoice");
       const [invoice] = await rest<Json[]>(`invoices?select=id,total,paid,currency,state,client_id,case_id&id=eq.${invoiceId}&limit=1`, token);
@@ -112,7 +111,6 @@ export async function POST(request: Request) {
       await insert("audit_events", { organisation_id: org, actor_id: actor, action: "payment.recorded", resource_type: "payment", resource_id: paymentId, case_id: invoice.case_id ?? null, summary: `Recorded payment and issued ${receiptNumber}`, after_data: { invoice_id: invoiceId, amount, receipt_number: receiptNumber } }, token);
       return appendRefreshCookies(Response.json({ ok: true, paymentId, receiptId, receiptNumber, paid }), session.refreshed, request);
     } else if (action === "record_refund") {
-      if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can record refunds.");
       const amount = positiveNumber(body.amount, "Refund amount");
       const invoiceId = uuid(body.invoiceId, "Invoice");
       const [invoice] = await rest<Json[]>(`invoices?select=id,total,paid,currency,case_id&id=eq.${invoiceId}&limit=1`, token);
@@ -142,13 +140,13 @@ export async function POST(request: Request) {
       await patch("reconciliation_runs", reconciliationId, { matched_total: matched, status: balanced ? "balanced" : "exception", completed_at: new Date().toISOString() }, token);
       return appendRefreshCookies(Response.json({ ok: true, matchedTotal: matched, balanced }), session.refreshed, request);
     } else if (action === "queue_overdue_reminder") {
-      if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can send payment reminders.");
       await insert("invoice_reminders", { id: crypto.randomUUID(), organisation_id: org, invoice_id: uuid(body.invoiceId, "Invoice"), reminder_type: optional(body.reminderType) || "manual", delivery_channel: "email", status: "queued", sent_by: actor }, token);
     } else if (action === "create_commission_claim") {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can raise a commission claim.");
       await insert("commission_claims", {
         id: crypto.randomUUID(),
         organisation_id: org,
+        branch_id: session.identity.branchId,
         application_id: optionalUuid(body.applicationId),
         partner_name: required(body.partnerName, "Partner"),
         institution: optional(body.institution),
