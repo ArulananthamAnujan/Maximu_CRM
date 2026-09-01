@@ -442,7 +442,18 @@ async function assertInvitationBranch(
 }
 async function get(query: string, token: string) { return supabaseRequest(`/rest/v1/${query}`, { method: "GET" }, token); }
 async function insert(table: string, value: Json, token: string, prefer = "return=minimal") { await supabaseRequest(`/rest/v1/${table}`, { method: "POST", headers: { Prefer: prefer }, body: JSON.stringify(value) }, token); }
-async function patch(table: string, id: string, value: Json, token: string) { await supabaseRequest(`/rest/v1/${table}?id=eq.${id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify(value) }, token); }
+// PostgREST answers 204 when row-level security hid every row the filter
+// matched, so a write RLS actually refused comes back looking like success.
+// Asking for the row back turns that into the refusal it always was.
+async function patch(table: string, id: string, value: Json, token: string) {
+  const updated = await supabaseRequest<Json[]>(
+    `/rest/v1/${table}?id=eq.${id}&select=id`,
+    { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify(value) },
+    token,
+  );
+  if (!Array.isArray(updated) || updated.length === 0)
+    throw new LiveAccessError(403, "That record is not yours to change.");
+}
 function optional(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : null; }
 function required(value: unknown, label: string) { const parsed = optional(value); if (!parsed) throw new InputError(`${label} is required.`); return parsed; }
 function uuid(value: unknown, label: string) { const parsed = required(value, label); if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed)) throw new InputError(`${label} is invalid.`); return parsed; }

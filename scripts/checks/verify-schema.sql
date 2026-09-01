@@ -76,7 +76,16 @@ with expected(area, kind, name, detail) as (values
   ('Production completion (0031)', 'table',    'restore_drills',               'Evidence a backup was actually restored and validated'),
   ('Production completion (0031)', 'policy',   'payment_receipts.payment_receipts_client_read', 'A client reads only the receipts issued on their own invoices'),
   ('Production completion (0031)', 'function', 'respond_to_appointment',       'Staff confirm, reschedule or decline a client''s appointment request'),
-  ('Production completion (0031)', 'function', 'transfer_staff_ownership',     'Moves a departing staff member''s open cases, tasks and enquiries before removal')
+  ('Production completion (0031)', 'function', 'transfer_staff_ownership',     'Moves a departing staff member''s open cases, tasks and enquiries before removal'),
+  ('Branch/case-team scope (0032)', 'function', 'can_access_branch',           'A branch admin or manager is scoped to their own branch'),
+  ('Branch/case-team scope (0032)', 'function', 'can_access_case',             'Case visibility: owner, supervisor or an explicit collaborator, not every case a client has'),
+  ('Branch/case-team scope (0032)', 'column',   'commission_claims.branch_id', 'A commission claim is scoped to the branch that earned it'),
+  ('Branch/case-team scope (0032)', 'policy',   'client_user_links.client_links_write', 'A branch admin or manager links a portal login only within their own branch'),
+  ('Case creation scope fix (0033)', 'policy',    'cases.cases_scoped_write',    'A brand new case is checked against its own owner/branch columns, not a self-referencing lookup that could never see it'),
+  ('Case cover visibility (0034)', 'function',  'can_view_case',               'The case board stays branch-wide read for cover and handover, distinct from the narrower working-detail boundary'),
+  ('Case cover visibility (0034)', 'function',  'can_access_client',           'Restored to 0018''s branch-wide read boundary; can_modify_client remains the separate, narrower write boundary'),
+  ('Case cover visibility (0034)', 'function',  'can_modify_client',           'Restored to the owner/case-team write boundary, independent of the now-wider can_access_client read boundary'),
+  ('Case cover visibility (0034)', 'policy',    'invoices.invoices_scoped_select', 'A client-level invoice''s finance detail stays case-team scoped even though the case itself is branch-visible')
 )
 select
   e.area,

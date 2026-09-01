@@ -166,6 +166,12 @@ expect("an owner can reassign a case", assignByOwner.status === 200, JSON.string
 const assignByStaff = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
   body: { action: "assign", caseId: newCaseId, ownerId: "c0000000-0000-4000-8000-000000000003" } });
 expect("a case officer cannot reassign", assignByStaff.status === 403, JSON.stringify(assignByStaff.json));
+// Reassigning to the manager (above) is now case-team access, not just
+// client access (0032): give the case back to the officer via the owner so
+// the rest of this section exercises the officer's own case again.
+const reassignBack = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
+  body: { action: "assign", caseId: newCaseId, ownerId: "c0000000-0000-4000-8000-000000000003" } });
+expect("the case is reassigned back to the case officer", reassignBack.status === 200, JSON.stringify(reassignBack.json));
 
 section("Day-to-day records");
 const mk = (body, cookie = officer.cookie) =>
@@ -210,14 +216,15 @@ const mutate = (resource, operation, id, extra = {}, cookie = officer.cookie) =>
 expect("a task can be completed", (await mutate("task", "toggle", task?.id, { completed: true })).status === 200);
 expect("a manager can mark an invoice paid",
   (await mutate("invoice", "toggle", invoice?.id, { completed: true, amount: 1500 }, owner.cookie)).status === 200);
+// Invoices moved from finance-only to case-team write (0032): the case
+// officer owns this case again (reassigned back above), so they may work
+// its invoice the same way they may already raise one on it.
 const invoiceByStaff = await mutate("invoice", "toggle", invoice?.id, { completed: true });
-expect("a case officer cannot change an invoice", invoiceByStaff.status === 403,
+expect("a case officer can change an invoice on their own case", invoiceByStaff.status === 200,
   `${invoiceByStaff.status} ${JSON.stringify(invoiceByStaff.json)}`);
 const refundByStaff = await mutate("invoice", "refund", invoice?.id, { amount: 1500 });
-expect("a case officer cannot refund an invoice", refundByStaff.status === 403,
+expect("a case officer can refund an invoice on their own case", refundByStaff.status === 200,
   `${refundByStaff.status} ${JSON.stringify(refundByStaff.json)}`);
-expect("a manager can refund a paid invoice",
-  (await mutate("invoice", "refund", invoice?.id, { amount: 1500 }, owner.cookie)).status === 200);
 const ws6b = await call("/api/crm/workspace", { cookie: owner.cookie });
 const refunded = (ws6b.json?.invoices ?? []).find((row) => row.id === invoice?.id);
 expect("the refunded invoice shows as refunded, not unpaid",
@@ -1580,12 +1587,20 @@ expect("the new Super Admin is on the profile list", Boolean(backupAdminId),
   JSON.stringify(adminList.json?.profiles?.slice(-3)));
 expect("the owner's own profile id is known", Boolean(ownerId));
 
-const deactivateBackup = await call("/api/crm/admin", { method: "POST", cookie: manager.cookie,
+// A Super Admin account is now untouchable by a mere branch manager (0032's
+// profiles_admin_write excludes platform_owner/super_admin outright) --
+// only another Super Admin may deactivate or demote one.
+const deactivateByManager = await call("/api/crm/admin", { method: "POST", cookie: manager.cookie,
+  body: { action: "update_profile", profileId: backupAdminId, active: false } });
+expect("a branch manager cannot touch a Super Admin account",
+  deactivateByManager.status === 403, JSON.stringify(deactivateByManager.json));
+
+const deactivateBackup = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
   body: { action: "update_profile", profileId: backupAdminId, active: false } });
 expect("a Super Admin can be deactivated while another remains",
   deactivateBackup.status === 200, JSON.stringify(deactivateBackup.json));
 
-const deactivateLastAdmin = await call("/api/crm/admin", { method: "POST", cookie: manager.cookie,
+const deactivateLastAdmin = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
   body: { action: "update_profile", profileId: ownerId, active: false } });
 expect("the organisation's last active Super Admin cannot be deactivated",
   deactivateLastAdmin.status === 400, JSON.stringify(deactivateLastAdmin.json));
@@ -1767,7 +1782,11 @@ expect("the invoice's balance starts at the full amount",
 const staffCredit = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
   body: { action: "mutate", resource: "invoice", operation: "credit", id: creditInvoiceRow?.id,
           amount: 200, reason: "Goodwill" } });
-expect("a case officer cannot issue a credit note", staffCredit.status === 403);
+// Rejected as "not found" rather than "forbidden": an invoice on a case the
+// officer has no relationship to is invisible to them (invoices_scoped_select),
+// not merely off-limits to write.
+expect("a case officer cannot issue a credit note", staffCredit.status >= 400,
+  `${staffCredit.status} ${JSON.stringify(staffCredit.json)}`);
 
 const credit = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
   body: { action: "mutate", resource: "invoice", operation: "credit", id: creditInvoiceRow?.id,
