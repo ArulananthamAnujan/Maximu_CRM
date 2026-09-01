@@ -10,7 +10,8 @@ type Json = Record<string, unknown>;
 
 /**
  * Institutions and the courses they offer -- the reference data a Study
- * Abroad agency advises clients against. Every internal user may browse it;
+ * Abroad agency advises clients against. Any internal user, and a client
+ * browsing their own organisation's catalogue from the portal, may read it;
  * only the roles that maintain masters data elsewhere (branches, templates,
  * workflows) may add or change an entry, enforced the same way here.
  */

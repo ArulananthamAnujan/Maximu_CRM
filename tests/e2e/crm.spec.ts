@@ -70,6 +70,24 @@ function caseRow(page: Page, name: string) {
   return page.locator(".richRow").filter({ hasText: name }).first();
 }
 
+/**
+ * Clicking a case row opens it in its own browser window (so an officer can
+ * work several cases side by side), not inline on the board it was opened
+ * from. Returns that window and its drawer.
+ */
+async function openCaseDrawer(page: Page, name: string) {
+  const row = caseRow(page, name);
+  await expect(row).toBeVisible({ timeout: 25_000 });
+  const [popup] = await Promise.all([
+    page.waitForEvent("popup"),
+    row.click(),
+  ]);
+  await popup.waitForLoadState();
+  const drawer = popup.locator(".caseDrawer");
+  await expect(drawer).toBeVisible({ timeout: 25_000 });
+  return { popup, drawer };
+}
+
 test("the sign-in page renders its form", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
@@ -134,21 +152,17 @@ test("an enquiry is created and opens as a case file with its tabs", async ({
   await expect(modal).toHaveCount(0, { timeout: 25_000 });
 
   await openEnquiries(page);
-  const row = caseRow(page, "Browser Created Client");
-  await expect(row).toBeVisible({ timeout: 25_000 });
-  await row.click();
-
-  const drawer = page.locator(".caseDrawer");
-  await expect(drawer).toBeVisible();
+  const { drawer } = await openCaseDrawer(page, "Browser Created Client");
   for (const tab of [
-    "Overview",
-    "Client",
+    "Case home",
+    "Client details",
     "Family",
-    "History",
+    "Background",
     "Applications",
     "Visa matter",
     "Documents",
-    "Timeline",
+    "Messages",
+    "Activity & notes",
     "Finance",
   ])
     await expect(drawer.getByRole("tab", { name: tab })).toBeVisible();
@@ -158,7 +172,7 @@ test("an enquiry is created and opens as a case file with its tabs", async ({
   await expect(
     drawer.getByRole("button", { name: /add application/i }),
   ).toBeVisible();
-  await drawer.getByRole("tab", { name: "Timeline" }).click();
+  await drawer.getByRole("tab", { name: "Activity & notes" }).click();
   await expect(drawer.getByPlaceholder(/record a call/i)).toBeVisible();
 });
 
@@ -167,21 +181,15 @@ test("the pipeline control moves a case to the next stage", async ({
 }) => {
   await signIn(page, OFFICER);
   await openEnquiries(page);
-  const row = caseRow(page, "Priya Sharma");
-  await expect(row).toBeVisible({ timeout: 25_000 });
-  await row.click();
-
-  const drawer = page.locator(".caseDrawer");
-  await expect(drawer).toBeVisible();
+  const { drawer } = await openCaseDrawer(page, "Priya Sharma");
   await expect(drawer.locator(".lifecycleTrack li.current")).toHaveText(
     /enquiry/i,
   );
   await drawer.getByRole("button", { name: /move to student/i }).click();
-  await expect(drawer).toHaveCount(0, { timeout: 25_000 });
-
-  // It has left Enquiries and arrived in Students.
-  await page.getByRole("button", { name: /^Students$/ }).click();
-  await expect(caseRow(page, "Priya Sharma")).toBeVisible({ timeout: 25_000 });
+  await expect(drawer.locator(".lifecycleTrack li.current")).toHaveText(
+    /student/i,
+    { timeout: 25_000 },
+  );
 });
 
 test("a manager is offered invoice creation", async ({ page }) => {
@@ -263,7 +271,7 @@ test("client messages go only to their Maximus case team", async ({ page }) => {
     modal.getByRole("heading", { name: "Message your case team" }),
   ).toBeVisible();
   await expect(modal.locator('input[name="to"]')).toHaveCount(0);
-  await expect(modal.getByDisplayValue("Your Maximus case team")).toBeVisible();
+  await expect(modal.getByLabel("To")).toHaveValue("Your Maximus case team");
   await expect(modal.locator('input[name="caseId"]')).toHaveValue(/.+/);
   await expect(
     modal.getByRole("button", { name: "Send message" }),
@@ -364,11 +372,7 @@ test("Defer is on the case pipeline and a case can be parked there", async ({
 }) => {
   await signIn(page, OFFICER);
   await createEnquiry(page, "Parked Student", "parked.student@example.test");
-  const row = caseRow(page, "Parked Student");
-  await expect(row).toBeVisible({ timeout: 25_000 });
-  await row.click();
-
-  const drawer = page.locator(".caseDrawer");
+  const { drawer } = await openCaseDrawer(page, "Parked Student");
   await expect(drawer.locator(".lifecycleTrack li")).toContainText([
     /enquiry/i,
     /student/i,
@@ -379,20 +383,14 @@ test("Defer is on the case pipeline and a case can be parked there", async ({
   ]);
 
   await drawer.getByRole("button", { name: /defer this case/i }).click();
-  await expect(drawer).toHaveCount(0, { timeout: 25_000 });
-
-  await page.getByRole("button", { name: /^Defer$/ }).click();
-  await expect(caseRow(page, "Parked Student")).toBeVisible({
-    timeout: 25_000,
-  });
+  await expect(drawer.locator(".lifecycleTrack li.current")).toHaveText(
+    /deferred/i,
+    { timeout: 25_000 },
+  );
 
   // And it resumes into whichever stage the work restarts at.
-  await caseRow(page, "Parked Student").click();
-  await expect(page.locator(".lifecycleTrack li.current")).toHaveText(
-    /deferred/i,
-  );
   await expect(
-    page.getByRole("button", { name: /resume in student/i }),
+    drawer.getByRole("button", { name: /resume in student/i }),
   ).toBeVisible();
 });
 
@@ -414,8 +412,7 @@ test("the visa expiry is asked for beside the move that needs it", async ({
   await expect(modal).toHaveCount(0, { timeout: 25_000 });
 
   await openEnquiries(page);
-  await caseRow(page, "Needs An Expiry").click();
-  const drawer = page.locator(".caseDrawer");
+  const { drawer } = await openCaseDrawer(page, "Needs An Expiry");
   // This one has an expiry, so the requirement is not in the way.
   await expect(drawer.locator(".lifecycleBlocker")).toHaveCount(0);
   await expect(
@@ -618,17 +615,17 @@ test("the case drawer keeps four tabs on a phone and the rest under More", async
   // On a phone the navigation is off-canvas until it is asked for.
   await page.getByRole("button", { name: "Open case navigation" }).click();
   await openEnquiries(page);
-  await caseRow(page, "Phone Sized").click();
-  const drawer = page.locator(".caseDrawer");
-  await expect(drawer).toBeVisible();
+  const { popup, drawer } = await openCaseDrawer(page, "Phone Sized");
+  // The case's own window starts at a desktop size; resize it the same way.
+  await popup.setViewportSize({ width: 390, height: 844 });
   await expect(drawer.getByRole("tab")).toHaveCount(4);
-  for (const tab of ["Overview", "Applications", "Documents", "Finance"])
+  for (const tab of ["Case home", "Applications", "Documents", "Messages"])
     await expect(drawer.getByRole("tab", { name: tab })).toBeVisible();
   // The rest are one control away, and selecting one shows it.
   const more = drawer.getByLabel("More case sections");
   await expect(more).toBeVisible();
   await more.selectOption("timeline");
-  await expect(drawer.getByRole("tab", { name: "Timeline" })).toBeVisible();
+  await expect(drawer.getByRole("tab", { name: "Activity & notes" })).toBeVisible();
   await expect(drawer.getByPlaceholder(/record a call/i)).toBeVisible();
 });
 
@@ -698,6 +695,10 @@ test("a staff account can be deactivated and brought back", async ({
 }) => {
   await signIn(page, OWNER);
   await page.getByRole("button", { name: /staff & masters/i }).click();
+  // The status filter defaults to Active, which would hide this row the
+  // moment it is deactivated -- widen it first so the row stays visible
+  // through both halves of the test.
+  await page.getByLabel("Status").selectOption("all");
   const row = page
     .locator(".boardTable tbody tr")
     .filter({ hasText: "colombo@maximus.test" })
@@ -732,13 +733,8 @@ test("a case officer sees a colleague's case but cannot change it", async ({
 }) => {
   await signIn(page, COLLEAGUE);
   await openEnquiries(page);
-  const row = caseRow(page, "Priya Sharma");
   // Visible, because cover and handover depend on it.
-  await expect(row).toBeVisible({ timeout: 25_000 });
-  await row.click();
-
-  const drawer = page.locator(".caseDrawer");
-  await expect(drawer).toBeVisible();
+  const { drawer } = await openCaseDrawer(page, "Priya Sharma");
   // The database would refuse a write here regardless, but the controls
   // themselves say so up front rather than letting somebody click into a
   // rejection: disabled, with the same explanation the database would give.

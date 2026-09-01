@@ -298,7 +298,17 @@ expect("a notification can be marked read",
     ? (await opsPost({ action: "read_notification", id: firstNotification.id })).status === 200
     : false,
   `notifications=${notes.json?.data?.length}`);
-const paidInvoice = ws6.json?.invoices?.[0];
+// ws6.invoices[0] is the invoice already marked paid, refunded and voided
+// above (the "Record updates and removal" section reuses that exact same
+// snapshot entry) -- raise a fresh, untouched one to record a real payment
+// against, rather than one whose balance is already zeroed out.
+const paymentInvoiceRaised = await mk({ action: "invoice", clientId: created.json?.clientId,
+  caseId: newCaseId, amount: "800", due: "2026-10-31" }, owner.cookie);
+expect("an invoice exists for the payment to be recorded against",
+  paymentInvoiceRaised.status === 200, JSON.stringify(paymentInvoiceRaised.json));
+const paymentWorkspace = await call("/api/crm/workspace", { cookie: officer.cookie });
+const paidInvoice = (paymentWorkspace.json?.invoices ?? [])
+  .find((row) => row.amount === 800 && row.paid === 0);
 const payment = paidInvoice
   ? await opsPost({ action: "record_payment", invoiceId: paidInvoice.id, amount: 500, method: "bank_transfer" }, owner.cookie)
   : { status: 0, json: { error: "no invoice to pay" } };
@@ -328,8 +338,15 @@ expect("an integration job can be queued", queue.status === 200, JSON.stringify(
 section("Course Finder");
 const cfByStaff = await call("/api/crm/course-finder", { cookie: officer.cookie });
 expect("staff can browse Course Finder", cfByStaff.status === 200, JSON.stringify(cfByStaff.json)?.slice(0, 200));
+// The catalogue is non-personal reference data (see migration 0030): a
+// client may browse it from their own portal, just never change it.
 const cfByClient = await call("/api/crm/course-finder", { cookie: student.cookie });
-expect("a client cannot reach Course Finder", cfByClient.status === 403);
+expect("a client can browse Course Finder read-only", cfByClient.status === 200,
+  JSON.stringify(cfByClient.json)?.slice(0, 200));
+const cfCreateByClient = await call("/api/crm/course-finder", { method: "POST", cookie: student.cookie,
+  body: { action: "create_institution", name: "Rogue University", country: "AU" } });
+expect("a client cannot add an institution", cfCreateByClient.status === 403,
+  `${cfCreateByClient.status} ${JSON.stringify(cfCreateByClient.json)}`);
 const cfCreateByStaff = await call("/api/crm/course-finder", { method: "POST", cookie: officer.cookie,
   body: { action: "create_institution", name: "Rogue University", country: "AU" } });
 expect("staff cannot add an institution", cfCreateByStaff.status === 403,
@@ -1459,8 +1476,10 @@ const lastSent = (gmailStubState.sentMessages ?? []).at(-1);
 const decodedRaw = lastSent
   ? Buffer.from(lastSent.raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8")
   : "";
+// The staff-side "to" is never trusted (see workspace/route.ts's "message"
+// action): the recipient is always resolved from the case's own client.
 expect("the message actually sent through Gmail carries the drafted subject",
-  decodedRaw.includes("Your visa application") && decodedRaw.includes("client@example.test"),
+  decodedRaw.includes("Your visa application") && decodedRaw.includes("gmail.test@example.test"),
   decodedRaw.slice(0, 200));
 
 const disconnect = await call("/api/crm/mailbox", { method: "POST", cookie: officer.cookie,

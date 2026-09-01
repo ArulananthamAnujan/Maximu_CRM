@@ -4,6 +4,17 @@ create schema if not exists auth;
 -- (pg_trgm and the like) away from public. A plain local Postgres cluster
 -- does not, so a migration that installs one into it fails here otherwise.
 create schema if not exists extensions;
+-- Real Supabase also provisions this schema, holding the buckets/objects
+-- tables behind file storage. A migration that registers a bucket (e.g. for
+-- backup evidence) fails here otherwise, the same way the extensions gap did.
+create schema if not exists storage;
+create table if not exists storage.buckets (
+  id text primary key,
+  name text not null,
+  public boolean not null default false,
+  file_size_limit bigint,
+  allowed_mime_types text[]
+);
 create table if not exists auth.users (
   id uuid primary key,
   email text

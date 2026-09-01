@@ -10914,12 +10914,16 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, []);
   useEffect(() => {
-    if (!caseWindowId || selected?.dbId === caseWindowId) return;
+    if (!caseWindowId) return;
     const record = cases.find((entry) => entry.dbId === caseWindowId);
-    if (!record) return;
+    // Keeps a case window showing the freshest record rather than only ever
+    // selecting once: without this, a stage move (which clears the selection
+    // so the drawer can rebuild against reloaded data) never picks the new
+    // record back up, and the pipeline is left showing the stage it just left.
+    if (!record || record === selected) return;
     const timer = window.setTimeout(() => setSelected(record), 0);
     return () => window.clearTimeout(timer);
-  }, [caseWindowId, cases, selected?.dbId]);
+  }, [caseWindowId, cases, selected]);
   const openCaseWorkspace = useCallback((record: CaseRecord) => {
     if (!record.dbId) return;
     const target = new URL(window.location.href);

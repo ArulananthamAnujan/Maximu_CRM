@@ -22,6 +22,65 @@ const columnExpr = (v) => {
   const [base, ...path] = String(v).split("->>");
   return path.reduce((expr, key) => `${expr}->>${lit(key)}`, ident(base));
 };
+const columnExprAliased = (alias, v) => {
+  const [base, ...path] = String(v).split("->>");
+  return path.reduce((expr, key) => `${expr}->>${lit(key)}`, `${ident(alias)}.${ident(base)}`);
+};
+
+// Splits a PostgREST list (a select clause, an `or=(...)` body) on top-level
+// commas only, so a nested embed's own comma-separated columns stay together.
+function splitTopLevel(str) {
+  const parts = [];
+  let depth = 0, current = "";
+  for (const ch of str) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if (ch === "," && depth === 0) { parts.push(current); current = ""; continue; }
+    current += ch;
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
+// `profiles!case_collaborators_profile_id_fkey(display_name,email)` and
+// `email_threads!inner(case_id,subject)` are the two embed shapes this app
+// sends: a to-one resource named by an explicit foreign key, or by join type.
+function parseSelectItem(raw) {
+  const trimmed = raw.trim();
+  const m = /^(\w+)(?:!(\w+))?\((.*)\)$/.exec(trimmed);
+  if (!m) return { kind: "column", name: trimmed };
+  const [, embedTable, hint, subcols] = m;
+  return {
+    kind: "embed",
+    table: embedTable,
+    hint,
+    inner: hint === "inner",
+    columns: splitTopLevel(subcols).map((c) => c.trim()),
+  };
+}
+
+// Resolves which column on `baseTable` points at which column on
+// `targetTable`, either via an explicit foreign key constraint name or (for
+// a bare `!inner`/`!left` hint) whichever single foreign key connects them.
+const fkCache = new Map();
+async function resolveForeignKey(baseTable, targetTable, hint) {
+  const key = `${baseTable}|${targetTable}|${hint || ""}`;
+  if (fkCache.has(key)) return fkCache.get(key);
+  const constraintFilter = hint && hint !== "inner" && hint !== "left"
+    ? ` and c.conname = ${lit(hint)}` : "";
+  const out = await sql(
+    `select json_build_object('local', a.attname, 'foreign', af.attname)::text` +
+    ` from pg_constraint c` +
+    ` join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]` +
+    ` join pg_attribute af on af.attrelid = c.confrelid and af.attnum = c.confkey[1]` +
+    ` where c.contype = 'f' and c.conrelid = ${lit(`public.${baseTable}`)}::regclass` +
+    ` and c.confrelid = ${lit(`public.${targetTable}`)}::regclass${constraintFilter} limit 1`,
+    null, false);
+  if (!out) throw new Error(`no foreign key found from ${baseTable} to ${targetTable}${hint ? ` via ${hint}` : ""}`);
+  const fk = JSON.parse(out);
+  fkCache.set(key, fk);
+  return fk;
+}
 
 // `asAuth` false runs as the database owner, used only for the auth endpoints
 // that Supabase itself would serve. Everything else runs as `authenticated`
@@ -92,10 +151,9 @@ function toSql(value, type) {
 }
 
 // PostgREST filter -> SQL predicate. Supports the operators this app sends.
-function predicate(column, spec) {
+function predicateOn(target, spec) {
   const [op, ...rest] = spec.split(".");
   const value = rest.join(".");
-  const target = columnExpr(column);
   if (op === "eq") return `${target} = ${lit(value)}`;
   if (op === "neq") return `${target} <> ${lit(value)}`;
   if (op === "is") return `${target} is ${value === "null" ? "null" : value}`;
@@ -105,20 +163,14 @@ function predicate(column, spec) {
   if (op === "lte") return `${target} <= ${lit(value)}`;
   throw new Error(`unsupported filter operator: ${op}`);
 }
+function predicate(column, spec) {
+  return predicateOn(columnExpr(column), spec);
+}
 
 // `or=(a.ilike.*x*,b.ilike.*x*)` -> (a ilike '%x%' or b ilike '%x%')
 function orPredicate(raw) {
   const inner = raw.replace(/^\(/, "").replace(/\)$/, "");
-  const parts = [];
-  let depth = 0, current = "";
-  for (const ch of inner) {
-    if (ch === "(") depth++;
-    if (ch === ")") depth--;
-    if (ch === "," && depth === 0) { parts.push(current); current = ""; continue; }
-    current += ch;
-  }
-  if (current) parts.push(current);
-  return `(${parts.map((p) => {
+  return `(${splitTopLevel(inner).map((p) => {
     const idx = p.indexOf(".");
     return predicate(p.slice(0, idx), p.slice(idx + 1));
   }).join(" or ")})`;
@@ -142,6 +194,42 @@ function buildOrder(order) {
     const dir = bits[1] === "desc" ? "desc" : "asc";
     const nulls = bits[2] === "nullslast" ? " nulls last" : bits[2] === "nullsfirst" ? " nulls first" : "";
     return `${ident(column)} ${dir}${nulls}`;
+  });
+  return ` order by ${parts.join(", ")}`;
+}
+
+// The embed-query path aliases the base table `t`, and a dot-qualified
+// filter (`email_threads.case_id=eq...`) reaches into a joined embed table
+// by the same alias an embed was given, so both need every predicate and
+// order column resolved against an alias rather than the bare column PostgREST
+// would otherwise apply directly to the (unaliased) target table.
+function buildWhereQualified(params, embedAliasByTable) {
+  const clauses = [];
+  for (const [key, value] of params) {
+    if (["select", "order", "limit", "offset"].includes(key)) continue;
+    if (key === "or") { clauses.push(orPredicate(value)); continue; }
+    const dot = key.indexOf(".");
+    if (dot !== -1) {
+      const tbl = key.slice(0, dot);
+      const col = key.slice(dot + 1);
+      const alias = embedAliasByTable.get(tbl);
+      if (!alias) throw new Error(`filter references unknown embedded table: ${tbl}`);
+      clauses.push(predicateOn(columnExprAliased(alias, col), value));
+    } else {
+      clauses.push(predicateOn(columnExprAliased("t", key), value));
+    }
+  }
+  return clauses.length ? ` where ${clauses.join(" and ")}` : "";
+}
+
+function buildOrderQualified(order) {
+  if (!order) return "";
+  const parts = order.split(",").map((piece) => {
+    const bits = piece.split(".");
+    const column = bits[0];
+    const dir = bits[1] === "desc" ? "desc" : "asc";
+    const nulls = bits[2] === "nullslast" ? " nulls last" : bits[2] === "nullsfirst" ? " nulls first" : "";
+    return `t.${ident(column)} ${dir}${nulls}`;
   });
   return ` order by ${parts.join(", ")}`;
 }
@@ -258,11 +346,45 @@ const server = http.createServer((req, res) => {
 
       if (req.method === "GET") {
         const select = url.searchParams.get("select") || "*";
-        const cols = select === "*" ? "*" : select.split(",").map((c) => ident(c.trim())).join(", ");
         const limit = url.searchParams.get("limit");
+        const items = select === "*" ? null : splitTopLevel(select).map(parseSelectItem);
+        const embeds = items ? items.filter((i) => i.kind === "embed") : [];
+
+        if (embeds.length === 0) {
+          const cols = select === "*" ? "*" : items.map((c) => ident(c.name)).join(", ");
+          const out = await sql(
+            `select coalesce(json_agg(t)::text,'[]') from (select ${cols} from public.${ident(table)}${where}` +
+            `${buildOrder(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""}) t`,
+            uid, !isServiceRole);
+          return send(200, JSON.parse(out || "[]"));
+        }
+
+        // An embedded-resource select (`profiles!fkey(...)`, `x!inner(...)`):
+        // resolve each embed's foreign key, join it in, and build each row's
+        // JSON directly rather than the plain path's json_agg(t) shortcut.
+        const embedAliasByTable = new Map();
+        const joins = [];
+        const pairs = items
+          .filter((i) => i.kind === "column")
+          .map((c) => `${lit(c.name)}, t.${ident(c.name)}`);
+        for (const embed of embeds) {
+          const alias = `${embed.table}_e`;
+          embedAliasByTable.set(embed.table, alias);
+          const fk = await resolveForeignKey(table, embed.table, embed.hint);
+          joins.push(
+            `${embed.inner ? "inner" : "left"} join public.${ident(embed.table)} ${ident(alias)}` +
+            ` on ${ident(alias)}.${ident(fk.foreign)} = t.${ident(fk.local)}`);
+          const embedCols = embed.columns.map((c) => `${lit(c)}, ${ident(alias)}.${ident(c)}`).join(", ");
+          pairs.push(
+            `${lit(embed.table)}, case when ${ident(alias)}.${ident(fk.foreign)} is null then null` +
+            ` else json_build_object(${embedCols}) end`);
+        }
+        const qualifiedWhere = buildWhereQualified(params, embedAliasByTable);
         const out = await sql(
-          `select coalesce(json_agg(t)::text,'[]') from (select ${cols} from public.${ident(table)}${where}` +
-          `${buildOrder(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""}) t`,
+          `select coalesce(json_agg(row_obj)::text,'[]') from (` +
+          `select json_build_object(${pairs.join(", ")}) as row_obj` +
+          ` from public.${ident(table)} t ${joins.join(" ")}${qualifiedWhere}` +
+          `${buildOrderQualified(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""}) x`,
           uid, !isServiceRole);
         return send(200, JSON.parse(out || "[]"));
       }

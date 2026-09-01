@@ -64,7 +64,19 @@ with expected(area, kind, name, detail) as (values
   ('Staff invoicing (0026)', 'policy', 'invoices.invoices_staff_create', 'A case officer may raise an invoice for a client they can already modify'),
   ('Email templates (0027)', 'table',    'email_templates',                  'Editable wording for the document, invoice and portal-welcome emails a client is sent'),
   ('Email templates (0027)', 'policy',   'email_templates.email_templates_admin_write', 'Same masters-data access shape as institutions and courses'),
-  ('Email templates (0027)', 'function', 'seed_default_email_templates',     'Gives every organisation the three starting email templates')
+  ('Email templates (0027)', 'function', 'seed_default_email_templates',     'Gives every organisation the three starting email templates'),
+  ('Case collaboration (0028)', 'table',  'case_collaborators',               'Extra staff working a case alongside its owner'),
+  ('Case collaboration (0028)', 'policy', 'case_collaborators.case_collaborators_manage', 'Only the case owner or a manager adds or removes a collaborator'),
+  ('Gmail case inbox (0029)', 'index',    'email_messages_provider_message_unique', 'A synced Gmail message is never imported twice'),
+  ('Course catalogue live sync (0030)', 'table',    'course_catalog_sync_runs',  'One row per catalogue sync attempt, success or failure'),
+  ('Course catalogue live sync (0030)', 'function', 'search_course_catalog_v2',  'Student-safe catalogue search with advising filters and source freshness'),
+  ('Course catalogue live sync (0030)', 'column',   'institutions.country_code', 'Normalised ISO country code behind the country filter'),
+  ('Production completion (0031)', 'table',    'organisation_settings',        'Owner-managed currency, tax and numbering configuration'),
+  ('Production completion (0031)', 'table',    'backup_runs',                  'Evidence a database backup actually completed'),
+  ('Production completion (0031)', 'table',    'restore_drills',               'Evidence a backup was actually restored and validated'),
+  ('Production completion (0031)', 'policy',   'payment_receipts.payment_receipts_client_read', 'A client reads only the receipts issued on their own invoices'),
+  ('Production completion (0031)', 'function', 'respond_to_appointment',       'Staff confirm, reschedule or decline a client''s appointment request'),
+  ('Production completion (0031)', 'function', 'transfer_staff_ownership',     'Moves a departing staff member''s open cases, tasks and enquiries before removal')
 )
 select
   e.area,
