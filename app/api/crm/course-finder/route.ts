@@ -70,8 +70,12 @@ export async function GET(request: Request) {
         { method: "GET" },
         token,
       );
+    const sources = await supabaseRequest<Json[]>(
+      "/rest/v1/course_source_registry?select=country_code,country_name,source_system,source_name,source_url,authority_type,coverage,sync_mode,status,last_success_at,last_error&order=country_name.asc",
+      { method: "GET" }, token,
+    ).catch(() => []);
     return appendRefreshCookies(
-      Response.json({ ok: true, ...catalog, institutions, page, limit }),
+      Response.json({ ok: true, ...catalog, institutions, sources, page, limit }),
       session.refreshed,
       request,
     );

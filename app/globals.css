@@ -9745,4 +9745,10 @@ body { font-size: 14px; }
   white-space: nowrap;
   clip-path: inset(50%);
 }
+
+.catalogueSourceCoverage { margin: 12px 0 18px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.catalogueSourceCoverage summary { cursor: pointer; font-weight: 700; }
+.sourceCoverageGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-top: 12px; }
+.sourceCoverageGrid > div { display: grid; gap: 5px; padding: 11px; border-radius: 10px; background: var(--surface-soft, rgba(127,127,127,.06)); }
+.sourceCoverageGrid span, .sourceCoverageGrid a { font-size: 12px; }
 .recordModal label > small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.4; }

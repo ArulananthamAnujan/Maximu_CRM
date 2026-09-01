@@ -148,9 +148,11 @@ async function syncFeed(feed, org) {
     });
     await inBatches(courses, 200, (body) => supabase("courses?on_conflict=organisation_id,source_system,source_key", { method: "POST", body }));
     if (runId) await supabase(`course_catalog_sync_runs?id=eq.${runId}`, { method: "PATCH", body: { status: "completed", institutions_seen: normalised.institutions.length, courses_seen: courses.length, completed_at: new Date().toISOString() } });
+    await supabase(`course_source_registry?organisation_id=eq.${org}&source_system=eq.${encodeURIComponent(feed.source)}`, { method: "PATCH", body: { status: "active", last_success_at: new Date().toISOString(), last_error: null } }).catch(() => null);
     return { source: feed.source, institutions: normalised.institutions.length, courses: courses.length };
   } catch (error) {
     if (runId) await supabase(`course_catalog_sync_runs?id=eq.${runId}`, { method: "PATCH", body: { status: "failed", error_message: String(error?.message || error).slice(0, 1000), completed_at: new Date().toISOString() } }).catch(() => null);
+    await supabase(`course_source_registry?organisation_id=eq.${org}&source_system=eq.${encodeURIComponent(feed.source)}`, { method: "PATCH", body: { status: "error", last_error: String(error?.message || error).slice(0, 1000) } }).catch(() => null);
     throw error;
   }
 }

@@ -195,6 +195,8 @@ type AppointmentRecord = {
   date: string;
   time: string;
   type: string;
+  status: string;
+  responseNote?: string;
 };
 type DocumentRecord = {
   id: string;
@@ -624,8 +626,8 @@ const featureCoverage = [
   ],
   [
     "Master configuration",
-    "Partners, statuses, document checklists, visa types, commissions, courses and institutions",
-    "Next working screen",
+    "Organisation defaults, branches, staff, statuses, document checklists, workflows, courses and institutions",
+    "Working model + backend",
   ],
   [
     "Daily workflow",
@@ -2509,12 +2511,14 @@ function CalendarView({
   setItems,
   setActive,
   onBulkAction,
+  onRespond,
 }: {
   items: AppointmentRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: AppointmentRecord[]) => void;
   setActive: (x: ModuleKey) => void;
   onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
+  onRespond: (appointment: AppointmentRecord, status: "scheduled" | "declined") => void;
 }) {
   const [calendarNow] = useState(() => new Date());
   const [connection, setConnection] = useState<MailboxStatus | null>(null);
@@ -2763,6 +2767,13 @@ function CalendarView({
                     {a.client || "Internal"} · {a.type}
                   </span>
                 </div>
+                <Status value={a.status} />
+                {a.status === "requested" ? (
+                  <div className="staffActions">
+                    <button className="linkButton" onClick={() => onRespond(a, "scheduled")}>Confirm</button>
+                    <button className="linkButton dangerLink" onClick={() => onRespond(a, "declined")}>Decline</button>
+                  </div>
+                ) : null}
                 <button
                   className="iconButton"
                   onClick={() => setItems(items.filter((x) => x.id !== a.id))}
@@ -3215,6 +3226,8 @@ function FinanceView({
   canManage,
   onRefund,
   onCreditNote,
+  onPayment,
+  onReminder,
   onBulkAction,
 }: {
   items: InvoiceRecord[];
@@ -3225,6 +3238,8 @@ function FinanceView({
   canManage: boolean;
   onRefund: (invoice: InvoiceRecord) => void;
   onCreditNote: (invoice: InvoiceRecord) => void;
+  onPayment: (invoice: InvoiceRecord) => void;
+  onReminder: (invoice: InvoiceRecord) => void;
   onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
@@ -3339,20 +3354,10 @@ function FinanceView({
                 <>
                   <button
                     className="ghostButton"
-                    onClick={() =>
-                      setItems(
-                        items.map((x) =>
-                          x.id === i.id
-                            ? {
-                                ...x,
-                                status: x.status === "Paid" ? "Unpaid" : "Paid",
-                              }
-                            : x,
-                        ),
-                      )
-                    }
+                    onClick={() => onPayment(i)}
+                    disabled={i.balance <= 0 || i.status === "Void"}
                   >
-                    {i.status === "Paid" ? "Mark unpaid" : "Record payment"}
+                    Record payment
                   </button>
                   {i.status === "Paid" && (
                     <button className="ghostButton" onClick={() => onRefund(i)}>
@@ -3364,6 +3369,9 @@ function FinanceView({
                       Credit note
                     </button>
                   )}
+                  {i.balance > 0 && i.status !== "Void" ? (
+                    <button className="ghostButton" onClick={() => onReminder(i)}>Send reminder</button>
+                  ) : null}
                   <button
                     className="iconButton"
                     onClick={() => setItems(items.filter((x) => x.id !== i.id))}
@@ -4904,6 +4912,16 @@ type CourseCatalogueHealth = {
   missing_website_count: number;
   last_verified_at: string | null;
 };
+type CourseSourceStatus = {
+  country_code: string;
+  country_name: string;
+  source_name: string;
+  source_url: string;
+  coverage: string;
+  sync_mode: string;
+  status: string;
+  last_success_at: string | null;
+};
 
 function cleanCatalogueText(value: string | null | undefined, fallback = "Not supplied") {
   if (!value?.trim()) return fallback;
@@ -4943,6 +4961,7 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
   const [fields, setFields] = useState<CourseFacet[]>([]);
   const [institutions, setInstitutions] = useState<CourseInstitution[]>([]);
   const [health, setHealth] = useState<CourseCatalogueHealth | null>(null);
+  const [sources, setSources] = useState<CourseSourceStatus[]>([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -5004,6 +5023,7 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
       setFields(result.fields || []);
       setInstitutions(result.institutions || []);
       setHealth(result.health || null);
+      setSources(result.sources || []);
       setTotal(Number(result.total) || 0);
       setError("");
     } catch (reason) {
@@ -5054,6 +5074,21 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
           </span>
         </div>
       )}
+      {canManage && sources.length > 0 ? (
+        <details className="catalogueSourceCoverage">
+          <summary>Official source coverage by destination</summary>
+          <div className="sourceCoverageGrid">
+            {sources.map((source) => (
+              <div key={`${source.country_code}-${source.source_name}`}>
+                <strong>{source.country_name}</strong>
+                <span>{humanise(source.coverage)} · {humanise(source.sync_mode)}</span>
+                <Status value={source.status} />
+                <a href={source.source_url} target="_blank" rel="noreferrer">{source.source_name}</a>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
       <div className="courseFinderFilters courseFinderFilterGrid">
         <label className="searchField courseFinderMainSearch">Course, institution, campus or course code<input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search Bachelor of Nursing, Monash, CRICOS code…" /></label>
         <label>Destination<select value={country} onChange={(e) => { setCountry(e.target.value); setPage(1); }}><option value="">All countries</option>{countries.map((item) => <option value={item.value} key={item.value}>{item.value} ({item.amount.toLocaleString()})</option>)}</select></label>
@@ -6154,6 +6189,18 @@ type AdminBranch = {
   country_code: string;
   active: boolean;
 };
+type MasterSettings = {
+  timezone: string;
+  default_currency: string;
+  tax_label: string;
+  tax_rate: number;
+  invoice_prefix: string;
+  receipt_prefix: string;
+  credit_note_prefix: string;
+  payment_terms_days: number;
+  overdue_reminders_enabled: boolean;
+  appointment_duration_minutes: number;
+};
 
 type ClientSearchResult = { id: string; title: string; subtitle: string };
 
@@ -6336,6 +6383,8 @@ function AdminView({
   const [clientLinks, setClientLinks] = useState<
     { profile_id: string; client_id: string }[]
   >([]);
+  const [settings, setSettings] = useState<MasterSettings | null>(null);
+  const [replacementByProfile, setReplacementByProfile] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
@@ -6359,6 +6408,7 @@ function AdminView({
       invitations: AdminInvitation[];
       branches: AdminBranch[];
       clientLinks: { profile_id: string; client_id: string }[];
+      settings: MasterSettings | null;
     };
   };
   const apply = (result: {
@@ -6366,11 +6416,13 @@ function AdminView({
     invitations: AdminInvitation[];
     branches: AdminBranch[];
     clientLinks: { profile_id: string; client_id: string }[];
+    settings: MasterSettings | null;
   }) => {
     setProfiles(result.profiles ?? []);
     setInvitations(result.invitations ?? []);
     setAdminBranches(result.branches ?? []);
     setClientLinks(result.clientLinks ?? []);
+    setSettings(result.settings ?? null);
   };
   const reload = async () => {
     try {
@@ -6469,6 +6521,37 @@ function AdminView({
 
   return (
     <section className="adminStack">
+      {isOwner && settings ? (
+        <article className="panel listPanel">
+          <div className="panelHead"><div><span className="kicker">MASTER CONFIGURATION</span><h2>Organisation defaults</h2></div></div>
+          <p className="coverageIntro">These values control new invoices, receipts, reminders and appointments across every branch.</p>
+          <form className="stackedForm" onSubmit={async (event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            await send({
+              action: "update_settings",
+              timezone: data.get("timezone"), defaultCurrency: data.get("defaultCurrency"),
+              taxLabel: data.get("taxLabel"), taxRate: Number(data.get("taxRate")),
+              invoicePrefix: data.get("invoicePrefix"), receiptPrefix: data.get("receiptPrefix"),
+              creditNotePrefix: data.get("creditNotePrefix"), paymentTermsDays: Number(data.get("paymentTermsDays")),
+              appointmentDurationMinutes: Number(data.get("appointmentDurationMinutes")),
+              overdueRemindersEnabled: data.get("overdueRemindersEnabled") === "on",
+            });
+          }}>
+            <label>Timezone<input name="timezone" required defaultValue={settings.timezone} /></label>
+            <label>Currency<input name="defaultCurrency" required maxLength={3} defaultValue={settings.default_currency} /></label>
+            <label>Tax label<input name="taxLabel" required defaultValue={settings.tax_label} /></label>
+            <label>Tax rate<input name="taxRate" type="number" min="0" max="1" step="0.0001" required defaultValue={settings.tax_rate} /></label>
+            <label>Invoice prefix<input name="invoicePrefix" required defaultValue={settings.invoice_prefix} /></label>
+            <label>Receipt prefix<input name="receiptPrefix" required defaultValue={settings.receipt_prefix} /></label>
+            <label>Credit-note prefix<input name="creditNotePrefix" required defaultValue={settings.credit_note_prefix} /></label>
+            <label>Payment terms (days)<input name="paymentTermsDays" type="number" min="0" max="365" required defaultValue={settings.payment_terms_days} /></label>
+            <label>Appointment duration (minutes)<input name="appointmentDurationMinutes" type="number" min="15" max="480" required defaultValue={settings.appointment_duration_minutes} /></label>
+            <label className="checkboxLabel"><input name="overdueRemindersEnabled" type="checkbox" defaultChecked={settings.overdue_reminders_enabled} /> Automatic overdue reminders</label>
+            <button className="primaryButton" disabled={working}><Check size={15} /> Save master configuration</button>
+          </form>
+        </article>
+      ) : null}
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
@@ -6745,16 +6828,22 @@ function AdminView({
                             {person.active ? "Deactivate" : "Reactivate"}
                           </button>
                           {isOwner && !person.active && (
-                            <button
-                              className="linkButton dangerLink"
-                              disabled={working}
-                              onClick={() => {
-                                if (confirm(`Remove ${person.display_name}'s login? Their historical actions remain, but their email can be used to create a new account later. Open cases must be transferred first.`))
-                                  void send({ action: "remove_staff", profileId: person.id });
-                              }}
-                            >
-                              Remove account
-                            </button>
+                            <>
+                              <select aria-label={`Replacement owner for ${person.display_name}`} value={replacementByProfile[person.id] ?? ""} onChange={(event) => setReplacementByProfile((current) => ({ ...current, [person.id]: event.target.value }))}>
+                                <option value="">No active work to transfer</option>
+                                {profiles.filter((candidate) => candidate.active && candidate.id !== person.id && candidate.level !== "student").map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.display_name}</option>)}
+                              </select>
+                              <button
+                                className="linkButton dangerLink"
+                                disabled={working}
+                                onClick={() => {
+                                  if (confirm(`Remove ${person.display_name}'s login and transfer all open responsibilities to the selected replacement? Historical actions will remain attributed to ${person.display_name}.`))
+                                    void send({ action: "remove_staff", profileId: person.id, replacementProfileId: replacementByProfile[person.id] || null });
+                                }}
+                              >
+                                Transfer and remove
+                              </button>
+                            </>
                           )}
                         </div>
                       )}
@@ -11262,6 +11351,22 @@ export default function Home() {
         setItems={syncAppointments}
         setActive={setActive}
         onBulkAction={bulkMutateRemote}
+        onRespond={(appointment, status) => {
+          const note = window.prompt(
+            status === "scheduled"
+              ? "Confirmation note for the client (optional)"
+              : "Reason or alternative time for the client",
+            appointment.responseNote || "",
+          );
+          if (note === null) return;
+          void postOperation("appointment_response", {
+            appointmentId: appointment.id,
+            status,
+            date: appointment.date,
+            time: appointment.time,
+            note,
+          });
+        }}
       />
     );
   else if (active === "documents")
@@ -11302,9 +11407,28 @@ export default function Home() {
                 `Refund $${invoice.paid.toLocaleString()} to ${invoice.client}? This is recorded against the invoice and cannot be undone here.`,
               )
             )
-              void mutateRemote("invoice", "refund", invoice.id, {
+              void postOperation("record_refund", {
+                invoiceId: invoice.id,
                 amount: invoice.paid,
               });
+          }}
+          onPayment={(invoice) => {
+            const amount = window.prompt(
+              `Payment received for ${invoice.invoiceNumber}. Outstanding ${invoice.currency} ${invoice.balance.toFixed(2)}`,
+              invoice.balance.toFixed(2),
+            );
+            if (amount === null) return;
+            const parsed = Number(amount);
+            if (!Number.isFinite(parsed) || parsed <= 0 || parsed > invoice.balance) {
+              say("Enter a payment no greater than the outstanding balance.");
+              return;
+            }
+            const reference = window.prompt("Payment reference (bank reference, receipt ID or transaction ID)", "") ?? "";
+            void postOperation("record_payment", { invoiceId: invoice.id, amount: parsed, currency: invoice.currency, reference });
+          }}
+          onReminder={(invoice) => {
+            if (confirm(`Queue an overdue reminder for ${invoice.invoiceNumber}? It will use the current email in the case profile.`))
+              void postOperation("queue_overdue_reminder", { invoiceId: invoice.id, reminderType: "manual" });
           }}
           onCreditNote={(invoice) => {
             const remaining = invoice.balance;

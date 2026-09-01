@@ -328,6 +328,8 @@ export async function GET(request: Request) {
         date: dateOnly(row.starts_at),
         time: timeOnly(row.starts_at),
         type: row.appointment_type,
+        status: row.status ?? "scheduled",
+        responseNote: row.response_note ?? "",
       })),
       documents: documents.map((row) => ({
         id: row.id,
@@ -666,6 +668,7 @@ export async function POST(request: Request) {
           starts_at: startsAt.toISOString(),
           ends_at: new Date(startsAt.getTime() + 30 * 60 * 1000).toISOString(),
           status: "requested",
+          requested_by: actor,
         },
         token,
       );
@@ -690,6 +693,44 @@ export async function POST(request: Request) {
         session.refreshed,
         request,
       );
+    }
+
+    if (action === "appointment_response") {
+      if (session.identity.role === "client")
+        throw new LiveAccessError(403, "Only the case team can respond to appointment requests.");
+      const appointmentId = required(body.appointmentId, "Appointment");
+      const status = required(body.status, "Response").toLowerCase();
+      if (!["scheduled", "declined", "cancelled"].includes(status))
+        throw new InputError("Choose confirm, decline or cancel.");
+      const date = nullable(body.date);
+      const time = nullable(body.time);
+      const start = date && time ? new Date(`${date}T${time}:00`) : null;
+      if (start && Number.isNaN(start.getTime())) throw new InputError("The appointment time is invalid.");
+      const duration = Math.min(480, Math.max(15, Number(body.durationMinutes ?? 30)));
+      const result = await supabaseRequest<Json>(
+        "/rest/v1/rpc/respond_to_appointment",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            p_appointment_id: appointmentId,
+            p_status: status,
+            p_starts_at: start?.toISOString() ?? null,
+            p_ends_at: start ? new Date(start.getTime() + duration * 60 * 1000).toISOString() : null,
+            p_note: nullable(body.note),
+          }),
+        },
+        token,
+      );
+      if (status === "scheduled") {
+        await syncAppointmentToCalendar(
+          String(result.owner_id ?? actor), appointmentId,
+          String(result.title ?? "Client appointment"),
+          String(result.starts_at ?? start?.toISOString()),
+          String(result.ends_at ?? (start ? new Date(start.getTime() + duration * 60000).toISOString() : "")),
+          token,
+        );
+      }
+      return Response.json({ ok: true, appointment: result });
     }
 
     if (action === "confirm_document" || action === "confirm_invoice") {
@@ -2075,15 +2116,25 @@ export async function POST(request: Request) {
         // Forgiving part of what is owed, not a refund of money already
         // collected -- its own ledger entry, checked against the invoice at
         // read time rather than folded into the payments total.
+        const amount = Math.abs(Number(body.amount ?? 0));
+        if (!Number.isFinite(amount) || amount <= 0) throw new InputError("Credit-note amount must be greater than zero.");
+        const [invoice] = await rest<Json[]>(`invoices?select=total,paid&id=eq.${encodeURIComponent(id)}&limit=1`, token);
+        if (!invoice) throw new InputError("Invoice was not found.");
+        const prior = await rest<Json[]>(`credit_notes?select=amount&invoice_id=eq.${encodeURIComponent(id)}&voided_at=is.null`, token);
+        const credited = prior.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+        const balance = Math.max(0, Number(invoice.total ?? 0) - Number(invoice.paid ?? 0) - credited);
+        if (amount > balance + 0.001) throw new InputError(`Credit note exceeds the outstanding balance of ${balance.toFixed(2)}.`);
+        const creditId = crypto.randomUUID();
         await insert(
           "credit_notes",
           {
-            id: crypto.randomUUID(),
+            id: creditId,
             organisation_id: org,
             invoice_id: id,
-            amount: Math.abs(Number(body.amount ?? 0)),
+            amount,
             reason: nullable(body.reason),
             issued_by: actor,
+            credit_note_number: `CN-${new Date().getUTCFullYear()}-${creditId.slice(0, 8).toUpperCase()}`,
           },
           token,
         );
