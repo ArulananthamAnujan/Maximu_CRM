@@ -11,6 +11,8 @@ test("legacy exports keep stable relationships across every supported module", a
   for (const entity of ["study_records","direct_visa_records","clients","cases","applications","visa_matters","notes","tasks","appointments","communications","documents","invoices","payments","commission_claims","commission_payments"])
     assert.match(route, new RegExp(`["]${entity}["]`));
   assert.match(route, /legacy_external_keys/);
+  assert.match(route, /lifecycleProgress\(lifecycle\)/, "legacy cases should inherit canonical progress when an export has no explicit percentage");
+  assert.match(route, /visa_expiry_on:dayValue/, "legacy visa expiry should populate the case-stage expiry field");
   assert.match(route, /legacy_data/);
   assert.match(route, /Import the parent export first/);
   assert.match(migration, /unique \(organisation_id, source_system, entity_type, source_key\)/);
