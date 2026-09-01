@@ -14,15 +14,16 @@ export async function GET(request: Request) {
     const session = await liveSession(request);
     requireAdmin(session.identity.role);
     const token = session.accessToken;
-    const [profiles, roles, permissions, invitations, branches, clientLinks] = await Promise.all([
+    const [profiles, roles, permissions, invitations, branches, clientLinks, settings] = await Promise.all([
       get("profiles?select=id,display_name,email,level,department,branch_id,active,created_at&order=display_name.asc", token),
       get("roles?select=*&order=system_role.desc,name.asc", token),
       get("permissions?select=*&order=resource.asc,action.asc", token),
       get("staff_invitations?select=*&order=created_at.desc", token),
       get("branches?select=*&order=name.asc", token),
       get("client_user_links?select=profile_id,client_id,created_at", token),
+      get("organisation_settings?select=*&limit=1", token).catch(() => []),
     ]);
-    return appendRefreshCookies(Response.json({ ok: true, profiles, roles, permissions, invitations, branches, clientLinks }), session.refreshed, request);
+    return appendRefreshCookies(Response.json({ ok: true, profiles, roles, permissions, invitations, branches, clientLinks, settings: (settings as Json[])[0] ?? null }), session.refreshed, request);
   } catch (error) { return apiError(error); }
 }
 
@@ -164,6 +165,43 @@ export async function POST(request: Request) {
       // somewhere rather than in no branch at all.
       const branchId = optionalUuid(body.branchId) ?? session.identity.branchId;
       await insert("staff_invitations", { id: crypto.randomUUID(), organisation_id: org, email: email(body.email), role_id: roleId, branch_id: branchId, display_name: optional(body.displayName), department: optional(body.department), level: optional(body.level), invited_by: session.identity.profileId, status: "pending" }, token);
+    } else if (action === "bulk_update_profiles") {
+      const targets = uuidList(body.profileIds, "Staff accounts");
+      const changes: Json = {};
+      if (typeof body.branchId === "string" || body.branchId === null)
+        changes.branch_id = optionalUuid(body.branchId);
+      if (typeof body.active === "boolean") changes.active = body.active;
+      if (Object.keys(changes).length === 0)
+        throw new InputError("Choose a branch or account status to change.");
+      let succeeded = 0;
+      const errors: string[] = [];
+      for (const target of targets) {
+        try {
+          if (target === session.identity.profileId)
+            throw new InputError("Your own account was not changed.");
+          const [person] = await get(
+            `profiles?select=id,level,active&id=eq.${target}&limit=1`,
+            token,
+          ) as { id: string; level: string; active: boolean }[];
+          if (!person) throw new InputError("A selected staff account no longer exists.");
+          // Super Admin deactivation stays an individual action so the existing
+          // last-administrator protection cannot be bypassed by a group edit.
+          if (changes.active === false && person.level === "super_admin")
+            throw new InputError("Super Admin accounts must be deactivated individually.");
+          await patch("profiles", target, changes, token);
+          succeeded += 1;
+        } catch (error) {
+          errors.push(error instanceof Error ? error.message : "A staff account could not be changed.");
+        }
+      }
+      return appendRefreshCookies(Response.json({
+        ok: succeeded > 0,
+        succeeded,
+        failed: targets.length - succeeded,
+        errors: Array.from(new Set(errors)).slice(0, 3),
+        error: succeeded > 0 ? undefined : errors[0],
+        message: `${succeeded} staff account${succeeded === 1 ? "" : "s"} updated${targets.length - succeeded ? `; ${targets.length - succeeded} could not be changed.` : "."}`,
+      }, { status: succeeded > 0 ? 200 : 400 }), session.refreshed, request);
     } else if (action === "update_profile") {
       const target = uuid(body.profileId, "Profile");
       if (target === session.identity.profileId && body.active === false) throw new InputError("You cannot deactivate your own account.");
@@ -199,6 +237,95 @@ export async function POST(request: Request) {
         }
       }
       await patch("profiles", target, changes, token);
+    } else if (action === "remove_staff") {
+      if (session.identity.role !== "super_admin")
+        throw new LiveAccessError(403, "Only a Super Admin can remove a staff account.");
+      if (!serviceRoleKey())
+        throw new InputError("Permanent staff removal requires the Supabase service-role connection.");
+      const target = uuid(body.profileId, "Profile");
+      if (target === session.identity.profileId)
+        throw new InputError("You cannot remove your own account.");
+      const replacement = optionalUuid(body.replacementProfileId);
+      if (replacement) {
+        await supabaseRequest("/rest/v1/rpc/transfer_staff_ownership", {
+          method: "POST",
+          body: JSON.stringify({ p_from: target, p_to: replacement }),
+        }, token);
+      }
+      const [person] = await get(
+        `profiles?select=id,display_name,email,level,active&id=eq.${target}&limit=1`,
+        token,
+      ) as Json[];
+      if (!person) throw new InputError("That staff account no longer exists.");
+      if (person.level === "super_admin") {
+        const remaining = await get(
+          `profiles?select=id&organisation_id=eq.${org}&level=eq.super_admin&active=eq.true&id=neq.${target}`,
+          token,
+        ) as Json[];
+        if (remaining.length === 0)
+          throw new InputError("Promote another Super Admin before removing this account.");
+      }
+      const assigned = await get(
+        `cases?select=id&organisation_id=eq.${org}&or=(owner_id.eq.${target},supervisor_id.eq.${target})&closed_at=is.null&limit=1`,
+        token,
+      ) as Json[];
+      if (assigned.length)
+        throw new InputError("Transfer this staff member's open cases before removing their account.");
+
+      const retiredEmail = `removed+${target}@accounts.invalid`;
+      await supabaseAdminRequest(`/auth/v1/admin/users/${target}`, {
+        method: "PUT",
+        body: JSON.stringify({ email: retiredEmail, ban_duration: "876000h" }),
+      });
+      await supabaseRequest(
+        `/rest/v1/profile_roles?profile_id=eq.${target}`,
+        { method: "DELETE", headers: { Prefer: "return=minimal" } },
+        token,
+      ).catch(() => undefined);
+      await supabaseRequest(
+        `/rest/v1/mailbox_connections?profile_id=eq.${target}`,
+        { method: "DELETE", headers: { Prefer: "return=minimal" } },
+        token,
+      ).catch(() => undefined);
+      await patch("profiles", target, {
+        display_name: `${String(person.display_name ?? "Former staff")} (removed)`,
+        email: retiredEmail,
+        active: false,
+        branch_id: null,
+        department: null,
+      }, token);
+      await insert("audit_events", {
+        organisation_id: org,
+        actor_id: session.identity.profileId,
+        action: "staff.removed",
+        resource_type: "profile",
+        resource_id: target,
+        summary: `Removed ${String(person.display_name ?? "former staff")} after preserving historical attribution`,
+        after_data: { replacement_profile_id: replacement, retired_email: retiredEmail },
+      }, token);
+    } else if (action === "update_settings") {
+      if (session.identity.role !== "super_admin")
+        throw new LiveAccessError(403, "Only a Super Admin can change master configuration.");
+      const value = {
+        organisation_id: org,
+        timezone: required(body.timezone, "Timezone"),
+        default_currency: currency(body.defaultCurrency),
+        tax_label: required(body.taxLabel, "Tax label"),
+        tax_rate: boundedNumber(body.taxRate, "Tax rate", 0, 1),
+        invoice_prefix: prefix(body.invoicePrefix, "Invoice prefix"),
+        receipt_prefix: prefix(body.receiptPrefix, "Receipt prefix"),
+        credit_note_prefix: prefix(body.creditNotePrefix, "Credit-note prefix"),
+        payment_terms_days: boundedNumber(body.paymentTermsDays, "Payment terms", 0, 365),
+        overdue_reminders_enabled: body.overdueRemindersEnabled !== false,
+        appointment_duration_minutes: boundedNumber(body.appointmentDurationMinutes, "Appointment duration", 15, 480),
+        updated_by: session.identity.profileId,
+        updated_at: new Date().toISOString(),
+      };
+      await supabaseRequest("/rest/v1/organisation_settings?on_conflict=organisation_id", {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(value),
+      }, token);
     } else if (action === "assign_role") {
       if (session.identity.role !== "super_admin") throw new LiveAccessError(403, "Only a Super Admin can assign roles.");
       await insert("profile_roles", { profile_id: uuid(body.profileId, "Profile"), role_id: uuid(body.roleId, "Role"), branch_id: uuid(body.branchId, "Branch") }, token, "resolution=merge-duplicates,return=minimal");
@@ -276,8 +403,16 @@ async function patch(table: string, id: string, value: Json, token: string) { aw
 function optional(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : null; }
 function required(value: unknown, label: string) { const parsed = optional(value); if (!parsed) throw new InputError(`${label} is required.`); return parsed; }
 function uuid(value: unknown, label: string) { const parsed = required(value, label); if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed)) throw new InputError(`${label} is invalid.`); return parsed; }
+function uuidList(value: unknown, label: string) {
+  if (!Array.isArray(value) || value.length === 0) throw new InputError(`Select at least one ${label.toLowerCase()}.`);
+  if (value.length > 100) throw new InputError("Bulk actions are limited to 100 accounts at a time.");
+  return Array.from(new Set(value.map((item) => uuid(item, label))));
+}
 function optionalUuid(value: unknown) { const parsed = optional(value); return parsed ? uuid(parsed, "Identifier") : null; }
 function email(value: unknown) { const parsed = required(value, "Email").toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed)) throw new InputError("Email is invalid."); return parsed; }
+function currency(value: unknown) { const parsed = required(value, "Currency").toUpperCase(); if (!/^[A-Z]{3}$/.test(parsed)) throw new InputError("Currency must be a three-letter code."); return parsed; }
+function prefix(value: unknown, label: string) { const parsed = required(value, label).toUpperCase(); if (!/^[A-Z0-9-]{1,12}$/.test(parsed)) throw new InputError(`${label} may contain letters, numbers and hyphens only.`); return parsed; }
+function boundedNumber(value: unknown, label: string, minimum: number, maximum: number) { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum) throw new InputError(`${label} must be between ${minimum} and ${maximum}.`); return parsed; }
 function slug(value: unknown, label: string) { const parsed = required(value, label).toLowerCase().replace(/[^a-z0-9_]+/g, "_"); if (!parsed) throw new InputError(`${label} is invalid.`); return parsed; }
 function isObject(value: unknown): value is Json { return typeof value === "object" && value !== null && !Array.isArray(value); }
 class InputError extends Error {}

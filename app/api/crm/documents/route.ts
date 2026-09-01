@@ -131,7 +131,7 @@ export async function POST(request: Request) {
       );
 
     const documents = await rest<Json[]>(
-      `documents?select=id,client_id,case_id,document_type,display_name,version,drive_file_id,state&id=eq.${documentId}&limit=1`,
+      `documents?select=id,client_id,case_id,document_type,display_name,version,drive_file_id,state,metadata&id=eq.${documentId}&limit=1`,
       token,
     );
     const document = documents[0];
@@ -210,6 +210,7 @@ export async function POST(request: Request) {
         uploaded_by: session.identity.profileId,
         version: Number(document.version ?? 1) + (document.drive_file_id ? 1 : 0),
         metadata: {
+          ...((document.metadata as Json | null) ?? {}),
           storage: "google_shared_drive",
           original_name: file.name,
           web_view_link: stored.webViewLink,

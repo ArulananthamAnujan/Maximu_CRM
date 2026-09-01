@@ -213,7 +213,8 @@ Anything reading MISSING names the migration that has not been applied yet.
 
 ### Importing the legacy Course Finder
 
-Apply `0022_course_finder.sql` and `0026_course_finder_catalog.sql`, then import
+Apply `0022_course_finder.sql`, `0026_course_finder_catalog.sql` and
+`0030_course_catalog_live_sync.sql`, then import
 the Maximus export with a service-role key kept only in the terminal:
 
 ```bash
@@ -226,6 +227,21 @@ npm run import:courses -- /path/to/maximus_all_courses.csv
 Run the same command with `--dry-run` first to validate counts without writing.
 The importer is repeatable: legacy IDs are upserted, not duplicated. It cleans
 searchable values while retaining rejected/raw source values in `legacy_data`.
+
+Migration `0030` adds student-safe catalogue browsing, country normalisation,
+source freshness, completeness reporting and the expanded field/intake/fee/
+duration filters. Netlify runs `netlify/functions/course-catalog-sync.mjs`
+daily. It discovers the Australian Government CRICOS CSV resources and upserts
+official rows under their own source IDs, preferring recently verified rows in
+search results without overwriting Maximus notes or commission details.
+
+The existing `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` deployment secrets
+are used by that scheduled import. Set `COURSE_FINDER_ORGANISATION_ID` when the
+database contains more than one organisation. Additional licensed or official
+CSV feeds can be supplied as a JSON array in `COURSE_CATALOG_FEEDS`; every feed
+must provide `source`, `country` and `url` (with optional `countryCode`). Never
+scrape a provider website or add a commercial feed without permission to use
+its catalogue.
 
 **Checking every feature.** `scripts/verify-features.sh` builds a throwaway
 PostgreSQL database, applies every migration, seeds a two-branch agency and

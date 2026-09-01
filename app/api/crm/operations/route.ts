@@ -76,10 +76,74 @@ export async function POST(request: Request) {
       await insert("notifications", { id: crypto.randomUUID(), organisation_id: org, recipient_id: uuid(body.recipientId, "Recipient"), case_id: optionalUuid(body.caseId), kind: optional(body.kind) || "general", title: required(body.title, "Title"), body: optional(body.body), action_url: safePath(body.actionUrl) }, token);
     } else if (action === "read_notification") {
       await patch("notifications", uuid(body.id, "Notification"), { read_at: new Date().toISOString() }, token);
+    } else if (action === "appointment_response") {
+      const status = required(body.status, "Response").toLowerCase();
+      if (!["scheduled", "declined", "cancelled"].includes(status)) throw new InputError("Appointment response is invalid.");
+      const date = optional(body.date);
+      const time = optional(body.time);
+      const startsAt = date && time ? new Date(`${date}T${time}:00`) : null;
+      if (startsAt && Number.isNaN(startsAt.getTime())) throw new InputError("Appointment time is invalid.");
+      const duration = Math.min(480, Math.max(15, Number(body.durationMinutes ?? 30)));
+      await supabaseRequest("/rest/v1/rpc/respond_to_appointment", {
+        method: "POST",
+        body: JSON.stringify({
+          p_appointment_id: uuid(body.appointmentId, "Appointment"),
+          p_status: status,
+          p_starts_at: startsAt?.toISOString() ?? null,
+          p_ends_at: startsAt ? new Date(startsAt.getTime() + duration * 60000).toISOString() : null,
+          p_note: optional(body.note),
+        }),
+      }, token);
     } else if (action === "record_payment") {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can record payments.");
       const amount = positiveNumber(body.amount, "Amount");
-      await insert("payments", { id: crypto.randomUUID(), organisation_id: org, invoice_id: uuid(body.invoiceId, "Invoice"), amount, currency: optional(body.currency) || "AUD", method: optional(body.method), reference: optional(body.reference), recorded_by: actor }, token);
+      const invoiceId = uuid(body.invoiceId, "Invoice");
+      const [invoice] = await rest<Json[]>(`invoices?select=id,total,paid,currency,state,client_id,case_id&id=eq.${invoiceId}&limit=1`, token);
+      if (!invoice) throw new InputError("Invoice was not found.");
+      const outstanding = Math.max(0, Number(invoice.total ?? 0) - Number(invoice.paid ?? 0));
+      if (amount > outstanding + 0.001) throw new InputError(`Payment exceeds the outstanding balance of ${outstanding.toFixed(2)}.`);
+      const paymentId = crypto.randomUUID();
+      const receiptId = crypto.randomUUID();
+      const receiptNumber = `RCT-${new Date().getUTCFullYear()}-${receiptId.slice(0, 8).toUpperCase()}`;
+      await insert("payments", { id: paymentId, organisation_id: org, invoice_id: invoiceId, amount, currency: optional(body.currency) || invoice.currency || "AUD", method: optional(body.method), reference: optional(body.reference), external_reference: optional(body.externalReference), transaction_type: "payment", recorded_by: actor }, token);
+      await insert("payment_receipts", { id: receiptId, organisation_id: org, payment_id: paymentId, receipt_number: receiptNumber, issued_by: actor }, token);
+      const paid = Math.round((Number(invoice.paid ?? 0) + amount) * 100) / 100;
+      await patch("invoices", invoiceId, { paid, state: paid + 0.001 >= Number(invoice.total ?? 0) ? "paid" : "part_paid" }, token);
+      await insert("audit_events", { organisation_id: org, actor_id: actor, action: "payment.recorded", resource_type: "payment", resource_id: paymentId, case_id: invoice.case_id ?? null, summary: `Recorded payment and issued ${receiptNumber}`, after_data: { invoice_id: invoiceId, amount, receipt_number: receiptNumber } }, token);
+      return appendRefreshCookies(Response.json({ ok: true, paymentId, receiptId, receiptNumber, paid }), session.refreshed, request);
+    } else if (action === "record_refund") {
+      if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can record refunds.");
+      const amount = positiveNumber(body.amount, "Refund amount");
+      const invoiceId = uuid(body.invoiceId, "Invoice");
+      const [invoice] = await rest<Json[]>(`invoices?select=id,total,paid,currency,case_id&id=eq.${invoiceId}&limit=1`, token);
+      if (!invoice) throw new InputError("Invoice was not found.");
+      if (amount > Number(invoice.paid ?? 0) + 0.001) throw new InputError("Refund cannot exceed payments received.");
+      const paymentId = crypto.randomUUID();
+      await insert("payments", { id: paymentId, organisation_id: org, invoice_id: invoiceId, amount: -amount, currency: optional(body.currency) || invoice.currency || "AUD", method: optional(body.method), reference: optional(body.reason) || "Refund", external_reference: optional(body.externalReference), transaction_type: "refund", recorded_by: actor }, token);
+      const paid = Math.max(0, Math.round((Number(invoice.paid ?? 0) - amount) * 100) / 100);
+      await patch("invoices", invoiceId, { paid, state: paid <= 0 ? "refunded" : "part_paid" }, token);
+      await insert("audit_events", { organisation_id: org, actor_id: actor, action: "refund.recorded", resource_type: "payment", resource_id: paymentId, case_id: invoice.case_id ?? null, summary: `Recorded refund of ${amount.toFixed(2)}`, after_data: { invoice_id: invoiceId, amount, reason: optional(body.reason) } }, token);
+      return appendRefreshCookies(Response.json({ ok: true, refundId: paymentId, paid }), session.refreshed, request);
+    } else if (action === "start_reconciliation") {
+      if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can reconcile payments.");
+      const id = crypto.randomUUID();
+      await insert("reconciliation_runs", { id, organisation_id: org, source: required(body.source, "Source"), statement_reference: optional(body.statementReference), currency: optional(body.currency) || "AUD", statement_total: positiveNumber(body.statementTotal, "Statement total"), started_by: actor }, token);
+      return appendRefreshCookies(Response.json({ ok: true, reconciliationId: id }), session.refreshed, request);
+    } else if (action === "reconcile_payments") {
+      if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can reconcile payments.");
+      const reconciliationId = uuid(body.reconciliationId, "Reconciliation");
+      const paymentIds = Array.isArray(body.paymentIds) ? body.paymentIds.map((id) => uuid(id, "Payment")) : [];
+      if (!paymentIds.length || paymentIds.length > 500) throw new InputError("Select between 1 and 500 payments.");
+      const payments = await rest<Json[]>(`payments?select=id,amount&organisation_id=eq.${org}&id=in.(${paymentIds.join(",")})`, token);
+      const matched = Math.round(payments.reduce((sum, row) => sum + Number(row.amount ?? 0), 0) * 100) / 100;
+      for (const payment of payments) await patch("payments", String(payment.id), { reconciliation_id: reconciliationId, reconciled_at: new Date().toISOString() }, token);
+      const [run] = await rest<Json[]>(`reconciliation_runs?select=statement_total&id=eq.${reconciliationId}&limit=1`, token);
+      const balanced = Math.abs(Number(run?.statement_total ?? 0) - matched) < 0.01;
+      await patch("reconciliation_runs", reconciliationId, { matched_total: matched, status: balanced ? "balanced" : "exception", completed_at: new Date().toISOString() }, token);
+      return appendRefreshCookies(Response.json({ ok: true, matchedTotal: matched, balanced }), session.refreshed, request);
+    } else if (action === "queue_overdue_reminder") {
+      if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can send payment reminders.");
+      await insert("invoice_reminders", { id: crypto.randomUUID(), organisation_id: org, invoice_id: uuid(body.invoiceId, "Invoice"), reminder_type: optional(body.reminderType) || "manual", delivery_channel: "email", status: "queued", sent_by: actor }, token);
     } else if (action === "create_commission_claim") {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can raise a commission claim.");
       await insert("commission_claims", {

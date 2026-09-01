@@ -87,6 +87,7 @@ export async function GET(request: Request) {
       applications,
       visaMatters,
       visaHistory,
+      collaborators,
     ] = await Promise.all([
       safeRest(
         `clients?select=*&archived_at=is.null&order=updated_at.desc&limit=${RECORD_LIMIT}`,
@@ -177,6 +178,11 @@ export async function GET(request: Request) {
         token,
         degraded,
       ),
+      safeRest(
+        "case_collaborators?select=case_id,profile_id&limit=5000",
+        token,
+        degraded,
+      ),
     ]);
 
     // A dataset fetched exactly up to its cap may have more rows the
@@ -219,9 +225,31 @@ export async function GET(request: Request) {
       const key = String(row.invoice_id);
       creditedByInvoice.set(key, (creditedByInvoice.get(key) ?? 0) + Number(row.amount ?? 0));
     }
+    const invoicePdfByInvoice = new Map<string, Json>();
+    for (const row of documents) {
+      const metadata = (row.metadata as Json | null) ?? {};
+      if (metadata.source !== "invoice_pdf" || !metadata.invoice_id) continue;
+      invoicePdfByInvoice.set(String(metadata.invoice_id), row);
+    }
     const branchById = new Map(branches.map((row) => [String(row.id), row]));
     const profileById = new Map(profiles.map((row) => [String(row.id), row]));
     const threadById = new Map(threads.map((row) => [String(row.id), row]));
+    const applicationByCase = new Map<string, Json>();
+    for (const application of applications) {
+      const key = String(application.case_id);
+      if (!application.archived_at && !applicationByCase.has(key))
+        applicationByCase.set(key, application);
+    }
+    const visaMatterByCase = new Map<string, Json>();
+    for (const matter of visaMatters) {
+      const key = String(matter.case_id);
+      if (!visaMatterByCase.has(key)) visaMatterByCase.set(key, matter);
+    }
+    const collaboratorsByCase = new Map<string, string[]>();
+    for (const row of collaborators) {
+      const key = String(row.case_id);
+      collaboratorsByCase.set(key, [...(collaboratorsByCase.get(key) ?? []), String(row.profile_id)]);
+    }
     const workflowStages = new Map<string, Json[]>();
     for (const stage of stages) {
       const key = String(stage.template_id);
@@ -247,6 +275,10 @@ export async function GET(request: Request) {
       })),
       cases: cases.map((row) => {
         const client = clientById.get(String(row.client_id)) ?? {};
+        const clientIntake = (client.custom_fields as Json | null) ?? {};
+        const caseIntake = (row.custom_fields as Json | null) ?? {};
+        const latestApplication = applicationByCase.get(String(row.id)) ?? {};
+        const visaMatter = visaMatterByCase.get(String(row.id)) ?? {};
         const stage = stageById.get(String(row.current_stage_id)) ?? {};
         const owner = profileById.get(String(row.owner_id)) ?? {};
         const branch = branchById.get(String(row.branch_id)) ?? {};
@@ -273,6 +305,7 @@ export async function GET(request: Request) {
           stage: stage.name ?? client.current_lifecycle ?? "Enquiry",
           owner: owner.display_name ?? "",
           ownerId: row.owner_id ?? "",
+          collaboratorIds: collaboratorsByCase.get(String(row.id)) ?? [],
           branch: branch.name ?? "",
           branchId: row.branch_id,
           due: dateOnly(row.due_at),
@@ -290,6 +323,16 @@ export async function GET(request: Request) {
           completedAt: dateOnly(row.completed_at),
           reopenedAt: dateOnly(row.reopened_at),
           createdAt: row.opened_at,
+          destinationCountry:
+            visaMatter.destination_country ??
+            caseIntake.destinationCountry ??
+            caseIntake.migrationDestination ??
+            clientIntake.destinationCountry ??
+            "",
+          intake: latestApplication.intake ?? caseIntake.intake ?? clientIntake.intake ?? "",
+          source: client.source ?? "",
+          applicationStatus: latestApplication.status ?? "",
+          visaCategory: row.matter_type ?? visaMatter.visa_subclass ?? "",
         };
       }),
       tasks: tasks.map((row) => ({
@@ -310,6 +353,8 @@ export async function GET(request: Request) {
         date: dateOnly(row.starts_at),
         time: timeOnly(row.starts_at),
         type: row.appointment_type,
+        status: row.status ?? "scheduled",
+        responseNote: row.response_note ?? "",
       })),
       documents: documents.map((row) => ({
         id: row.id,
@@ -346,7 +391,11 @@ export async function GET(request: Request) {
         const credited = creditedByInvoice.get(String(row.id)) ?? 0;
         return {
           id: row.id,
+          invoiceNumber: String(row.invoice_number ?? ""),
           client: fullClientName(clientById.get(String(row.client_id))),
+          currency: String(row.currency ?? "AUD"),
+          subtotal: Number(row.subtotal ?? 0),
+          tax: Number(row.tax ?? 0),
           amount: total,
           paid,
           credited,
@@ -365,6 +414,9 @@ export async function GET(request: Request) {
                 : row.state === "void"
                   ? "Void"
                   : "Unpaid",
+          pdfDocumentId: invoicePdfByInvoice.get(String(row.id))?.drive_file_id
+            ? String(invoicePdfByInvoice.get(String(row.id))?.id ?? "")
+            : "",
         };
       }),
       // Management-only, same read scope as commission claims -- comes back
@@ -433,6 +485,7 @@ export async function GET(request: Request) {
       applications: applications.map((row) => {
         const parent = caseById.get(String(row.case_id)) ?? {};
         const client = clientById.get(String(parent.client_id)) ?? {};
+        const details = (row.details as Json | null) ?? {};
         return {
           id: String(row.id),
           caseId: String(row.case_id),
@@ -450,6 +503,9 @@ export async function GET(request: Request) {
           deadlineOn: dateOnly(row.deadline_at),
           owner: profileById.get(String(parent.owner_id))?.display_name ?? "",
           branch: branchById.get(String(parent.branch_id))?.name ?? "",
+          associate: details.associate ?? "",
+          partner: details.partner ?? "",
+          notes: details.notes ?? "",
           archived: Boolean(row.archived_at),
         };
       }),
@@ -641,6 +697,7 @@ export async function POST(request: Request) {
           starts_at: startsAt.toISOString(),
           ends_at: new Date(startsAt.getTime() + 30 * 60 * 1000).toISOString(),
           status: "requested",
+          requested_by: actor,
         },
         token,
       );
@@ -665,6 +722,44 @@ export async function POST(request: Request) {
         session.refreshed,
         request,
       );
+    }
+
+    if (action === "appointment_response") {
+      if (session.identity.role === "client")
+        throw new LiveAccessError(403, "Only the case team can respond to appointment requests.");
+      const appointmentId = required(body.appointmentId, "Appointment");
+      const status = required(body.status, "Response").toLowerCase();
+      if (!["scheduled", "declined", "cancelled"].includes(status))
+        throw new InputError("Choose confirm, decline or cancel.");
+      const date = nullable(body.date);
+      const time = nullable(body.time);
+      const start = date && time ? new Date(`${date}T${time}:00`) : null;
+      if (start && Number.isNaN(start.getTime())) throw new InputError("The appointment time is invalid.");
+      const duration = Math.min(480, Math.max(15, Number(body.durationMinutes ?? 30)));
+      const result = await supabaseRequest<Json>(
+        "/rest/v1/rpc/respond_to_appointment",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            p_appointment_id: appointmentId,
+            p_status: status,
+            p_starts_at: start?.toISOString() ?? null,
+            p_ends_at: start ? new Date(start.getTime() + duration * 60 * 1000).toISOString() : null,
+            p_note: nullable(body.note),
+          }),
+        },
+        token,
+      );
+      if (status === "scheduled") {
+        await syncAppointmentToCalendar(
+          String(result.owner_id ?? actor), appointmentId,
+          String(result.title ?? "Client appointment"),
+          String(result.starts_at ?? start?.toISOString()),
+          String(result.ends_at ?? (start ? new Date(start.getTime() + duration * 60000).toISOString() : "")),
+          token,
+        );
+      }
+      return Response.json({ ok: true, appointment: result });
     }
 
     if (action === "confirm_document" || action === "confirm_invoice") {
@@ -847,13 +942,31 @@ export async function POST(request: Request) {
         current_lifecycle: "enquiry",
         date_of_birth: nullableDay(body.dob),
         nationality: nullable(body.nationality),
+        gender: nullable(body.gender),
+        marital_status: nullable(body.maritalStatus)?.toLowerCase() ?? null,
+        country_of_birth: nullable(body.countryOfBirth),
+        current_country: nullable(body.currentCountry),
+        passport_country: nullable(body.passportCountry),
+        passport_expiry: nullableDay(body.passportExpiry),
+        preferred_language: nullable(body.preferredLanguage),
+        address: {
+          line1: nullable(body.addressLine),
+          city: nullable(body.city),
+          state: nullable(body.state),
+          postcode: nullable(body.postcode),
+        },
         source: nullable(body.source),
         custom_fields: intakeFields(body, [
           "action", "name", "email", "phone", "dob", "nationality", "source",
           "branchId", "type", "target", "stage", "due", "health", "progress",
         ]),
         updated_at: now,
-      };
+      } as Json;
+      const passportNumber = nullable(body.passportNumber);
+      if (passportNumber) {
+        client.passport_number_encrypted = await protect(passportNumber);
+        client.passport_masked = maskPassport(passportNumber);
+      }
       if (!existingClientId) await insert("clients", client, token);
       try {
         await insert(
@@ -896,6 +1009,24 @@ export async function POST(request: Request) {
             { method: "DELETE" },
             token,
           ).catch(() => undefined);
+        throw error;
+      }
+      try {
+        await persistCompleteIntake({
+          body,
+          token,
+          organisationId: org,
+          clientId,
+          caseId,
+          serviceType: kind,
+          includeClientRecords: !existingClientId,
+        });
+      } catch (error) {
+        // Do not leave a half-created case if one of the structured intake
+        // records fails. A returning client's existing profile is preserved.
+        await deleteRow("cases", caseId, token).catch(() => undefined);
+        if (!existingClientId)
+          await deleteRow("clients", clientId, token).catch(() => undefined);
         throw error;
       }
       await auditEvent(
@@ -1027,7 +1158,7 @@ export async function POST(request: Request) {
           client_name: fullClientName(client),
           document_title: title,
           note: nullable(body.documentNote) ?? "",
-          portal_link: new URL(request.url).origin,
+          portal_link: publicOrigin(request),
           sender_name: session.identity.displayName,
         });
       return Response.json({ ok: true });
@@ -1145,7 +1276,7 @@ export async function POST(request: Request) {
             client_name: fullClientName(client),
             document_title: newlyRequested.join(", "),
             note: nullable(body.documentNote) ?? "",
-            portal_link: new URL(request.url).origin,
+            portal_link: publicOrigin(request),
             sender_name: session.identity.displayName,
           });
       }
@@ -1155,17 +1286,71 @@ export async function POST(request: Request) {
     if (action === "message") {
       const threadId = crypto.randomUUID();
       const messageId = crypto.randomUUID();
-      const recipient = required(body.to, "Recipient");
+      let clientId = nullable(body.clientId);
+      let caseId = nullable(body.caseId);
+      let recipient = nullable(body.to);
+      let assignedTo = actor;
+      let threadStatus = "draft";
+      let direction = "outbound";
+      let deliveryState = "draft";
+      if (session.identity.role === "client") {
+        clientId = await ownClientId(session.identity.profileId, token);
+        caseId = required(body.caseId, "Case");
+        if (!clientId)
+          throw new LiveAccessError(
+            403,
+            "No client record is linked to this account.",
+          );
+        const [linkedCase] = await rest<Json[]>(
+          `cases?select=id,client_id,owner_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+          token,
+        );
+        if (!linkedCase || String(linkedCase.client_id) !== String(clientId))
+          throw new LiveAccessError(
+            403,
+            "You can only message the team working on your own case.",
+          );
+        if (!linkedCase.owner_id)
+          throw new InputError(
+            "Your case does not have an assigned officer yet. Please contact Maximus directly.",
+          );
+        assignedTo = String(linkedCase.owner_id);
+        recipient = "Maximus case team";
+        threadStatus = "open";
+        direction = "inbound";
+        deliveryState = "received";
+      } else {
+        // Staff never type a recipient for case communication. Resolve it
+        // from the case and its client at send time, so a corrected address
+        // in the case profile is used immediately and an unrelated address
+        // cannot be attached to the wrong file.
+        caseId = required(body.caseId, "Case");
+        const [linkedCase] = await rest<Json[]>(
+          `cases?select=id,client_id,owner_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+          token,
+        );
+        if (!linkedCase)
+          throw new LiveAccessError(403, "That case is not available to you.");
+        clientId = String(linkedCase.client_id);
+        const [linkedClient] = await rest<Json[]>(
+          `clients?select=id,email&id=eq.${encodeURIComponent(clientId)}&limit=1`,
+          token,
+        );
+        if (!linkedClient)
+          throw new LiveAccessError(403, "That client is not available to you.");
+        recipient = requiredEmail(linkedClient.email);
+        assignedTo = String(linkedCase.owner_id || actor);
+      }
       await insert(
         "email_threads",
         {
           id: threadId,
           organisation_id: org,
-          client_id: nullable(body.clientId),
-          case_id: nullable(body.caseId),
+          client_id: clientId,
+          case_id: caseId,
           subject: required(body.subject, "Subject"),
-          assigned_to: actor,
-          status: "draft",
+          assigned_to: assignedTo,
+          status: threadStatus,
           awaiting_party: "staff",
           last_message_at: new Date().toISOString(),
         },
@@ -1179,9 +1364,9 @@ export async function POST(request: Request) {
           thread_id: threadId,
           sender: session.identity.email,
           recipients: [recipient],
-          direction: "outbound",
+          direction,
           body_preview: required(body.body, "Message"),
-          delivery_state: "draft",
+          delivery_state: deliveryState,
           created_by: actor,
         },
         token,
@@ -1189,14 +1374,16 @@ export async function POST(request: Request) {
       await auditEvent(
         org,
         actor,
-        "message.drafted",
+        session.identity.role === "client" ? "message.received" : "message.drafted",
         "email_message",
         messageId,
         session.identity.branchId,
-        `Saved message draft: ${String(body.subject)}`,
+        session.identity.role === "client"
+          ? `Client message: ${String(body.subject)}`
+          : `Saved message draft: ${String(body.subject)}`,
         token,
       );
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, messageId, recipientSource: "case_profile" });
     }
 
     if (action === "invoice") {
@@ -1205,23 +1392,63 @@ export async function POST(request: Request) {
       // database, same as every other staff write in this schema. Changing
       // or voiding an invoice once raised stays manager and above.
       const id = crypto.randomUUID();
-      const total = Number(body.amount ?? 0);
+      const documentId = crypto.randomUUID();
+      const caseId = required(body.caseId, "Case");
+      const [invoiceCase] = await rest<Json[]>(
+        `cases?select=id,client_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+        token,
+      );
+      if (!invoiceCase)
+        throw new LiveAccessError(403, "That case is not available to you.");
+      const clientId = String(invoiceCase.client_id);
+      const subtotal = moneyAmount(body.subtotal ?? body.amount, "Subtotal");
+      const tax = moneyAmount(body.tax ?? 0, "Tax", true);
+      const total = Math.round((subtotal + tax) * 100) / 100;
+      const currency = invoiceCurrency(body.currency);
+      const invoiceType = invoiceTypeValue(body.invoiceType);
+      const invoiceNumber = `INV-${new Date().getUTCFullYear()}-${id.slice(0, 8).toUpperCase()}`;
       await insert(
         "invoices",
         {
           id,
           organisation_id: org,
-          client_id: required(body.clientId, "Client"),
-          case_id: nullable(body.caseId),
-          invoice_number: `INV-${new Date().getUTCFullYear()}-${id.slice(0, 8).toUpperCase()}`,
-          invoice_type: "professional_fee",
-          currency: "AUD",
-          subtotal: total,
+          client_id: clientId,
+          case_id: caseId,
+          invoice_number: invoiceNumber,
+          invoice_type: invoiceType,
+          currency,
+          subtotal,
+          tax,
           total,
           state: "issued",
           issued_on: new Date().toISOString().slice(0, 10),
           due_on: nullable(body.due),
           created_by: actor,
+        },
+        token,
+      );
+      // Every invoice gets a protected file slot, even when the PDF is added
+      // later. The normal document uploader then stores it in the client's
+      // Accounts and Receipts folder and keeps replacement/version history.
+      await insert(
+        "documents",
+        {
+          id: documentId,
+          organisation_id: org,
+          client_id: clientId,
+          case_id: caseId,
+          document_type: "10 Accounts and Receipts",
+          display_name: `${invoiceNumber}.pdf`,
+          state: "requested",
+          requested_by: actor,
+          metadata: {
+            source: "invoice_pdf",
+            invoice_id: id,
+            invoice_number: invoiceNumber,
+            // Shown through the invoice, not as a document request asking the
+            // client to upload Maximus's own invoice back to the agency.
+            client_visible: false,
+          },
         },
         token,
       );
@@ -1232,24 +1459,24 @@ export async function POST(request: Request) {
         "invoice",
         id,
         session.identity.branchId,
-        `Created invoice for $${total.toFixed(2)}`,
+        `Created ${invoiceNumber} for ${currency} ${total.toFixed(2)}`,
         token,
       );
       const [invoiceClient] = await rest<Json[]>(
-        `clients?select=email,first_name,last_name&id=eq.${encodeURIComponent(String(body.clientId))}&limit=1`,
+        `clients?select=email,first_name,last_name&id=eq.${encodeURIComponent(clientId)}&limit=1`,
         token,
       );
       if (invoiceClient) {
         const due = nullable(body.due);
         await notifyClient(org, token, "invoice_request", String(invoiceClient.email ?? ""), {
           client_name: fullClientName(invoiceClient),
-          amount: `$${total.toFixed(2)}`,
+          amount: `${currency} ${total.toFixed(2)}`,
           due_clause: due ? `, due ${due}` : "",
-          portal_link: new URL(request.url).origin,
+            portal_link: publicOrigin(request),
           sender_name: session.identity.displayName,
         });
       }
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, invoiceId: id, invoiceNumber, documentId });
     }
 
     if (action === "send_portal_access") {
@@ -1362,7 +1589,7 @@ export async function POST(request: Request) {
           body: JSON.stringify({
             type: "recovery",
             email: address,
-            options: { redirect_to: new URL(request.url).origin },
+            options: { redirect_to: publicOrigin(request) },
           }),
         });
         setupLink = generated.action_link || generated.properties?.action_link || "";
@@ -1515,16 +1742,13 @@ export async function POST(request: Request) {
     }
 
     if (action === "assign" || action === "bulk_assign") {
-      // Reassignment is a management action: it changes who is accountable for
-      // the case and who sees it in their queue.
-      if (
-        session.identity.role !== "super_admin" &&
-        session.identity.role !== "admin"
-      )
-        throw new LiveAccessError(
-          403,
-          `Only an administrator can reassign ${action === "bulk_assign" ? "cases" : "a case"}.`,
-        );
+      // Managers may redistribute any accessible case. A staff member may
+      // hand over the one case they currently own; bulk redistribution stays
+      // a management operation.
+      const manager =
+        session.identity.role === "super_admin" || session.identity.role === "admin";
+      if (!manager && action === "bulk_assign")
+        throw new LiveAccessError(403, "Only an administrator can reassign cases in bulk.");
       const ownerId = required(body.ownerId, "Staff member");
       const candidates = await rest<Json[]>(
         `profiles?select=id,display_name,level,active&id=eq.${encodeURIComponent(ownerId)}&limit=1`,
@@ -1549,6 +1773,17 @@ export async function POST(request: Request) {
       let succeeded = 0;
       const failedCaseIds: string[] = [];
       for (const caseId of caseIds) {
+        if (!manager) {
+          const owned = await rest<Json[]>(
+            `cases?select=id,owner_id&id=eq.${encodeURIComponent(caseId)}&owner_id=eq.${encodeURIComponent(actor)}&limit=1`,
+            token,
+          );
+          if (!owned[0])
+            throw new LiveAccessError(
+              403,
+              "You can transfer only a case currently assigned to you.",
+            );
+        }
         try {
           await patchRow("cases", caseId, { owner_id: ownerId }, token);
         } catch (error) {
@@ -1596,6 +1831,56 @@ export async function POST(request: Request) {
       return Response.json({ ok: true });
     }
 
+    if (action === "add_collaborator" || action === "remove_collaborator") {
+      const caseId = required(body.caseId, "Case");
+      const profileId = required(body.profileId, "Staff member");
+      const [subject] = await rest<Json[]>(
+        `cases?select=id,owner_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+        token,
+      );
+      if (!subject) throw new LiveAccessError(403, "That case is not available.");
+      const manager =
+        session.identity.role === "super_admin" || session.identity.role === "admin";
+      if (!manager && subject.owner_id !== actor)
+        throw new LiveAccessError(403, "Only the case owner or an administrator can change the case team.");
+      if (profileId === subject.owner_id)
+        throw new InputError("The case owner is already part of the case team.");
+      if (action === "add_collaborator") {
+        const [candidate] = await rest<Json[]>(
+          `profiles?select=id,level,active&id=eq.${encodeURIComponent(profileId)}&limit=1`,
+          token,
+        );
+        if (!candidate || candidate.active !== true || candidate.level === "student")
+          throw new InputError("Choose an active staff member from this organisation.");
+        await supabaseRequest(
+          "/rest/v1/case_collaborators",
+          {
+            method: "POST",
+            headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+            body: JSON.stringify({ organisation_id: org, case_id: caseId, profile_id: profileId, added_by: actor }),
+          },
+          token,
+        );
+      } else {
+        await supabaseRequest(
+          `/rest/v1/case_collaborators?case_id=eq.${encodeURIComponent(caseId)}&profile_id=eq.${encodeURIComponent(profileId)}`,
+          { method: "DELETE", headers: { Prefer: "return=minimal" } },
+          token,
+        );
+      }
+      await auditEvent(
+        org,
+        actor,
+        action === "add_collaborator" ? "case.collaborator_added" : "case.collaborator_removed",
+        "case",
+        caseId,
+        session.identity.branchId,
+        action === "add_collaborator" ? "Added a colleague to the case team" : "Removed a colleague from the case team",
+        token,
+      );
+      return Response.json({ ok: true });
+    }
+
     if (action === "lifecycle") {
       const caseId = required(body.caseId, "Case");
       const stage = required(body.stage, "Stage") as LifecycleStage;
@@ -1631,6 +1916,147 @@ export async function POST(request: Request) {
         ok: true,
         case: Array.isArray(moved) ? (moved[0] ?? null) : moved,
       });
+    }
+
+    if (action === "bulk_lifecycle") {
+      if (session.identity.role === "client")
+        throw new LiveAccessError(403, "Case stages are available to staff only.");
+      const caseIds = uuidList(body.caseIds, "Cases");
+      const stage = required(body.stage, "Stage") as LifecycleStage;
+      if (!LIFECYCLE_STAGES.includes(stage))
+        throw new InputError("That is not a valid case stage.");
+      if (!(await lifecycleReady(token)))
+        throw new InputError(LIFECYCLE_MIGRATION_HINT);
+      let succeeded = 0;
+      const errors: string[] = [];
+      for (const caseId of caseIds) {
+        try {
+          await supabaseRequest<Json[]>(
+            "/rest/v1/rpc/move_case_lifecycle",
+            {
+              method: "POST",
+              body: JSON.stringify({
+                target_case: caseId,
+                target_stage: stage,
+                transition_reason: nullable(body.reason),
+              }),
+            },
+            token,
+          );
+          succeeded += 1;
+        } catch (error) {
+          errors.push(databaseError(error, "Case could not be moved.").message);
+        }
+      }
+      return Response.json({
+        ok: succeeded > 0,
+        succeeded,
+        failed: caseIds.length - succeeded,
+        errors: Array.from(new Set(errors)).slice(0, 3),
+        error: succeeded > 0 ? undefined : errors[0],
+      }, { status: succeeded > 0 ? 200 : 400 });
+    }
+
+    if (action === "bulk_mutate") {
+      if (session.identity.role === "client")
+        throw new LiveAccessError(
+          403,
+          "Client records can only be changed through approved portal actions.",
+        );
+      const resource = required(body.resource, "Resource");
+      const operation = required(body.operation, "Operation");
+      const ids = uuidList(body.ids, "Records");
+      if (["invoice", "template", "workflow"].includes(resource))
+        requireManager(session.identity.role, `change ${resource} records`);
+
+      let succeeded = 0;
+      let requested = 0;
+      const errors: string[] = [];
+      for (const id of ids) {
+        try {
+          if (resource === "task" && operation === "toggle") {
+            const completed = Boolean(body.completed);
+            await patchRow("tasks", id, {
+              status: completed ? "completed" : "open",
+              completed_at: completed ? new Date().toISOString() : null,
+            }, token);
+          } else if (resource === "task" && operation === "delete") {
+            await deleteRow("tasks", id, token);
+          } else if (resource === "case" && operation === "archive") {
+            if (session.identity.role === "staff") {
+              await supabaseRequest(
+                "/rest/v1/rpc/request_case_archive",
+                {
+                  method: "POST",
+                  body: JSON.stringify({
+                    target_case: id,
+                    request_reason: nullable(body.reason),
+                  }),
+                },
+                token,
+              );
+              requested += 1;
+            } else {
+              await patchRow("cases", id, {
+                health: "closed",
+                closed_at: new Date().toISOString(),
+                outcome: "archived",
+              }, token);
+            }
+          } else if (resource === "appointment" && operation === "delete") {
+            const [cancelled] = await rest<
+              { owner_id: string | null; google_calendar_event_id: string | null }[]
+            >(
+              `appointments?select=owner_id,google_calendar_event_id&id=eq.${encodeURIComponent(id)}&limit=1`,
+              token,
+            );
+            await deleteRow("appointments", id, token);
+            if (cancelled)
+              await cancelAppointmentOnCalendar(
+                cancelled.owner_id,
+                cancelled.google_calendar_event_id,
+                token,
+              );
+          } else if (resource === "document" && operation === "delete") {
+            await patchRow("documents", id, { state: "archived" }, token);
+          } else if (resource === "message" && operation === "toggle") {
+            await patchRow("email_messages", id, {
+              delivery_state: body.completed ? "ready" : "draft",
+            }, token);
+          } else if (resource === "message" && operation === "delete") {
+            await patchRow("email_messages", id, { delivery_state: "discarded" }, token);
+          } else if (resource === "invoice" && operation === "delete") {
+            await patchRow("invoices", id, { state: "void" }, token);
+          } else if (resource === "template" && operation === "delete") {
+            await deleteRow("content_templates", id, token);
+          } else if (resource === "workflow" && operation === "toggle") {
+            await patchRow("workflow_templates", id, { active: Boolean(body.active) }, token);
+          } else {
+            throw new InputError("That bulk action is not supported for this record type.");
+          }
+          await auditEvent(
+            org,
+            actor,
+            `${resource}.bulk_${operation}`,
+            resource,
+            id,
+            session.identity.branchId,
+            `Bulk ${operation} ${resource}`,
+            token,
+          );
+          succeeded += 1;
+        } catch (error) {
+          errors.push(databaseError(error, "Record could not be updated.").message);
+        }
+      }
+      return Response.json({
+        ok: succeeded > 0,
+        succeeded,
+        requested,
+        failed: ids.length - succeeded,
+        errors: Array.from(new Set(errors)).slice(0, 3),
+        error: succeeded > 0 ? undefined : errors[0],
+      }, { status: succeeded > 0 ? 200 : 400 });
     }
 
     if (action === "mutate") {
@@ -1755,15 +2181,25 @@ export async function POST(request: Request) {
         // Forgiving part of what is owed, not a refund of money already
         // collected -- its own ledger entry, checked against the invoice at
         // read time rather than folded into the payments total.
+        const amount = Math.abs(Number(body.amount ?? 0));
+        if (!Number.isFinite(amount) || amount <= 0) throw new InputError("Credit-note amount must be greater than zero.");
+        const [invoice] = await rest<Json[]>(`invoices?select=total,paid&id=eq.${encodeURIComponent(id)}&limit=1`, token);
+        if (!invoice) throw new InputError("Invoice was not found.");
+        const prior = await rest<Json[]>(`credit_notes?select=amount&invoice_id=eq.${encodeURIComponent(id)}&voided_at=is.null`, token);
+        const credited = prior.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+        const balance = Math.max(0, Number(invoice.total ?? 0) - Number(invoice.paid ?? 0) - credited);
+        if (amount > balance + 0.001) throw new InputError(`Credit note exceeds the outstanding balance of ${balance.toFixed(2)}.`);
+        const creditId = crypto.randomUUID();
         await insert(
           "credit_notes",
           {
-            id: crypto.randomUUID(),
+            id: creditId,
             organisation_id: org,
             invoice_id: id,
-            amount: Math.abs(Number(body.amount ?? 0)),
+            amount,
             reason: nullable(body.reason),
             issued_by: actor,
+            credit_note_number: `CN-${new Date().getUTCFullYear()}-${creditId.slice(0, 8).toUpperCase()}`,
           },
           token,
         );
@@ -1861,6 +2297,263 @@ async function ownClientId(profileId: string, token: string) {
     token,
   );
   return rows[0]?.client_id ?? null;
+}
+
+async function persistCompleteIntake({
+  body,
+  token,
+  organisationId,
+  clientId,
+  caseId,
+  serviceType,
+  includeClientRecords,
+}: {
+  body: Json;
+  token: string;
+  organisationId: string;
+  clientId: string;
+  caseId: string;
+  serviceType: string;
+  includeClientRecords: boolean;
+}) {
+  if (includeClientRecords) {
+    const addDependant = async (relationship: string, prefix: "spouse" | "child") => {
+      const fullName = nullable(body[`${prefix}FullName`]);
+      if (!fullName) return;
+      const id = crypto.randomUUID();
+      const passport = nullable(body[`${prefix}Passport`]);
+      const value: Json = {
+        id,
+        organisation_id: organisationId,
+        client_id: clientId,
+        relationship,
+        full_name: fullName,
+        date_of_birth: nullableDay(body[`${prefix}Dob`]),
+        nationality: nullable(body[`${prefix}Nationality`]),
+        passport_expiry: nullableDay(body[`${prefix}PassportExpiry`]),
+        visa_status: nullable(body[`${prefix}VisaStatus`]),
+        included_in_application: checked(body[`${prefix}Included`]),
+        details: {
+          email: nullable(body[`${prefix}Email`]),
+          mobile: nullable(body[`${prefix}Phone`]),
+        },
+      };
+      if (passport) {
+        value.passport_number_encrypted = await protect(passport);
+        value.passport_masked = maskPassport(passport);
+      }
+      await insert("dependants", value, token);
+    };
+    await addDependant("spouse", "spouse");
+    await addDependant("child", "child");
+
+    const educationInstitution = nullable(body.educationInstitution);
+    const qualification = nullable(body.qualification);
+    if (educationInstitution && qualification)
+      await insert(
+        "client_education_history",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          country_code: nullable(body.educationCountry),
+          institution: educationInstitution,
+          qualification,
+          field_of_study: nullable(body.fieldOfStudy),
+          started_on: nullableDay(body.educationStart),
+          completed_on: nullableDay(body.educationEnd),
+          result: nullable(body.educationResult),
+          details: {},
+        },
+        token,
+      );
+
+    const employer = nullable(body.employer);
+    const jobTitle = nullable(body.jobTitle);
+    if (employer && jobTitle)
+      await insert(
+        "client_employment_history",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          employer,
+          job_title: jobTitle,
+          country_code: nullable(body.employmentCountry),
+          started_on: nullableDay(body.employmentStart),
+          ended_on: nullableDay(body.employmentEnd),
+          hours_per_week: nullableNumber(body.hoursPerWeek),
+          duties: nullable(body.duties),
+          details: {},
+        },
+        token,
+      );
+
+    const testType = nullable(body.testType);
+    if (testType)
+      await insert(
+        "english_tests",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          test_type: testType,
+          test_date: nullableDay(body.testDate),
+          overall: nullableNumber(body.testOverall),
+          listening: nullableNumber(body.testListening),
+          reading: nullableNumber(body.testReading),
+          writing: nullableNumber(body.testWriting),
+          speaking: nullableNumber(body.testSpeaking),
+          details: {},
+        },
+        token,
+      );
+
+    if (serviceType === "study_abroad" && nullable(body.destinationCountry))
+      await insert(
+        "study_preferences",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          destination_countries: [nullable(body.destinationCountry)],
+          study_levels: stringArray(body.studyLevel),
+          preferred_institutions: stringArray(body.preferredInstitution),
+          fields_of_study: stringArray(body.preferredCourse),
+          target_intakes: stringArray(body.intake),
+          annual_budget: nullableNumber(body.annualBudget),
+          funding_source: nullable(body.fundingSource),
+          accommodation_required: checked(body.accommodationRequired),
+          scholarship_required: checked(body.scholarshipRequired),
+          notes: nullable(body.remarks),
+        },
+        token,
+      );
+
+    const previousVisaCountry = nullable(body.previousVisaCountry);
+    const previousVisaType = nullable(body.previousVisaType);
+    if (previousVisaCountry && previousVisaType)
+      await insert(
+        "visa_history",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          country_code: previousVisaCountry,
+          visa_type: previousVisaType,
+          status: nullable(body.previousVisaOutcome) ?? "unknown",
+          applied_on: nullableDay(body.previousVisaApplied),
+          refusal_reason: nullable(body.refusalDetails),
+          details: {},
+        },
+        token,
+      );
+
+    const declarations: Array<[string, unknown, unknown]> = [
+      ["travel_history", body.visitedOtherCountry, [body.travelCountry, body.travelDate, body.travelPurpose].filter(Boolean).join(" · ")],
+      ["visa_refusal", body.hasVisaRefusal, body.refusalDetails],
+      ["history_gap", body.gapReason ? "yes" : "no", [body.gapFrom, body.gapTo, body.gapReason].filter(Boolean).join(" · ")],
+    ];
+    for (const [type, answer, details] of declarations) {
+      if (!nullable(answer) && !nullable(details)) continue;
+      await insert(
+        "client_declarations",
+        {
+          id: crypto.randomUUID(),
+          organisation_id: organisationId,
+          client_id: clientId,
+          declaration_type: type,
+          response: nullable(answer) ? nullable(answer)?.toLowerCase() === "yes" : null,
+          details: nullable(details),
+          declared_at: new Date().toISOString(),
+        },
+        token,
+      );
+    }
+  }
+
+  const applicationInstitution = nullable(body.applicationInstitution);
+  const applicationCourse = nullable(body.applicationCourse);
+  if (serviceType === "study_abroad" && applicationInstitution && applicationCourse) {
+    const status = completeApplicationStatus(body.applicationStatus);
+    const now = new Date().toISOString();
+    await insert(
+      "education_applications",
+      {
+        id: crypto.randomUUID(),
+        organisation_id: organisationId,
+        case_id: caseId,
+        institution: applicationInstitution,
+        course: applicationCourse,
+        campus: nullable(body.applicationCampus),
+        intake: nullable(body.intake),
+        application_reference: nullable(body.applicationReference),
+        status,
+        deadline_at: nullableDay(body.applicationDeadline),
+        ...(["submitted", "offer_received", "offer_accepted", "coe_received"].includes(status) ? { submitted_at: now } : {}),
+        ...(["offer_received", "offer_accepted", "coe_received"].includes(status) ? { offer_received_at: now } : {}),
+        ...(status === "coe_received" ? { coe_received_at: now } : {}),
+        details: {
+          associate: nullable(body.associate),
+          partner: nullable(body.partner),
+        },
+      },
+      token,
+    );
+  }
+
+  if (serviceType === "direct_visa")
+    await insert(
+      "visa_matters",
+      {
+        id: crypto.randomUUID(),
+        organisation_id: organisationId,
+        case_id: caseId,
+        destination_country: nullable(body.migrationDestination) ?? "Australia",
+        visa_subclass: nullable(body.matterType),
+        status: "assessment",
+        current_visa_expiry: nullableDay(body.visaExpiry),
+        details: {
+          current_visa_status: nullable(body.currentVisaStatus),
+          travel_country: nullable(body.travelCountry),
+          travel_date: nullable(body.travelDate),
+          travel_purpose: nullable(body.travelPurpose),
+          gap_from: nullable(body.gapFrom),
+          gap_to: nullable(body.gapTo),
+          gap_reason: nullable(body.gapReason),
+        },
+      },
+      token,
+    );
+}
+
+function stringArray(value: unknown): string[] {
+  const parsed = nullable(value);
+  return parsed ? [parsed] : [];
+}
+
+function checked(value: unknown): boolean {
+  return value === true || value === "true" || value === "on" || value === "yes";
+}
+
+function nullableNumber(value: unknown): number | null {
+  const parsed = nullable(value);
+  if (!parsed) return null;
+  const number = Number(parsed);
+  if (!Number.isFinite(number)) throw new InputError("A numeric intake value is invalid.");
+  return number;
+}
+
+function completeApplicationStatus(value: unknown): string {
+  const parsed = nullable(value) ?? "draft";
+  const allowed = ["draft", "submitted", "offer_received", "offer_accepted", "coe_received", "deferred", "withdrawn", "rejected"];
+  if (!allowed.includes(parsed)) throw new InputError("Application status is invalid.");
+  return parsed;
+}
+
+function maskPassport(value: string): string {
+  const clean = value.replace(/\s+/g, "");
+  return `${"•".repeat(Math.max(0, clean.length - 4))}${clean.slice(-4)}`;
 }
 
 async function rest<T>(query: string, token: string): Promise<T> {
@@ -2053,6 +2746,31 @@ function requiredEmail(value: unknown): string {
     throw new InputError("Enter a valid email address.");
   return parsed;
 }
+function moneyAmount(value: unknown, label: string, allowZero = false): number {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0 || (!allowZero && amount === 0))
+    throw new InputError(`${label} must be a valid amount greater than zero.`);
+  return Math.round(amount * 100) / 100;
+}
+function invoiceCurrency(value: unknown): string {
+  const currency = String(value || "AUD").trim().toUpperCase();
+  if (!["AUD", "USD", "NZD", "GBP", "EUR", "CAD", "INR", "LKR"].includes(currency))
+    throw new InputError("That invoice currency is not supported.");
+  return currency;
+}
+function invoiceTypeValue(value: unknown): string {
+  const parsed = String(value || "professional_fee").trim().toLowerCase();
+  if (![
+    "professional_fee",
+    "service_fee",
+    "tuition",
+    "application_fee",
+    "visa_fee",
+    "disbursement",
+  ].includes(parsed))
+    throw new InputError("That invoice type is not recognised.");
+  return parsed;
+}
 function requiredDay(value: unknown, label: string): string {
   const parsed = required(value, label);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed) || Number.isNaN(Date.parse(parsed)))
@@ -2093,6 +2811,25 @@ function fullClientName(value?: Json): string {
   return value
     ? [value.first_name, value.last_name].filter(Boolean).join(" ")
     : "";
+}
+
+// Some server adapters expose the internal worker URL as localhost even when
+// the browser is on the public Netlify site. Client emails and Supabase action
+// links must always return to the address the client can actually open.
+function publicOrigin(request: Request): string {
+  for (const configured of [process.env.NEXT_PUBLIC_APP_URL, process.env.URL]) {
+    if (!configured) continue;
+    try {
+      return new URL(configured).origin;
+    } catch {
+      // Continue to the proxy headers when an optional value is malformed.
+    }
+  }
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const host = forwardedHost || request.headers.get("host")?.trim();
+  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (host) return `${forwardedProtocol || "https"}://${host}`;
+  return new URL(request.url).origin;
 }
 // invoices, content_templates and workflow_templates are all writable only by
 // manager level and above (migration 0005). Check it here so the CRM can say
@@ -2139,6 +2876,17 @@ function requireManager(role: string, action: string): void {
       403,
       `Only a manager or administrator can ${action}.`,
     );
+}
+
+function uuidList(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.length === 0)
+    throw new InputError(`Select at least one ${label.toLowerCase()}.`);
+  if (value.length > 100)
+    throw new InputError("Bulk actions are limited to 100 records at a time.");
+  const ids = Array.from(new Set(value.map((item) => String(item))));
+  if (ids.some((id) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)))
+    throw new InputError(`${label} contains an invalid record identifier.`);
+  return ids;
 }
 
 class InputError extends Error {}

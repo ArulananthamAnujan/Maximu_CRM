@@ -48,7 +48,43 @@ export async function GET(request: Request) {
     ).catch(() => null);
     const googleSignInEnabled = authSettings?.external?.google === true;
     const gmailReady = gmailOAuthConfigured();
+    const [backups, drills, checks, incidents] = await Promise.all([
+      supabaseRequest<{ status: string; completed_at: string | null; object_path: string | null }[]>("/rest/v1/backup_runs?select=status,completed_at,object_path&order=started_at.desc&limit=1", { method: "GET" }, session.accessToken).catch(() => []),
+      supabaseRequest<{ status: string; completed_at: string | null }[]>("/rest/v1/restore_drills?select=status,completed_at&order=started_at.desc&limit=1", { method: "GET" }, session.accessToken).catch(() => []),
+      supabaseRequest<{ component: string; status: string; checked_at: string; details: Record<string, unknown> }[]>("/rest/v1/operational_checks?select=component,status,checked_at,details&order=checked_at.desc&limit=50", { method: "GET" }, session.accessToken).catch(() => []),
+      supabaseRequest<{ id: string }[]>("/rest/v1/operational_incidents?select=id&status=neq.resolved", { method: "GET" }, session.accessToken).catch(() => []),
+    ]);
+    const latestCheck = (component: string) => checks.find((row) => row.component === component);
+    const backupReady = backups[0]?.status === "completed" && drills[0]?.status === "passed";
     const integrations = [
+      {
+        key: "backup_restore",
+        name: "Database backup and restore drill",
+        purpose: "Daily logical archive plus automatic checksum and relationship validation.",
+        state: backupReady ? "connected" : "not_configured",
+        detail: backupReady
+          ? `Latest backup and restore drill passed ${drills[0]?.completed_at ?? backups[0]?.completed_at}.`
+          : "No successful production backup and restore drill is recorded yet. The scheduled production-operations function must complete once after migration 0031.",
+        setup: ["SUPABASE_SERVICE_ROLE_KEY"],
+      },
+      {
+        key: "monitoring",
+        name: "Monitoring and incident alerts",
+        purpose: "Checks database, deployment headers, Gmail, Drive, backups and retry queues every day.",
+        state: latestCheck("database")?.status === "healthy" && incidents.length === 0 ? "connected" : "not_configured",
+        detail: `${incidents.length} open incident${incidents.length === 1 ? "" : "s"}. Latest database check: ${latestCheck("database")?.checked_at ?? "not run"}.`,
+        setup: ["INCIDENT_ALERT_WEBHOOK_URL"],
+      },
+      {
+        key: "security_headers",
+        name: "Production security headers",
+        purpose: "Verifies the public deployment sends CSP, HSTS, clickjacking and content-type protections.",
+        state: latestCheck("security_headers")?.status === "healthy" ? "connected" : "not_configured",
+        detail: latestCheck("security_headers")?.status === "healthy"
+          ? `Verified ${latestCheck("security_headers")?.checked_at}.`
+          : "The repository config is present, but the scheduled live response check has not passed yet.",
+        setup: [],
+      },
       {
         key: "drive",
         name: "Google Shared Drive",

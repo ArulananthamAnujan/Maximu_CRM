@@ -53,6 +53,8 @@ export async function GET(request: Request) {
       preferences,
       visaHistory,
       declarations,
+      collaborators,
+      communications,
     ] = await Promise.all([
       get<Json[]>(`clients?select=*&id=eq.${clientId}&limit=1`, token),
       get<Json[]>(
@@ -108,6 +110,14 @@ export async function GET(request: Request) {
         `client_declarations?select=*&client_id=eq.${clientId}&order=declaration_type.asc`,
         token,
       ),
+      get<Json[]>(
+        `case_collaborators?select=profile_id,added_at,profiles!case_collaborators_profile_id_fkey(display_name,email)&case_id=eq.${caseId}&order=added_at.asc`,
+        token,
+      ),
+      get<Json[]>(
+        `email_messages?select=id,sender,recipients,direction,body_preview,sent_at,created_at,delivery_state,email_threads!inner(case_id,subject)&email_threads.case_id=eq.${caseId}&order=created_at.desc&limit=200`,
+        token,
+      ),
     ]);
 
     return appendRefreshCookies(
@@ -127,6 +137,22 @@ export async function GET(request: Request) {
         documents,
         notes,
         invoices,
+        collaborators: collaborators.map((row) => ({
+          profileId: row.profile_id,
+          addedAt: row.added_at,
+          name: (row.profiles as Json | null)?.display_name ?? "Team member",
+          email: (row.profiles as Json | null)?.email ?? "",
+        })),
+        communications: communications.map((row) => ({
+          id: row.id,
+          sender: row.sender,
+          recipients: row.recipients,
+          direction: row.direction,
+          body: row.body_preview,
+          sentAt: row.sent_at ?? row.created_at,
+          status: row.delivery_state,
+          subject: (row.email_threads as Json | null)?.subject ?? "Message",
+        })),
         intake: {
           education,
           employment,
@@ -155,6 +181,50 @@ export async function POST(request: Request) {
     const body = (await request.json()) as Json;
     const action = required(body.action, "Action");
 
+    if (action === "invoice_pdf_prepare") {
+      const invoiceId = uuid(body.invoiceId, "Invoice");
+      const caseId = uuid(body.caseId, "Case");
+      const [invoice] = await get<Json[]>(
+        `invoices?select=id,client_id,case_id,invoice_number&id=eq.${invoiceId}&limit=1`,
+        token,
+      );
+      if (!invoice || String(invoice.case_id) !== caseId)
+        throw new LiveAccessError(403, "That invoice is not available in this case.");
+      const existing = await get<Json[]>(
+        `documents?select=id&case_id=eq.${caseId}&metadata->>invoice_id=eq.${invoiceId}&limit=1`,
+        token,
+      );
+      if (existing[0]) return Response.json({ ok: true, documentId: existing[0].id });
+
+      const documentId = crypto.randomUUID();
+      const invoiceNumber = String(invoice.invoice_number || "Invoice");
+      await insert(
+        "documents",
+        {
+          id: documentId,
+          organisation_id: org,
+          client_id: invoice.client_id,
+          case_id: caseId,
+          document_type: "10 Accounts and Receipts",
+          display_name: `${invoiceNumber}.pdf`,
+          state: "requested",
+          requested_by: session.identity.profileId,
+          metadata: {
+            source: "invoice_pdf",
+            invoice_id: invoiceId,
+            invoice_number: invoiceNumber,
+            client_visible: false,
+          },
+        },
+        token,
+      );
+      await audit(session, "invoice.pdf_prepared", "invoice", invoiceId, {
+        caseId,
+        summary: `Prepared a PDF attachment for ${invoiceNumber}`,
+      });
+      return Response.json({ ok: true, documentId });
+    }
+
     if (action === "application_create") {
       const id = crypto.randomUUID();
       const status = applicationStatus(body.status);
@@ -175,14 +245,20 @@ export async function POST(request: Request) {
         status,
         deadline_at: optionalDate(body.deadline),
         // Each later status implies the ones before it already happened.
-        ...(["submitted", "offer_received", "coe_received"].includes(status)
-          ? { submitted_at: now }
+        ...(["submitted", "offer_received", "offer_accepted", "coe_received"].includes(status)
+          ? { submitted_at: optionalDate(body.submittedOn) ?? now }
           : {}),
-        ...(["offer_received", "coe_received"].includes(status)
-          ? { offer_received_at: now }
+        ...(["offer_received", "offer_accepted", "coe_received"].includes(status)
+          ? { offer_received_at: optionalDate(body.offerOn) ?? now }
           : {}),
-        ...(status === "coe_received" ? { coe_received_at: now } : {}),
-        details: {},
+        ...(status === "coe_received"
+          ? { coe_received_at: optionalDate(body.coeOn) ?? now }
+          : {}),
+        details: {
+          associate: optional(body.associate),
+          partner: optional(body.partner),
+          notes: optional(body.notes),
+        },
       };
       await insert("education_applications", value, token);
       await audit(session, "application.created", "education_application", id, {

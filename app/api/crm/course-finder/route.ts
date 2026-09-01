@@ -17,30 +17,51 @@ type Json = Record<string, unknown>;
 export async function GET(request: Request) {
   try {
     const session = await liveSession(request);
-    if (session.identity.role === "client")
-      throw new LiveAccessError(403, "Course Finder is available to staff only.");
     const token = session.accessToken;
     const url = new URL(request.url);
     const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || 30, 1), 100);
     const page = Math.max(Number(url.searchParams.get("page")) || 1, 1);
     const institution = url.searchParams.get("institution");
     if (institution) uuid(institution, "Institution");
-    const [catalog, institutions] = await Promise.all([
-      supabaseRequest<Json>(
+    const v2Body = {
+      p_query: optional(url.searchParams.get("q")),
+      p_country: optional(url.searchParams.get("country")),
+      p_level: optional(url.searchParams.get("level")),
+      p_field: optional(url.searchParams.get("field")),
+      p_intake: optional(url.searchParams.get("intake")),
+      p_max_fee: optionalNumber(url.searchParams.get("maxFee")),
+      p_max_duration: optionalInt(url.searchParams.get("maxDuration")),
+      p_verified_only: url.searchParams.get("verified") === "true",
+      p_institution: institution || null,
+      p_limit: limit,
+      p_offset: (page - 1) * limit,
+    };
+    let catalog: Json;
+    try {
+      catalog = await supabaseRequest<Json>(
+        "/rest/v1/rpc/search_course_catalog_v2",
+        { method: "POST", body: JSON.stringify(v2Body) },
+        token,
+      );
+    } catch (reason) {
+      if (!(reason instanceof SupabaseError) || !/search_course_catalog_v2|PGRST202|does not exist/i.test(reason.message)) throw reason;
+      catalog = await supabaseRequest<Json>(
         "/rest/v1/rpc/search_course_catalog",
         {
           method: "POST",
           body: JSON.stringify({
-            p_query: optional(url.searchParams.get("q")),
-            p_country: optional(url.searchParams.get("country")),
-            p_level: optional(url.searchParams.get("level")),
-            p_institution: institution || null,
-            p_limit: limit,
-            p_offset: (page - 1) * limit,
+            p_query: v2Body.p_query,
+            p_country: v2Body.p_country,
+            p_level: v2Body.p_level,
+            p_institution: v2Body.p_institution,
+            p_limit: v2Body.p_limit,
+            p_offset: v2Body.p_offset,
           }),
         },
         token,
-      ),
+      );
+    }
+    const institutions = await
       // Small compared to the course catalogue -- the list an administrator
       // picks from when adding a course, and looks a new institution up
       // against before adding a duplicate.
@@ -48,10 +69,13 @@ export async function GET(request: Request) {
         "/rest/v1/institutions?select=id,name,country,city&active=eq.true&order=name.asc&limit=5000",
         { method: "GET" },
         token,
-      ),
-    ]);
+      );
+    const sources = await supabaseRequest<Json[]>(
+      "/rest/v1/course_source_registry?select=country_code,country_name,source_system,source_name,source_url,authority_type,coverage,sync_mode,status,last_success_at,last_error&order=country_name.asc",
+      { method: "GET" }, token,
+    ).catch(() => []);
     return appendRefreshCookies(
-      Response.json({ ok: true, ...catalog, institutions, page, limit }),
+      Response.json({ ok: true, ...catalog, institutions, sources, page, limit }),
       session.refreshed,
       request,
     );

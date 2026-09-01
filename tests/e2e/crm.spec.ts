@@ -236,6 +236,40 @@ test("the portal shows a client their own view and no staff tools", async ({
   );
 });
 
+test("client appointment requests use portal wording and their own case", async ({
+  page,
+}) => {
+  await signIn(page, CLIENT);
+  await page.getByRole("button", { name: "Appointments", exact: true }).click();
+  await page.getByRole("button", { name: /request appointment/i }).click();
+  const modal = page.locator(".recordModal");
+  await expect(
+    modal.getByRole("heading", { name: "Request an appointment" }),
+  ).toBeVisible();
+  await expect(modal.getByText("Internal appointment")).toHaveCount(0);
+  await expect(modal.getByText("Internal meeting")).toHaveCount(0);
+  await expect(
+    modal.getByRole("button", { name: "Send appointment request" }),
+  ).toBeVisible();
+  await expect(modal.locator('input[name="caseId"]')).toHaveValue(/.+/);
+});
+
+test("client messages go only to their Maximus case team", async ({ page }) => {
+  await signIn(page, CLIENT);
+  await page.getByRole("button", { name: "Messages", exact: true }).click();
+  await page.getByRole("button", { name: /new message/i }).click();
+  const modal = page.locator(".recordModal");
+  await expect(
+    modal.getByRole("heading", { name: "Message your case team" }),
+  ).toBeVisible();
+  await expect(modal.locator('input[name="to"]')).toHaveCount(0);
+  await expect(modal.getByDisplayValue("Your Maximus case team")).toBeVisible();
+  await expect(modal.locator('input[name="caseId"]')).toHaveValue(/.+/);
+  await expect(
+    modal.getByRole("button", { name: "Send message" }),
+  ).toBeVisible();
+});
+
 test("the layout does not overflow on a phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, OFFICER);

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Maximus CRM Next",
-  description: "Education and migration operations, made clear.",
+  title: "Maximus CRM | Education & Migration Operations",
+  description: "Case-centred education and migration operations for the Maximus team and its clients.",
   other: { "codex-preview": "development" },
 };
 

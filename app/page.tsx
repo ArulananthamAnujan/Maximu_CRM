@@ -18,6 +18,7 @@ import {
   CircleDollarSign,
   Clock3,
   Command,
+  Copy,
   Download,
   FileCheck2,
   FileText,
@@ -28,7 +29,6 @@ import {
   LogOut,
   Mail,
   Menu,
-  MoreHorizontal,
   Eye,
   EyeOff,
   Pencil,
@@ -108,6 +108,7 @@ type CaseRecord = {
   stage: string;
   owner: string;
   ownerId: string;
+  collaboratorIds?: string[];
   branch: string;
   due: string;
   health: "healthy" | "attention" | "critical";
@@ -119,6 +120,11 @@ type CaseRecord = {
   completedAt: string;
   reopenedAt: string;
   createdAt: string;
+  destinationCountry: string;
+  intake: string;
+  source: string;
+  applicationStatus: string;
+  visaCategory: string;
 };
 // One student can hold several offers at once, so an application is a record in
 // its own right rather than something inferred from the case it belongs to.
@@ -139,6 +145,9 @@ type ApplicationRow = {
   deadlineOn: string;
   owner: string;
   branch: string;
+  associate: string;
+  partner: string;
+  notes: string;
   archived: boolean;
 };
 type VisaMatterRow = {
@@ -194,6 +203,8 @@ type AppointmentRecord = {
   date: string;
   time: string;
   type: string;
+  status: string;
+  responseNote?: string;
 };
 type DocumentRecord = {
   id: string;
@@ -221,7 +232,11 @@ type MessageRecord = {
 };
 type InvoiceRecord = {
   id: string;
+  invoiceNumber: string;
   client: string;
+  currency: string;
+  subtotal: number;
+  tax: number;
   amount: number;
   paid: number;
   credited: number;
@@ -230,6 +245,7 @@ type InvoiceRecord = {
   issued: string;
   due: string;
   status: string;
+  pdfDocumentId: string;
 };
 type CommissionClaimRecord = {
   id: string;
@@ -322,6 +338,69 @@ type LiveIdentity = {
   role: AppRole;
 };
 
+const STUDY_MATTER_TYPES = [
+  "Education enquiry",
+  "Student admission",
+  "Student visa",
+];
+
+const DIRECT_VISA_MATTER_TYPES = [
+  "Migration enquiry",
+  "Student Subclass 500",
+  "Visitor Subclass 600",
+  "Temporary Graduate Subclass 485",
+  "Training Visa Subclass 407",
+  "407 Training Visa",
+  "Employer Sponsored Subclass 482",
+  "482 Work Visa",
+  "408 Temporary work activity",
+  "485 Visa",
+  "Offshore",
+  "Subclass 408",
+  "EOI / ROI",
+  "EOI lodgement",
+  "ACS Skill Assessment",
+  "PSA Registration",
+  "JRP Registration",
+  "JRWA Registration",
+  "CPA Skill Assessment",
+  "Skill Assessment",
+  "Skill assessment program",
+  "Engineers Australia Skill Assessment",
+  "494 Regional Work Visa",
+  "500 Student Dependent",
+  "Partner visa 820/801",
+  "Partner visa 309/100",
+  "Protection Visa 866",
+  "600 Visitor Visa",
+];
+
+const DESTINATION_COUNTRIES = [
+  "Australia",
+  "Bangladesh",
+  "Bhutan",
+  "Canada",
+  "China",
+  "Finland",
+  "France",
+  "Georgia",
+  "India",
+  "Ireland",
+  "Malaysia",
+  "Malta",
+  "Nepal",
+  "New Zealand",
+  "Pakistan",
+  "Poland",
+  "Singapore",
+  "South Korea",
+  "Sri Lanka",
+  "Sweden",
+  "United Arab Emirates",
+  "United Kingdom",
+  "United States",
+];
+
 if (
   typeof window !== "undefined" &&
   globalThis.crypto &&
@@ -342,6 +421,7 @@ const studyNavGroups = [
       ["applications", "Applications", BookOpen],
       ["visas", "Visa", BriefcaseBusiness],
       ["defer", "Defer", Clock3],
+      ["case_complete", "Completed", FileCheck2],
     ],
   },
 ] as const;
@@ -353,6 +433,7 @@ const directVisaNavGroups = [
       ["enquiries", "Enquiries", Users],
       ["direct_visas", "Clients", UserCog],
       ["visas", "Visa Applications", ShieldCheck],
+      ["defer", "Deferred", Clock3],
       ["case_complete", "Case Complete", FileCheck2],
     ],
   },
@@ -363,6 +444,7 @@ const clientNavGroups = [
     label: "My journey",
     items: [
       ["portal", "Journey", GraduationCap],
+      ["courseFinder", "Find a course", School],
       ["calendar", "Appointments", CalendarDays],
       ["documents", "Documents", FolderOpen],
       ["communications", "Messages", Mail],
@@ -410,6 +492,7 @@ const adminToolGroups = [
   {
     label: "Branch management",
     items: [
+      ["workflows", "Workflow Templates", Workflow],
       ["administration", "Staff & Masters", Settings],
       ["compliance", "Activity & Compliance", LockKeyhole],
     ],
@@ -584,7 +667,7 @@ const roleConfig: Record<
     legacy: "Student login",
     scope: "Only the linked personal journey and documents",
     initials: "CL",
-    modules: ["portal", "calendar", "documents", "communications", "finance"],
+    modules: ["portal", "courseFinder", "calendar", "documents", "communications", "finance"],
   },
 };
 
@@ -614,8 +697,8 @@ const featureCoverage = [
   ],
   [
     "Master configuration",
-    "Partners, statuses, document checklists, visa types, commissions, courses and institutions",
-    "Next working screen",
+    "Organisation defaults, branches, staff, statuses, document checklists, workflows, courses and institutions",
+    "Working model + backend",
   ],
   [
     "Daily workflow",
@@ -654,6 +737,11 @@ const clientMeta: Partial<Record<ModuleKey, [string, string, string]>> = {
     "My journey",
     "Maximus",
     "Where your application has got to, and what we need from you next.",
+  ],
+  courseFinder: [
+    "Find a course",
+    "Study options",
+    "Search and compare current courses, fees, intakes and entry requirements.",
   ],
   calendar: [
     "My appointments",
@@ -746,7 +834,7 @@ const meta: Record<ModuleKey, [string, string, string]> = {
   communications: [
     "Messages",
     "Communication",
-    "Case-linked message drafts. Sending is not connected yet.",
+    "Send and receive case-linked Gmail conversations using the address saved in each client profile.",
   ],
   courseFinder: [
     "Course Finder",
@@ -859,6 +947,199 @@ function EmptyState({
           {action}
         </button>
       )}
+    </div>
+  );
+}
+
+/** Shared selection behaviour for operational lists. Keeping it here makes
+ * every bulk-enabled screen use the same select-all, clear and stale-record
+ * handling instead of each page inventing a slightly different interaction. */
+function useBulkSelection<T extends { id: string }>(items: T[]) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const membership = items.map((item) => item.id).join("|");
+  const [selectionMembership, setSelectionMembership] = useState(membership);
+  if (selectionMembership !== membership) {
+    setSelectionMembership(membership);
+    setSelectedIds(new Set());
+  }
+  const selected = items.filter((item) => selectedIds.has(item.id));
+  const toggle = (id: string) =>
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const toggleAll = () =>
+    setSelectedIds(
+      selected.length === items.length
+        ? new Set()
+        : new Set(items.map((item) => item.id)),
+    );
+  const clear = () => setSelectedIds(new Set());
+  return {
+    selected,
+    selectedIds,
+    toggle,
+    toggleAll,
+    clear,
+    allSelected: items.length > 0 && selected.length === items.length,
+  };
+}
+
+function SelectAllControl({
+  checked,
+  onChange,
+  label = "Select all shown records",
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label?: string;
+}) {
+  return (
+    <label className="bulkSelectAll">
+      <input type="checkbox" checked={checked} onChange={onChange} />
+      <span>{label}</span>
+    </label>
+  );
+}
+
+function BulkActionBar({
+  count,
+  onClear,
+  children,
+}: {
+  count: number;
+  onClear: () => void;
+  children: React.ReactNode;
+}) {
+  if (!count) return null;
+  return (
+    <div className="bulkActionBar" role="region" aria-label="Bulk actions">
+      <strong>{count} selected</strong>
+      <div className="bulkActionChoices">{children}</div>
+      <button type="button" className="linkButton" onClick={onClear}>
+        Clear selection
+      </button>
+    </div>
+  );
+}
+
+function RowSelection({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+}) {
+  return (
+    <label className="bulkRowSelect" onClick={(event) => event.stopPropagation()}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        aria-label={label}
+      />
+    </label>
+  );
+}
+
+function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
+  if (!rows.length) return;
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  const cell = (value: unknown) => {
+    const text = value == null ? "" : Array.isArray(value) ? value.join(" | ") : String(value);
+    return `"${text.replaceAll('"', '""')}"`;
+  };
+  const csv = [
+    columns.map(cell).join(","),
+    ...rows.map((row) => columns.map((column) => cell(row[column])).join(",")),
+  ].join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadCalendarFile(filename: string, appointments: AppointmentRecord[]) {
+  if (!appointments.length) return;
+  const escapeIcs = (value: string) =>
+    value.replaceAll("\\", "\\\\").replaceAll(",", "\\,").replaceAll(";", "\\;").replaceAll("\n", "\\n");
+  const events = appointments.flatMap((appointment) => {
+    const start = `${appointment.date.replaceAll("-", "")}T${appointment.time.replaceAll(":", "").padEnd(6, "0")}`;
+    return [
+      "BEGIN:VEVENT",
+      `UID:${appointment.id}@maximus-crm`,
+      `DTSTART:${start}`,
+      `SUMMARY:${escapeIcs(appointment.title)}`,
+      `DESCRIPTION:${escapeIcs(`${appointment.type} appointment with Maximus`)}`,
+      "END:VEVENT",
+    ];
+  });
+  const calendar = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Maximus CRM//Client appointments//EN", ...events, "END:VCALENDAR"].join("\r\n");
+  const url = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadDocumentFiles(documentIds: string[]) {
+  documentIds.forEach((documentId, index) => {
+    window.setTimeout(() => {
+      const anchor = document.createElement("a");
+      anchor.href = `/api/crm/documents?documentId=${encodeURIComponent(documentId)}`;
+      anchor.download = "";
+      anchor.rel = "noopener";
+      anchor.click();
+    }, index * 180);
+  });
+}
+
+function matchesSearch(query: string, values: unknown[]) {
+  const needle = query.trim().toLocaleLowerCase();
+  if (!needle) return true;
+  return values.some((value) =>
+    String(value ?? "").toLocaleLowerCase().includes(needle),
+  );
+}
+
+function ListFilterBar({
+  query,
+  onQuery,
+  placeholder,
+  children,
+  resultCount,
+}: {
+  query: string;
+  onQuery: (value: string) => void;
+  placeholder: string;
+  children?: React.ReactNode;
+  resultCount: number;
+}) {
+  return (
+    <div className="listFilterBar">
+      <label className="listFilterSearch">
+        <Search size={16} aria-hidden="true" />
+        <input
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          placeholder={placeholder}
+          aria-label={placeholder}
+        />
+        {query && (
+          <button type="button" onClick={() => onQuery("")} aria-label="Clear search">
+            <X size={14} />
+          </button>
+        )}
+      </label>
+      {children}
+      <span className="filterResultCount">{resultCount.toLocaleString()} shown</span>
     </div>
   );
 }
@@ -1091,7 +1372,7 @@ function Sidebar({
     <aside className={`sidebar ${open ? "open" : ""}`}>
       <div className="brand">
         <button
-          className="brandMark"
+          className="brandHome"
           onClick={() => {
             setActive(role === "client" ? "portal" : "dashboard");
             setOpen(false);
@@ -1099,12 +1380,12 @@ function Sidebar({
           aria-label={role === "client" ? "Open my journey" : "Open dashboard"}
           title={role === "client" ? "Open my journey" : "Open dashboard"}
         >
-          M
+          <span className="brandMark" aria-hidden="true">M</span>
+          <span className="brandWords">
+            <strong>MAXIMUS</strong>
+            <span>Education &amp; Migration</span>
+          </span>
         </button>
-        <div>
-          <strong>MAXIMUS</strong>
-          <span>Education & Migration</span>
-        </div>
         <button
           className="mobileClose"
           onClick={() => setOpen(false)}
@@ -1156,16 +1437,6 @@ function Sidebar({
                 : "Direct Visa"}
           </span>
         </div>
-        {config.modules.includes("administration") ? (
-          <button
-            className="iconButton"
-            onClick={() => setActive("administration")}
-            aria-label="Open settings"
-            title="Open settings"
-          >
-            <MoreHorizontal size={18} />
-          </button>
-        ) : null}
       </div>
     </aside>
   );
@@ -1240,44 +1511,80 @@ function DailyTopNav({
 function WorkspaceDashboard({
   cases,
   tasks,
+  appointments,
   documents,
   openModal,
   setActive,
+  onOpenCase,
   serviceMode,
 }: {
   cases: CaseRecord[];
   tasks: TaskRecord[];
+  appointments: AppointmentRecord[];
   documents: DocumentRecord[];
   openModal: (x: ModalType) => void;
   setActive: (x: ModuleKey) => void;
+  onOpenCase: (x: CaseRecord) => void;
   serviceMode: ServiceMode;
 }) {
+  const [dashboardSearch, setDashboardSearch] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("");
+  const [countryFilter, setCountryFilter] = useState("");
+  const [intakeFilter, setIntakeFilter] = useState("");
+  const [visaTypeFilter, setVisaTypeFilter] = useState("");
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
   const direct = serviceMode === "direct_visa",
     // Classify by the recorded service stream, never by the matter label: a
     // "Student visa" matter belongs to study abroad, not migration.
-    workspaceCases = cases.filter((c) =>
+    allWorkspaceCases = cases.filter((c) =>
       direct
         ? c.serviceType === "direct_visa"
         : c.serviceType !== "direct_visa",
     ),
+    workspaceCases = allWorkspaceCases.filter((c) => {
+      const searchable = `${c.name} ${c.id} ${c.email} ${c.phone} ${c.target} ${c.matterType}`.toLowerCase();
+      const created = c.createdAt?.slice(0, 10) ?? "";
+      return (
+        (!dashboardSearch || searchable.includes(dashboardSearch.toLowerCase())) &&
+        (!branchFilter || c.branch === branchFilter) &&
+        (!ownerFilter || c.owner === ownerFilter) &&
+        (!countryFilter || c.destinationCountry === countryFilter) &&
+        (!intakeFilter || c.intake.toLowerCase().includes(intakeFilter.toLowerCase())) &&
+        (!visaTypeFilter || c.visaCategory === visaTypeFilter) &&
+        (!createdFrom || created >= createdFrom) &&
+        (!createdTo || created <= createdTo)
+      );
+    }),
     attention = workspaceCases.filter((c) => c.health !== "healthy").length,
     waiting = workspaceCases.filter((c) => c.status === "waiting").length,
     completed = workspaceCases.filter((c) => c.status === "completed").length,
-    steps = direct
-      ? [
-          ["01", "Enquiry", "Capture and qualify"],
-          ["02", "Client", "Convert and assign"],
-          ["03", "Visa Application", "Prepare and lodge"],
-          ["04", "Case Complete", "Record the outcome"],
-        ]
-      : [
-          ["01", "Enquiry", "Capture and qualify"],
-          ["02", "Student", "Convert and counsel"],
-          ["03", "Application", "Offer and CoE"],
-          ["04", "Visa", "Lodge and decide"],
-          ["05", "Defer", "Move the intake"],
-        ],
-    openList = direct ? "direct_visas" : "students";
+    today = new Date().toISOString().slice(0, 10),
+    openTasks = tasks.filter((task) => !task.completed),
+    overdueTasks = openTasks.filter((task) => task.due && task.due < today),
+    pendingDocuments = documents.filter(
+      (document) => !["received", "completed", "uploaded"].includes(document.status.toLowerCase()),
+    ),
+    upcomingAppointments = appointments
+      .filter((appointment) => appointment.date >= today)
+      .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)),
+    nextAppointments = upcomingAppointments.slice(0, 3),
+    openList = direct ? "direct_visas" : "students",
+    branchOptions = [...new Set(allWorkspaceCases.map((c) => c.branch).filter(Boolean))].sort(),
+    ownerOptions = [...new Set(allWorkspaceCases.map((c) => c.owner).filter(Boolean))].sort(),
+    countryOptions = [...new Set(allWorkspaceCases.map((c) => c.destinationCountry).filter(Boolean))].sort(),
+    visaTypeOptions = [...new Set(allWorkspaceCases.map((c) => c.visaCategory).filter(Boolean))].sort(),
+    categoryCounts = [...workspaceCases.reduce((map, record) => {
+      const key = direct ? record.visaCategory || "Uncategorised" : humanise(record.lifecycleStage);
+      map.set(key, (map.get(key) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>())].sort((a, b) => b[1] - a[1]),
+    statusCounts = [...workspaceCases.reduce((map, record) => {
+      const key = direct ? record.stage || "Not set" : humanise(record.applicationStatus || record.stage || "Not set");
+      map.set(key, (map.get(key) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>())].sort((a, b) => b[1] - a[1]);
   return (
     <>
       <section
@@ -1290,13 +1597,13 @@ function WorkspaceDashboard({
           <div>
             <h2>
               {direct
-                ? "Every visa matter, clearly managed."
-                : "Every student journey, beautifully organised."}
+                ? "Migration operations desk"
+                : "Student operations desk"}
             </h2>
             <p>
               {direct
-                ? "Move from enquiry to client, visa application and case completion in one focused migration workspace."
-                : "Move from first enquiry to student, application, visa and defer management without losing the next action."}
+                ? "See the matters that need action, the deadlines at risk and the next client commitments from one place."
+                : "See the students who need action, the work due today and the next application commitments from one place."}
             </p>
             <div className="welcomeActions">
               <button className="heroPrimary" onClick={() => openModal("case")}>
@@ -1324,37 +1631,74 @@ function WorkspaceDashboard({
             </small>
             <div>
               <i />
-              <b>Workspace ready</b>
+              <b>{attention ? `${attention} need attention` : "No case risks flagged"}</b>
             </div>
           </div>
         </div>
       </section>
-      <section className="modeJourney">
+      <section className="dashboardFilters" aria-label="Dashboard filters">
+        <div className="dashboardFilterSearch">
+          <Search size={16} />
+          <input value={dashboardSearch} onChange={(event) => setDashboardSearch(event.target.value)} placeholder="Search client, case, email, mobile or target" />
+        </div>
+        <select aria-label="Filter dashboard by branch" value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="">All branches</option>{branchOptions.map((value) => <option key={value}>{value}</option>)}</select>
+        <select aria-label="Filter dashboard by staff" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}><option value="">All staff</option>{ownerOptions.map((value) => <option key={value}>{value}</option>)}</select>
+        <select aria-label="Filter dashboard by country" value={countryFilter} onChange={(event) => setCountryFilter(event.target.value)}><option value="">All countries</option>{countryOptions.map((value) => <option key={value}>{value}</option>)}</select>
+        {direct ? (
+          <select aria-label="Filter dashboard by visa category" value={visaTypeFilter} onChange={(event) => setVisaTypeFilter(event.target.value)}><option value="">All visa categories</option>{visaTypeOptions.map((value) => <option key={value}>{value}</option>)}</select>
+        ) : (
+          <input aria-label="Filter dashboard by intake" value={intakeFilter} onChange={(event) => setIntakeFilter(event.target.value)} placeholder="Intake" />
+        )}
+        <label>Created from<input type="date" value={createdFrom} onChange={(event) => setCreatedFrom(event.target.value)} /></label>
+        <label>Created to<input type="date" value={createdTo} onChange={(event) => setCreatedTo(event.target.value)} /></label>
+        <button className="ghostButton" onClick={() => { setDashboardSearch(""); setBranchFilter(""); setOwnerFilter(""); setCountryFilter(""); setIntakeFilter(""); setVisaTypeFilter(""); setCreatedFrom(""); setCreatedTo(""); }}>Reset</button>
+        <span>{workspaceCases.length} of {allWorkspaceCases.length} records</span>
+      </section>
+      <section className="operationsBrief" aria-label="Today's priorities">
         <div className="sectionIntro">
           <div>
-            <span className="kicker">THE MAXIMUS PROCESS</span>
-            <h2>{direct ? "Direct Visa workflow" : "Study Abroad workflow"}</h2>
+            <span className="kicker">TODAY</span>
+            <h2>What needs your team&apos;s attention</h2>
           </div>
-          <p>
-            The service switch changes the complete navigation, terminology and
-            reporting context.
-          </p>
+          <p>Open the queue and continue the work without searching across modules.</p>
         </div>
-        <div className="journeyTrack">
-          {steps.map(([number, label, copy], index) => (
-            <article key={label} className={index === 0 ? "active" : ""}>
-              <b>{number}</b>
-              <div>
-                <strong>{label}</strong>
-                <small>{copy}</small>
-              </div>
-              {index < steps.length - 1 ? <ArrowRight size={16} /> : null}
-            </article>
-          ))}
+        <div className="priorityStrip">
+          <button onClick={() => setActive("work")} className={overdueTasks.length ? "urgent" : ""}>
+            <span><Check size={18} /></span>
+            <strong>{overdueTasks.length}</strong>
+            <small>overdue task{overdueTasks.length === 1 ? "" : "s"}</small>
+            <ArrowRight size={15} />
+          </button>
+          <button onClick={() => setActive("documents")}>
+            <span><FileCheck2 size={18} /></span>
+            <strong>{pendingDocuments.length}</strong>
+            <small>document request{pendingDocuments.length === 1 ? "" : "s"} open</small>
+            <ArrowRight size={15} />
+          </button>
+          <button onClick={() => setActive("calendar")}>
+            <span><CalendarDays size={18} /></span>
+            <strong>{upcomingAppointments.length}</strong>
+            <small>upcoming appointment{upcomingAppointments.length === 1 ? "" : "s"}</small>
+            <ArrowRight size={15} />
+          </button>
         </div>
       </section>
+      <section className="dashboardBreakdowns" aria-label="Operational breakdowns">
+        <article className="panel">
+          <div className="panelHead"><div><span className="kicker">WORKLOAD MIX</span><h2>{direct ? "Visa category summary" : "Journey stage summary"}</h2></div></div>
+          <div className="summaryRows">
+            {categoryCounts.length ? categoryCounts.map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>) : <p>No categorised records yet.</p>}
+          </div>
+        </article>
+        <article className="panel">
+          <div className="panelHead"><div><span className="kicker">STATUS VISIBILITY</span><h2>{direct ? "Client status summary" : "Application status summary"}</h2></div></div>
+          <div className="summaryRows">
+            {statusCounts.length ? statusCounts.map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>) : <p>No status updates recorded yet.</p>}
+          </div>
+        </article>
+      </section>
       <section className="signalGrid">
-        <article className="signal ocean">
+        <button className="signal ocean" onClick={() => setActive(openList)}>
           <div>
             <span>{direct ? "Active clients" : "Active students"}</span>
             <strong>
@@ -1365,8 +1709,8 @@ function WorkspaceDashboard({
           <div className="signalIcon blue">
             {direct ? <ShieldCheck size={22} /> : <GraduationCap size={22} />}
           </div>
-        </article>
-        <article className="signal sunshine">
+        </button>
+        <button className="signal sunshine" onClick={() => setActive(openList)}>
           <div>
             <span>Need attention</span>
             <strong>{attention}</strong>
@@ -1375,8 +1719,8 @@ function WorkspaceDashboard({
           <div className="signalIcon amber">
             <AlertTriangle size={22} />
           </div>
-        </article>
-        <article className="signal coral">
+        </button>
+        <button className="signal coral" onClick={() => setActive(openList)}>
           <div>
             <span>Waiting</span>
             <strong>{waiting}</strong>
@@ -1385,8 +1729,8 @@ function WorkspaceDashboard({
           <div className="signalIcon">
             <Clock3 size={22} />
           </div>
-        </article>
-        <article className="signal mint">
+        </button>
+        <button className="signal mint" onClick={() => setActive("case_complete")}>
           <div>
             <span>{direct ? "Case complete" : "Completed"}</span>
             <strong>{completed}</strong>
@@ -1395,7 +1739,7 @@ function WorkspaceDashboard({
           <div className="signalIcon green">
             <Check size={22} />
           </div>
-        </article>
+        </button>
       </section>
       <section className="dashboardGrid">
         <article className="panel pipelinePanel">
@@ -1428,7 +1772,7 @@ function WorkspaceDashboard({
                 <button
                   className="caseRow compactRecord"
                   key={c.id}
-                  onClick={() => setActive(openList)}
+                  onClick={() => onOpenCase(c)}
                 >
                   <span className="clientCell">
                     <b>{c.name}</b>
@@ -1487,6 +1831,21 @@ function WorkspaceDashboard({
               </div>
               <ArrowRight size={15} />
             </button>
+            {nextAppointments.length > 0 ? (
+              <div className="dashboardAppointments">
+                <span className="kicker">NEXT APPOINTMENTS</span>
+                {nextAppointments.map((appointment) => (
+                  <button key={appointment.id} onClick={() => setActive("calendar")}>
+                    <CalendarDays size={15} />
+                    <span>
+                      <strong>{appointment.client || appointment.title}</strong>
+                      <small>{appointment.date} · {appointment.time || "Time not set"}</small>
+                    </span>
+                    <ArrowRight size={14} />
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </article>
         </aside>
       </section>
@@ -1505,6 +1864,8 @@ function CaseWorkspace({
   staff,
   canBulkAssign,
   onBulkAssign,
+  onBulkStage,
+  onBulkArchive,
 }: {
   title: string;
   // Which screen this is, so a saved view is offered back only on the same
@@ -1518,10 +1879,18 @@ function CaseWorkspace({
   staff: StaffRecord[];
   canBulkAssign: boolean;
   onBulkAssign: (records: CaseRecord[], ownerId: string) => Promise<void>;
+  onBulkStage: (records: CaseRecord[], stage: LifecycleStage) => Promise<void>;
+  onBulkArchive: (records: CaseRecord[]) => Promise<void>;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [assigning, setAssigning] = useState(false);
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [listQuery, setListQuery] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const [branchFilter, setBranchFilter] = useState("all");
+  const [healthFilter, setHealthFilter] = useState("all");
+  const [dueFilter, setDueFilter] = useState("all");
   // A screen switch must not carry a selection from one case list into the
   // next; adjusted here, during render, rather than in an effect.
   const [selectionModule, setSelectionModule] = useState(module);
@@ -1548,8 +1917,43 @@ function CaseWorkspace({
     };
   }, [module]);
 
-  const shown =
-    filter === "all" ? cases : cases.filter((c) => c.status === filter);
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAhead = new Date(Date.parse(`${today}T00:00:00Z`) + 7 * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const shown = cases.filter((record) => {
+    if (filter !== "all" && record.status !== filter) return false;
+    if (
+      listQuery &&
+      !`${record.name} ${record.id} ${record.email} ${record.type} ${record.target}`
+        .toLowerCase()
+        .includes(listQuery.toLowerCase())
+    ) return false;
+    if (ownerFilter !== "all" && record.ownerId !== ownerFilter) return false;
+    if (branchFilter !== "all" && record.branchId !== branchFilter) return false;
+    if (healthFilter !== "all" && record.health !== healthFilter) return false;
+    if (dueFilter === "overdue" && (!record.due || record.due >= today)) return false;
+    if (
+      dueFilter === "next7" &&
+      (!record.due || record.due < today || record.due > weekAhead)
+    ) return false;
+    if (dueFilter === "none" && record.due) return false;
+    return true;
+  });
+  const activeFilterCount = [
+    listQuery,
+    ownerFilter !== "all" ? ownerFilter : "",
+    branchFilter !== "all" ? branchFilter : "",
+    healthFilter !== "all" ? healthFilter : "",
+    dueFilter !== "all" ? dueFilter : "",
+  ].filter(Boolean).length;
+  const clearFilters = () => {
+    setListQuery("");
+    setOwnerFilter("all");
+    setBranchFilter("all");
+    setHealthFilter("all");
+    setDueFilter("all");
+  };
   const toggleOne = (id: string) =>
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -1562,6 +1966,11 @@ function CaseWorkspace({
       prev.size === shown.length ? new Set() : new Set(shown.map((c) => c.id)),
     );
   const selectedRecords = shown.filter((c) => selectedIds.has(c.id));
+  const bulkStageOptions = LIFECYCLE_STAGES.filter((stage) =>
+    selectedRecords.every((record) =>
+      allowedStageMoves(record.lifecycleStage).includes(stage),
+    ),
+  );
 
   const saveCurrentView = async () => {
     const name = window.prompt("Name this view (for example, \"My waiting cases\")");
@@ -1574,7 +1983,14 @@ function CaseWorkspace({
           action: "create",
           module,
           name: name.trim(),
-          filters: { filter },
+          filters: {
+            filter,
+            query: listQuery,
+            owner: ownerFilter,
+            branch: branchFilter,
+            health: healthFilter,
+            due: dueFilter,
+          },
         }),
       });
       const result = await response.json();
@@ -1620,10 +2036,11 @@ function CaseWorkspace({
         <div>
           <button
             className="ghostButton"
-            onClick={() => setFilter(filter === "all" ? "active" : "all")}
+            aria-expanded={showFilters}
+            onClick={() => setShowFilters((value) => !value)}
           >
             <Filter size={15} />
-            Filter
+            Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
           </button>
           <button className="primaryButton" onClick={() => openModal("case")}>
             <Plus size={16} />
@@ -1631,12 +2048,81 @@ function CaseWorkspace({
           </button>
         </div>
       </div>
+      {showFilters ? (
+        <div className="caseFilterPanel">
+          <label className="caseFilterSearch">
+            <span>Search this list</span>
+            <div>
+              <Search size={16} />
+              <input
+                value={listQuery}
+                onChange={(event) => setListQuery(event.target.value)}
+                placeholder="Name, case number, email or matter"
+              />
+            </div>
+          </label>
+          <label>
+            <span>Owner</span>
+            <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
+              <option value="all">All owners</option>
+              <option value="">Unassigned</option>
+              {staff.filter((person) => person.active).map((person) => (
+                <option key={person.id} value={person.id}>{person.display_name}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Branch</span>
+            <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
+              <option value="all">All branches</option>
+              {Array.from(
+                new Map(
+                  cases
+                    .filter((record) => record.branchId)
+                    .map((record) => [record.branchId, record.branch]),
+                ).entries(),
+              ).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Case health</span>
+            <select value={healthFilter} onChange={(event) => setHealthFilter(event.target.value)}>
+              <option value="all">All health states</option>
+              <option value="critical">Critical</option>
+              <option value="attention">Needs attention</option>
+              <option value="healthy">Healthy</option>
+            </select>
+          </label>
+          <label>
+            <span>Due date</span>
+            <select value={dueFilter} onChange={(event) => setDueFilter(event.target.value)}>
+              <option value="all">Any due date</option>
+              <option value="overdue">Overdue</option>
+              <option value="next7">Next 7 days</option>
+              <option value="none">No due date</option>
+            </select>
+          </label>
+          <div className="caseFilterSummary">
+            <strong>{shown.length}</strong>
+            <span>of {cases.length} cases</span>
+            {activeFilterCount ? <button className="linkButton" onClick={clearFilters}>Clear filters</button> : null}
+          </div>
+        </div>
+      ) : null}
       <div className="savedViewsBar">
         {savedViews.map((view) => (
             <span className="savedViewChip" key={view.id}>
               <button
                 type="button"
-                onClick={() => setFilter(String(view.filters?.filter ?? "all"))}
+                onClick={() => {
+                  setFilter(String(view.filters?.filter ?? "all"));
+                  setListQuery(String(view.filters?.query ?? ""));
+                  setOwnerFilter(String(view.filters?.owner ?? "all"));
+                  setBranchFilter(String(view.filters?.branch ?? "all"));
+                  setHealthFilter(String(view.filters?.health ?? "all"));
+                  setDueFilter(String(view.filters?.due ?? "all"));
+                  setShowFilters(true);
+                }}
               >
                 {view.name}
               </button>
@@ -1664,9 +2150,11 @@ function CaseWorkspace({
         />
       ) : (
         <>
-          {canBulkAssign && selectedIds.size > 0 && (
-            <div className="bulkActionBar">
-              <span>{selectedIds.size} selected</span>
+          <BulkActionBar
+            count={selectedRecords.length}
+            onClear={() => setSelectedIds(new Set())}
+          >
+            {canBulkAssign && (
               <select
                 aria-label="Assign selected cases to"
                 disabled={assigning}
@@ -1690,23 +2178,76 @@ function CaseWorkspace({
                     </option>
                   ))}
               </select>
-              <button className="linkButton" onClick={() => setSelectedIds(new Set())}>
-                Clear
-              </button>
-            </div>
-          )}
+            )}
+            <select
+              aria-label="Move selected cases to stage"
+              disabled={assigning}
+              defaultValue=""
+              onChange={async (event) => {
+                const stage = event.target.value as LifecycleStage;
+                if (!stage) return;
+                setAssigning(true);
+                await onBulkStage(selectedRecords, stage);
+                setAssigning(false);
+                setSelectedIds(new Set());
+                event.target.value = "";
+              }}
+            >
+              <option value="">Move stage…</option>
+              {bulkStageOptions.map((stage) => (
+                <option key={stage} value={stage}>{stageLabelFor(stage, cases[0]?.serviceType === "direct_visa")}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="ghostButton"
+              onClick={() =>
+                downloadCsv(
+                  `${module}-selected.csv`,
+                  selectedRecords.map((record) => ({
+                    caseNumber: record.id,
+                    client: record.name,
+                    email: record.email,
+                    phone: record.phone,
+                    matter: record.type,
+                    stage: record.lifecycleStage,
+                    owner: record.owner,
+                    branch: record.branch,
+                    due: record.due,
+                    health: record.health,
+                    status: record.status,
+                  })),
+                )
+              }
+            >
+              <Download size={14} /> Export selected
+            </button>
+            <button
+              type="button"
+              className="ghostButton dangerAction"
+              disabled={assigning}
+              onClick={async () => {
+                const verb = canBulkAssign ? "archive" : "request archive for";
+                if (!confirm(`${verb[0].toUpperCase()}${verb.slice(1)} ${selectedRecords.length} selected case${selectedRecords.length === 1 ? "" : "s"}?`)) return;
+                setAssigning(true);
+                await onBulkArchive(selectedRecords);
+                setAssigning(false);
+                setSelectedIds(new Set());
+              }}
+            >
+              Archive selected
+            </button>
+          </BulkActionBar>
           <div className="richTable">
             <div className="richHeaderWrap">
-              {canBulkAssign && (
-                <span className="rowCheckboxCell">
-                  <input
-                    type="checkbox"
-                    aria-label="Select all shown cases"
-                    checked={selectedIds.size > 0 && selectedIds.size === shown.length}
-                    onChange={toggleAll}
-                  />
-                </span>
-              )}
+              <span className="rowCheckboxCell">
+                <input
+                  type="checkbox"
+                  aria-label="Select all shown cases"
+                  checked={selectedRecords.length > 0 && selectedRecords.length === shown.length}
+                  onChange={toggleAll}
+                />
+              </span>
               <div className="richHeader">
                 <span>Client</span>
                 <span>Matter</span>
@@ -1718,16 +2259,14 @@ function CaseWorkspace({
             </div>
             {shown.map((c) => (
               <div className="richRowWrap" key={c.id}>
-                {canBulkAssign && (
-                  <span className="rowCheckboxCell">
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${c.name}`}
-                      checked={selectedIds.has(c.id)}
-                      onChange={() => toggleOne(c.id)}
-                    />
-                  </span>
-                )}
+                <span className="rowCheckboxCell">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${c.name}`}
+                    checked={selectedIds.has(c.id)}
+                    onChange={() => toggleOne(c.id)}
+                  />
+                </span>
                 <button className="richRow" onClick={() => onSelect(c)}>
                   <span className="clientCell">
                     <b>{c.name}</b>
@@ -1786,8 +2325,14 @@ function ApplicationsBoard({
   onOpen: (caseId: string) => void;
 }) {
   const [showArchived, setShowArchived] = useState(false);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
   const archivedCount = rows.filter((row) => row.archived).length;
-  const shown = showArchived ? rows : rows.filter((row) => !row.archived);
+  const statuses = [...new Set(rows.map((row) => row.status).filter(Boolean))].sort();
+  const shown = (showArchived ? rows : rows.filter((row) => !row.archived))
+    .filter((row) => !status || row.status === status)
+    .filter((row) => matchesSearch(query, [row.client, row.institution, row.course, row.campus, row.intake, row.reference, row.owner, row.caseNumber, row.associate, row.partner]));
+  const selection = useBulkSelection(shown);
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -1806,19 +2351,33 @@ function ApplicationsBoard({
           </button>
         )}
       </div>
+      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search student, institution, course, intake or reference" resultCount={shown.length}>
+        <label className="compactFilter">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+      </ListFilterBar>
       {shown.length === 0 ? (
         <BoardEmpty what="applications" />
       ) : (
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        </div>
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          <button className="ghostButton" onClick={() => downloadCsv("applications-selected.csv", selection.selected as unknown as Record<string, unknown>[])}>
+            <Download size={14} /> Export selected
+          </button>
+        </BulkActionBar>
         <div className="recordTableWrap">
           <table className="recordTable boardTable">
             <thead>
               <tr>
+                <th scope="col" className="selectionColumn"><span className="srOnly">Select</span></th>
                 <th scope="col">Student</th>
                 <th scope="col">Institution</th>
                 <th scope="col">Course</th>
                 <th scope="col">Campus</th>
                 <th scope="col">Intake</th>
                 <th scope="col">Reference</th>
+                <th scope="col">Partner / associate</th>
                 <th scope="col">Status</th>
                 <th scope="col">Submitted</th>
                 <th scope="col">Offer</th>
@@ -1831,12 +2390,14 @@ function ApplicationsBoard({
             <tbody>
               {shown.map((row) => (
                 <tr key={row.id} className={row.archived ? "archivedRow" : ""}>
+                  <td className="selectionColumn"><RowSelection checked={selection.selectedIds.has(row.id)} onChange={() => selection.toggle(row.id)} label={`Select ${row.client || "application"}`} /></td>
                   <td>{row.client || "—"}</td>
                   <td>{row.institution || "—"}</td>
                   <td>{row.course || "—"}</td>
                   <td>{row.campus || "—"}</td>
                   <td>{row.intake || "—"}</td>
                   <td>{row.reference || "—"}</td>
+                  <td>{[row.partner, row.associate].filter(Boolean).join(" · ") || "—"}</td>
                   <td>
                     {humanise(row.status)}
                     {row.archived ? " · withdrawn" : ""}
@@ -1861,6 +2422,7 @@ function ApplicationsBoard({
             </tbody>
           </table>
         </div>
+        </>
       )}
     </article>
   );
@@ -1873,6 +2435,13 @@ function VisaMattersBoard({
   rows: VisaMatterRow[];
   onOpen: (caseId: string) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const statuses = [...new Set(rows.map((row) => row.status).filter(Boolean))].sort();
+  const shown = rows
+    .filter((row) => !status || row.status === status)
+    .filter((row) => matchesSearch(query, [row.client, row.subclass, row.matterType, row.destination, row.currentVisa, row.trn, row.reference, row.agent, row.owner, row.marn, row.caseNumber]));
+  const selection = useBulkSelection(shown);
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -1881,13 +2450,26 @@ function VisaMattersBoard({
           <h2>Visa matters</h2>
         </div>
       </div>
-      {rows.length === 0 ? (
+      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search client, visa subclass, TRN, MARN or destination" resultCount={shown.length}>
+        <label className="compactFilter">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+      </ListFilterBar>
+      {shown.length === 0 ? (
         <BoardEmpty what="visa matters" />
       ) : (
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        </div>
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          <button className="ghostButton" onClick={() => downloadCsv("visa-matters-selected.csv", selection.selected as unknown as Record<string, unknown>[])}>
+            <Download size={14} /> Export selected
+          </button>
+        </BulkActionBar>
         <div className="recordTableWrap">
           <table className="recordTable boardTable">
             <thead>
               <tr>
+                <th scope="col" className="selectionColumn"><span className="srOnly">Select</span></th>
                 <th scope="col">Client</th>
                 <th scope="col">Subclass</th>
                 <th scope="col">Destination</th>
@@ -1904,8 +2486,9 @@ function VisaMattersBoard({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {shown.map((row) => (
                 <tr key={row.id}>
+                  <td className="selectionColumn"><RowSelection checked={selection.selectedIds.has(row.id)} onChange={() => selection.toggle(row.id)} label={`Select ${row.client || "visa matter"}`} /></td>
                   <td>{row.client || "—"}</td>
                   <td>{row.subclass || row.matterType || "—"}</td>
                   <td>{row.destination || "—"}</td>
@@ -1951,6 +2534,7 @@ function VisaMattersBoard({
             </tbody>
           </table>
         </div>
+        </>
       )}
     </article>
   );
@@ -1961,12 +2545,27 @@ function TasksView({
   cases,
   setTasks,
   openModal,
+  onBulkAction,
 }: {
   tasks: TaskRecord[];
   cases: CaseRecord[];
   setTasks: (x: TaskRecord[]) => void;
   openModal: (x: ModalType) => void;
+  onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
 }) {
+  const [query, setQuery] = useState("");
+  const [state, setState] = useState("open");
+  const [priority, setPriority] = useState("");
+  const shown = tasks
+    .filter((task) => state === "all" || (state === "done" ? task.completed : !task.completed))
+    .filter((task) => !priority || task.priority === priority)
+    .filter((task) => matchesSearch(query, [task.title, task.priority, task.due, cases.find((c) => c.dbId === task.caseId)?.name]));
+  const priorities = [...new Set(tasks.map((task) => task.priority).filter(Boolean))].sort();
+  const selection = useBulkSelection(shown);
+  const run = async (operation: string, extra: Record<string, unknown> = {}) => {
+    await onBulkAction("task", operation, selection.selected.map((item) => item.id), extra);
+    selection.clear();
+  };
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -1979,7 +2578,11 @@ function TasksView({
           New task
         </button>
       </div>
-      {tasks.length === 0 ? (
+      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search task, client or due date" resultCount={shown.length}>
+        <label className="compactFilter">Status<select value={state} onChange={(event) => setState(event.target.value)}><option value="open">Open</option><option value="done">Completed</option><option value="all">All</option></select></label>
+        <label className="compactFilter">Priority<select value={priority} onChange={(event) => setPriority(event.target.value)}><option value="">All priorities</option>{priorities.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+      </ListFilterBar>
+      {shown.length === 0 ? (
         <EmptyState
           icon={Check}
           title="No tasks"
@@ -1988,8 +2591,26 @@ function TasksView({
           onAction={() => openModal("task")}
         />
       ) : (
-        tasks.map((t) => (
-          <div className="functionalRow" key={t.id}>
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        </div>
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          <button className="ghostButton" onClick={() => void run("toggle", { completed: true })}>
+            <Check size={14} /> Mark complete
+          </button>
+          <button className="ghostButton" onClick={() => void run("toggle", { completed: false })}>
+            Reopen
+          </button>
+          <button className="ghostButton dangerAction" onClick={() => {
+            if (confirm(`Delete ${selection.selected.length} selected task${selection.selected.length === 1 ? "" : "s"}?`)) void run("delete");
+          }}>
+            <Trash2 size={14} /> Delete
+          </button>
+        </BulkActionBar>
+        {shown.map((t) => (
+          <div className="functionalRow bulkEnabled" key={t.id}>
+            <RowSelection checked={selection.selectedIds.has(t.id)} onChange={() => selection.toggle(t.id)} label={`Select ${t.title}`} />
             <button
               className={`taskCheck ${t.completed ? "done" : ""}`}
               onClick={() =>
@@ -2019,7 +2640,8 @@ function TasksView({
               <Trash2 size={16} />
             </button>
           </div>
-        ))
+        ))}
+        </>
       )}
     </article>
   );
@@ -2029,17 +2651,28 @@ function CalendarView({
   openModal,
   setItems,
   setActive,
+  onBulkAction,
+  onRespond,
 }: {
   items: AppointmentRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: AppointmentRecord[]) => void;
   setActive: (x: ModuleKey) => void;
+  onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
+  onRespond: (appointment: AppointmentRecord, status: "scheduled" | "declined") => void;
 }) {
   const [calendarNow] = useState(() => new Date());
   const [connection, setConnection] = useState<MailboxStatus | null>(null);
   const [connectionError, setConnectionError] = useState("");
+  const [query, setQuery] = useState("");
+  const [type, setType] = useState("");
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
     today = calendarNow.getDay();
+  const types = [...new Set(items.map((item) => item.type).filter(Boolean))].sort();
+  const shown = items
+    .filter((item) => !type || item.type === type)
+    .filter((item) => matchesSearch(query, [item.title, item.client, item.type, item.date, item.time]));
+  const selection = useBulkSelection(shown);
 
   const loadConnection = async () => {
     try {
@@ -2179,6 +2812,9 @@ function CalendarView({
               </button>
             </div>
           </div>
+          <ListFilterBar query={query} onQuery={setQuery} placeholder="Search appointment, client or date" resultCount={shown.length}>
+            <label className="compactFilter">Type<select value={type} onChange={(event) => setType(event.target.value)}><option value="">All types</option>{types.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+          </ListFilterBar>
           <div className="weekGrid">
             {days.map((day, index) => (
               <div className={today === index + 1 ? "today" : ""} key={day}>
@@ -2192,7 +2828,7 @@ function CalendarView({
                     ).padStart(2, "0")}
                   </b>
                 </header>
-                {items
+                {shown
                   .filter(
                     (a) =>
                       new Date(`${a.date}T00:00:00`).getDay() === index + 1,
@@ -2212,7 +2848,7 @@ function CalendarView({
                       <small>{a.client || "Internal"}</small>
                     </button>
                   ))}
-                {!items.some(
+                {!shown.some(
                   (a) => new Date(`${a.date}T00:00:00`).getDay() === index + 1,
                 ) ? (
                   <span className="freeDay">No CRM events</span>
@@ -2229,7 +2865,7 @@ function CalendarView({
             </div>
             <CalendarCheck2 size={19} />
           </div>
-          {items.length === 0 ? (
+          {shown.length === 0 ? (
             <div className="agendaEmpty">
               <CalendarDays size={28} />
               <strong>Your schedule is clear</strong>
@@ -2246,8 +2882,22 @@ function CalendarView({
               </button>
             </div>
           ) : (
-            items.slice(0, 6).map((a) => (
+            <>
+            <div className="listSelectionTools compactSelectionTools">
+              <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+            </div>
+            <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+              <button className="ghostButton dangerAction" onClick={async () => {
+                if (!confirm(`Cancel ${selection.selected.length} selected appointment${selection.selected.length === 1 ? "" : "s"}? Connected Google Calendar events will also be cancelled.`)) return;
+                await onBulkAction("appointment", "delete", selection.selected.map((item) => item.id));
+                selection.clear();
+              }}>
+                <Trash2 size={14} /> Cancel selected
+              </button>
+            </BulkActionBar>
+            {shown.slice(0, 12).map((a) => (
               <div className="agendaItem" key={a.id}>
+                <RowSelection checked={selection.selectedIds.has(a.id)} onChange={() => selection.toggle(a.id)} label={`Select ${a.title}`} />
                 <div className="dateTile">
                   <b>{a.date?.slice(8, 10) || "–"}</b>
                   <span>{a.time || "TBC"}</span>
@@ -2258,6 +2908,13 @@ function CalendarView({
                     {a.client || "Internal"} · {a.type}
                   </span>
                 </div>
+                <Status value={a.status} />
+                {a.status === "requested" ? (
+                  <div className="staffActions">
+                    <button className="linkButton" onClick={() => onRespond(a, "scheduled")}>Confirm</button>
+                    <button className="linkButton dangerLink" onClick={() => onRespond(a, "declined")}>Decline</button>
+                  </div>
+                ) : null}
                 <button
                   className="iconButton"
                   onClick={() => setItems(items.filter((x) => x.id !== a.id))}
@@ -2267,7 +2924,8 @@ function CalendarView({
                   <Trash2 size={15} />
                 </button>
               </div>
-            ))
+            ))}
+            </>
           )}
         </aside>
       </section>
@@ -2278,18 +2936,25 @@ function DocumentsView({
   items,
   setItems,
   storageConnected,
+  onBulkAction,
 }: {
   items: DocumentRecord[];
   setItems: (x: DocumentRecord[]) => void;
   storageConnected: boolean;
+  onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
 }) {
   // An archived document is kept for the retention period but is not part of
   // the working file, so it is out of the way until it is asked for.
   const [showArchived, setShowArchived] = useState(false);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
   const archivedCount = items.filter((d) => d.status === "archived").length;
-  const shown = showArchived
+  const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
+  const shown = (showArchived
     ? items
-    : items.filter((d) => d.status !== "archived");
+    : items.filter((d) => d.status !== "archived"))
+    .filter((item) => !status || item.status === status)
+    .filter((item) => matchesSearch(query, [item.client, item.title, item.folder, item.fileName, item.status]));
   // Every file, grouped by the client it belongs to -- an archive to browse
   // and download from, not where a request gets started. Requesting a
   // document happens from that client's own case now, so it is never out of
@@ -2299,6 +2964,7 @@ function DocumentsView({
     const key = d.client || "No client";
     byClient.set(key, [...(byClient.get(key) ?? []), d]);
   }
+  const selection = useBulkSelection(shown);
   return (
     <section className="moduleGrid">
       <article className="panel widePanel">
@@ -2320,6 +2986,9 @@ function DocumentsView({
             )}
           </div>
         </div>
+        <ListFilterBar query={query} onQuery={setQuery} placeholder="Search client, document, folder or filename" resultCount={shown.length}>
+          <label className="compactFilter">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+        </ListFilterBar>
         {shown.length === 0 ? (
           <EmptyState
             icon={FolderOpen}
@@ -2335,11 +3004,27 @@ function DocumentsView({
             }
           />
         ) : (
-          [...byClient.entries()].map(([client, docs]) => (
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+          </div>
+          <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+            <button className="ghostButton" onClick={() => downloadCsv("documents-selected.csv", selection.selected.map((document) => ({
+              client: document.client, title: document.title, folder: document.folder,
+              fileName: document.fileName, status: document.status, createdAt: document.createdAt,
+            })))}><Download size={14} /> Export index</button>
+            <button className="ghostButton dangerAction" onClick={async () => {
+              if (!confirm(`Archive ${selection.selected.length} selected document record${selection.selected.length === 1 ? "" : "s"}? Files stay in Drive for retention.`)) return;
+              await onBulkAction("document", "delete", selection.selected.map((item) => item.id));
+              selection.clear();
+            }}><Trash2 size={14} /> Archive selected</button>
+          </BulkActionBar>
+          {[...byClient.entries()].map(([client, docs]) => (
             <div className="documentClientGroup" key={client}>
               <h3 className="documentClientGroupHead">{client}</h3>
               {docs.map((d) => (
-                <div className="functionalRow" key={d.id}>
+                <div className="functionalRow bulkEnabled" key={d.id}>
+                  <RowSelection checked={selection.selectedIds.has(d.id)} onChange={() => selection.toggle(d.id)} label={`Select ${d.title}`} />
                   <div className="docIcon">
                     <FileText size={18} />
                   </div>
@@ -2361,7 +3046,8 @@ function DocumentsView({
                 </div>
               ))}
             </div>
-          ))
+          ))}
+          </>
         )}
       </article>
       <aside className="panel drivePanel">
@@ -2402,19 +3088,25 @@ type MailboxStatus = {
 
 function MessagesView({
   items,
+  cases,
   openModal,
   setItems,
   canSend,
+  onBulkAction,
 }: {
   items: MessageRecord[];
+  cases: CaseRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: MessageRecord[]) => void;
   // A client's own portal login can raise a message to their case team, but
   // only staff ever dispatch mail as the agency.
   canSend: boolean;
+  onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
 }) {
   // A discarded draft is kept for the record but is not part of the outbox.
   const [showDiscarded, setShowDiscarded] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const [mailbox, setMailbox] = useState<MailboxStatus | null>(null);
   const [mailboxError, setMailboxError] = useState("");
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -2499,13 +3191,20 @@ function MessagesView({
   const discarded = (message: MessageRecord) =>
     message.status.toLowerCase() === "discarded";
   const discardedCount = items.filter(discarded).length;
-  const shown = showDiscarded ? items : items.filter((m) => !discarded(m));
+  const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
+  const shown = (showDiscarded ? items : items.filter((m) => !discarded(m)))
+    .filter((item) => !statusFilter || item.status === statusFilter)
+    .filter((item) => matchesSearch(query, [item.subject, item.body, item.status, messageWhen(item), cases.find((entry) => (entry.dbId || entry.id) === item.caseId)?.name]));
+  const selectable = shown.filter((message) =>
+    !sentIds.has(message.id) && message.status.toLowerCase() !== "sent",
+  );
+  const selection = useBulkSelection(selectable);
   return (
     <article className="panel listPanel">
       <div className="panelHead">
         <div>
           <span className="kicker">CASE MESSAGES</span>
-          <h2>Drafts</h2>
+          <h2>Shared case communication</h2>
         </div>
         <div className="panelHeadActions">
           {discardedCount > 0 && (
@@ -2527,6 +3226,9 @@ function MessagesView({
           </button>
         </div>
       </div>
+      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search client, subject or message content" resultCount={shown.length}>
+        <label className="compactFilter">Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+      </ListFilterBar>
       {canSend && mailbox?.oauthConfigured ? (
         <p className="modalNotice">
           {mailbox.connected ? (
@@ -2568,22 +3270,46 @@ function MessagesView({
         <EmptyState
           icon={Mail}
           title={discardedCount > 0 ? "Nothing in the outbox" : "No messages"}
-          copy="Compose and save case-linked drafts. Sending is done from your own mailbox."
+          copy="Choose a case and send a message. The CRM uses the email saved in that case profile."
           action="Compose message"
           onAction={() => openModal("message")}
         />
       ) : (
-        shown.map((m) => {
+        <>
+        {selectable.length > 0 && (
+          <div className="listSelectionTools">
+            <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} label="Select all shown drafts" />
+          </div>
+        )}
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          <button className="ghostButton" onClick={async () => {
+            await onBulkAction("message", "toggle", selection.selected.map((item) => item.id), { completed: true });
+            selection.clear();
+          }}>Mark ready</button>
+          <button className="ghostButton" onClick={async () => {
+            await onBulkAction("message", "toggle", selection.selected.map((item) => item.id), { completed: false });
+            selection.clear();
+          }}>Return to draft</button>
+          <button className="ghostButton dangerAction" onClick={async () => {
+            if (!confirm(`Discard ${selection.selected.length} selected draft${selection.selected.length === 1 ? "" : "s"}?`)) return;
+            await onBulkAction("message", "delete", selection.selected.map((item) => item.id));
+            selection.clear();
+          }}><Trash2 size={14} /> Discard</button>
+        </BulkActionBar>
+        {shown.map((m) => {
           const sent = sentIds.has(m.id) || m.status.toLowerCase() === "sent";
           return (
-            <div className="functionalRow" key={m.id}>
+            <div className="functionalRow bulkEnabled" key={m.id}>
+              {!sent ? (
+                <RowSelection checked={selection.selectedIds.has(m.id)} onChange={() => selection.toggle(m.id)} label={`Select ${m.subject}`} />
+              ) : <span className="bulkSelectionSpacer" />}
               <div className="docIcon">
                 <Mail size={17} />
               </div>
               <div>
                 <strong>{m.subject}</strong>
                 <span>
-                  To {m.to} · {messageWhen(m)}
+                  {cases.find((item) => (item.dbId || item.id) === m.caseId)?.name || "Linked case"} · {messageWhen(m)}
                 </span>
               </div>
               <Status value={sent ? "Sent" : m.status} />
@@ -2628,7 +3354,8 @@ function MessagesView({
               )}
             </div>
           );
-        })
+        })}
+        </>
       )}
     </article>
   );
@@ -2640,6 +3367,9 @@ function FinanceView({
   canManage,
   onRefund,
   onCreditNote,
+  onPayment,
+  onReminder,
+  onBulkAction,
 }: {
   items: InvoiceRecord[];
   openModal: (x: ModalType) => void;
@@ -2649,8 +3379,21 @@ function FinanceView({
   canManage: boolean;
   onRefund: (invoice: InvoiceRecord) => void;
   onCreditNote: (invoice: InvoiceRecord) => void;
+  onPayment: (invoice: InvoiceRecord) => void;
+  onReminder: (invoice: InvoiceRecord) => void;
+  onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
 }) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("");
+  const [type, setType] = useState("");
   const total = items.reduce((s, x) => s + x.amount, 0);
+  const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
+  const types = [...new Set(items.map((item) => item.type).filter(Boolean))].sort();
+  const shown = items
+    .filter((item) => !status || item.status === status)
+    .filter((item) => !type || item.type === type)
+    .filter((item) => matchesSearch(query, [item.invoiceNumber, item.client, item.type, item.status, item.due, item.amount]));
+  const selection = useBulkSelection(shown);
   return (
     <>
       <div className="miniStats">
@@ -2698,7 +3441,11 @@ function FinanceView({
             </button>
           )}
         </div>
-        {items.length === 0 ? (
+        <ListFilterBar query={query} onQuery={setQuery} placeholder="Search invoice number, client, type or due date" resultCount={shown.length}>
+          <label className="compactFilter">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+          <label className="compactFilter">Type<select value={type} onChange={(event) => setType(event.target.value)}><option value="">All types</option>{types.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
+        </ListFilterBar>
+        {shown.length === 0 ? (
           <EmptyState
             icon={CircleDollarSign}
             title="No invoices"
@@ -2711,31 +3458,47 @@ function FinanceView({
             onAction={canManage ? () => openModal("invoice") : undefined}
           />
         ) : (
-          items.map((i) => (
-            <div className="functionalRow" key={i.id}>
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+          </div>
+          <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+            <button className="ghostButton" onClick={() => downloadCsv("invoices-selected.csv", selection.selected.map((invoice) => ({
+              invoiceNumber: invoice.invoiceNumber, client: invoice.client,
+              type: invoice.type, currency: invoice.currency, subtotal: invoice.subtotal,
+              tax: invoice.tax, total: invoice.amount, paid: invoice.paid,
+              balance: invoice.balance, issued: invoice.issued, due: invoice.due,
+              status: invoice.status,
+            })))}><Download size={14} /> Export selected</button>
+            {canManage && (
+              <button className="ghostButton dangerAction" onClick={async () => {
+                if (!confirm(`Void ${selection.selected.length} selected invoice${selection.selected.length === 1 ? "" : "s"}? This keeps the accounting history and cannot be changed back here.`)) return;
+                await onBulkAction("invoice", "delete", selection.selected.map((item) => item.id));
+                selection.clear();
+              }}><Trash2 size={14} /> Void selected</button>
+            )}
+          </BulkActionBar>
+          {shown.map((i) => (
+            <div className="functionalRow bulkEnabled" key={i.id}>
+              <RowSelection checked={selection.selectedIds.has(i.id)} onChange={() => selection.toggle(i.id)} label={`Select invoice ${i.invoiceNumber || i.client}`} />
               <div>
-                <strong>{i.client}</strong>
-                <span>Due {i.due || "not set"}</span>
+                <strong>{i.invoiceNumber || i.client}</strong>
+                <span>{i.client} · Due {i.due || "not set"}</span>
               </div>
-              <b>${i.amount.toLocaleString()}</b>
+              <b>{i.currency} {i.amount.toLocaleString()}</b>
+              {i.pdfDocumentId ? (
+                <a className="ghostButton" href={`/api/crm/documents?documentId=${i.pdfDocumentId}`}>
+                  <FileText size={14} /> Invoice PDF
+                </a>
+              ) : null}
               {canManage ? (
                 <>
                   <button
                     className="ghostButton"
-                    onClick={() =>
-                      setItems(
-                        items.map((x) =>
-                          x.id === i.id
-                            ? {
-                                ...x,
-                                status: x.status === "Paid" ? "Unpaid" : "Paid",
-                              }
-                            : x,
-                        ),
-                      )
-                    }
+                    onClick={() => onPayment(i)}
+                    disabled={i.balance <= 0 || i.status === "Void"}
                   >
-                    {i.status === "Paid" ? "Mark unpaid" : "Record payment"}
+                    Record payment
                   </button>
                   {i.status === "Paid" && (
                     <button className="ghostButton" onClick={() => onRefund(i)}>
@@ -2747,6 +3510,9 @@ function FinanceView({
                       Credit note
                     </button>
                   )}
+                  {i.balance > 0 && i.status !== "Void" ? (
+                    <button className="ghostButton" onClick={() => onReminder(i)}>Send reminder</button>
+                  ) : null}
                   <button
                     className="iconButton"
                     onClick={() => setItems(items.filter((x) => x.id !== i.id))}
@@ -2760,7 +3526,8 @@ function FinanceView({
                 <Status value={i.status} />
               )}
             </div>
-          ))
+          ))}
+          </>
         )}
       </article>
     </>
@@ -2874,13 +3641,16 @@ function TemplatesView({
   openModal,
   setItems,
   canManage,
+  onBulkAction,
 }: {
   items: TemplateRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: TemplateRecord[]) => void;
   // Approved templates are writable only by manager level and above.
   canManage: boolean;
+  onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
 }) {
+  const selection = useBulkSelection(items);
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -2911,8 +3681,23 @@ function TemplatesView({
           onAction={canManage ? () => openModal("template") : undefined}
         />
       ) : (
-        items.map((t) => (
-          <div className="functionalRow" key={t.id}>
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        </div>
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          <button className="ghostButton" onClick={() => navigator.clipboard?.writeText(selection.selected.map((item) => `${item.name}\n${item.content}`).join("\n\n---\n\n")).then(() => alert("Selected templates copied."))}>
+            Copy selected
+          </button>
+          {canManage && <button className="ghostButton dangerAction" onClick={async () => {
+            if (!confirm(`Delete ${selection.selected.length} selected template${selection.selected.length === 1 ? "" : "s"}?`)) return;
+            await onBulkAction("template", "delete", selection.selected.map((item) => item.id));
+            selection.clear();
+          }}><Trash2 size={14} /> Delete</button>}
+        </BulkActionBar>
+        {items.map((t) => (
+          <div className="functionalRow bulkEnabled" key={t.id}>
+            <RowSelection checked={selection.selectedIds.has(t.id)} onChange={() => selection.toggle(t.id)} label={`Select ${t.name}`} />
             <div className="docIcon">
               <FileText size={17} />
             </div>
@@ -2943,9 +3728,54 @@ function TemplatesView({
               </button>
             )}
           </div>
-        ))
+        ))}
+        </>
       )}
     </article>
+  );
+}
+
+function TemplatesWorkspace({
+  items, checklistTemplates, emailTemplates, openModal, setItems,
+  canManage, reloadChecklist, reloadEmails, onBulkAction,
+}: {
+  items: TemplateRecord[]; checklistTemplates: ChecklistTemplateRecord[];
+  emailTemplates: EmailTemplateRecord[]; openModal: (x: ModalType) => void;
+  setItems: (x: TemplateRecord[]) => void; canManage: boolean;
+  reloadChecklist: () => Promise<void>; reloadEmails: () => Promise<void>;
+  onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
+}) {
+  const [section, setSection] = useState<"documents" | "emails" | "content">("documents");
+  const sections = [
+    { key: "documents" as const, label: "Document requests", icon: FileCheck2, count: checklistTemplates.length },
+    { key: "emails" as const, label: "Client emails", icon: Mail, count: emailTemplates.length },
+    { key: "content" as const, label: "Reusable content", icon: FileText, count: items.length },
+  ];
+  return (
+    <section className="templateWorkspace">
+      <div className="templateWorkspaceIntro">
+        <div>
+          <span className="kicker">CONTROL CENTRE</span>
+          <h2>Standardise every client interaction</h2>
+          <p>Maintain the approved requests and messages your team uses every day, without making staff search through one long settings page.</p>
+        </div>
+        <div className="templateWorkspaceSummary">
+          <strong>{checklistTemplates.filter((item) => item.active).length}</strong>
+          <span>active document requests</span>
+        </div>
+      </div>
+      <div className="templateWorkspaceTabs" role="tablist" aria-label="Template types">
+        {sections.map(({ key, label, icon: Icon, count }) => (
+          <button key={key} role="tab" aria-selected={section === key}
+            className={section === key ? "active" : ""} onClick={() => setSection(key)}>
+            <Icon size={17} /><span>{label}</span><b>{count}</b>
+          </button>
+        ))}
+      </div>
+      {section === "documents" && <DocumentChecklistTemplatesPanel templates={checklistTemplates} canManage={canManage} reload={reloadChecklist} />}
+      {section === "emails" && <EmailTemplatesPanel templates={emailTemplates} canManage={canManage} reload={reloadEmails} />}
+      {section === "content" && <TemplatesView items={items} openModal={openModal} setItems={setItems} canManage={canManage} onBulkAction={onBulkAction} />}
+    </section>
   );
 }
 function WorkflowView({
@@ -2953,12 +3783,15 @@ function WorkflowView({
   openModal,
   setItems,
   canManage,
+  onBulkAction,
 }: {
   items: WorkflowRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: WorkflowRecord[]) => void;
   canManage: boolean;
+  onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
 }) {
+  const selection = useBulkSelection(items);
   return (
     <article className="panel listPanel">
       <div className="panelHead">
@@ -2994,8 +3827,20 @@ function WorkflowView({
           onAction={canManage ? () => openModal("workflow") : undefined}
         />
       ) : (
-        items.map((w) => (
-          <div className="functionalRow" key={w.id}>
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        </div>
+        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
+          {canManage && <>
+            <button className="ghostButton" onClick={async () => { await onBulkAction("workflow", "toggle", selection.selected.map((item) => item.id), { active: true }); selection.clear(); }}>Activate</button>
+            <button className="ghostButton" onClick={async () => { await onBulkAction("workflow", "toggle", selection.selected.map((item) => item.id), { active: false }); selection.clear(); }}>Deactivate</button>
+          </>}
+          <button className="ghostButton" onClick={() => downloadCsv("workflow-templates-selected.csv", selection.selected.map((item) => ({ name: item.name, stages: item.stages, active: item.active })))}><Download size={14} /> Export</button>
+        </BulkActionBar>
+        {items.map((w) => (
+          <div className="functionalRow bulkEnabled" key={w.id}>
+            <RowSelection checked={selection.selectedIds.has(w.id)} onChange={() => selection.toggle(w.id)} label={`Select ${w.name}`} />
             <div className="workflowIcon">
               <Workflow size={17} />
             </div>
@@ -3023,7 +3868,8 @@ function WorkflowView({
               </button>
             )}
           </div>
-        ))
+        ))}
+        </>
       )}
     </article>
   );
@@ -3049,6 +3895,9 @@ function DocumentChecklistTemplatesPanel({
   const [editingKey, setEditingKey] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("active");
 
   const send = async (body: Record<string, unknown>) => {
     setBusy(true);
@@ -3071,9 +3920,28 @@ function DocumentChecklistTemplatesPanel({
     }
   };
 
+  const categories = [...new Set(templates.map((item) => item.category))].sort();
+  const visibleTemplates = templates.filter((item) => {
+    const haystack = `${item.title} ${item.guidance} ${item.category}`.toLowerCase();
+    return (!query.trim() || haystack.includes(query.trim().toLowerCase())) &&
+      (categoryFilter === "all" || item.category === categoryFilter) &&
+      (statusFilter === "all" || (statusFilter === "active" ? item.active : !item.active));
+  });
   const byCategory = new Map<string, ChecklistTemplateRecord[]>();
-  for (const t of templates)
+  for (const t of visibleTemplates)
     byCategory.set(t.category, [...(byCategory.get(t.category) ?? []), t]);
+  const checklistSelection = useBulkSelection(
+    visibleTemplates.map((item) => ({ ...item, id: item.key })),
+  );
+
+  const bulkSetActive = async (active: boolean) => {
+    const ok = await send({
+      action: "bulk_update",
+      templateIds: checklistSelection.selected.map((item) => item.key),
+      active,
+    });
+    if (ok) checklistSelection.clear();
+  };
 
   return (
     <article className="panel listPanel checklistTemplatesPanel">
@@ -3094,6 +3962,21 @@ function DocumentChecklistTemplatesPanel({
         from a client, on any case. Deactivating an item removes it from new
         requests without touching anything already asked for under it.
       </p>
+      {templates.length > 0 && (
+        <div className="templateFilters">
+          <label className="templateSearch"><Search size={16} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search document requests" aria-label="Search document requests" />
+          </label>
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="Filter by category">
+            <option value="all">All categories</option>
+            {categories.map((category) => <option value={category} key={category}>{category}</option>)}
+          </select>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} aria-label="Filter by status">
+            <option value="active">Active only</option><option value="inactive">Inactive only</option><option value="all">All statuses</option>
+          </select>
+          <span className="templateResultCount">{visibleTemplates.length} of {templates.length}</span>
+        </div>
+      )}
       {error && <p className="caseWorkError">{error}</p>}
       {adding && (
         <form
@@ -3137,8 +4020,21 @@ function DocumentChecklistTemplatesPanel({
           action={canManage ? "Add item" : undefined}
           onAction={canManage ? () => setAdding(true) : undefined}
         />
+      ) : visibleTemplates.length === 0 ? (
+        <EmptyState icon={Search} title="No matching document requests" copy="Clear a filter or search with a broader phrase." />
       ) : (
-        [...byCategory.entries()].map(([category, items]) => (
+        <>
+        <div className="listSelectionTools">
+          <SelectAllControl checked={checklistSelection.allSelected} onChange={checklistSelection.toggleAll} />
+        </div>
+        <BulkActionBar count={checklistSelection.selected.length} onClear={checklistSelection.clear}>
+          {canManage && <>
+            <button className="ghostButton" disabled={busy} onClick={() => void bulkSetActive(true)}>Activate selected</button>
+            <button className="ghostButton" disabled={busy} onClick={() => void bulkSetActive(false)}>Deactivate selected</button>
+          </>}
+          <button className="ghostButton" onClick={() => downloadCsv("document-checklist-selected.csv", checklistSelection.selected.map((item) => ({ category: item.category, title: item.title, guidance: item.guidance, status: item.active ? "Active" : "Inactive" })))}><Download size={14} /> Export</button>
+        </BulkActionBar>
+        {[...byCategory.entries()].map(([category, items]) => (
           <div key={category}>
             <h3 className="documentClientGroupHead">{category}</h3>
             {items.map((item) =>
@@ -3182,7 +4078,8 @@ function DocumentChecklistTemplatesPanel({
                   </button>
                 </form>
               ) : (
-                <div className="functionalRow" key={item.key}>
+                <div className="functionalRow bulkEnabled" key={item.key}>
+                  <RowSelection checked={checklistSelection.selectedIds.has(item.key)} onChange={() => checklistSelection.toggle(item.key)} label={`Select ${item.title}`} />
                   <div className="docIcon">
                     <FileCheck2 size={17} />
                   </div>
@@ -3218,7 +4115,8 @@ function DocumentChecklistTemplatesPanel({
               ),
             )}
           </div>
-        ))
+        ))}
+        </>
       )}
     </article>
   );
@@ -3240,6 +4138,7 @@ function EmailTemplatesPanel({
   reload: () => Promise<void>;
 }) {
   const [editingId, setEditingId] = useState("");
+  const [previewId, setPreviewId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -3322,21 +4221,23 @@ function EmailTemplatesPanel({
               </button>
             </form>
           ) : (
-            <div className="functionalRow" key={item.id}>
-              <div className="docIcon">
-                <Mail size={17} />
-              </div>
-              <div>
-                <strong>{EMAIL_TEMPLATE_LABELS[item.kind] || item.kind}</strong>
-                <span>{item.subject}</span>
-              </div>
-              {canManage && (
-                <button
-                  className="ghostButton"
-                  onClick={() => setEditingId(item.id)}
-                >
-                  Edit
+            <div className="emailTemplateCard" key={item.id}>
+              <div className="emailTemplateCardHead">
+                <div className="docIcon"><Mail size={17} /></div>
+                <div><strong>{EMAIL_TEMPLATE_LABELS[item.kind] || item.kind}</strong><span>{item.subject}</span></div>
+                <button className="ghostButton" onClick={() => setPreviewId(previewId === item.id ? "" : item.id)}>
+                  <Eye size={15} />{previewId === item.id ? "Close preview" : "Preview"}
                 </button>
+                {canManage && <button className="primaryButton" onClick={() => setEditingId(item.id)}><Pencil size={15} />Edit wording</button>}
+              </div>
+              {previewId === item.id && (
+                <div className="emailTemplatePreview">
+                  <div><b>Subject</b><p>{item.subject}</p></div>
+                  <div><b>Message</b><p>{item.body}</p></div>
+                  <div className="templateTokens"><b>Automatic fields</b>
+                    {[...new Set(`${item.subject} ${item.body}`.match(/{{[^}]+}}/g) || [])].map((token) => <code key={token}>{token}</code>)}
+                  </div>
+                </div>
               )}
             </div>
           ),
@@ -3622,6 +4523,26 @@ function ClientModuleView({
   const [portalError, setPortalError] = useState("");
   const [confirming, setConfirming] = useState("");
   const [confirmedIds, setConfirmedIds] = useState<Set<string>>(new Set());
+  const [appointmentQuery, setAppointmentQuery] = useState("");
+  const [documentQuery, setDocumentQuery] = useState("");
+  const [messageQuery, setMessageQuery] = useState("");
+  const [invoiceQuery, setInvoiceQuery] = useState("");
+  const ownAppointments = appointments
+    .filter((x) => Boolean(client) && x.client === client?.name)
+    .filter((x) => matchesSearch(appointmentQuery, [x.title, x.date, x.time, x.type]));
+  const ownDocuments = documents.filter(
+    (x) => Boolean(client) && x.client === client?.name && x.clientVisible !== false && x.status !== "archived",
+  ).filter((x) => matchesSearch(documentQuery, [x.title, x.folder, x.fileName, x.status]));
+  const ownMessages = messages
+    .filter((x) => Boolean(client) && x.caseId === client?.id)
+    .filter((x) => matchesSearch(messageQuery, [x.subject, x.body, x.status, messageWhen(x)]));
+  const ownInvoices = invoices.filter(
+    (x) => Boolean(client) && x.client === client?.name && CLIENT_INVOICE_TYPES.includes(x.type),
+  ).filter((x) => matchesSearch(invoiceQuery, [x.invoiceNumber, x.type, x.status, x.due, x.amount]));
+  const appointmentSelection = useBulkSelection(ownAppointments);
+  const documentSelection = useBulkSelection(ownDocuments);
+  const messageSelection = useBulkSelection(ownMessages);
+  const invoiceSelection = useBulkSelection(ownInvoices);
   // Acknowledging a document or invoice request reached them -- recorded on
   // the case history and told to the case owner. It never changes the
   // record's own state, so the confirmation is tracked locally rather than
@@ -3646,6 +4567,16 @@ function ClientModuleView({
     } finally {
       setConfirming("");
     }
+  };
+  const confirmSelectedReceipts = async (
+    kind: "confirm_document" | "confirm_invoice",
+    ids: string[],
+    clear: () => void,
+  ) => {
+    for (const id of ids.filter((itemId) => !confirmedIds.has(itemId))) {
+      await confirmReceipt(kind, id);
+    }
+    clear();
   };
   // A client supplies a document that was asked of them. The API and the
   // database both limit this to their own requested documents.
@@ -3686,9 +4617,7 @@ function ClientModuleView({
       </article>
     );
   if (module === "documents") {
-    const own = documents.filter(
-      (x) => x.client === client.name && x.clientVisible !== false && x.status !== "archived",
-    );
+    const own = ownDocuments;
     return (
       <article className="panel listPanel">
         <div className="panelHead">
@@ -3697,9 +4626,28 @@ function ClientModuleView({
             <h2>Documents Maximus has asked for</h2>
           </div>
         </div>
+        <ListFilterBar query={documentQuery} onQuery={setDocumentQuery} placeholder="Search my documents" resultCount={own.length} />
         {own.length ? (
-          own.map((d) => (
-            <div className="functionalRow" key={d.id}>
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={documentSelection.allSelected} onChange={documentSelection.toggleAll} label="Select all my documents" />
+          </div>
+          <BulkActionBar count={documentSelection.selected.length} onClear={documentSelection.clear}>
+            <button className="ghostButton" onClick={() => downloadCsv("my-documents-selected.csv", documentSelection.selected as unknown as Record<string, unknown>[])}>
+              <Download size={14} /> Export selected
+            </button>
+            {documentSelection.selected.some((item) => Boolean(item.fileName)) && (
+              <button className="ghostButton" onClick={() => downloadDocumentFiles(documentSelection.selected.filter((item) => Boolean(item.fileName)).map((item) => item.id))}>
+                <Download size={14} /> Download files
+              </button>
+            )}
+            <button className="ghostButton" disabled={Boolean(confirming)} onClick={() => void confirmSelectedReceipts("confirm_document", documentSelection.selected.map((item) => item.id), documentSelection.clear)}>
+              <Check size={14} /> Confirm received
+            </button>
+          </BulkActionBar>
+          {own.map((d) => (
+            <div className="functionalRow bulkEnabled" key={d.id}>
+              <RowSelection checked={documentSelection.selectedIds.has(d.id)} onChange={() => documentSelection.toggle(d.id)} label={`Select ${d.title}`} />
               <FileText size={18} />
               <div>
                 <strong>{d.title}</strong>
@@ -3740,7 +4688,8 @@ function ClientModuleView({
                 </label>
               ) : null}
             </div>
-          ))
+          ))}
+          </>
         ) : (
           <p className="restrictedEmpty">
             No documents are linked to this client account.
@@ -3751,7 +4700,7 @@ function ClientModuleView({
     );
   }
   if (module === "calendar") {
-    const own = appointments.filter((x) => x.client === client.name);
+    const own = ownAppointments;
     return (
       <article className="panel listPanel">
         <div className="panelHead">
@@ -3767,9 +4716,23 @@ function ClientModuleView({
             Request appointment
           </button>
         </div>
+        <ListFilterBar query={appointmentQuery} onQuery={setAppointmentQuery} placeholder="Search my appointments" resultCount={own.length} />
         {own.length ? (
-          own.map((a) => (
-            <div className="functionalRow" key={a.id}>
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={appointmentSelection.allSelected} onChange={appointmentSelection.toggleAll} label="Select all my appointments" />
+          </div>
+          <BulkActionBar count={appointmentSelection.selected.length} onClear={appointmentSelection.clear}>
+            <button className="ghostButton" onClick={() => downloadCalendarFile("maximus-appointments.ics", appointmentSelection.selected)}>
+              <CalendarDays size={14} /> Add to calendar
+            </button>
+            <button className="ghostButton" onClick={() => downloadCsv("my-appointments-selected.csv", appointmentSelection.selected as unknown as Record<string, unknown>[])}>
+              <Download size={14} /> Export selected
+            </button>
+          </BulkActionBar>
+          {own.map((a) => (
+            <div className="functionalRow bulkEnabled" key={a.id}>
+              <RowSelection checked={appointmentSelection.selectedIds.has(a.id)} onChange={() => appointmentSelection.toggle(a.id)} label={`Select ${a.title}`} />
               <CalendarDays size={18} />
               <div>
                 <strong>{a.title}</strong>
@@ -3779,7 +4742,8 @@ function ClientModuleView({
               </div>
               <Status value={a.type} />
             </div>
-          ))
+          ))}
+          </>
         ) : (
           <p className="restrictedEmpty">No appointments are scheduled.</p>
         )}
@@ -3787,7 +4751,7 @@ function ClientModuleView({
     );
   }
   if (module === "communications") {
-    const own = messages.filter((x) => x.caseId === client.id);
+    const own = ownMessages;
     return (
       <article className="panel listPanel">
         <div className="panelHead">
@@ -3803,9 +4767,23 @@ function ClientModuleView({
             New message
           </button>
         </div>
+        <ListFilterBar query={messageQuery} onQuery={setMessageQuery} placeholder="Search my messages" resultCount={own.length} />
         {own.length ? (
-          own.map((m) => (
-            <div className="functionalRow" key={m.id}>
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={messageSelection.allSelected} onChange={messageSelection.toggleAll} label="Select all my messages" />
+          </div>
+          <BulkActionBar count={messageSelection.selected.length} onClear={messageSelection.clear}>
+            <button className="ghostButton" onClick={() => downloadCsv("my-messages-selected.csv", messageSelection.selected as unknown as Record<string, unknown>[])}>
+              <Download size={14} /> Export selected
+            </button>
+            <button className="ghostButton" onClick={() => void navigator.clipboard.writeText(messageSelection.selected.map((item) => `${item.subject}\n${item.body || ""}`).join("\n\n---\n\n"))}>
+              <Copy size={14} /> Copy messages
+            </button>
+          </BulkActionBar>
+          {own.map((m) => (
+            <div className="functionalRow bulkEnabled" key={m.id}>
+              <RowSelection checked={messageSelection.selectedIds.has(m.id)} onChange={() => messageSelection.toggle(m.id)} label={`Select ${m.subject}`} />
               <Mail size={18} />
               <div>
                 <strong>{m.subject}</strong>
@@ -3813,7 +4791,8 @@ function ClientModuleView({
               </div>
               <Status value={m.status} />
             </div>
-          ))
+          ))}
+          </>
         ) : (
           <p className="restrictedEmpty">
             No messages are linked to your case.
@@ -3825,9 +4804,7 @@ function ClientModuleView({
   // Only what this client has been billed. A commission claim raised against a
   // partner or an institution is never a client's business and never appears
   // here, whatever else the finance module holds.
-  const own = invoices.filter(
-    (x) => x.client === client.name && CLIENT_INVOICE_TYPES.includes(x.type),
-  );
+  const own = ownInvoices;
   const billed = own.reduce((sum, i) => sum + i.amount, 0);
   const paid = own.reduce((sum, i) => sum + i.paid, 0);
   const outstanding = own.reduce((sum, i) => sum + i.balance, 0);
@@ -3864,19 +4841,43 @@ function ClientModuleView({
           </div>
           <LockKeyhole size={18} />
         </div>
+        <ListFilterBar query={invoiceQuery} onQuery={setInvoiceQuery} placeholder="Search my invoices" resultCount={own.length} />
         {own.length ? (
-          own.map((i) => (
-            <div className="functionalRow" key={i.id}>
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={invoiceSelection.allSelected} onChange={invoiceSelection.toggleAll} label="Select all my invoices" />
+          </div>
+          <BulkActionBar count={invoiceSelection.selected.length} onClear={invoiceSelection.clear}>
+            <button className="ghostButton" onClick={() => downloadCsv("my-invoices-selected.csv", invoiceSelection.selected as unknown as Record<string, unknown>[])}>
+              <Download size={14} /> Export selected
+            </button>
+            {invoiceSelection.selected.some((item) => Boolean(item.pdfDocumentId)) && (
+              <button className="ghostButton" onClick={() => downloadDocumentFiles(invoiceSelection.selected.flatMap((item) => item.pdfDocumentId ? [item.pdfDocumentId] : []))}>
+                <FileText size={14} /> Download invoice PDFs
+              </button>
+            )}
+            <button className="ghostButton" disabled={Boolean(confirming)} onClick={() => void confirmSelectedReceipts("confirm_invoice", invoiceSelection.selected.map((item) => item.id), invoiceSelection.clear)}>
+              <Check size={14} /> Confirm received
+            </button>
+          </BulkActionBar>
+          {own.map((i) => (
+            <div className="functionalRow bulkEnabled" key={i.id}>
+              <RowSelection checked={invoiceSelection.selectedIds.has(i.id)} onChange={() => invoiceSelection.toggle(i.id)} label={`Select invoice ${i.invoiceNumber || i.id}`} />
               <CircleDollarSign size={18} />
               <div>
-                <strong>{money(i.amount)}</strong>
+                <strong>{i.invoiceNumber || money(i.amount)}</strong>
                 <span>
-                  {i.issued ? `Issued ${i.issued} · ` : ""}Due{" "}
+                  {i.currency} {i.amount.toLocaleString()} · {i.issued ? `Issued ${i.issued} · ` : ""}Due{" "}
                   {i.due || "not set"} · Paid {money(i.paid)} · Balance{" "}
                   {money(i.balance)}
                 </span>
               </div>
               <Status value={i.status} />
+              {i.pdfDocumentId ? (
+                <a className="ghostButton" href={`/api/crm/documents?documentId=${i.pdfDocumentId}`}>
+                  <FileText size={14} /> View invoice
+                </a>
+              ) : null}
               {confirmedIds.has(i.id) ? (
                 <span className="portalConfirmed">
                   <Check size={14} /> Confirmed
@@ -3892,7 +4893,8 @@ function ClientModuleView({
                 </button>
               )}
             </div>
-          ))
+          ))}
+          </>
         ) : (
           <p className="restrictedEmpty">
             You have not been invoiced for anything yet.
@@ -4033,11 +5035,34 @@ type CourseFinderCourse = {
   entry_requirements: string | null;
   scholarship: string | null;
   source_key: string | null;
+  external_code?: string | null;
+  source_url?: string | null;
+  institution_source_url?: string | null;
+  catalogue_verified_at?: string | null;
   source_updated_at: string | null;
   legacy_data: Record<string, string | null> | null;
 };
 type CourseFacet = { value: string; amount: number };
 type CourseInstitution = { id: string; name: string; country: string; city: string | null };
+type CourseCatalogueHealth = {
+  course_count: number;
+  institution_count: number;
+  country_count: number;
+  stale_count: number;
+  missing_fee_count: number;
+  missing_website_count: number;
+  last_verified_at: string | null;
+};
+type CourseSourceStatus = {
+  country_code: string;
+  country_name: string;
+  source_name: string;
+  source_url: string;
+  coverage: string;
+  sync_mode: string;
+  status: string;
+  last_success_at: string | null;
+};
 
 function cleanCatalogueText(value: string | null | undefined, fallback = "Not supplied") {
   if (!value?.trim()) return fallback;
@@ -4070,16 +5095,25 @@ function catalogueLevelLabel(value: string | null | undefined) {
  * always been free text; this is the canonical list it was never backed by.
  */
 function CourseFinderView({ canManage }: { canManage: boolean }) {
+  const [catalogueNow] = useState(() => Date.now());
   const [courses, setCourses] = useState<CourseFinderCourse[]>([]);
   const [countries, setCountries] = useState<CourseFacet[]>([]);
   const [levels, setLevels] = useState<CourseFacet[]>([]);
+  const [fields, setFields] = useState<CourseFacet[]>([]);
   const [institutions, setInstitutions] = useState<CourseInstitution[]>([]);
+  const [health, setHealth] = useState<CourseCatalogueHealth | null>(null);
+  const [sources, setSources] = useState<CourseSourceStatus[]>([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [country, setCountry] = useState("");
   const [level, setLevel] = useState("");
+  const [field, setField] = useState("");
+  const [intake, setIntake] = useState("");
+  const [maxFee, setMaxFee] = useState("");
+  const [maxDuration, setMaxDuration] = useState("");
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [institution, setInstitution] = useState("");
   const [institutionQuery, setInstitutionQuery] = useState("");
   const [institutionOpen, setInstitutionOpen] = useState(false);
@@ -4114,6 +5148,11 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
       if (query.trim()) params.set("q", query.trim());
       if (country) params.set("country", country);
       if (level) params.set("level", level);
+      if (field) params.set("field", field);
+      if (intake.trim()) params.set("intake", intake.trim());
+      if (maxFee) params.set("maxFee", maxFee);
+      if (maxDuration) params.set("maxDuration", maxDuration);
+      if (verifiedOnly) params.set("verified", "true");
       if (institution) params.set("institution", institution);
       const response = await fetch(`/api/crm/course-finder?${params}`, { cache: "no-store", signal });
       const result = await response.json();
@@ -4122,7 +5161,10 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
       setCourses(result.courses || []);
       setCountries(result.countries || []);
       setLevels(result.levels || []);
+      setFields(result.fields || []);
       setInstitutions(result.institutions || []);
+      setHealth(result.health || null);
+      setSources(result.sources || []);
       setTotal(Number(result.total) || 0);
       setError("");
     } catch (reason) {
@@ -4133,7 +5175,7 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
     } finally {
       setLoaded(true);
     }
-  }, [query, country, level, institution, page]);
+  }, [query, country, level, field, intake, maxFee, maxDuration, verifiedOnly, institution, page]);
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(() => void load(controller.signal), 250);
@@ -4163,10 +5205,36 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
         </div>
         <span className="catalogueCount">{total.toLocaleString()} courses</span>
       </div>
-      <div className="courseFinderFilters legacyFinderFilters">
-        <label className="searchField">Course, institution or campus<input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search Bachelor of Nursing, Monash…" /></label>
+      {health && (
+        <div className="catalogueHealthStrip">
+          <span><b>{health.country_count.toLocaleString()}</b> countries</span>
+          <span><b>{health.institution_count.toLocaleString()}</b> institutions</span>
+          <span><b>{health.course_count.toLocaleString()}</b> active courses</span>
+          <span className={health.stale_count ? "catalogueNeedsReview" : "catalogueCurrent"}>
+            <RefreshCw size={14} /> {health.stale_count ? `${health.stale_count.toLocaleString()} need source review` : "Sources current"}
+          </span>
+        </div>
+      )}
+      {canManage && sources.length > 0 ? (
+        <details className="catalogueSourceCoverage">
+          <summary>Official source coverage by destination</summary>
+          <div className="sourceCoverageGrid">
+            {sources.map((source) => (
+              <div key={`${source.country_code}-${source.source_name}`}>
+                <strong>{source.country_name}</strong>
+                <span>{humanise(source.coverage)} · {humanise(source.sync_mode)}</span>
+                <Status value={source.status} />
+                <a href={source.source_url} target="_blank" rel="noreferrer">{source.source_name}</a>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
+      <div className="courseFinderFilters courseFinderFilterGrid">
+        <label className="searchField courseFinderMainSearch">Course, institution, campus or course code<input value={query} onChange={(e) => { setQuery(e.target.value); setPage(1); }} placeholder="Search Bachelor of Nursing, Monash, CRICOS code…" /></label>
         <label>Destination<select value={country} onChange={(e) => { setCountry(e.target.value); setPage(1); }}><option value="">All countries</option>{countries.map((item) => <option value={item.value} key={item.value}>{item.value} ({item.amount.toLocaleString()})</option>)}</select></label>
         <label>Study level<select value={level} onChange={(e) => { setLevel(e.target.value); setPage(1); }}><option value="">All levels</option>{levels.map((item) => <option value={item.value} key={item.value}>{catalogueLevelLabel(item.value)} ({item.amount.toLocaleString()})</option>)}</select></label>
+        <label>Field of study<select value={field} onChange={(e) => { setField(e.target.value); setPage(1); }}><option value="">All fields</option>{fields.map((item) => <option value={item.value} key={item.value}>{cleanCatalogueText(item.value)} ({item.amount.toLocaleString()})</option>)}</select></label>
         <div className="institutionPicker">
           <label htmlFor="course-institution-search">Institution</label>
           <div className="institutionPickerControl">
@@ -4194,12 +5262,55 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
             {availableInstitutions.length === 0 && <p>No institutions match this search.</p>}
           </div>}
         </div>
+        <label>Intake<input value={intake} onChange={(event) => { setIntake(event.target.value); setPage(1); }} placeholder="February, July, 2027…" /></label>
+        <label>Maximum annual tuition<input type="number" min="0" step="1000" value={maxFee} onChange={(event) => { setMaxFee(event.target.value); setPage(1); }} placeholder="e.g. 40000" /></label>
+        <label>Maximum duration<select value={maxDuration} onChange={(event) => { setMaxDuration(event.target.value); setPage(1); }}><option value="">Any duration</option><option value="12">Up to 1 year</option><option value="24">Up to 2 years</option><option value="36">Up to 3 years</option><option value="48">Up to 4 years</option></select></label>
+        <label className="verifiedCourseFilter"><input type="checkbox" checked={verifiedOnly} onChange={(event) => { setVerifiedOnly(event.target.checked); setPage(1); }} /> Source checked in the last 6 months</label>
+        {(query || country || level || field || institution || intake || maxFee || maxDuration || verifiedOnly) && (
+          <button type="button" className="ghostButton clearCourseFilters" onClick={() => { setQuery(""); setCountry(""); setLevel(""); setField(""); setInstitution(""); setInstitutionQuery(""); setIntake(""); setMaxFee(""); setMaxDuration(""); setVerifiedOnly(false); setPage(1); }}>Clear all filters</button>
+        )}
       </div>
       {error && <p className="caseWorkError">{error}</p>}
       {courses.length === 0 ? (
         <EmptyState icon={School} title="No matching courses" copy="Try removing a filter or using a broader course name." />
       ) : (
-        <div className="legacyCourseTable"><div className="legacyCourseHead"><span>Country</span><span>Institution / campus</span><span>Course</span><span>Level</span><span>Duration</span><span>Intake</span><span>Tuition fee</span><span /></div>{courses.map((course) => <div className={`legacyCourseRecord ${expanded === course.id ? "open" : ""}`} key={course.id}><div className="legacyCourseRow"><span data-label="Country"><b>{cleanCatalogueText(course.country)}</b></span><span data-label="Institution / campus"><b>{cleanCatalogueText(course.institution_name)}</b><small>{cleanCatalogueText(course.campus || course.institution_city, "Campus not supplied")}</small></span><span data-label="Course"><b>{cleanCatalogueText(course.name)}</b></span><span data-label="Level">{catalogueLevelLabel(course.level)}</span><span data-label="Duration">{course.duration_months ? `${course.duration_months} months` : "—"}</span><span className="courseIntake" data-label="Intake">{cleanCatalogueText(course.intake_months, "—")}</span><span className="courseFee" data-label="Tuition fee"><b>{course.tuition_fee ? `${cleanCatalogueText(course.currency, "")} ${Number(course.tuition_fee).toLocaleString()}` : "On request"}</b></span><button className="ghostButton courseDetailsButton" onClick={() => setExpanded(expanded === course.id ? null : course.id)}>{expanded === course.id ? "Close" : "Full details"}</button></div>{expanded === course.id && <CourseFinderDetails course={course} canManage={canManage} />}</div>)}</div>
+        <div className="courseCardGrid">
+          {courses.map((course) => {
+            const verifiedAt = course.catalogue_verified_at || course.source_updated_at;
+            const current = verifiedAt ? catalogueNow - new Date(verifiedAt).valueOf() < 180 * 86400000 : false;
+            return (
+              <article className={`courseResultCard ${expanded === course.id ? "open" : ""}`} key={course.id}>
+                <header>
+                  <div className="courseInstitutionMark"><School size={19} /></div>
+                  <div>
+                    <span>{cleanCatalogueText(course.country)} · {cleanCatalogueText(course.campus || course.institution_city, "Campus to confirm")}</span>
+                    <strong>{cleanCatalogueText(course.institution_name)}</strong>
+                  </div>
+                  <span className={current ? "sourceCurrentBadge" : "sourceReviewBadge"}>{current ? "Source checked" : "Verify with provider"}</span>
+                </header>
+                <div className="courseCardBody">
+                  <div className="courseCardTitle">
+                    <span>{catalogueLevelLabel(course.level)}</span>
+                    <h3>{cleanCatalogueText(course.name)}</h3>
+                    <p>{cleanCatalogueText(course.field_of_study, "Field of study not classified")}{course.external_code ? ` · ${course.external_code}` : ""}</p>
+                  </div>
+                  <div className="courseQuickFacts">
+                    <div><Clock3 size={16} /><span>Duration<b>{course.duration_months ? `${course.duration_months} months` : "Confirm"}</b></span></div>
+                    <div><CalendarDays size={16} /><span>Intakes<b>{cleanCatalogueText(course.intake_months, "Confirm")}</b></span></div>
+                    <div><CircleDollarSign size={16} /><span>Tuition<b>{course.tuition_fee ? `${cleanCatalogueText(course.currency, "")} ${Number(course.tuition_fee).toLocaleString()}` : "On request"}</b></span></div>
+                    <div><GraduationCap size={16} /><span>English<b>{course.ielts_overall ? `IELTS ${course.ielts_overall}` : course.pte_overall ? `PTE ${course.pte_overall}` : "See requirements"}</b></span></div>
+                  </div>
+                  {(course.scholarship || course.application_deadline) && <div className="courseHighlights">{course.scholarship && <span><Sparkles size={14} /> {cleanCatalogueText(course.scholarship)}</span>}{course.application_deadline && <span><Clock3 size={14} /> Apply by {cleanCatalogueText(course.application_deadline)}</span>}</div>}
+                </div>
+                <footer>
+                  {(course.website || course.institution_website || course.source_url || course.institution_source_url) && <a className="ghostButton" href={course.website || course.institution_website || course.source_url || course.institution_source_url || "#"} target="_blank" rel="noreferrer">Official course page <ArrowRight size={14} /></a>}
+                  <button className="primaryButton courseDetailsButton" onClick={() => setExpanded(expanded === course.id ? null : course.id)}>{expanded === course.id ? "Close details" : "Compare full details"}</button>
+                </footer>
+                {expanded === course.id && <CourseFinderDetails course={course} canManage={canManage} />}
+              </article>
+            );
+          })}
+        </div>
       )}
       {total > pageSize && <div className="cataloguePager"><button className="ghostButton" disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button><span>Page {page} of {Math.ceil(total / pageSize)}</span><button className="ghostButton" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>Next</button></div>}
       {canManage && <p className="catalogueAdminNote">Catalogue maintenance is restricted to administrators; staff can safely search and advise.</p>}
@@ -4208,11 +5319,17 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
 }
 
 function CourseFinderDetails({ course, canManage }: { course: CourseFinderCourse; canManage: boolean }) {
-  const money = (value: number | null) => value === null ? "Not supplied" : `${course.currency} ${Number(value).toLocaleString()}`;
-  const english = (score: number | null, band: string | null) => [score, band].filter((value) => value !== null && value !== "").join(" · ") || "Not supplied";
+  const money = (value: number | null, applicationFee = false) =>
+    value === null || value <= 0
+      ? "Not supplied"
+      : applicationFee && course.tuition_fee && value > course.tuition_fee
+        ? "Verify with provider"
+        : `${course.currency} ${Number(value).toLocaleString()}`;
+  const english = (score: number | null, band: string | null) =>
+    [score && score > 0 ? score : null, band].filter((value) => value !== null && value !== "").join(" · ") || "Not supplied";
   return <div className="legacyCourseDetails">
     <section><h4>Course information</h4><dl><div><dt>Country</dt><dd>{cleanCatalogueText(course.country)}</dd></div><div><dt>Institution</dt><dd>{cleanCatalogueText(course.institution_name)}</dd></div><div><dt>Campus</dt><dd>{cleanCatalogueText(course.campus)}</dd></div><div><dt>Course level</dt><dd>{catalogueLevelLabel(course.level)}</dd></div><div><dt>Field of study</dt><dd>{cleanCatalogueText(course.field_of_study)}</dd></div><div><dt>Duration</dt><dd>{course.duration_months ? `${course.duration_months} months` : "Not supplied"}</dd></div><div><dt>Intake</dt><dd>{cleanCatalogueText(course.intake_months)}</dd></div><div><dt>Application deadline</dt><dd>{cleanCatalogueText(course.application_deadline)}</dd></div></dl></section>
-    <section><h4>Fees and commercial information</h4><dl><div><dt>Tuition fee</dt><dd>{money(course.tuition_fee)}</dd></div><div><dt>Application fee</dt><dd>{money(course.application_fee)}</dd></div><div><dt>Currency</dt><dd>{cleanCatalogueText(course.currency)}</dd></div><div><dt>Expected commission</dt><dd>{cleanCatalogueText(course.expected_commission)}</dd></div><div><dt>Scholarship</dt><dd>{cleanCatalogueText(course.scholarship)}</dd></div></dl></section>
+    <section><h4>Fees and commercial information</h4><dl><div><dt>Tuition fee</dt><dd>{money(course.tuition_fee)}</dd></div><div><dt>Application fee</dt><dd>{money(course.application_fee, true)}</dd></div><div><dt>Currency</dt><dd>{cleanCatalogueText(course.currency)}</dd></div><div><dt>Expected commission</dt><dd>{cleanCatalogueText(course.expected_commission)}</dd></div><div><dt>Scholarship</dt><dd>{cleanCatalogueText(course.scholarship)}</dd></div></dl></section>
     <section><h4>English and academic requirements</h4><dl><div><dt>IELTS score / bands</dt><dd>{english(course.ielts_overall, course.ielts_band)}</dd></div><div><dt>TOEFL score / bands</dt><dd>{english(course.toefl_overall, course.toefl_band)}</dd></div><div><dt>PTE score / bands</dt><dd>{english(course.pte_overall, course.pte_band)}</dd></div><div><dt>Duolingo score</dt><dd>{course.duolingo_score ?? "Not supplied"}</dd></div><div><dt>GPA requirement</dt><dd>{cleanCatalogueText(course.gpa_score)}</dd></div></dl>{course.entry_requirements && <div className="requirementNote"><b>Complete entry requirements</b><p>{cleanCatalogueText(course.entry_requirements)}</p></div>}</section>
     <section><h4>Links and source</h4><dl><div><dt>Catalogue status</dt><dd>{course.active ? "Active" : "Inactive"}</dd></div><div><dt>Last source update</dt><dd>{course.source_updated_at ? new Date(course.source_updated_at).toLocaleDateString() : course.legacy_data?.updated_date || "Not supplied"}</dd></div>{canManage && <><div><dt>Legacy course ID</dt><dd>{course.source_key || "Not supplied"}</dd></div><div><dt>Legacy institution ID</dt><dd>{course.legacy_data?.legacy_university_id || "Not supplied"}</dd></div><div><dt>Created by / date</dt><dd>{[course.legacy_data?.created_by, course.legacy_data?.created_date].filter(Boolean).join(" · ") || "Not supplied"}</dd></div><div><dt>Updated by / date</dt><dd>{[course.legacy_data?.updated_by, course.legacy_data?.updated_date].filter(Boolean).join(" · ") || "Not supplied"}</dd></div></>}</dl>{(course.website || course.institution_website) ? <a className="primaryButton courseWebsiteLink" href={course.website || course.institution_website || "#"} target="_blank" rel="noreferrer">Open official website</a> : <p className="courseMissingValue">Official website not supplied</p>}</section>
   </div>;
@@ -5213,6 +6330,18 @@ type AdminBranch = {
   country_code: string;
   active: boolean;
 };
+type MasterSettings = {
+  timezone: string;
+  default_currency: string;
+  tax_label: string;
+  tax_rate: number;
+  invoice_prefix: string;
+  receipt_prefix: string;
+  credit_note_prefix: string;
+  payment_terms_days: number;
+  overdue_reminders_enabled: boolean;
+  appointment_duration_minutes: number;
+};
 
 type ClientSearchResult = { id: string; title: string; subtitle: string };
 
@@ -5395,11 +6524,16 @@ function AdminView({
   const [clientLinks, setClientLinks] = useState<
     { profile_id: string; client_id: string }[]
   >([]);
+  const [settings, setSettings] = useState<MasterSettings | null>(null);
+  const [replacementByProfile, setReplacementByProfile] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addingBranch, setAddingBranch] = useState(false);
+  const [staffSearch, setStaffSearch] = useState("");
+  const [staffStatus, setStaffStatus] = useState("active");
+  const [staffBranch, setStaffBranch] = useState("");
   const [handover, setHandover] = useState<{
     message: string;
     password?: string;
@@ -5415,6 +6549,7 @@ function AdminView({
       invitations: AdminInvitation[];
       branches: AdminBranch[];
       clientLinks: { profile_id: string; client_id: string }[];
+      settings: MasterSettings | null;
     };
   };
   const apply = (result: {
@@ -5422,11 +6557,13 @@ function AdminView({
     invitations: AdminInvitation[];
     branches: AdminBranch[];
     clientLinks: { profile_id: string; client_id: string }[];
+    settings: MasterSettings | null;
   }) => {
     setProfiles(result.profiles ?? []);
     setInvitations(result.invitations ?? []);
     setAdminBranches(result.branches ?? []);
     setClientLinks(result.clientLinks ?? []);
+    setSettings(result.settings ?? null);
   };
   const reload = async () => {
     try {
@@ -5500,9 +6637,62 @@ function AdminView({
     (row) => row.status !== "accepted",
   );
   const portalAccounts = profiles.filter((row) => row.level === "student");
+  const visibleProfiles = profiles.filter((person) => {
+    const needle = staffSearch.trim().toLowerCase();
+    return (
+      person.level !== "student" &&
+      (!needle || `${person.display_name} ${person.email} ${person.department ?? ""}`.toLowerCase().includes(needle)) &&
+      (staffStatus === "all" || (staffStatus === "active" ? person.active : !person.active)) &&
+      (!staffBranch || person.branch_id === staffBranch)
+    );
+  });
+  const selectableProfiles = visibleProfiles.filter(
+    (person) => person.id !== currentProfileId,
+  );
+  const staffSelection = useBulkSelection(selectableProfiles);
+
+  const bulkUpdateStaff = async (changes: Record<string, unknown>) => {
+    const result = await send({
+      action: "bulk_update_profiles",
+      profileIds: staffSelection.selected.map((person) => person.id),
+      ...changes,
+    });
+    if (result) staffSelection.clear();
+  };
 
   return (
     <section className="adminStack">
+      {isOwner && settings ? (
+        <article className="panel listPanel">
+          <div className="panelHead"><div><span className="kicker">MASTER CONFIGURATION</span><h2>Organisation defaults</h2></div></div>
+          <p className="coverageIntro">These values control new invoices, receipts, reminders and appointments across every branch.</p>
+          <form className="stackedForm" onSubmit={async (event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            await send({
+              action: "update_settings",
+              timezone: data.get("timezone"), defaultCurrency: data.get("defaultCurrency"),
+              taxLabel: data.get("taxLabel"), taxRate: Number(data.get("taxRate")),
+              invoicePrefix: data.get("invoicePrefix"), receiptPrefix: data.get("receiptPrefix"),
+              creditNotePrefix: data.get("creditNotePrefix"), paymentTermsDays: Number(data.get("paymentTermsDays")),
+              appointmentDurationMinutes: Number(data.get("appointmentDurationMinutes")),
+              overdueRemindersEnabled: data.get("overdueRemindersEnabled") === "on",
+            });
+          }}>
+            <label>Timezone<input name="timezone" required defaultValue={settings.timezone} /></label>
+            <label>Currency<input name="defaultCurrency" required maxLength={3} defaultValue={settings.default_currency} /></label>
+            <label>Tax label<input name="taxLabel" required defaultValue={settings.tax_label} /></label>
+            <label>Tax rate<input name="taxRate" type="number" min="0" max="1" step="0.0001" required defaultValue={settings.tax_rate} /></label>
+            <label>Invoice prefix<input name="invoicePrefix" required defaultValue={settings.invoice_prefix} /></label>
+            <label>Receipt prefix<input name="receiptPrefix" required defaultValue={settings.receipt_prefix} /></label>
+            <label>Credit-note prefix<input name="creditNotePrefix" required defaultValue={settings.credit_note_prefix} /></label>
+            <label>Payment terms (days)<input name="paymentTermsDays" type="number" min="0" max="365" required defaultValue={settings.payment_terms_days} /></label>
+            <label>Appointment duration (minutes)<input name="appointmentDurationMinutes" type="number" min="15" max="480" required defaultValue={settings.appointment_duration_minutes} /></label>
+            <label className="checkboxLabel"><input name="overdueRemindersEnabled" type="checkbox" defaultChecked={settings.overdue_reminders_enabled} /> Automatic overdue reminders</label>
+            <button className="primaryButton" disabled={working}><Check size={15} /> Save master configuration</button>
+          </form>
+        </article>
+      ) : null}
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
@@ -5523,6 +6713,35 @@ function AdminView({
           </div>
         </div>
         {error && <p className="caseWorkError">{error}</p>}
+
+        <div className="staffFilters" aria-label="Staff filters">
+          <label>
+            Search team
+            <input
+              type="search"
+              value={staffSearch}
+              onChange={(event) => setStaffSearch(event.target.value)}
+              placeholder="Name, email or department"
+            />
+          </label>
+          <label>
+            Status
+            <select value={staffStatus} onChange={(event) => setStaffStatus(event.target.value)}>
+              <option value="active">Active</option>
+              <option value="inactive">Deactivated</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          <label>
+            Branch
+            <select value={staffBranch} onChange={(event) => setStaffBranch(event.target.value)}>
+              <option value="">All branches</option>
+              {adminBranches.map((branch) => (
+                <option key={branch.id} value={branch.id}>{branch.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
 
         {handover && (
           <div className="handoverPanel">
@@ -5630,13 +6849,44 @@ function AdminView({
             <span className="skeletonBar" />
             <span className="skeletonBar short" />
           </div>
-        ) : profiles.length === 0 ? (
-          <p className="boardEmpty">Nobody is on the team yet.</p>
+        ) : visibleProfiles.length === 0 ? (
+          <p className="boardEmpty">No staff match these filters.</p>
         ) : (
+          <>
+          <div className="listSelectionTools">
+            <SelectAllControl checked={staffSelection.allSelected} onChange={staffSelection.toggleAll} label="Select all shown staff except yourself" />
+          </div>
+          <BulkActionBar count={staffSelection.selected.length} onClear={staffSelection.clear}>
+            <select
+              aria-label="Move selected staff to branch"
+              defaultValue=""
+              disabled={working}
+              onChange={(event) => {
+                if (!event.target.value) return;
+                void bulkUpdateStaff({ branchId: event.target.value });
+                event.target.value = "";
+              }}
+            >
+              <option value="">Move to branch…</option>
+              {adminBranches.filter((branch) => branch.active).map((branch) => (
+                <option key={branch.id} value={branch.id}>{branch.name}</option>
+              ))}
+            </select>
+            <button className="ghostButton" disabled={working} onClick={() => void bulkUpdateStaff({ active: true })}>Reactivate</button>
+            <button className="ghostButton dangerAction" disabled={working} onClick={() => {
+              if (confirm(`Deactivate ${staffSelection.selected.length} selected staff account${staffSelection.selected.length === 1 ? "" : "s"}? Their history will be retained.`)) void bulkUpdateStaff({ active: false });
+            }}>Deactivate</button>
+            <button className="ghostButton" onClick={() => downloadCsv("staff-selected.csv", staffSelection.selected.map((person) => ({
+              name: person.display_name, email: person.email, level: person.level,
+              branch: branchName(person.branch_id), department: person.department,
+              status: person.active ? "Active" : "Deactivated",
+            })))}><Download size={14} /> Export</button>
+          </BulkActionBar>
           <div className="recordTableWrap">
             <table className="recordTable boardTable">
               <thead>
                 <tr>
+                  <th scope="col" className="selectionColumn"><span className="srOnly">Select</span></th>
                   <th scope="col">Name</th>
                   <th scope="col">Email</th>
                   <th scope="col">Level</th>
@@ -5647,11 +6897,16 @@ function AdminView({
                 </tr>
               </thead>
               <tbody>
-                {profiles.map((person) => (
+                {visibleProfiles.map((person) => (
                   <tr
                     key={person.id}
                     className={person.active ? "" : "archivedRow"}
                   >
+                    <td className="selectionColumn">
+                      {person.id === currentProfileId ? <span className="bulkSelectionSpacer" /> : (
+                        <RowSelection checked={staffSelection.selectedIds.has(person.id)} onChange={() => staffSelection.toggle(person.id)} label={`Select ${person.display_name}`} />
+                      )}
+                    </td>
                     <td>{person.display_name}</td>
                     <td>{person.email}</td>
                     <td>
@@ -5705,19 +6960,33 @@ function AdminView({
                       {person.id === currentProfileId ? (
                         <span className="mutedCell">This is you</span>
                       ) : (
-                        <button
-                          className="linkButton"
-                          disabled={working}
-                          onClick={() =>
-                            void send({
-                              action: "update_profile",
-                              profileId: person.id,
-                              active: !person.active,
-                            })
-                          }
-                        >
-                          {person.active ? "Deactivate" : "Reactivate"}
-                        </button>
+                        <div className="staffActions">
+                          <button
+                            className="linkButton"
+                            disabled={working}
+                            onClick={() => void send({ action: "update_profile", profileId: person.id, active: !person.active })}
+                          >
+                            {person.active ? "Deactivate" : "Reactivate"}
+                          </button>
+                          {isOwner && !person.active && (
+                            <>
+                              <select aria-label={`Replacement owner for ${person.display_name}`} value={replacementByProfile[person.id] ?? ""} onChange={(event) => setReplacementByProfile((current) => ({ ...current, [person.id]: event.target.value }))}>
+                                <option value="">No active work to transfer</option>
+                                {profiles.filter((candidate) => candidate.active && candidate.id !== person.id && candidate.level !== "student").map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.display_name}</option>)}
+                              </select>
+                              <button
+                                className="linkButton dangerLink"
+                                disabled={working}
+                                onClick={() => {
+                                  if (confirm(`Remove ${person.display_name}'s login and transfer all open responsibilities to the selected replacement? Historical actions will remain attributed to ${person.display_name}.`))
+                                    void send({ action: "remove_staff", profileId: person.id, replacementProfileId: replacementByProfile[person.id] || null });
+                                }}
+                              >
+                                Transfer and remove
+                              </button>
+                            </>
+                          )}
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -5725,11 +6994,13 @@ function AdminView({
               </tbody>
             </table>
           </div>
+          </>
         )}
         <p className="coverageIntro">
           Deactivating somebody keeps their history and stops them signing in.
-          Accounts are not deleted, because the case record has to say who did
-          what for seven years.
+          Deactivation is reversible. Remove account releases the email for a
+          future account while retaining the historical actor required by the
+          case and audit record; open cases must be transferred first.
         </p>
       </article>
 
@@ -6037,7 +7308,7 @@ function CaseDrawer({
   lifecycleReady,
   schemaWarning,
   storageConnected,
-  onRequestDocument,
+  onCaseAction,
 }: {
   item: CaseRecord | null;
   close: () => void;
@@ -6056,7 +7327,7 @@ function CaseDrawer({
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
-  onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist" | "invoice") => void;
+  onCaseAction: (caseId: string, kind?: "document" | "visaChecklist" | "invoice" | "message") => void;
 }) {
   return item ? (
     <CaseDrawerBody
@@ -6073,7 +7344,7 @@ function CaseDrawer({
       lifecycleReady={lifecycleReady}
       schemaWarning={schemaWarning}
       storageConnected={storageConnected}
-      onRequestDocument={onRequestDocument}
+      onCaseAction={onCaseAction}
     />
   ) : null;
 }
@@ -6086,20 +7357,35 @@ type CaseTab =
   | "applications"
   | "visa"
   | "documents"
+  | "communication"
   | "timeline"
   | "finance";
 
 const caseTabs: [CaseTab, string][] = [
-  ["overview", "Overview"],
-  ["client", "Client"],
-  ["family", "Family"],
-  ["history", "History"],
+  ["overview", "Case home"],
   ["applications", "Applications"],
   ["visa", "Visa matter"],
   ["documents", "Documents"],
-  ["timeline", "Timeline"],
+  ["communication", "Messages"],
+  ["client", "Client details"],
+  ["family", "Family"],
+  ["history", "Background"],
   ["finance", "Finance"],
+  ["timeline", "Activity & notes"],
 ];
+
+const caseTabDescriptions: Record<CaseTab, string> = {
+  overview: "Priorities, ownership, deadlines and the case workflow.",
+  applications: "Institution applications, offers, enrolment and COE progress.",
+  visa: "Visa preparation, lodgement, checks and decision details.",
+  documents: "Outstanding requests, received files and the document checklist.",
+  communication: "The shared client conversation, including imported Gmail messages.",
+  client: "Personal, contact, passport, consent and study-preference details.",
+  family: "Dependants and family members connected to this client.",
+  history: "Education, employment, English tests and previous visa history.",
+  finance: "Invoices and payments recorded against this case.",
+  timeline: "File notes and a complete, time-ordered audit trail.",
+};
 
 type CaseFile = {
   case: Record<string, unknown>;
@@ -6110,6 +7396,8 @@ type CaseFile = {
   documents: Record<string, unknown>[];
   notes: CaseNote[];
   invoices: Record<string, unknown>[];
+  collaborators: { profileId: string; name: string; email: string; addedAt: string }[];
+  communications: { id: string; sender: string; recipients: string[]; direction: string; body: string; sentAt: string; status: string; subject: string }[];
   intake: {
     education: Record<string, unknown>[];
     employment: Record<string, unknown>[];
@@ -6180,14 +7468,16 @@ function FactList({
   title,
   rows,
   empty,
+  className,
 }: {
   title: string;
   rows: [string, unknown][];
   empty?: string;
+  className?: string;
 }) {
   const filled = rows.filter(([, value]) => text(value));
   return (
-    <section className="caseWorkPanel">
+    <section className={`caseWorkPanel${className ? ` ${className}` : ""}`}>
       <span className="kicker">{title.toUpperCase()}</span>
       {filled.length === 0 ? (
         <p className="caseWorkEmpty">{empty ?? "Nothing recorded yet."}</p>
@@ -6216,7 +7506,7 @@ function CaseDrawerBody({
   lifecycleReady,
   schemaWarning,
   storageConnected,
-  onRequestDocument,
+  onCaseAction,
 }: {
   item: CaseRecord;
   close: () => void;
@@ -6235,7 +7525,7 @@ function CaseDrawerBody({
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
-  onRequestDocument: (caseId: string, kind?: "document" | "visaChecklist" | "invoice") => void;
+  onCaseAction: (caseId: string, kind?: "document" | "visaChecklist" | "invoice" | "message") => void;
 }) {
   const [tab, setTab] = useState<CaseTab>("overview");
   // Switching straight from one case to another, without closing the drawer,
@@ -6256,12 +7546,14 @@ function CaseDrawerBody({
   const [recordedExpiry, setRecordedExpiry] = useState(item.visaExpiry || "");
   const [savingExpiry, setSavingExpiry] = useState(false);
   const [owner, setOwner] = useState(item.ownerId);
+  const [collaborator, setCollaborator] = useState("");
   const [assigning, setAssigning] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [file, setFile] = useState<CaseFile | null>(null);
   const [newItem, setNewItem] = useState("");
   const [newNote, setNewNote] = useState("");
   const [working, setWorking] = useState(false);
+  const [syncingMail, setSyncingMail] = useState(false);
   const [caseError, setCaseError] = useState("");
   const [sendingPortalAccess, setSendingPortalAccess] = useState(false);
   const [portalAccessResult, setPortalAccessResult] = useState<{
@@ -6285,8 +7577,8 @@ function CaseDrawerBody({
   // migration file -- and the rest move behind one control.
   const compact = useCompactScreen();
   const primaryTabs: CaseTab[] = direct
-    ? ["overview", "visa", "documents", "finance"]
-    : ["overview", "applications", "documents", "finance"];
+    ? ["overview", "visa", "documents", "communication"]
+    : ["overview", "applications", "documents", "communication"];
   const shownTabs = compact
     ? availableTabs.filter(([key]) => primaryTabs.includes(key) || key === tab)
     : availableTabs;
@@ -6368,6 +7660,13 @@ function CaseDrawerBody({
       if (!response.ok) throw new Error(result.error || "That did not save.");
       setCaseError("");
       await reload();
+      // Status, deadlines and intake changes made inside a case must also be
+      // visible on the dashboard and module lists immediately.
+      await refresh();
+      window.localStorage.setItem(
+        "maximus.workspaceRefresh",
+        window.localStorage.getItem("maximus.workspaceRefresh") === "1" ? "0" : "1",
+      );
       return true;
     } catch (reason_) {
       setCaseError(
@@ -6384,6 +7683,26 @@ function CaseDrawerBody({
     send("/api/crm/casefile", body);
   const intake = (body: Record<string, unknown>) =>
     send("/api/crm/intake", body);
+
+  const syncCaseMail = async () => {
+    if (!caseId) return;
+    setSyncingMail(true);
+    try {
+      const response = await fetch("/api/crm/mailbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync_case", caseId }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Gmail could not be synchronised.");
+      setCaseError(result.imported ? `${result.imported} Gmail message${result.imported === 1 ? "" : "s"} added to this conversation.` : "Gmail is up to date for this person.");
+      await reload();
+    } catch (reason_) {
+      setCaseError(reason_ instanceof Error ? reason_.message : "Gmail could not be synchronised.");
+    } finally {
+      setSyncingMail(false);
+    }
+  };
 
   const run = async (next: LifecycleStage) => {
     setMoving(next);
@@ -6426,6 +7745,47 @@ function CaseDrawerBody({
   const client = file?.client ?? {};
   const clientId = String(item.clientId ?? "");
   const visa = file?.visaMatter ?? null;
+  const activeTabLabel =
+    availableTabs.find(([key]) => key === tab)?.[1] ?? "Case home";
+  const outstandingDocuments = checklist.filter(
+    (entry) => entry.status !== "completed" && entry.status !== "waived",
+  ).length;
+  const nextWork =
+    outstandingDocuments > 0
+      ? `${outstandingDocuments} document${outstandingDocuments === 1 ? "" : "s"} still required`
+      : stage === "enquiry"
+        ? "Complete the client details and convert this enquiry"
+        : stage === "student"
+          ? direct
+            ? "Prepare the visa matter and confirm the document plan"
+            : "Create or update the first institution application"
+          : stage === "application"
+            ? "Review application progress and prepare the visa stage"
+            : stage === "visa"
+              ? needsExpiry
+                ? "Record the visa expiry date before progressing"
+                : "Monitor the visa decision and record every update"
+              : stage === "deferred"
+                ? "Review the deferment and resume the case when ready"
+                : "Review the completed file and its final records";
+  const tabCount = (key: CaseTab) => {
+    if (key === "applications") return file?.applications.length ?? 0;
+    if (key === "family") return file?.dependants.length ?? 0;
+    if (key === "documents") return outstandingDocuments;
+    if (key === "communication") return file?.communications.length ?? 0;
+    if (key === "finance") return file?.invoices.length ?? 0;
+    return 0;
+  };
+  const navGroups: { label: string; tabs: CaseTab[] }[] = [
+    {
+      label: "Daily work",
+      tabs: direct
+        ? ["overview", "visa", "documents", "communication"]
+        : ["overview", "applications", "visa", "documents", "communication"],
+    },
+    { label: "Client profile", tabs: ["client", "family", "history"] },
+    { label: "Records", tabs: ["finance", "timeline"] },
+  ];
 
   return (
     <div className="drawerBackdrop" onClick={close}>
@@ -6452,48 +7812,118 @@ function CaseDrawerBody({
           </button>
         </div>
 
-        <nav className="caseTabs" role="tablist">
-          {shownTabs.map(([key, label]) => (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={tab === key}
-              className={tab === key ? "active" : ""}
-              onClick={() => setTab(key)}
-            >
-              {label}
-              {key === "applications" && file?.applications.length
-                ? ` (${file.applications.length})`
-                : ""}
-              {key === "family" && file?.dependants.length
-                ? ` (${file.dependants.length})`
-                : ""}
-            </button>
-          ))}
-          {moreTabs.length > 0 && (
-            <select
-              className="caseTabsMore"
-              aria-label="More case sections"
-              title="More case sections"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) setTab(e.target.value as CaseTab);
-              }}
-            >
-              <option value="">More…</option>
-              {moreTabs.map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          )}
-        </nav>
+        <div className="caseWorkspaceLayout">
+          <nav className="caseTabs" role="tablist" aria-label="Case sections">
+            {compact ? (
+              <>
+                {shownTabs.map(([key, label]) => (
+                  <button
+                    key={key}
+                    role="tab"
+                    aria-selected={tab === key}
+                    className={tab === key ? "active" : ""}
+                    onClick={() => setTab(key)}
+                  >
+                    {label}
+                    {tabCount(key) > 0 ? <b>{tabCount(key)}</b> : null}
+                  </button>
+                ))}
+                {moreTabs.length > 0 && (
+                  <select
+                    className="caseTabsMore"
+                    aria-label="More case sections"
+                    title="More case sections"
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) setTab(e.target.value as CaseTab);
+                    }}
+                  >
+                    <option value="">More…</option>
+                    {moreTabs.map(([key, label]) => (
+                      <option key={key} value={key}>
+                        {label}{tabCount(key) > 0 ? ` (${tabCount(key)})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </>
+            ) : (
+              navGroups.map((group) => {
+                const tabs = group.tabs
+                  .map((key) => availableTabs.find(([candidate]) => candidate === key))
+                  .filter(Boolean) as [CaseTab, string][];
+                if (tabs.length === 0) return null;
+                return (
+                  <div className="caseNavGroup" key={group.label}>
+                    <span>{group.label}</span>
+                    {tabs.map(([key, label]) => (
+                      <button
+                        key={key}
+                        role="tab"
+                        aria-selected={tab === key}
+                        className={tab === key ? "active" : ""}
+                        onClick={() => setTab(key)}
+                      >
+                        <span>{label}</span>
+                        {tabCount(key) > 0 ? <b>{tabCount(key)}</b> : null}
+                      </button>
+                    ))}
+                  </div>
+                );
+              })
+            )}
+          </nav>
 
-        {caseError && <p className="caseWorkError">{caseError}</p>}
+          <main className="caseWorkspaceContent">
+            <header className="caseSectionHead">
+              <div>
+                <span className="kicker">CASE WORKSPACE</span>
+                <h2>{activeTabLabel}</h2>
+                <p>{caseTabDescriptions[tab]}</p>
+              </div>
+              <div className="caseQuickActions">
+                <button className="ghostButton" onClick={() => setTab("communication")}>
+                  <Mail size={14} /> Message
+                </button>
+                <button className="ghostButton" onClick={() => setTab("documents")}>
+                  <FileCheck2 size={14} /> Documents
+                </button>
+                <button className="ghostButton" onClick={() => edit(item)} disabled={!canModify}>
+                  <Pencil size={14} /> Edit case
+                </button>
+              </div>
+            </header>
+
+            {caseError && <p className="caseWorkError">{caseError}</p>}
 
         {tab === "overview" && (
-          <>
+          <div className="caseHome">
+            <section className="casePriorityBar">
+              <div>
+                <span className="kicker">NEXT PRIORITY</span>
+                <h3>{nextWork}</h3>
+                <p>
+                  {stageLabelFor(stage, direct)} · {item.owner || "No owner assigned"}
+                  {item.due ? ` · due ${item.due}` : " · no deadline set"}
+                </p>
+              </div>
+              <button
+                className="primaryButton"
+                onClick={() =>
+                  setTab(
+                    outstandingDocuments > 0
+                      ? "documents"
+                      : direct
+                        ? "visa"
+                        : stage === "visa"
+                          ? "visa"
+                          : "applications",
+                  )
+                }
+              >
+                Open work area <ArrowRight size={15} />
+              </button>
+            </section>
             <div className="drawerHealth">
               <div>
                 <small>Health</small>
@@ -6510,6 +7940,7 @@ function CaseDrawerBody({
             </div>
             <FactList
               title="Case"
+              className="caseFactsPanel"
               rows={[
                 ["Matter type", item.matterType || "Not set"],
                 [
@@ -6568,6 +7999,36 @@ function CaseDrawerBody({
                 </div>
               </section>
             )}
+            <section className="caseWorkPanel caseTeamPanel">
+              <div className="caseWorkPanelHead">
+                <div>
+                  <span className="kicker">CASE TEAM</span>
+                  <h3>People working together</h3>
+                </div>
+              </div>
+              <div className="caseTeamList">
+                <span><strong>{item.owner || "Unassigned"}</strong><small>Accountable owner</small></span>
+                {(file?.collaborators ?? []).map((person) => (
+                  <span key={person.profileId}>
+                    <strong>{person.name}</strong><small>Collaborator</small>
+                    {canAssign && <button className="linkButton" onClick={() => void operation({ action: "remove_collaborator", caseId, profileId: person.profileId })}>Remove</button>}
+                  </span>
+                ))}
+              </div>
+              {canAssign && (
+                <div className="assignRow">
+                  <select value={collaborator} onChange={(event) => setCollaborator(event.target.value)} aria-label="Add case collaborator">
+                    <option value="">Add a colleague</option>
+                    {staff.filter((person) => person.id !== item.ownerId && !(file?.collaborators ?? []).some((member) => member.profileId === person.id)).map((person) => (
+                      <option key={person.id} value={person.id}>{person.display_name}</option>
+                    ))}
+                  </select>
+                  <button className="ghostButton" disabled={!collaborator || working} onClick={async () => {
+                    if (await operation({ action: "add_collaborator", caseId, profileId: collaborator })) setCollaborator("");
+                  }}><Plus size={14} /> Add to case</button>
+                </div>
+              )}
+            </section>
             <section className="lifecyclePanel">
               <span className="kicker">CASE PIPELINE</span>
               <ol className="lifecycleTrack">
@@ -6738,7 +8199,7 @@ function CaseDrawerBody({
                 </div>
               )}
             </section>
-          </>
+          </div>
         )}
 
         {tab === "client" && (
@@ -6749,6 +8210,7 @@ function CaseDrawerBody({
                 ["Preferred name", client.preferred_name],
                 ["Email", client.email],
                 ["Mobile", client.mobile],
+                ["Alternate mobile", (client.custom_fields as Record<string, unknown> | null)?.alternatePhone],
                 ["Date of birth", day(client.date_of_birth)],
                 ["Nationality", client.nationality],
                 ["Country of birth", client.country_of_birth],
@@ -6764,6 +8226,8 @@ function CaseDrawerBody({
               title="Passport and consent"
               rows={[
                 ["Passport country", client.passport_country],
+                ["Passport number", client.passport_masked],
+                ["Passport issue", (client.custom_fields as Record<string, unknown> | null)?.passportIssue],
                 ["Passport expiry", day(client.passport_expiry)],
                 [
                   "Privacy consent",
@@ -6771,6 +8235,24 @@ function CaseDrawerBody({
                 ],
                 ["Marketing consent", client.marketing_consent ? "Yes" : "No"],
               ]}
+            />
+            <FactList
+              title="Address and intake declarations"
+              rows={[
+                ["Street", (client.address as Record<string, unknown> | null)?.line1],
+                ["City", (client.address as Record<string, unknown> | null)?.city],
+                ["State / province", (client.address as Record<string, unknown> | null)?.state],
+                ["Postcode", (client.address as Record<string, unknown> | null)?.postcode],
+                ["Visited another country", (client.custom_fields as Record<string, unknown> | null)?.visitedOtherCountry],
+                ["Travel country", (client.custom_fields as Record<string, unknown> | null)?.travelCountry],
+                ["Travel date", (client.custom_fields as Record<string, unknown> | null)?.travelDate],
+                ["Travel purpose", (client.custom_fields as Record<string, unknown> | null)?.travelPurpose],
+                ["Visa refusal", (client.custom_fields as Record<string, unknown> | null)?.hasVisaRefusal],
+                ["Refusal details", (client.custom_fields as Record<string, unknown> | null)?.refusalDetails],
+                ["History gap", [(client.custom_fields as Record<string, unknown> | null)?.gapFrom, (client.custom_fields as Record<string, unknown> | null)?.gapTo].filter(Boolean).join(" to ")],
+                ["Gap reason", (client.custom_fields as Record<string, unknown> | null)?.gapReason],
+              ]}
+              empty="No address, travel, refusal or gap information recorded."
             />
             {file?.intake.preferences && (
               <FactList
@@ -6940,7 +8422,7 @@ function CaseDrawerBody({
                   <button
                     type="button"
                     className="ghostButton"
-                    onClick={() => onRequestDocument(caseId ?? "", "visaChecklist")}
+                    onClick={() => onCaseAction(caseId ?? "", "visaChecklist")}
                   >
                     <FileCheck2 size={14} />
                     Document checklist
@@ -6948,7 +8430,7 @@ function CaseDrawerBody({
                   <button
                     type="button"
                     className="ghostButton"
-                    onClick={() => onRequestDocument(caseId ?? "", "document")}
+                    onClick={() => onCaseAction(caseId ?? "", "document")}
                   >
                     <Plus size={14} />
                     Request document
@@ -7050,6 +8532,39 @@ function CaseDrawerBody({
           </>
         )}
 
+        {tab === "communication" && (
+          <section className="caseWorkPanel">
+            <div className="caseWorkPanelHead">
+              <div>
+                <span className="kicker">SHARED CLIENT CONVERSATION</span>
+                <h3>Email and messages</h3>
+              </div>
+              <div className="caseWorkPanelActions">
+                <button className="ghostButton" disabled={syncingMail} onClick={() => void syncCaseMail()}>
+                  <RefreshCw size={14} className={syncingMail ? "spin" : ""} />
+                  {syncingMail ? "Checking Gmail…" : "Receive from Gmail"}
+                </button>
+                <button className="primaryButton" onClick={() => onCaseAction(caseId ?? "", "message")}>
+                  <Plus size={14} /> New message
+                </button>
+              </div>
+            </div>
+            {(file?.communications ?? []).length === 0 ? (
+              <p className="caseWorkEmpty">No communication is linked to this case yet.</p>
+            ) : (
+              <div className="communicationFeed">
+                {(file?.communications ?? []).map((message) => (
+                  <article key={message.id}>
+                    <div><strong>{message.subject}</strong><Status value={message.status || message.direction} /></div>
+                    <small>{message.sender} · {orgDateTime(message.sentAt)}</small>
+                    <p>{message.body || "No preview available."}</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {tab === "timeline" && (
           <section className="caseWorkPanel">
             <span className="kicker">FILE NOTE AND ACTIVITY</span>
@@ -7116,7 +8631,7 @@ function CaseDrawerBody({
                   <button
                     type="button"
                     className="ghostButton"
-                    onClick={() => onRequestDocument(caseId ?? "", "invoice")}
+                    onClick={() => onCaseAction(caseId ?? "", "invoice")}
                   >
                     <Plus size={14} />
                     Create invoice
@@ -7124,24 +8639,12 @@ function CaseDrawerBody({
                 </div>
               </div>
             )}
-            <RecordTable
-              title="Invoices"
-              rows={(file?.invoices ?? []).map((row) => ({
-                ...row,
-                raised_by:
-                  staff.find((person) => person.id === row.created_by)
-                    ?.display_name || "Unknown",
-              }))}
-              columns={[
-                ["Invoice", "invoice_number"],
-                ["Type", "invoice_type"],
-                ["Total", "total"],
-                ["Paid", "paid"],
-                ["State", "state"],
-                ["Due", "due_on"],
-                ["Raised by", "raised_by"],
-              ]}
-              empty="No invoices raised for this case."
+            <CaseInvoices
+              invoices={file?.invoices ?? []}
+              documents={file?.documents ?? []}
+              caseId={caseId ?? ""}
+              storageConnected={storageConnected}
+              onChanged={reload}
             />
           </>
         )}
@@ -7167,6 +8670,8 @@ function CaseDrawerBody({
             <Trash2 size={15} />
             {canAssign ? "Archive" : "Request archive"}
           </button>
+        </div>
+          </main>
         </div>
       </aside>
     </div>
@@ -7275,44 +8780,120 @@ function HistorySection({
   );
 }
 
-function RecordTable({
-  title,
-  rows,
-  columns,
-  empty,
+function CaseInvoices({
+  invoices,
+  documents,
+  caseId,
+  storageConnected,
+  onChanged,
 }: {
-  title: string;
-  rows: Record<string, unknown>[];
-  columns: [string, string][];
-  empty?: string;
+  invoices: Record<string, unknown>[];
+  documents: Record<string, unknown>[];
+  caseId: string;
+  storageConnected: boolean;
+  onChanged: () => Promise<void>;
 }) {
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+
+  const pdfFor = (invoiceId: string) =>
+    documents.find((document) => {
+      const metadata = (document.metadata as Record<string, unknown> | null) ?? {};
+      return metadata.source === "invoice_pdf" && String(metadata.invoice_id) === invoiceId;
+    });
+
+  const storePdf = async (invoice: Record<string, unknown>, chosen: File) => {
+    const invoiceId = String(invoice.id ?? "");
+    if (chosen.type !== "application/pdf" && !chosen.name.toLowerCase().endsWith(".pdf")) {
+      setError("Invoice attachments must be PDF files.");
+      return;
+    }
+    setBusy(invoiceId);
+    setError("");
+    try {
+      let documentId = String(pdfFor(invoiceId)?.id ?? "");
+      if (!documentId) {
+        const prepared = await fetch("/api/crm/casefile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "invoice_pdf_prepare", invoiceId, caseId }),
+        });
+        const preparedResult = await prepared.json().catch(() => ({}));
+        if (!prepared.ok)
+          throw new Error(preparedResult.error || "The invoice PDF slot could not be prepared.");
+        documentId = String(preparedResult.documentId || "");
+      }
+      const upload = new FormData();
+      upload.append("documentId", documentId);
+      upload.append("file", chosen);
+      const response = await fetch("/api/crm/documents", { method: "POST", body: upload });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "The invoice PDF could not be stored.");
+      await onChanged();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The invoice PDF could not be stored.");
+    } finally {
+      setBusy("");
+    }
+  };
+
   return (
     <section className="caseWorkPanel">
-      <span className="kicker">{title.toUpperCase()}</span>
-      {rows.length === 0 ? (
-        <p className="caseWorkEmpty">{empty ?? "Nothing recorded yet."}</p>
+      <span className="kicker">INVOICES</span>
+      {invoices.length === 0 ? (
+        <p className="caseWorkEmpty">No invoices raised for this case.</p>
       ) : (
         <div className="recordTableWrap">
-          <table className="recordTable">
+          <table className="recordTable caseInvoiceTable">
             <thead>
               <tr>
-                {columns.map(([label]) => (
-                  <th key={label}>{label}</th>
-                ))}
+                <th>Invoice</th><th>Type</th><th>Total</th><th>Paid</th><th>State</th><th>Due</th><th>PDF</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, index) => (
-                <tr key={String(row.id ?? index)}>
-                  {columns.map(([label, key]) => (
-                    <td key={label}>{humanise(row[key]) || "—"}</td>
-                  ))}
-                </tr>
-              ))}
+              {invoices.map((invoice) => {
+                const invoiceId = String(invoice.id ?? "");
+                const pdf = pdfFor(invoiceId);
+                const stored = Boolean(pdf?.drive_file_id);
+                return (
+                  <tr key={invoiceId}>
+                    <td>{humanise(invoice.invoice_number) || "—"}</td>
+                    <td>{humanise(invoice.invoice_type)}</td>
+                    <td>{String(invoice.currency || "AUD")} {Number(invoice.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td>{Number(invoice.paid || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td><Status value={String(invoice.state || "issued")} /></td>
+                    <td>{day(invoice.due_on) || "Not set"}</td>
+                    <td>
+                      <div className="invoicePdfActions">
+                        {stored ? (
+                          <a className="ghostButton" href={`/api/crm/documents?documentId=${String(pdf?.id)}`}>
+                            <Download size={13} /> View PDF
+                          </a>
+                        ) : null}
+                        <label className={`ghostButton${!storageConnected ? " disabled" : ""}`}>
+                          <Cloud size={13} />
+                          {busy === invoiceId ? "Storing…" : stored ? "Replace" : "Add PDF"}
+                          <input
+                            type="file"
+                            accept="application/pdf,.pdf"
+                            disabled={!storageConnected || busy === invoiceId}
+                            onChange={(event) => {
+                              const chosen = event.target.files?.[0];
+                              if (chosen) void storePdf(invoice, chosen);
+                              event.currentTarget.value = "";
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
+      {error ? <p className="caseWorkError">{error}</p> : null}
     </section>
   );
 }
@@ -7479,6 +9060,89 @@ function ArchiveForm({
   );
 }
 
+function CourseApplicationFields() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<CourseFinderCourse[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [institution, setInstitution] = useState("");
+  const [course, setCourse] = useState("");
+  const [campus, setCampus] = useState("");
+  const [intake, setIntake] = useState("");
+  const [selectedSource, setSelectedSource] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      if (query.trim().length < 2) {
+        setResults([]);
+        setSearching(false);
+        return;
+      }
+      setSearching(true);
+      try {
+        const params = new URLSearchParams({ q: query.trim(), limit: "8", page: "1" });
+        const response = await fetch(`/api/crm/course-finder?${params}`, { cache: "no-store", signal: controller.signal });
+        const result = await response.json();
+        if (response.ok) setResults(result.courses || []);
+      } catch (reason) {
+        if (!(reason instanceof DOMException && reason.name === "AbortError")) setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query]);
+
+  const choose = (item: CourseFinderCourse) => {
+    setInstitution(cleanCatalogueText(item.institution_name, ""));
+    setCourse(cleanCatalogueText(item.name, ""));
+    setCampus(cleanCatalogueText(item.campus || item.institution_city, ""));
+    setIntake(cleanCatalogueText(item.intake_months, ""));
+    setSelectedSource(item.catalogue_verified_at || item.source_updated_at || "");
+    setQuery(`${cleanCatalogueText(item.institution_name, "")} · ${cleanCatalogueText(item.name, "")}`);
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <div className="courseApplicationPicker wide">
+        <label htmlFor="application-course-search">Find a course in the catalogue</label>
+        <div className="institutionPickerControl">
+          <Search size={16} />
+          <input id="application-course-search" value={query} onFocus={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} placeholder="Search institution, course, campus or code…" autoComplete="off" />
+          {searching && <RefreshCw className="spin" size={15} />}
+        </div>
+        {open && query.trim().length >= 2 && (
+          <div className="courseApplicationOptions">
+            {results.map((item) => (
+              <button type="button" key={item.id} onClick={() => choose(item)}>
+                <strong>{cleanCatalogueText(item.name)}</strong>
+                <span>{cleanCatalogueText(item.institution_name)} · {cleanCatalogueText(item.country)} · {cleanCatalogueText(item.campus || item.institution_city, "Campus to confirm")}</span>
+                <small>{[catalogueLevelLabel(item.level), item.intake_months, item.tuition_fee ? `${item.currency} ${Number(item.tuition_fee).toLocaleString()}` : null].filter(Boolean).join(" · ")}</small>
+              </button>
+            ))}
+            {!searching && results.length === 0 && <p>No catalogue result. Broaden the search or enter the confirmed details below.</p>}
+          </div>
+        )}
+        {selectedSource && <small className="catalogueSelectionSource"><Check size={13} /> Catalogue fields filled automatically · source checked {new Date(selectedSource).toLocaleDateString()}</small>}
+      </div>
+      <label>
+        Institution *<input name="institution" required value={institution} onChange={(event) => setInstitution(event.target.value)} />
+      </label>
+      <label>
+        Course *<input name="course" required value={course} onChange={(event) => setCourse(event.target.value)} />
+      </label>
+      <label>
+        Campus<input name="campus" value={campus} onChange={(event) => setCampus(event.target.value)} />
+      </label>
+      <label>
+        Intake<input name="intake" value={intake} onChange={(event) => setIntake(event.target.value)} placeholder="e.g. February 2027" />
+      </label>
+    </>
+  );
+}
+
 function ApplicationsTab({
   applications,
   caseId,
@@ -7508,6 +9172,7 @@ function ApplicationsTab({
                 <th>Course</th>
                 <th>Intake</th>
                 <th>Reference</th>
+                <th>Partner / associate</th>
                 <th>Status</th>
                 <th>Deadline</th>
                 <th />
@@ -7520,6 +9185,10 @@ function ApplicationsTab({
                   <td>{text(row.course)}</td>
                   <td>{text(row.intake) || "—"}</td>
                   <td>{text(row.application_reference) || "—"}</td>
+                  <td>{[
+                    text((row.details as Record<string, unknown> | null)?.partner),
+                    text((row.details as Record<string, unknown> | null)?.associate),
+                  ].filter(Boolean).join(" · ") || "—"}</td>
                   <td>
                     <select
                       value={text(row.status)}
@@ -7588,24 +9257,17 @@ function ApplicationsTab({
               reference: data.get("reference"),
               status: data.get("status"),
               deadline: data.get("deadline"),
+              submittedOn: data.get("submittedOn"),
+              offerOn: data.get("offerOn"),
+              coeOn: data.get("coeOn"),
+              associate: data.get("associate"),
+              partner: data.get("partner"),
+              notes: data.get("notes"),
             });
             if (ok) setAdding(false);
           }}
         >
-          <label>
-            Institution *<input name="institution" required />
-          </label>
-          <label>
-            Course *<input name="course" required />
-          </label>
-          <label>
-            Campus
-            <input name="campus" />
-          </label>
-          <label>
-            Intake
-            <input name="intake" placeholder="e.g. February 2027" />
-          </label>
+          <CourseApplicationFields />
           <label>
             Application reference
             <input name="reference" />
@@ -7623,6 +9285,30 @@ function ApplicationsTab({
           <label>
             Deadline
             <input name="deadline" type="date" />
+          </label>
+          <label>
+            Submitted date
+            <input name="submittedOn" type="date" />
+          </label>
+          <label>
+            Offer received date
+            <input name="offerOn" type="date" />
+          </label>
+          <label>
+            CoE received date
+            <input name="coeOn" type="date" />
+          </label>
+          <label>
+            Associate / sub-agent
+            <input name="associate" />
+          </label>
+          <label>
+            Institution partner
+            <input name="partner" />
+          </label>
+          <label className="wide">
+            Application notes
+            <input name="notes" />
           </label>
           <div className="formActions">
             <button className="primaryButton" disabled={working}>
@@ -8127,13 +9813,18 @@ function RecordModal({
     );
   }
   if (!type) return null;
+  const isClientAppointment = role === "client" && type === "appointment";
+  const isClientMessage = role === "client" && type === "message";
+  const clientCase = cases[0];
   const titles: Record<Exclude<ModalType, null>, string> = {
     case: editing ? "Edit record" : "Create record",
     task: "Create task",
-    appointment: "Schedule appointment",
+    appointment: isClientAppointment
+      ? "Request an appointment"
+      : "Schedule appointment",
     document: "Request document",
     visaChecklist: "Document checklist",
-    message: "Compose draft",
+    message: isClientMessage ? "Message your case team" : "Send case message",
     invoice: "Create invoice",
     template: "Create template",
     workflow: "Status configuration",
@@ -8150,6 +9841,8 @@ function RecordModal({
             <span>
               {type === "case"
                 ? "MAXIMUS COMPLETE INFORMATION CAPTURE"
+                : isClientAppointment || isClientMessage
+                  ? "MY MAXIMUS PORTAL"
                 : "SECURE CRM RECORD"}
             </span>
             <h2>{titles[type]}</h2>
@@ -8250,11 +9943,10 @@ function RecordModal({
                 </label>
               </section>
               <p className="modalNotice">
-                <AlertTriangle size={14} />
-                This opens the file. Academic history, tests, employment,
-                passport details and family are recorded in the case file
-                afterwards, where they are stored as proper records rather than
-                loose fields.
+                <Check size={14} />
+                {editing
+                  ? "Update the case contact and workflow information here. Structured history remains available in the case workspace."
+                  : "Capture the complete applicant picture now. Optional sections can be skipped and completed later without losing the case."}
               </p>
               <div className="intakeFields">
                 <label>
@@ -8269,6 +9961,9 @@ function RecordModal({
                     required
                     defaultValue={editing?.email}
                   />
+                  {editing ? (
+                    <small>All future messages for this case use this address automatically.</small>
+                  ) : null}
                 </label>
                 <label>
                   Mobile *
@@ -8295,22 +9990,12 @@ function RecordModal({
                     value={matterType}
                     onChange={(e) => setMatterType(e.target.value)}
                   >
-                    <option>Education enquiry</option>
-                    <option>Migration enquiry</option>
-                    <option>Student admission</option>
-                    <option>Student visa</option>
-                    <option>407 Training Visa</option>
-                    <option>408 Temporary work activity</option>
-                    <option>482 Work Visa</option>
-                    <option>485 Visa</option>
-                    <option>494 Regional Work Visa</option>
-                    <option>500 Student Dependent</option>
-                    <option>600 Visitor Visa</option>
-                    <option>Partner visa 820/801</option>
-                    <option>Partner visa 309/100</option>
-                    <option>Protection Visa 866</option>
-                    <option>Skill assessment program</option>
-                    <option>EOI lodgement</option>
+                    {(workspace === "Direct Visa"
+                      ? DIRECT_VISA_MATTER_TYPES
+                      : STUDY_MATTER_TYPES
+                    ).map((option) => (
+                      <option key={option}>{option}</option>
+                    ))}
                   </select>
                 </label>
                 <label>
@@ -8395,6 +10080,11 @@ function RecordModal({
                     <option>Referral</option>
                     <option>Website</option>
                     <option>Social media</option>
+                    <option>Facebook</option>
+                    <option>WhatsApp</option>
+                    <option>Email marketing</option>
+                    <option>Phone enquiry</option>
+                    <option>Education expo</option>
                     <option>Agent</option>
                     <option>Existing client</option>
                   </select>
@@ -8407,6 +10097,119 @@ function RecordModal({
                   />
                 </label>
               </div>
+              {!editing && (
+                <div className="completeIntakeSections">
+                  <details open>
+                    <summary>Personal, contact and passport details</summary>
+                    <div className="intakeFields">
+                      <label>Alternate mobile<input name="alternatePhone" placeholder="+61 412 345 678" /></label>
+                      <label>Gender<select name="gender" defaultValue=""><option value="">Select gender</option><option>Male</option><option>Female</option><option>Other</option><option>Prefer not to say</option></select></label>
+                      <label>Marital status<select name="maritalStatus" defaultValue=""><option value="">Select status</option><option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option><option>Separated</option></select></label>
+                      <label>Country of birth<input name="countryOfBirth" /></label>
+                      <label>Current country<input name="currentCountry" /></label>
+                      <label>Preferred language<input name="preferredLanguage" /></label>
+                      <label className="wide">Residential address<input name="addressLine" placeholder="Street address" /></label>
+                      <label>City<input name="city" /></label>
+                      <label>State / province<input name="state" /></label>
+                      <label>Postcode<input name="postcode" /></label>
+                      <label>Passport number<input name="passportNumber" autoComplete="off" /></label>
+                      <label>Passport country<input name="passportCountry" /></label>
+                      <label>Passport issue date<input name="passportIssue" type="date" /></label>
+                      <label>Passport expiry date<input name="passportExpiry" type="date" /></label>
+                    </div>
+                  </details>
+
+                  <details open>
+                    <summary>{workspace === "Direct Visa" ? "Migration history and declarations" : "Study preferences and proposed application"}</summary>
+                    {workspace === "Study Abroad" ? (
+                      <div className="intakeFields">
+                        <label>Destination country<select name="destinationCountry" defaultValue=""><option value="">Select country</option>{DESTINATION_COUNTRIES.map((country) => <option key={country}>{country}</option>)}</select></label>
+                        <label>Study level<select name="studyLevel" defaultValue=""><option value="">Select level</option><option>Certificate III</option><option>Certificate IV</option><option>Diploma</option><option>Advanced Diploma</option><option>Bachelor Degree</option><option>Graduate Certificate</option><option>Graduate Diploma</option><option>Master Degree</option><option>Master by Research</option><option>PhD</option></select></label>
+                        <label>Preferred institution<input name="preferredInstitution" /></label>
+                        <label>Preferred course<input name="preferredCourse" /></label>
+                        <label>Target intake<input name="intake" placeholder="e.g. February 2027" /></label>
+                        <label>Annual budget<input name="annualBudget" type="number" min="0" step="0.01" /></label>
+                        <label>Funding source<input name="fundingSource" /></label>
+                        <label>Application institution<input name="applicationInstitution" /></label>
+                        <label>Application course<input name="applicationCourse" /></label>
+                        <label>Campus<input name="applicationCampus" /></label>
+                        <label>Application reference<input name="applicationReference" /></label>
+                        <label>Application status<select name="applicationStatus" defaultValue="draft">{APPLICATION_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{humanise(option)}</option>)}</select></label>
+                        <label>Application deadline<input name="applicationDeadline" type="date" /></label>
+                        <label>Associate / sub-agent<input name="associate" /></label>
+                        <label>Institution partner<input name="partner" /></label>
+                        <label className="checkboxLabel"><input name="accommodationRequired" type="checkbox" />Accommodation required</label>
+                        <label className="checkboxLabel"><input name="scholarshipRequired" type="checkbox" />Scholarship required</label>
+                      </div>
+                    ) : (
+                      <div className="intakeFields">
+                        <label>Destination country<select name="migrationDestination" defaultValue="Australia"><option>Australia</option>{DESTINATION_COUNTRIES.filter((country) => country !== "Australia").map((country) => <option key={country}>{country}</option>)}</select></label>
+                        <label>Current visa status<input name="currentVisaStatus" /></label>
+                        <label>Visited another country?<select name="visitedOtherCountry" defaultValue=""><option value="">Select</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+                        <label>Country visited<input name="travelCountry" /></label>
+                        <label>Date visited<input name="travelDate" type="date" /></label>
+                        <label>Purpose of travel<input name="travelPurpose" /></label>
+                        <label>Previous visa country<input name="previousVisaCountry" /></label>
+                        <label>Previous visa type<input name="previousVisaType" /></label>
+                        <label>Previous visa outcome<select name="previousVisaOutcome" defaultValue=""><option value="">Select outcome</option><option>Approved</option><option>Rejected</option><option>Withdrawn</option><option>Pending</option></select></label>
+                        <label>Previous application date<input name="previousVisaApplied" type="date" /></label>
+                        <label>Any visa refusal?<select name="hasVisaRefusal" defaultValue=""><option value="">Select</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+                        <label className="wide">Refusal details<input name="refusalDetails" /></label>
+                        <label>Gap from<input name="gapFrom" type="date" /></label>
+                        <label>Gap to<input name="gapTo" type="date" /></label>
+                        <label className="wide">Study / work gap reason<input name="gapReason" /></label>
+                      </div>
+                    )}
+                  </details>
+
+                  <details>
+                    <summary>Education, English test and employment</summary>
+                    <div className="intakeFields">
+                      <label>Highest qualification<input name="qualification" /></label>
+                      <label>Institution / board<input name="educationInstitution" /></label>
+                      <label>Field / stream<input name="fieldOfStudy" /></label>
+                      <label>Country<input name="educationCountry" /></label>
+                      <label>Started<input name="educationStart" type="date" /></label>
+                      <label>Completed<input name="educationEnd" type="date" /></label>
+                      <label>Result / grade<input name="educationResult" /></label>
+                      <label>English test<select name="testType" defaultValue=""><option value="">No test recorded</option><option>IELTS</option><option>PTE</option><option>TOEFL</option><option>Duolingo</option><option>CELPIP</option><option>OET</option></select></label>
+                      <label>Test date<input name="testDate" type="date" /></label>
+                      <label>Overall<input name="testOverall" type="number" step="0.01" /></label>
+                      <label>Listening<input name="testListening" type="number" step="0.01" /></label>
+                      <label>Reading<input name="testReading" type="number" step="0.01" /></label>
+                      <label>Writing<input name="testWriting" type="number" step="0.01" /></label>
+                      <label>Speaking<input name="testSpeaking" type="number" step="0.01" /></label>
+                      <label>Employer<input name="employer" /></label>
+                      <label>Position<input name="jobTitle" /></label>
+                      <label>Employment country<input name="employmentCountry" /></label>
+                      <label>Employment start<input name="employmentStart" type="date" /></label>
+                      <label>Employment end<input name="employmentEnd" type="date" /></label>
+                      <label>Hours per week<input name="hoursPerWeek" type="number" step="0.5" min="0" /></label>
+                      <label className="wide">Main duties<input name="duties" /></label>
+                    </div>
+                  </details>
+
+                  <details>
+                    <summary>Spouse, partner and child</summary>
+                    <div className="intakeFields">
+                      <label>Spouse / partner full name<input name="spouseFullName" /></label>
+                      <label>Date of birth<input name="spouseDob" type="date" /></label>
+                      <label>Email<input name="spouseEmail" type="email" /></label>
+                      <label>Mobile<input name="spousePhone" /></label>
+                      <label>Nationality<input name="spouseNationality" /></label>
+                      <label>Passport number<input name="spousePassport" autoComplete="off" /></label>
+                      <label>Passport expiry<input name="spousePassportExpiry" type="date" /></label>
+                      <label>Visa status<input name="spouseVisaStatus" /></label>
+                      <label className="checkboxLabel"><input name="spouseIncluded" type="checkbox" />Included in this application</label>
+                      <label>Child full name<input name="childFullName" /></label>
+                      <label>Child date of birth<input name="childDob" type="date" /></label>
+                      <label>Child nationality<input name="childNationality" /></label>
+                      <label className="checkboxLabel"><input name="childIncluded" type="checkbox" />Child included in this application</label>
+                    </div>
+                    <small>Additional family members can be added as individual records in the case workspace.</small>
+                  </details>
+                </div>
+              )}
             </div>
           )}
           {type === "task" && (
@@ -8443,37 +10246,68 @@ function RecordModal({
           {type === "appointment" && (
             <>
               <label className="full">
-                Title
+                {isClientAppointment
+                  ? "What would you like to discuss?"
+                  : "Title"}
                 <input name="title" required />
               </label>
-              <label>
-                Linked case
-                <select name="caseId">
-                  <option value="">Internal appointment</option>
-                  {cases.map((c) => (
-                    <option key={c.id} value={c.dbId || c.id}>
-                      {c.name}
+              {isClientAppointment && cases.length === 1 ? (
+                <label>
+                  Case
+                  <input value={`${clientCase.name} · ${clientCase.id}`} disabled />
+                  <input
+                    type="hidden"
+                    name="caseId"
+                    value={clientCase.dbId || clientCase.id}
+                  />
+                </label>
+              ) : (
+                <label>
+                  {isClientAppointment ? "Case" : "Linked case"}
+                  <select name="caseId" required={isClientAppointment}>
+                    <option value="">
+                      {isClientAppointment
+                        ? "Select your case"
+                        : "Internal appointment"}
                     </option>
-                  ))}
-                </select>
-              </label>
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.dbId || c.id}>
+                        {isClientAppointment ? `${c.name} · ${c.id}` : c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
-                Date
+                {isClientAppointment ? "Preferred date" : "Date"}
                 <input name="date" type="date" required />
               </label>
               <label>
-                Time
+                {isClientAppointment ? "Preferred time" : "Time"}
                 <input name="time" type="time" required />
               </label>
               <label>
-                Type
+                {isClientAppointment ? "Appointment reason" : "Type"}
                 <select name="appointmentType">
                   <option>Counselling</option>
                   <option>Document review</option>
                   <option>Visa consultation</option>
-                  <option>Internal meeting</option>
+                  {isClientAppointment ? (
+                    <>
+                      <option>Application update</option>
+                      <option>Other</option>
+                    </>
+                  ) : (
+                    <option>Internal meeting</option>
+                  )}
                 </select>
               </label>
+              {isClientAppointment && !clientCase ? (
+                <p className="formError full" role="alert">
+                  Your login is not linked to a case yet. Please contact your
+                  Maximus case team before requesting an appointment.
+                </p>
+              ) : null}
             </>
           )}
           {type === "document" && (
@@ -8608,21 +10442,64 @@ function RecordModal({
           )}
           {type === "message" && (
             <>
-              <label>
-                To
-                <input name="to" type="email" required />
-              </label>
-              <label>
-                Linked case
-                <select name="caseId">
-                  <option value="">None</option>
-                  {cases.map((c) => (
-                    <option key={c.id} value={c.dbId || c.id}>
-                      {c.name}
+              {isClientMessage ? (
+                <label>
+                  To
+                  <input value="Your Maximus case team" disabled />
+                </label>
+              ) : presetCase ? (
+                <label>
+                  Client
+                  <input value={presetCase.name} disabled />
+                  <input type="hidden" name="caseId" value={presetCase.dbId || presetCase.id} />
+                </label>
+              ) : null}
+              {!isClientMessage && !presetCase ? (
+                <label>
+                  Case
+                  <select name="caseId" required defaultValue="">
+                    <option value="">Select case</option>
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.dbId || c.id}>{c.name} · {c.id}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {!isClientMessage ? (
+                <p className="modalNotice full">
+                  <Mail size={14} />
+                  The recipient is taken automatically from this client&apos;s case profile. Edit the case profile if the address changes.
+                </p>
+              ) : null}
+              {isClientMessage && cases.length === 1 ? (
+                <label>
+                  Case
+                  <input value={`${clientCase.name} · ${clientCase.id}`} disabled />
+                  <input
+                    type="hidden"
+                    name="caseId"
+                    value={clientCase.dbId || clientCase.id}
+                  />
+                </label>
+              ) : isClientMessage ? (
+                <label>
+                  {isClientMessage ? "Case" : "Linked case"}
+                  <select
+                    name="caseId"
+                    required={isClientMessage}
+                    defaultValue={presetCase?.dbId || presetCase?.id || ""}
+                  >
+                    <option value="">
+                      {isClientMessage ? "Select your case" : "None"}
                     </option>
-                  ))}
-                </select>
-              </label>
+                    {cases.map((c) => (
+                      <option key={c.id} value={c.dbId || c.id}>
+                        {isClientMessage ? `${c.name} · ${c.id}` : c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <label className="full">
                 Subject
                 <input name="subject" required />
@@ -8631,34 +10508,58 @@ function RecordModal({
                 Message
                 <textarea name="body" required />
               </label>
+              {isClientMessage && !clientCase ? (
+                <p className="formError full" role="alert">
+                  Your login is not linked to a case yet. Please contact Maximus
+                  directly so the case team can connect your portal.
+                </p>
+              ) : null}
             </>
           )}
           {type === "invoice" && (
             <>
               {presetCase ? (
                 <label>
-                  Client
-                  <input value={presetCase.name} disabled />
-                  <input type="hidden" name="clientId" value={presetCase.clientId || ""} />
+                  Case
+                  <input value={`${presetCase.name} · ${presetCase.id}`} disabled />
                   <input type="hidden" name="caseId" value={presetCase.dbId || presetCase.id} />
                 </label>
               ) : (
                 <label>
-                  Client
-                  <select name="clientId" required>
-                    <option value="">Select client</option>
+                  Case
+                  <select name="caseId" required>
+                    <option value="">Select case</option>
                     {cases.map((c) => (
-                      <option key={c.id} value={c.clientId}>
-                        {c.name}
+                      <option key={c.id} value={c.dbId || c.id}>
+                        {c.name} · {c.id}
                       </option>
                     ))}
                   </select>
                 </label>
               )}
               <label>
-                Amount
+                Invoice type
+                <select name="invoiceType" defaultValue="professional_fee">
+                  <option value="professional_fee">Professional fee</option>
+                  <option value="service_fee">Service fee</option>
+                  <option value="tuition">Tuition</option>
+                  <option value="application_fee">Application fee</option>
+                  <option value="visa_fee">Visa fee</option>
+                  <option value="disbursement">Disbursement</option>
+                </select>
+              </label>
+              <label>
+                Currency
+                <select name="currency" defaultValue="AUD">
+                  {['AUD', 'USD', 'NZD', 'GBP', 'EUR', 'CAD', 'INR', 'LKR'].map((currency) => (
+                    <option key={currency}>{currency}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Subtotal
                 <input
-                  name="amount"
+                  name="subtotal"
                   type="number"
                   min="0"
                   step="0.01"
@@ -8666,8 +10567,17 @@ function RecordModal({
                 />
               </label>
               <label>
+                Tax / GST
+                <input name="tax" type="number" min="0" step="0.01" defaultValue="0" required />
+              </label>
+              <label>
                 Due date
                 <input name="due" type="date" />
+              </label>
+              <label className="full">
+                Invoice PDF
+                <input name="invoicePdf" type="file" accept="application/pdf,.pdf" />
+                <small>The PDF is stored in this client&apos;s Google Drive Accounts and Receipts folder.</small>
               </label>
             </>
           )}
@@ -8714,9 +10624,34 @@ function RecordModal({
           <button type="button" className="ghostButton" onClick={close}>
             Cancel
           </button>
-          <button type="submit" className="primaryButton" disabled={saving}>
+          <button
+            type="submit"
+            className="primaryButton"
+            disabled={
+              saving ||
+              ((isClientAppointment || isClientMessage) && !clientCase)
+            }
+          >
             <Check size={15} />
-            {saving ? "Saving securely…" : "Save complete record"}
+            {saving
+              ? isClientAppointment
+                ? "Sending request…"
+                : isClientMessage
+                  ? "Sending message…"
+                  : type === "message"
+                    ? "Sending message…"
+                    : type === "invoice"
+                      ? "Saving invoice…"
+                      : "Saving securely…"
+              : isClientAppointment
+                ? "Send appointment request"
+                : isClientMessage
+                  ? "Send message"
+                  : type === "message"
+                    ? "Send message"
+                    : type === "invoice"
+                      ? "Create invoice"
+                      : "Save complete record"}
           </button>
         </footer>
       </form>
@@ -8725,6 +10660,7 @@ function RecordModal({
 }
 
 export default function Home() {
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const [active, setActive] = useState<ModuleKey>("dashboard"),
     [menuOpen, setMenuOpen] = useState(false),
     [query, setQuery] = useState(""),
@@ -8732,6 +10668,7 @@ export default function Home() {
     [modal, setModal] = useState<ModalType>(null),
     [presetCaseId, setPresetCaseId] = useState(""),
     [selected, setSelected] = useState<CaseRecord | null>(null),
+    [caseWindowId, setCaseWindowId] = useState(""),
     [editing, setEditing] = useState<CaseRecord | null>(null),
     [toast, setToast] = useState(""),
     [formError, setFormError] = useState(""),
@@ -8948,6 +10885,48 @@ export default function Home() {
     const timer = window.setTimeout(() => void loadWorkspace(), 0);
     return () => window.clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    const receiveWorkspaceUpdate = (event: StorageEvent) => {
+      if (event.key === "maximus.workspaceRefresh") void loadWorkspace();
+    };
+    window.addEventListener("storage", receiveWorkspaceUpdate);
+    return () => window.removeEventListener("storage", receiveWorkspaceUpdate);
+  });
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (event.key === "Escape" && query) {
+        setQuery("");
+        searchRef.current?.blur();
+      }
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [query]);
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setCaseWindowId(new URL(window.location.href).searchParams.get("case") ?? ""),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    if (!caseWindowId || selected?.dbId === caseWindowId) return;
+    const record = cases.find((entry) => entry.dbId === caseWindowId);
+    if (!record) return;
+    const timer = window.setTimeout(() => setSelected(record), 0);
+    return () => window.clearTimeout(timer);
+  }, [caseWindowId, cases, selected?.dbId]);
+  const openCaseWorkspace = useCallback((record: CaseRecord) => {
+    if (!record.dbId) return;
+    const target = new URL(window.location.href);
+    target.search = "";
+    target.searchParams.set("case", record.dbId);
+    window.open(target.toString(), `maximus-case-${record.dbId}`, "noopener,noreferrer");
+  }, []);
   const searched = useMemo(
     () =>
       cases.filter((c) =>
@@ -8966,7 +10945,7 @@ export default function Home() {
   // Opening a document request or an invoice from within the case it
   // belongs to, rather than picking that same case back out of every case
   // in the organisation from a separate screen.
-  const openForCase = (caseId: string, kind: "document" | "visaChecklist" | "invoice" = "document") => {
+  const openForCase = (caseId: string, kind: "document" | "visaChecklist" | "invoice" | "message" = "document") => {
     setPresetCaseId(caseId);
     open(kind);
   };
@@ -8974,6 +10953,7 @@ export default function Home() {
   const submitRecord = async (
     kind: Exclude<ModalType, null>,
     payload: Record<string, unknown>,
+    attachment?: File,
   ) => {
     setSaving(true);
     try {
@@ -8985,13 +10965,61 @@ export default function Home() {
       const result = await response.json().catch(() => ({}));
       if (!response.ok)
         throw new Error(result.error || "The record could not be saved.");
+
+      if (kind === "message" && role !== "client") {
+        const sent = await fetch("/api/crm/mailbox", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "send_message", messageId: result.messageId }),
+        });
+        const sentResult = await sent.json().catch(() => ({}));
+        if (!sent.ok) {
+          setModal(null);
+          setPresetCaseId("");
+          await loadWorkspace();
+          throw new Error(sentResult.error || "The message was saved but Gmail could not send it.");
+        }
+      }
+
+      if (kind === "invoice" && attachment) {
+        if (!result.documentId) {
+          setModal(null);
+          setPresetCaseId("");
+          await loadWorkspace();
+          throw new Error("The invoice was created but its PDF storage record is unavailable.");
+        }
+        const upload = new FormData();
+        upload.append("documentId", String(result.documentId));
+        upload.append("file", attachment);
+        const stored = await fetch("/api/crm/documents", { method: "POST", body: upload });
+        const storedResult = await stored.json().catch(() => ({}));
+        if (!stored.ok) {
+          setModal(null);
+          setPresetCaseId("");
+          await loadWorkspace();
+          throw new Error(storedResult.error || "The invoice was created but its PDF could not be stored.");
+        }
+      }
+
       setModal(null);
       setEditing(null);
       setDuplicates(null);
       setPendingIntake(null);
       setPresetCaseId("");
       await loadWorkspace();
-      say(`${kind[0].toUpperCase() + kind.slice(1)} saved to Supabase`);
+      say(
+        role === "client" && kind === "appointment"
+          ? "Appointment request sent to your case team"
+          : role === "client" && kind === "message"
+            ? "Message sent to your case team"
+            : kind === "message"
+              ? "Message sent and added to the shared case conversation"
+              : kind === "invoice"
+                ? attachment
+                  ? "Invoice created and PDF stored in the client Drive folder"
+                  : "Invoice created with a Drive PDF slot ready"
+                : `${kind[0].toUpperCase() + kind.slice(1)} saved`,
+      );
       return true;
     } catch (reason) {
       const message =
@@ -9037,6 +11065,20 @@ export default function Home() {
           ([, value]) => typeof value === "string",
         ),
       ) as Record<string, unknown>;
+    const invoicePdfValue = modal === "invoice" ? f.get("invoicePdf") : null;
+    const invoicePdf =
+      invoicePdfValue instanceof File && invoicePdfValue.size > 0
+        ? invoicePdfValue
+        : undefined;
+    if (
+      invoicePdf &&
+      invoicePdf.type !== "application/pdf" &&
+      !invoicePdf.name.toLowerCase().endsWith(".pdf")
+    ) {
+      setFormError("Invoice attachments must be PDF files.");
+      setSaving(false);
+      return;
+    }
     payload.action = modal;
     // The portal asks; staff confirm. The workspace accepts only the actions
     // built for a client account.
@@ -9071,7 +11113,7 @@ export default function Home() {
         return;
       }
     }
-    await submitRecord(modal, payload);
+    await submitRecord(modal, payload, invoicePdf);
   };
 
   // The three honest answers to "this looks like somebody you already have".
@@ -9081,7 +11123,7 @@ export default function Home() {
     setEditing(null);
     setDuplicates(null);
     setPendingIntake(null);
-    if (existing) setSelected(existing);
+    if (existing) openCaseWorkspace(existing);
     else say("That client has no case on file yet.");
   };
   const addCaseToExistingClient = async (clientId: string) => {
@@ -9341,6 +11383,70 @@ export default function Home() {
       );
     }
   }
+  async function bulkMutateRemote(
+    resource: string,
+    operation: string,
+    ids: string[],
+    extra: Record<string, unknown> = {},
+  ) {
+    if (!ids.length) return;
+    try {
+      const response = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "bulk_mutate",
+          resource,
+          operation,
+          ids,
+          ...extra,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(result.error || "The bulk update was rejected.");
+      await loadWorkspace();
+      const succeeded = Number(result.succeeded ?? ids.length);
+      const failed = Number(result.failed ?? 0);
+      const requested = Number(result.requested ?? 0);
+      say(
+        (requested > 0
+          ? `${requested} archive request${requested === 1 ? "" : "s"} sent to management`
+          : `${succeeded} record${succeeded === 1 ? "" : "s"} updated`) +
+          (failed ? `; ${failed} could not be changed.` : "."),
+      );
+    } catch (reason) {
+      await loadWorkspace();
+      say(reason instanceof Error ? reason.message : "The bulk update could not be saved.");
+    }
+  }
+  const bulkMoveCases = async (
+    records: CaseRecord[],
+    stage: LifecycleStage,
+  ) => {
+    const ids = records.map((record) => record.dbId).filter(Boolean) as string[];
+    if (!ids.length) return say("None of the selected cases could be identified.");
+    try {
+      const response = await fetch("/api/crm/workspace", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "bulk_lifecycle", caseIds: ids, stage }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The cases could not be moved.");
+      await loadWorkspace();
+      const succeeded = Number(result.succeeded ?? ids.length);
+      const failed = Number(result.failed ?? 0);
+      say(`${succeeded} case${succeeded === 1 ? "" : "s"} moved to ${stageLabels[stage].toLowerCase()}` + (failed ? `; ${failed} could not be moved.` : "."));
+    } catch (reason) {
+      await loadWorkspace();
+      say(reason instanceof Error ? reason.message : "The cases could not be moved.");
+    }
+  };
+  const bulkArchiveCases = async (records: CaseRecord[]) => {
+    const ids = records.map((record) => record.dbId).filter(Boolean) as string[];
+    await bulkMutateRemote("case", "archive", ids);
+  };
   async function postOperation(
     action: string,
     extra: Record<string, unknown> = {},
@@ -9518,6 +11624,8 @@ export default function Home() {
     content =
       active === "portal" ? (
         <PortalView cases={cases} journeyHistory={journeyHistory} declarations={declarations} />
+      ) : active === "courseFinder" ? (
+        <CourseFinderView canManage={false} />
       ) : (
         <ClientModuleView
           module={active}
@@ -9535,9 +11643,11 @@ export default function Home() {
       <WorkspaceDashboard
         cases={cases}
         tasks={tasks}
+        appointments={appointments}
         documents={documents}
         openModal={open}
         setActive={setActive}
+        onOpenCase={openCaseWorkspace}
         serviceMode={serviceMode}
       />
     );
@@ -9548,6 +11658,7 @@ export default function Home() {
         cases={cases}
         setTasks={syncTasks}
         openModal={open}
+        onBulkAction={bulkMutateRemote}
       />
     );
   else if (active === "calendar")
@@ -9557,6 +11668,23 @@ export default function Home() {
         openModal={open}
         setItems={syncAppointments}
         setActive={setActive}
+        onBulkAction={bulkMutateRemote}
+        onRespond={(appointment, status) => {
+          const note = window.prompt(
+            status === "scheduled"
+              ? "Confirmation note for the client (optional)"
+              : "Reason or alternative time for the client",
+            appointment.responseNote || "",
+          );
+          if (note === null) return;
+          void postOperation("appointment_response", {
+            appointmentId: appointment.id,
+            status,
+            date: appointment.date,
+            time: appointment.time,
+            note,
+          });
+        }}
       />
     );
   else if (active === "documents")
@@ -9565,17 +11693,20 @@ export default function Home() {
         items={documents}
         setItems={syncDocuments}
         storageConnected={storageConnected}
+        onBulkAction={bulkMutateRemote}
       />
     );
   else if (active === "communications")
     content = (
       <MessagesView
         items={messages}
+        cases={cases}
         openModal={open}
         setItems={syncMessages}
         // This screen is only ever reached by staff -- the client portal has
         // its own communications screen elsewhere in this render.
         canSend={true}
+        onBulkAction={bulkMutateRemote}
       />
     );
   else if (active === "courseFinder")
@@ -9594,9 +11725,28 @@ export default function Home() {
                 `Refund $${invoice.paid.toLocaleString()} to ${invoice.client}? This is recorded against the invoice and cannot be undone here.`,
               )
             )
-              void mutateRemote("invoice", "refund", invoice.id, {
+              void postOperation("record_refund", {
+                invoiceId: invoice.id,
                 amount: invoice.paid,
               });
+          }}
+          onPayment={(invoice) => {
+            const amount = window.prompt(
+              `Payment received for ${invoice.invoiceNumber}. Outstanding ${invoice.currency} ${invoice.balance.toFixed(2)}`,
+              invoice.balance.toFixed(2),
+            );
+            if (amount === null) return;
+            const parsed = Number(amount);
+            if (!Number.isFinite(parsed) || parsed <= 0 || parsed > invoice.balance) {
+              say("Enter a payment no greater than the outstanding balance.");
+              return;
+            }
+            const reference = window.prompt("Payment reference (bank reference, receipt ID or transaction ID)", "") ?? "";
+            void postOperation("record_payment", { invoiceId: invoice.id, amount: parsed, currency: invoice.currency, reference });
+          }}
+          onReminder={(invoice) => {
+            if (confirm(`Queue an overdue reminder for ${invoice.invoiceNumber}? It will use the current email in the case profile.`))
+              void postOperation("queue_overdue_reminder", { invoiceId: invoice.id, reminderType: "manual" });
           }}
           onCreditNote={(invoice) => {
             const remaining = invoice.balance;
@@ -9616,6 +11766,7 @@ export default function Home() {
               reason: reason || undefined,
             });
           }}
+          onBulkAction={bulkMutateRemote}
         />
         <CommissionClaimsPanel
           items={commissionClaims}
@@ -9649,24 +11800,10 @@ export default function Home() {
     );
   else if (active === "templates")
     content = (
-      <>
-        <TemplatesView
-          items={templates}
-          openModal={open}
-          setItems={syncTemplates}
-          canManage={canManageFinance}
-        />
-        <DocumentChecklistTemplatesPanel
-          templates={checklistTemplates}
-          canManage={canManageFinance}
-          reload={loadChecklistTemplates}
-        />
-        <EmailTemplatesPanel
-          templates={emailTemplates}
-          canManage={canManageFinance}
-          reload={loadEmailTemplates}
-        />
-      </>
+      <TemplatesWorkspace items={templates} checklistTemplates={checklistTemplates}
+        emailTemplates={emailTemplates} openModal={open} setItems={syncTemplates}
+        canManage={canManageFinance} reloadChecklist={loadChecklistTemplates}
+        reloadEmails={loadEmailTemplates} onBulkAction={bulkMutateRemote} />
     );
   else if (active === "workflows")
     content = (
@@ -9675,6 +11812,7 @@ export default function Home() {
         openModal={open}
         setItems={syncWorkflows}
         canManage={canManageFinance}
+        onBulkAction={bulkMutateRemote}
       />
     );
   else if (active === "reports")
@@ -9741,7 +11879,7 @@ export default function Home() {
     // Opens the case an application or visa matter belongs to.
     const openCase = (id: string) => {
       const found = cases.find((c) => c.dbId === id);
-      if (found) setSelected(found);
+      if (found) openCaseWorkspace(found);
       else say("That case is not in your workspace.");
     };
     // The pipeline stage a case sits at is shared by both service streams, but
@@ -9814,10 +11952,12 @@ export default function Home() {
         filter={filter}
         setFilter={setFilter}
         openModal={open}
-        onSelect={setSelected}
+        onSelect={openCaseWorkspace}
         staff={staff}
         canBulkAssign={canManageFinance}
         onBulkAssign={bulkAssignCases}
+        onBulkStage={bulkMoveCases}
+        onBulkArchive={bulkArchiveCases}
       />
     );
     // These two screens lead with the records themselves. The case list stays
@@ -9849,7 +11989,7 @@ export default function Home() {
       );
   }
   return (
-    <div className={`appShell mode-${serviceMode}`}>
+    <div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}`}>
       {schemaWarning && (
         <div className="schemaBanner" role="status">
           <AlertTriangle size={15} />
@@ -9889,6 +12029,7 @@ export default function Home() {
               <div className="searchWrap">
                 <Search size={18} />
                 <input
+                  ref={searchRef}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={`Search ${serviceMode === "study" ? "students and applications" : "clients and visa matters"}…`}
@@ -9903,7 +12044,7 @@ export default function Home() {
                         <button
                           key={c.id}
                           onClick={() => {
-                            setSelected(c);
+                            openCaseWorkspace(c);
                             setQuery("");
                           }}
                         >
@@ -10067,19 +12208,6 @@ export default function Home() {
           ) : null}
         </header>
         <div className="content">
-          <div className="accessBanner">
-            <ShieldCheck size={16} />
-            <span>
-              <b>{roleConfig[role].label} account</b> · {roleConfig[role].scope}
-            </span>
-            <small>
-              {role !== "client"
-                ? serviceMode === "study"
-                  ? "Study Abroad workspace"
-                  : "Direct Visa workspace"
-                : "Private journey"}
-            </small>
-          </div>
           <div className="pageTitle">
             <div>
               <span>
@@ -10098,16 +12226,10 @@ export default function Home() {
               </h1>
               <p>{screenMeta[2]}</p>
             </div>
-            {role !== "client" ? (
+            {role !== "client" && (["dashboard", "enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete", "reports", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) ? (
               <div className="titleActions">
-                <button className="ghostButton" onClick={exportData}>
-                  <Download size={16} />
-                  Export
-                </button>
-                <button className="primaryButton" onClick={() => open("case")}>
-                  <Plus size={16} />
-                  {serviceMode === "study" ? "New enquiry" : "New client"}
-                </button>
+                {(["reports", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) && <button className="ghostButton" onClick={exportData}><Download size={16} />Export</button>}
+                {(["dashboard", "enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete"] as ModuleKey[]).includes(active) && <button className="primaryButton" onClick={() => open("case")}><Plus size={16} />{serviceMode === "study" ? "New enquiry" : "New client"}</button>}
               </div>
             ) : null}
           </div>
@@ -10116,6 +12238,16 @@ export default function Home() {
       </main>
       {role !== "client" ? (
         <CaseDrawer
+          key={selected
+            ? [
+                ...documents
+                  .filter((document) => document.caseId === selected.dbId)
+                  .map((document) => `${document.id}:${document.status}`),
+                ...messages
+                  .filter((message) => message.caseId === selected.dbId)
+                  .map((message) => `${message.id}:${message.status}`),
+              ].sort().join("|") || selected.dbId
+            : "closed"}
           moveStage={moveCaseStage}
           assign={assignCase}
           refresh={loadWorkspace}
@@ -10123,15 +12255,18 @@ export default function Home() {
           lifecycleReady={!schemaWarning}
           schemaWarning={schemaWarning}
           storageConnected={storageConnected}
-          canAssign={role === "super_admin" || role === "admin"}
-          canModify={
-            role !== "staff" || selected?.ownerId === identity?.profileId
-          }
+          canAssign={Boolean(role === "super_admin" || role === "admin" || selected?.ownerId === identity?.profileId)}
+          canModify={Boolean(
+            role !== "staff" || selected?.ownerId === identity?.profileId || selected?.collaboratorIds?.includes(identity?.profileId ?? "")
+          )}
           item={selected}
-          close={() => setSelected(null)}
+          close={() => {
+            if (caseWindowId) window.close();
+            else setSelected(null);
+          }}
           edit={editCase}
           remove={removeCase}
-          onRequestDocument={openForCase}
+          onCaseAction={openForCase}
         />
       ) : null}
       <RecordModal

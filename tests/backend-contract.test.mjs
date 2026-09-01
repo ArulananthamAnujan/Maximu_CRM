@@ -28,6 +28,62 @@ test("all live CRM routes authenticate through Supabase sessions", async () => {
   ]) assert.match(await read(route), /liveSession\(request\)/, route);
 });
 
+test("bulk actions are server-authorised and bounded", async () => {
+  const page = await read("app/page.tsx");
+  const workspace = await read("app/api/crm/workspace/route.ts");
+  const admin = await read("app/api/crm/admin/route.ts");
+  const checklists = await read("app/api/crm/document-checklist-templates/route.ts");
+  for (const source of [workspace, admin, checklists]) {
+    assert.match(source, /Bulk actions are limited to 100/);
+  }
+  assert.match(workspace, /action === "bulk_mutate"/);
+  assert.match(workspace, /action === "bulk_lifecycle"/);
+  assert.match(workspace, /requireManager\(session\.identity\.role/);
+  assert.match(admin, /action === "bulk_update_profiles"/);
+  assert.match(checklists, /action === "bulk_update"/);
+  for (const label of [
+    "Export selected",
+    "Mark complete",
+    "Archive selected",
+    "Void selected",
+    "Deactivate selected",
+  ]) assert.match(page, new RegExp(label));
+});
+
+test("every portal list provides client-safe bulk tools", async () => {
+  const page = await read("app/page.tsx");
+  for (const contract of [
+    "Select all my documents",
+    "Download files",
+    "Select all my appointments",
+    "Add to calendar",
+    "Select all my messages",
+    "Copy messages",
+    "Select all my invoices",
+    "Download invoice PDFs",
+    "Confirm received",
+  ]) assert.match(page, new RegExp(contract));
+});
+
+test("course finder is student-readable, filterable and source-aware", async () => {
+  const page = await read("app/page.tsx");
+  const route = await read("app/api/crm/course-finder/route.ts");
+  const migration = await read("supabase/migrations/0030_course_catalog_live_sync.sql");
+  for (const label of [
+    "Field of study",
+    "Maximum annual tuition",
+    "Maximum duration",
+    "Source checked in the last 6 months",
+    "courseCardGrid",
+    "CourseApplicationFields",
+  ]) assert.match(page, new RegExp(label));
+  assert.doesNotMatch(route.split("export async function POST")[0], /Course Finder is available to staff only/);
+  assert.match(route, /search_course_catalog_v2/);
+  assert.match(migration, /courses_portal_read/);
+  assert.match(migration, /course_catalog_sync_runs/);
+  assert.match(migration, /stale_count/);
+});
+
 test("worker applies baseline browser and API security headers", async () => {
   const worker = await read("worker/index.ts");
   for (const header of ["Content-Security-Policy", "X-Content-Type-Options", "X-Frame-Options", "Permissions-Policy", "Cache-Control"])
@@ -256,11 +312,10 @@ test("the service-role key is used on one path and never as a filter", async () 
   const supabase = await read("server/supabase.ts");
   assert.match(supabase, /export async function supabaseAdminRequest/);
   const admin = await read("app/api/crm/admin/route.ts");
-  // Exactly the three admin calls that create a login, undo it, and look one
-  // up by email to connect a pre-existing login (a client demo account, most
-  // often) without it having to sign itself in first.
+  // Admin calls create/undo/find a login and can retire a removed staff login
+  // so its real email is available for a future account.
   const uses = admin.match(/supabaseAdminRequest/g) ?? [];
-  assert.equal(uses.length, 4, "service-role calls beyond creating a login");
+  assert.equal(uses.length, 5, "unexpected service-role calls");
   assert.match(admin, /supabaseAdminRequest<\{ id\?: string \}>\("\/auth\/v1\/admin\/users"/);
   assert.match(admin, /supabaseAdminRequest<\{ users\?:/);
   // Only a Super Admin makes another administrator.
@@ -310,6 +365,39 @@ test("the client portal is titled from its own words", async () => {
   assert.match(page, /CLIENT_INVOICE_TYPES\.includes\(x\.type\)/);
   // And no developer language where a client can read it.
   assert.doesNotMatch(page, /client_user_links\s*$/m);
+});
+
+test("portal appointments and messages are restricted to the client's case", async () => {
+  const page = await read("app/page.tsx");
+  const route = await read("app/api/crm/workspace/route.ts");
+  assert.match(page, /Send appointment request/);
+  assert.match(page, /Message your case team/);
+  assert.match(route, /You can only request an appointment on your own case/);
+  assert.match(route, /You can only message the team working on your own case/);
+  assert.match(route, /direction = "inbound"/);
+  assert.match(route, /deliveryState = "received"/);
+});
+
+test("case email is resolved from the profile both when composing and when sending", async () => {
+  const workspace = await read("app/api/crm/workspace/route.ts");
+  const mailbox = await read("app/api/crm/mailbox/route.ts");
+  const page = await read("app/page.tsx");
+  assert.match(workspace, /recipientSource: "case_profile"/);
+  assert.match(workspace, /clients\?select=id,email/);
+  assert.match(mailbox, /Resolve the address again at the moment of dispatch/);
+  assert.match(mailbox, /clients\?select=email/);
+  assert.doesNotMatch(page, /name="to"/);
+});
+
+test("invoice PDFs use the protected Drive document pipeline", async () => {
+  const workspace = await read("app/api/crm/workspace/route.ts");
+  const documents = await read("app/api/crm/documents/route.ts");
+  const page = await read("app/page.tsx");
+  assert.match(workspace, /source: "invoice_pdf"/);
+  assert.match(workspace, /10 Accounts and Receipts/);
+  assert.match(documents, /\.\.\.\(\(document\.metadata/);
+  assert.match(page, /name="invoicePdf"/);
+  assert.match(page, /invoice_pdf_prepare/);
 });
 
 test("the browser suite is wired into CI and needs no committed key", async () => {
