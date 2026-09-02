@@ -128,6 +128,13 @@ type CaseRecord = {
   lostReason: string;
   applicationStatus: string;
   visaCategory: string;
+  nextAction: string;
+  stageEnteredAt: string;
+  lastActivity: string;
+  lastActivityAt: string;
+  lastActivityBy: string;
+  pendingDocuments: number;
+  overdueTasks: number;
 };
 // One student can hold several offers at once, so an application is a record in
 // its own right rather than something inferred from the case it belongs to.
@@ -644,7 +651,7 @@ const roleConfig: Record<
   admin: {
     label: "Admin",
     legacy: "Admin · Branch Manager / Manager",
-    scope: "Assigned branches, staff and operational records",
+    scope: "Their branch, staff and operational records",
     initials: "AD",
     modules: [
       "dashboard",
@@ -672,7 +679,7 @@ const roleConfig: Record<
   staff: {
     label: "Staff",
     legacy: "Employee teams",
-    scope: "Assigned cases and approved case-team collaborations",
+    scope: "Every operational record in their branch",
     initials: "ST",
     modules: [
       "dashboard",
@@ -709,8 +716,7 @@ const permissionRows = [
   ["Organisation, branches and integrations", true, false, false, false],
   ["Staff invitations, activation and roles", true, true, false, false],
   ["All organisation cases", true, false, false, false],
-  ["Assigned branch cases", true, true, false, false],
-  ["Assigned or collaborated cases", true, true, true, false],
+  ["Every case in their branch", true, true, true, false],
   ["Own journey and next steps", false, false, false, true],
   ["Documents", true, true, true, true],
   ["Gmail and internal communication", true, true, true, true],
@@ -1377,6 +1383,7 @@ function Sidebar({
   setOpen,
   role,
   serviceMode,
+  branchName,
 }: {
   active: ModuleKey;
   setActive: (x: ModuleKey) => void;
@@ -1384,6 +1391,7 @@ function Sidebar({
   setOpen: (x: boolean) => void;
   role: AppRole;
   serviceMode: ServiceMode;
+  branchName?: string;
 }) {
   const config = roleConfig[role],
     journey = serviceMode === "study" ? studyNavGroups : directVisaNavGroups,
@@ -1433,11 +1441,17 @@ function Sidebar({
         <span>
           {role === "client"
             ? "MY JOURNEY"
-            : serviceMode === "study"
-              ? "STUDY ABROAD"
-              : "DIRECT VISA"}
+            : role === "super_admin"
+              ? "ORGANISATION"
+              : "BRANCH WORKSPACE"}
         </span>
-        <strong>{role === "client" ? "Client portal" : config.label}</strong>
+        <strong>
+          {role === "client"
+            ? "Client portal"
+            : role === "super_admin"
+              ? "All branches"
+              : branchName || "Branch workspace"}
+        </strong>
       </div>
       <nav>
         {groups.map((g) => (
@@ -1542,6 +1556,54 @@ function DailyTopNav({
   );
 }
 
+function MobileNavigation({
+  active,
+  setActive,
+  role,
+  serviceMode,
+  openMenu,
+}: {
+  active: ModuleKey;
+  setActive: (x: ModuleKey) => void;
+  role: AppRole;
+  serviceMode: ServiceMode;
+  openMenu: () => void;
+}) {
+  const items: Array<[ModuleKey, string, typeof Users]> =
+    role === "client"
+      ? [
+          ["portal", "Journey", GraduationCap],
+          ["documents", "Documents", FolderOpen],
+          ["communications", "Messages", Mail],
+          ["finance", "Invoices", CircleDollarSign],
+        ]
+      : [
+          ["dashboard", "Workspace", Activity],
+          ["enquiries", "Enquiries", Users],
+          [serviceMode === "study" ? "students" : "direct_visas", serviceMode === "study" ? "Students" : "Clients", serviceMode === "study" ? GraduationCap : UserCog],
+          ["work", "Tasks", Check],
+        ];
+  return (
+    <nav className="mobileNavigation" aria-label="Primary mobile navigation">
+      {items.map(([key, label, Icon]) => (
+        <button
+          key={key}
+          type="button"
+          className={active === key ? "active" : ""}
+          onClick={() => setActive(key)}
+        >
+          <Icon size={19} />
+          <span>{label}</span>
+        </button>
+      ))}
+      <button type="button" onClick={openMenu} aria-label="Open all CRM sections">
+        <Menu size={19} />
+        <span>More</span>
+      </button>
+    </nav>
+  );
+}
+
 function WorkspaceDashboard({
   cases,
   tasks,
@@ -1551,6 +1613,7 @@ function WorkspaceDashboard({
   setActive,
   onOpenCase,
   serviceMode,
+  canViewAllBranches,
 }: {
   cases: CaseRecord[];
   tasks: TaskRecord[];
@@ -1560,15 +1623,16 @@ function WorkspaceDashboard({
   setActive: (x: ModuleKey) => void;
   onOpenCase: (x: CaseRecord) => void;
   serviceMode: ServiceMode;
+  canViewAllBranches: boolean;
 }) {
   const [dashboardSearch, setDashboardSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
-  const [ownerFilter, setOwnerFilter] = useState("");
   const [countryFilter, setCountryFilter] = useState("");
   const [intakeFilter, setIntakeFilter] = useState("");
   const [visaTypeFilter, setVisaTypeFilter] = useState("");
   const [createdFrom, setCreatedFrom] = useState("");
   const [createdTo, setCreatedTo] = useState("");
+  const [today] = useState(() => new Date().toISOString().slice(0, 10));
   const direct = serviceMode === "direct_visa",
     // Classify by the recorded service stream, never by the matter label: a
     // "Student visa" matter belongs to study abroad, not migration.
@@ -1582,8 +1646,7 @@ function WorkspaceDashboard({
       const created = c.createdAt?.slice(0, 10) ?? "";
       return (
         (!dashboardSearch || searchable.includes(dashboardSearch.toLowerCase())) &&
-        (!branchFilter || c.branch === branchFilter) &&
-        (!ownerFilter || c.owner === ownerFilter) &&
+        (!canViewAllBranches || !branchFilter || c.branch === branchFilter) &&
         (!countryFilter || c.destinationCountry === countryFilter) &&
         (!intakeFilter || c.intake.toLowerCase().includes(intakeFilter.toLowerCase())) &&
         (!visaTypeFilter || c.visaCategory === visaTypeFilter) &&
@@ -1591,92 +1654,47 @@ function WorkspaceDashboard({
         (!createdTo || created <= createdTo)
       );
     }),
-    attention = workspaceCases.filter((c) => c.health !== "healthy").length,
-    waiting = workspaceCases.filter((c) => c.status === "waiting").length,
-    completed = workspaceCases.filter((c) => c.status === "completed").length,
-    today = new Date().toISOString().slice(0, 10),
     openTasks = tasks.filter((task) => !task.completed),
     overdueTasks = openTasks.filter((task) => task.due && task.due < today),
-    pendingDocuments = documents.filter(
-      (document) => !["received", "completed", "uploaded"].includes(document.status.toLowerCase()),
-    ),
     upcomingAppointments = appointments
       .filter((appointment) => appointment.date >= today)
       .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)),
     nextAppointments = upcomingAppointments.slice(0, 3),
     openList = direct ? "direct_visas" : "students",
     branchOptions = [...new Set(allWorkspaceCases.map((c) => c.branch).filter(Boolean))].sort(),
-    ownerOptions = [...new Set(allWorkspaceCases.map((c) => c.owner).filter(Boolean))].sort(),
     countryOptions = [...new Set(allWorkspaceCases.map((c) => c.destinationCountry).filter(Boolean))].sort(),
     visaTypeOptions = [...new Set(allWorkspaceCases.map((c) => c.visaCategory).filter(Boolean))].sort(),
-    categoryCounts = [...workspaceCases.reduce((map, record) => {
-      const key = direct ? record.visaCategory || "Uncategorised" : humanise(record.lifecycleStage);
-      map.set(key, (map.get(key) ?? 0) + 1);
-      return map;
-    }, new Map<string, number>())].sort((a, b) => b[1] - a[1]),
-    statusCounts = [...workspaceCases.reduce((map, record) => {
-      const key = direct ? record.stage || "Not set" : humanise(record.applicationStatus || record.stage || "Not set");
-      map.set(key, (map.get(key) ?? 0) + 1);
-      return map;
-    }, new Map<string, number>())].sort((a, b) => b[1] - a[1]);
+    weekAgo = new Date(Date.parse(`${today}T00:00:00Z`) - 7 * 86_400_000).toISOString().slice(0, 10),
+    newEnquiries = workspaceCases.filter(
+      (record) =>
+        record.lifecycleStage === "enquiry" &&
+        Boolean(record.createdAt) &&
+        record.createdAt.slice(0, 10) >= weekAgo,
+    ).length,
+    awaitingAction = workspaceCases.filter(
+      (record) =>
+        record.status !== "completed" &&
+        (record.lifecycleStage === "application" || record.status === "waiting"),
+    ).length,
+    visaRisk = workspaceCases.filter((record) => {
+      if (!record.visaExpiry) return false;
+      const days = Math.ceil(
+        (Date.parse(`${record.visaExpiry}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) /
+          86_400_000,
+      );
+      return days <= 90;
+    }).length,
+    unallocated = workspaceCases.filter(
+      (record) => !record.ownerId && !record.owner,
+    ).length;
   return (
     <>
-      <section
-        className={`workspaceHero ${direct ? "migration" : "education"}`}
-      >
-        <div className="heroEyebrow">
-          {direct ? "MAXIMUS MIGRATION SERVICES" : "MAXIMUS EDUCATION SERVICES"}
-        </div>
-        <div className="workspaceHeroGrid">
-          <div>
-            <h2>
-              {direct
-                ? "Migration operations desk"
-                : "Student operations desk"}
-            </h2>
-            <p>
-              {direct
-                ? "See the matters that need action, the deadlines at risk and the next client commitments from one place."
-                : "See the students who need action, the work due today and the next application commitments from one place."}
-            </p>
-            <div className="welcomeActions">
-              <button className="heroPrimary" onClick={() => openModal("case")}>
-                <Plus size={16} />
-                {direct ? "Add client" : "Add enquiry"}
-              </button>
-              <button
-                className="heroSecondary"
-                onClick={() => openModal("task")}
-              >
-                <Check size={16} />
-                Create task
-              </button>
-            </div>
-          </div>
-          <div className="heroSummary">
-            <span>
-              {direct ? "MIGRATION WORKSPACE" : "STUDY ABROAD WORKSPACE"}
-            </span>
-            <strong>
-              {workspaceCases.filter((c) => c.status !== "completed").length}
-            </strong>
-            <small>
-              active {direct ? "client matters" : "student journeys"}
-            </small>
-            <div>
-              <i />
-              <b>{attention ? `${attention} need attention` : "No case risks flagged"}</b>
-            </div>
-          </div>
-        </div>
-      </section>
       <section className="dashboardFilters" aria-label="Dashboard filters">
         <div className="dashboardFilterSearch">
           <Search size={16} />
           <input value={dashboardSearch} onChange={(event) => setDashboardSearch(event.target.value)} placeholder="Search client, case, email, mobile or target" />
         </div>
-        <select aria-label="Filter dashboard by branch" value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="">All branches</option>{branchOptions.map((value) => <option key={value}>{value}</option>)}</select>
-        <select aria-label="Filter dashboard by staff" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}><option value="">All staff</option>{ownerOptions.map((value) => <option key={value}>{value}</option>)}</select>
+        {canViewAllBranches ? <select aria-label="Filter dashboard by branch" value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="">All branches</option>{branchOptions.map((value) => <option key={value}>{value}</option>)}</select> : null}
         <select aria-label="Filter dashboard by country" value={countryFilter} onChange={(event) => setCountryFilter(event.target.value)}><option value="">All countries</option>{countryOptions.map((value) => <option key={value}>{value}</option>)}</select>
         {direct ? (
           <select aria-label="Filter dashboard by visa category" value={visaTypeFilter} onChange={(event) => setVisaTypeFilter(event.target.value)}><option value="">All visa categories</option>{visaTypeOptions.map((value) => <option key={value}>{value}</option>)}</select>
@@ -1685,93 +1703,70 @@ function WorkspaceDashboard({
         )}
         <label>Created from<input type="date" value={createdFrom} onChange={(event) => setCreatedFrom(event.target.value)} /></label>
         <label>Created to<input type="date" value={createdTo} onChange={(event) => setCreatedTo(event.target.value)} /></label>
-        <button className="ghostButton" onClick={() => { setDashboardSearch(""); setBranchFilter(""); setOwnerFilter(""); setCountryFilter(""); setIntakeFilter(""); setVisaTypeFilter(""); setCreatedFrom(""); setCreatedTo(""); }}>Reset</button>
+        <button className="ghostButton" onClick={() => { setDashboardSearch(""); setBranchFilter(""); setCountryFilter(""); setIntakeFilter(""); setVisaTypeFilter(""); setCreatedFrom(""); setCreatedTo(""); }}>Reset</button>
         <span>{workspaceCases.length} of {allWorkspaceCases.length} records</span>
-      </section>
-      <section className="operationsBrief" aria-label="Today's priorities">
-        <div className="sectionIntro">
-          <div>
-            <span className="kicker">TODAY</span>
-            <h2>What needs your team&apos;s attention</h2>
-          </div>
-          <p>Open the queue and continue the work without searching across modules.</p>
-        </div>
-        <div className="priorityStrip">
-          <button onClick={() => setActive("work")} className={overdueTasks.length ? "urgent" : ""}>
-            <span><Check size={18} /></span>
-            <strong>{overdueTasks.length}</strong>
-            <small>overdue task{overdueTasks.length === 1 ? "" : "s"}</small>
-            <ArrowRight size={15} />
-          </button>
-          <button onClick={() => setActive("documents")}>
-            <span><FileCheck2 size={18} /></span>
-            <strong>{pendingDocuments.length}</strong>
-            <small>document request{pendingDocuments.length === 1 ? "" : "s"} open</small>
-            <ArrowRight size={15} />
-          </button>
-          <button onClick={() => setActive("calendar")}>
-            <span><CalendarDays size={18} /></span>
-            <strong>{upcomingAppointments.length}</strong>
-            <small>upcoming appointment{upcomingAppointments.length === 1 ? "" : "s"}</small>
-            <ArrowRight size={15} />
-          </button>
-        </div>
-      </section>
-      <section className="dashboardBreakdowns" aria-label="Operational breakdowns">
-        <article className="panel">
-          <div className="panelHead"><div><span className="kicker">WORKLOAD MIX</span><h2>{direct ? "Visa category summary" : "Journey stage summary"}</h2></div></div>
-          <div className="summaryRows">
-            {categoryCounts.length ? categoryCounts.map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>) : <p>No categorised records yet.</p>}
-          </div>
-        </article>
-        <article className="panel">
-          <div className="panelHead"><div><span className="kicker">STATUS VISIBILITY</span><h2>{direct ? "Client status summary" : "Application status summary"}</h2></div></div>
-          <div className="summaryRows">
-            {statusCounts.length ? statusCounts.map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>) : <p>No status updates recorded yet.</p>}
-          </div>
-        </article>
       </section>
       <section className="signalGrid">
         <button className="signal ocean" onClick={() => setActive(openList)}>
           <div>
-            <span>{direct ? "Active clients" : "Active students"}</span>
+            <span>Total active</span>
             <strong>
               {workspaceCases.filter((c) => c.status !== "completed").length}
             </strong>
-            <small>{workspaceCases.length} total records</small>
+            <small>{direct ? "Client matters in progress" : "Student journeys in progress"}</small>
           </div>
           <div className="signalIcon blue">
             {direct ? <ShieldCheck size={22} /> : <GraduationCap size={22} />}
           </div>
         </button>
-        <button className="signal sunshine" onClick={() => setActive(openList)}>
+        <button className="signal ocean" onClick={() => setActive("enquiries")}>
           <div>
-            <span>Need attention</span>
-            <strong>{attention}</strong>
-            <small>Health or deadline risk</small>
+            <span>New enquiries</span>
+            <strong>{newEnquiries}</strong>
+            <small>Created in the last 7 days</small>
+          </div>
+          <div className="signalIcon blue">
+            <Users size={22} />
+          </div>
+        </button>
+        <button className="signal sunshine" onClick={() => setActive("work")}>
+          <div>
+            <span>Overdue work</span>
+            <strong>{overdueTasks.length}</strong>
+            <small>Tasks and follow-ups past due</small>
           </div>
           <div className="signalIcon amber">
             <AlertTriangle size={22} />
           </div>
         </button>
-        <button className="signal coral" onClick={() => setActive(openList)}>
+        <button className="signal coral" onClick={() => setActive(direct ? "visas" : "applications")}>
           <div>
-            <span>Waiting</span>
-            <strong>{waiting}</strong>
-            <small>Client or third-party action</small>
+            <span>Awaiting action</span>
+            <strong>{awaitingAction}</strong>
+            <small>{direct ? "Visa matters requiring action" : "Applications requiring action"}</small>
           </div>
           <div className="signalIcon">
             <Clock3 size={22} />
           </div>
         </button>
-        <button className="signal mint" onClick={() => setActive("case_complete")}>
+        <button className="signal sunshine" onClick={() => setActive("visas")}>
           <div>
-            <span>{direct ? "Case complete" : "Completed"}</span>
-            <strong>{completed}</strong>
-            <small>Finalised outcomes</small>
+            <span>Visa expiry risk</span>
+            <strong>{visaRisk}</strong>
+            <small>Expired or due within 90 days</small>
+          </div>
+          <div className="signalIcon amber">
+            <ShieldCheck size={22} />
+          </div>
+        </button>
+        <button className="signal mint" onClick={() => setActive(openList)}>
+          <div>
+            <span>Responsibility not set</span>
+            <strong>{unallocated}</strong>
+            <small>Visible to the whole branch</small>
           </div>
           <div className="signalIcon green">
-            <Check size={22} />
+            <UserCog size={22} />
           </div>
         </button>
       </section>
@@ -1801,28 +1796,32 @@ function WorkspaceDashboard({
               onAction={() => openModal("case")}
             />
           ) : (
-            <div className="caseTable">
-              {workspaceCases.slice(0, 5).map((c) => (
+            <div className="dashboardCaseTable">
+              <div className="dashboardCaseHeader" aria-hidden="true">
+                <span>Client &amp; contact</span><span>Enquiry</span><span>Journey</span><span>Next action</span><span>Risk</span><span>Latest activity</span>
+              </div>
+              {workspaceCases.slice(0, 8).map((c) => (
                 <button
-                  className="caseRow compactRecord"
+                  className="dashboardCaseRow"
                   key={c.id}
                   onClick={() => onOpenCase(c)}
                 >
                   <span className="clientCell">
                     <b>{c.name}</b>
-                    <small>
-                      {c.id} · {c.type}
-                    </small>
+                    <small>{c.phone || c.email || "No contact recorded"}</small>
+                    <em>{c.id}{canViewAllBranches && c.branch ? ` · ${c.branch}` : ""}</em>
                   </span>
                   <span>
-                    <b>{c.stage}</b>
-                    <small>{c.target || "No target added"}</small>
+                    <b>{c.matterType || c.type}</b>
+                    <small>{c.source || "Source not recorded"}{c.leadScore ? ` · score ${c.leadScore}` : ""}</small>
                   </span>
                   <span>
-                    <Status value={c.health} />
+                    <b>{c.destinationCountry || c.target || "Target not set"}</b>
+                    <small>{c.intake || c.stage} · {c.progress}% complete</small>
                   </span>
-                  <span>{c.due || "No due date"}</span>
-                  <ArrowRight size={16} />
+                  <span><b>{c.nextAction || "Review enquiry"}</b><small>{c.due ? `Due ${c.due}` : "No follow-up date"}</small></span>
+                  <span className="caseRiskCell"><Status value={c.health} /><small>{c.overdueTasks ? `${c.overdueTasks} overdue task${c.overdueTasks === 1 ? "" : "s"}` : c.pendingDocuments ? `${c.pendingDocuments} document${c.pendingDocuments === 1 ? "" : "s"} pending` : "No open blockers"}</small></span>
+                  <span><b>{c.lastActivity}</b><small>{c.lastActivityBy || "System"}{c.lastActivityAt ? ` · ${day(c.lastActivityAt)}` : ""}</small></span>
                 </button>
               ))}
             </div>
@@ -1848,7 +1847,7 @@ function WorkspaceDashboard({
                 <strong>
                   {tasks.filter((t) => !t.completed).length} open tasks
                 </strong>
-                <span>View and update assignments</span>
+                <span>View and update branch workload</span>
               </div>
               <ArrowRight size={15} />
             </button>
@@ -1895,9 +1894,8 @@ function CaseWorkspace({
   setFilter,
   openModal,
   onSelect,
-  staff,
-  canBulkAssign,
-  onBulkAssign,
+  canViewAllBranches,
+  canArchiveDirectly,
   onBulkStage,
   onBulkArchive,
 }: {
@@ -1910,9 +1908,8 @@ function CaseWorkspace({
   setFilter: (x: string) => void;
   openModal: (x: ModalType) => void;
   onSelect: (x: CaseRecord) => void;
-  staff: StaffRecord[];
-  canBulkAssign: boolean;
-  onBulkAssign: (records: CaseRecord[], ownerId: string) => Promise<void>;
+  canViewAllBranches: boolean;
+  canArchiveDirectly: boolean;
   onBulkStage: (records: CaseRecord[], stage: LifecycleStage) => Promise<void>;
   onBulkArchive: (records: CaseRecord[]) => Promise<void>;
 }) {
@@ -1921,8 +1918,10 @@ function CaseWorkspace({
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [listQuery, setListQuery] = useState("");
-  const [ownerFilter, setOwnerFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [countryFilter, setCountryFilter] = useState("all");
+  const [intakeFilter, setIntakeFilter] = useState("");
   const [healthFilter, setHealthFilter] = useState("all");
   const [dueFilter, setDueFilter] = useState("all");
   // A screen switch must not carry a selection from one case list into the
@@ -1963,8 +1962,10 @@ function CaseWorkspace({
         .toLowerCase()
         .includes(listQuery.toLowerCase())
     ) return false;
-    if (ownerFilter !== "all" && record.ownerId !== ownerFilter) return false;
-    if (branchFilter !== "all" && record.branchId !== branchFilter) return false;
+    if (canViewAllBranches && branchFilter !== "all" && record.branchId !== branchFilter) return false;
+    if (sourceFilter !== "all" && record.source !== sourceFilter) return false;
+    if (countryFilter !== "all" && record.destinationCountry !== countryFilter) return false;
+    if (intakeFilter && !record.intake.toLowerCase().includes(intakeFilter.toLowerCase())) return false;
     if (healthFilter !== "all" && record.health !== healthFilter) return false;
     if (dueFilter === "overdue" && (!record.due || record.due >= today)) return false;
     if (
@@ -1976,15 +1977,19 @@ function CaseWorkspace({
   });
   const activeFilterCount = [
     listQuery,
-    ownerFilter !== "all" ? ownerFilter : "",
-    branchFilter !== "all" ? branchFilter : "",
+    canViewAllBranches && branchFilter !== "all" ? branchFilter : "",
+    sourceFilter !== "all" ? sourceFilter : "",
+    countryFilter !== "all" ? countryFilter : "",
+    intakeFilter,
     healthFilter !== "all" ? healthFilter : "",
     dueFilter !== "all" ? dueFilter : "",
   ].filter(Boolean).length;
   const clearFilters = () => {
     setListQuery("");
-    setOwnerFilter("all");
     setBranchFilter("all");
+    setSourceFilter("all");
+    setCountryFilter("all");
+    setIntakeFilter("");
     setHealthFilter("all");
     setDueFilter("all");
   };
@@ -2020,8 +2025,10 @@ function CaseWorkspace({
           filters: {
             filter,
             query: listQuery,
-            owner: ownerFilter,
             branch: branchFilter,
+            source: sourceFilter,
+            country: countryFilter,
+            intake: intakeFilter,
             health: healthFilter,
             due: dueFilter,
           },
@@ -2095,17 +2102,7 @@ function CaseWorkspace({
               />
             </div>
           </label>
-          <label>
-            <span>Owner</span>
-            <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
-              <option value="all">All owners</option>
-              <option value="">Unassigned</option>
-              {staff.filter((person) => person.active).map((person) => (
-                <option key={person.id} value={person.id}>{person.display_name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
+          {canViewAllBranches ? <label>
             <span>Branch</span>
             <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
               <option value="all">All branches</option>
@@ -2117,7 +2114,10 @@ function CaseWorkspace({
                 ).entries(),
               ).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
             </select>
-          </label>
+          </label> : null}
+          <label><span>Source</span><select value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}><option value="all">All sources</option>{[...new Set(cases.map((record) => record.source).filter(Boolean))].sort().map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label><span>Destination</span><select value={countryFilter} onChange={(event) => setCountryFilter(event.target.value)}><option value="all">All destinations</option>{[...new Set(cases.map((record) => record.destinationCountry).filter(Boolean))].sort().map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label><span>Intake</span><input value={intakeFilter} onChange={(event) => setIntakeFilter(event.target.value)} placeholder="Any intake" /></label>
           <label>
             <span>Case health</span>
             <select value={healthFilter} onChange={(event) => setHealthFilter(event.target.value)}>
@@ -2151,8 +2151,10 @@ function CaseWorkspace({
                 onClick={() => {
                   setFilter(String(view.filters?.filter ?? "all"));
                   setListQuery(String(view.filters?.query ?? ""));
-                  setOwnerFilter(String(view.filters?.owner ?? "all"));
                   setBranchFilter(String(view.filters?.branch ?? "all"));
+                  setSourceFilter(String(view.filters?.source ?? "all"));
+                  setCountryFilter(String(view.filters?.country ?? "all"));
+                  setIntakeFilter(String(view.filters?.intake ?? ""));
                   setHealthFilter(String(view.filters?.health ?? "all"));
                   setDueFilter(String(view.filters?.due ?? "all"));
                   setShowFilters(true);
@@ -2188,31 +2190,6 @@ function CaseWorkspace({
             count={selectedRecords.length}
             onClear={() => setSelectedIds(new Set())}
           >
-            {canBulkAssign && (
-              <select
-                aria-label="Assign selected cases to"
-                disabled={assigning}
-                defaultValue=""
-                onChange={async (event) => {
-                  const ownerId = event.target.value;
-                  if (!ownerId) return;
-                  setAssigning(true);
-                  await onBulkAssign(selectedRecords, ownerId);
-                  setAssigning(false);
-                  setSelectedIds(new Set());
-                  event.target.value = "";
-                }}
-              >
-                <option value="">Assign to…</option>
-                {staff
-                  .filter((person) => person.active && person.level !== "student")
-                  .map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.display_name}
-                    </option>
-                  ))}
-              </select>
-            )}
             <select
               aria-label="Move selected cases to stage"
               disabled={assigning}
@@ -2261,7 +2238,7 @@ function CaseWorkspace({
               className="ghostButton dangerAction"
               disabled={assigning}
               onClick={async () => {
-                const verb = canBulkAssign ? "archive" : "request archive for";
+                const verb = canArchiveDirectly ? "archive" : "request archive for";
                 if (!confirm(`${verb[0].toUpperCase()}${verb.slice(1)} ${selectedRecords.length} selected case${selectedRecords.length === 1 ? "" : "s"}?`)) return;
                 setAssigning(true);
                 await onBulkArchive(selectedRecords);
@@ -2283,12 +2260,13 @@ function CaseWorkspace({
                 />
               </span>
               <div className="richHeader">
-                <span>Client</span>
-                <span>Matter</span>
+                <span>Client &amp; contact</span>
+                <span>Enquiry details</span>
+                <span>Destination / intake</span>
                 <span>Stage</span>
-                <span>Owner</span>
-                <span>Health</span>
-                <span>Due</span>
+                <span>Next action</span>
+                <span>Latest activity</span>
+                <span>Risk</span>
               </div>
             </div>
             {shown.map((c) => (
@@ -2305,13 +2283,15 @@ function CaseWorkspace({
                   <span className="clientCell">
                     <b>{c.name}</b>
                     <small>
-                      {c.id} · {c.branch || "No branch"}
+                      {c.phone || c.email || "No contact recorded"}
                     </small>
+                    <em>{c.id}{canViewAllBranches && c.branch ? ` · ${c.branch}` : ""}</em>
                   </span>
                   <span>
-                    <b>{c.type}</b>
-                    <small>{c.target || "No target"}</small>
+                    <b>{c.matterType || c.type}</b>
+                    <small>{c.source || "Source not recorded"}{c.leadScore ? ` · lead score ${c.leadScore}` : ""}</small>
                   </span>
+                  <span><b>{c.destinationCountry || c.target || "Not set"}</b><small>{c.intake || "Intake not set"}</small></span>
                   <span className="progressCell">
                     <b>{c.stage}</b>
                     <div>
@@ -2319,15 +2299,9 @@ function CaseWorkspace({
                     </div>
                     <small>{c.progress}% complete</small>
                   </span>
-                  <span>
-                    <b>{c.owner || "Unassigned"}</b>
-                  </span>
-                  <span>
-                    <Status value={c.health} />
-                  </span>
-                  <span>
-                    <b>{c.due || "Not set"}</b>
-                  </span>
+                  <span><b>{c.nextAction || "Review enquiry"}</b><small>{c.due ? `Due ${c.due}` : "No follow-up date"}</small></span>
+                  <span><b>{c.lastActivity}</b><small>{c.lastActivityBy || "System"}{c.lastActivityAt ? ` · ${day(c.lastActivityAt)}` : ""}</small></span>
+                  <span className="caseRiskCell"><Status value={c.health} /><small>{c.overdueTasks ? `${c.overdueTasks} overdue task${c.overdueTasks === 1 ? "" : "s"}` : c.pendingDocuments ? `${c.pendingDocuments} document${c.pendingDocuments === 1 ? "" : "s"} pending` : "No open blockers"}</small></span>
                 </button>
               </div>
             ))}
@@ -2417,7 +2391,7 @@ function ApplicationsBoard({
                 <th scope="col">Offer</th>
                 <th scope="col">CoE</th>
                 <th scope="col">Deadline</th>
-                <th scope="col">Owner</th>
+                <th scope="col">Responsibility</th>
                 <th scope="col">Case</th>
               </tr>
             </thead>
@@ -2442,7 +2416,7 @@ function ApplicationsBoard({
                   <td className={overdue(row.deadlineOn) ? "overdueCell" : ""}>
                     {row.deadlineOn || "—"}
                   </td>
-                  <td>{row.owner || "Unassigned"}</td>
+                  <td>{row.owner || "Not set"}</td>
                   <td>
                     <button
                       className="linkButton"
@@ -2536,7 +2510,7 @@ function VisaMattersBoard({
                   </td>
                   <td>{row.lodgedOn || "Not lodged"}</td>
                   <td>{row.trn || row.reference || "—"}</td>
-                  <td>{row.agent || row.owner || "Unassigned"}</td>
+                  <td>{row.agent || row.owner || "Not set"}</td>
                   <td>{row.marn || "—"}</td>
                   <td>{humanise(row.status)}</td>
                   <td
@@ -3155,6 +3129,7 @@ function MessagesView({
     date: string; snippet: string; body: string; unread: boolean; inbox: boolean; sent: boolean;
   }>>([]);
   const [gmailSearch, setGmailSearch] = useState("");
+  const [gmailFolder, setGmailFolder] = useState<"inbox" | "sent" | "drafts" | "all">("inbox");
   const [gmailLoading, setGmailLoading] = useState(false);
   const [openGmailId, setOpenGmailId] = useState<string | null>(null);
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -3230,12 +3205,17 @@ function MessagesView({
     }
   };
 
-  const loadGmailInbox = async (search = gmailSearch) => {
+  const loadGmailInbox = async (
+    search = gmailSearch,
+    folder: "inbox" | "sent" | "drafts" | "all" = gmailFolder,
+  ) => {
     setGmailLoading(true);
     setMailboxError("");
     try {
       const params = new URLSearchParams({ view: "inbox" });
-      if (search.trim()) params.set("q", search.trim());
+      const folderQuery =
+        folder === "all" ? "in:anywhere" : folder === "sent" ? "in:sent" : folder === "drafts" ? "in:drafts" : "in:inbox";
+      params.set("q", `${folderQuery} ${search.trim()}`.trim());
       const response = await fetch(`/api/crm/mailbox?${params}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Gmail could not be loaded.");
@@ -3354,32 +3334,58 @@ function MessagesView({
       {canSend && mailbox?.connected && (
         <section className="gmailPortalInbox" aria-label="Connected Gmail inbox">
           <div className="panelHead">
-            <div><span className="kicker">CONNECTED MAILBOX</span><h3>Gmail inbox</h3></div>
-            <button className="ghostButton" disabled={gmailLoading} onClick={() => void loadGmailInbox()}>
-              <RefreshCw size={15} /> {gmailLoading ? "Loading…" : "Refresh inbox"}
+            <div><span className="kicker">CONNECTED MAILBOX</span><h3>{mailbox.email}</h3></div>
+            <button className="ghostButton" disabled={gmailLoading} onClick={() => void loadGmailInbox(gmailSearch, gmailFolder)}>
+              <RefreshCw size={15} /> {gmailLoading ? "Loading…" : "Refresh"}
             </button>
           </div>
-          <form className="listFilterBar" onSubmit={(event) => { event.preventDefault(); void loadGmailInbox(gmailSearch); }}>
-            <Search size={16} />
-            <input value={gmailSearch} onChange={(event) => setGmailSearch(event.target.value)} placeholder="Search Gmail exactly as you would in Gmail" />
-            <button className="ghostButton" disabled={gmailLoading}>Search</button>
-          </form>
-          {gmailMessages.length === 0 ? (
-            <p className="coverageIntro">Select “Refresh inbox” to load the latest 50 messages from {mailbox.email}.</p>
-          ) : (
-            <div className="gmailMessageList">
-              {gmailMessages.map((message) => (
-                <article key={message.id} className={message.unread ? "gmailMessage unread" : "gmailMessage"}>
-                  <button onClick={() => setOpenGmailId(openGmailId === message.id ? null : message.id)}>
-                    <span><b>{message.sent ? `To: ${message.to}` : message.from}</b><small>{new Date(message.date).toLocaleString()}</small></span>
-                    <strong>{message.subject}</strong>
-                    <p>{message.snippet}</p>
-                  </button>
-                  {openGmailId === message.id && <div className="gmailMessageBody"><pre>{message.body || message.snippet}</pre></div>}
-                </article>
+          <div className="gmailWorkspace">
+            <nav className="gmailFolderNav" aria-label="Gmail folders">
+              {([
+                ["inbox", "Inbox", Mail],
+                ["sent", "Sent", Send],
+                ["drafts", "Drafts", FileText],
+                ["all", "All mail", FolderOpen],
+              ] as const).map(([folder, label, Icon]) => (
+                <button
+                  type="button"
+                  key={folder}
+                  className={gmailFolder === folder ? "active" : ""}
+                  onClick={() => {
+                    setGmailFolder(folder);
+                    setOpenGmailId(null);
+                    void loadGmailInbox(gmailSearch, folder);
+                  }}
+                >
+                  <Icon size={16} />
+                  <span>{label}</span>
+                </button>
               ))}
+            </nav>
+            <div className="gmailMailboxMain">
+              <form className="gmailSearchBar" onSubmit={(event) => { event.preventDefault(); void loadGmailInbox(gmailSearch, gmailFolder); }}>
+                <Search size={16} />
+                <input value={gmailSearch} onChange={(event) => setGmailSearch(event.target.value)} placeholder="Search mail by sender, subject, words or Gmail query" />
+                <button className="ghostButton" disabled={gmailLoading}>Search</button>
+              </form>
+              {gmailMessages.length === 0 ? (
+                <p className="gmailEmpty">Choose a folder or refresh to load the latest 50 messages from this mailbox.</p>
+              ) : (
+                <div className="gmailMessageList">
+                  {gmailMessages.map((message) => (
+                    <article key={message.id} className={message.unread ? "gmailMessage unread" : "gmailMessage"}>
+                      <button onClick={() => setOpenGmailId(openGmailId === message.id ? null : message.id)}>
+                        <span><b>{message.sent ? `To: ${message.to}` : message.from}</b><small>{new Date(message.date).toLocaleString()}</small></span>
+                        <strong>{message.subject}</strong>
+                        <p>{message.snippet}</p>
+                      </button>
+                      {openGmailId === message.id && <div className="gmailMessageBody"><pre>{message.body || message.snippet}</pre></div>}
+                    </article>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </section>
       )}
       {shown.length === 0 ? (
@@ -5740,7 +5746,7 @@ function ReportsView({
         <Attention
           label="Overdue tasks"
           count={deadlines.overdueTasks}
-          detail="Assigned work past its due date"
+          detail="Branch work that has passed its due date"
           level="warning"
         />
         <Attention
@@ -7019,7 +7025,6 @@ function AdminView({
 
   return (
     <section className="adminStack">
-      <LegacyImportPanel branches={adminBranches} />
       {isOwner && settings ? (
         <article className="panel listPanel">
           <div className="panelHead"><div><span className="kicker">MASTER CONFIGURATION</span><h2>Organisation defaults</h2></div></div>
@@ -7090,7 +7095,7 @@ function AdminView({
               <option value="all">All</option>
             </select>
           </label>
-          <label>
+          {isOwner ? <label>
             Branch
             <select value={staffBranch} onChange={(event) => setStaffBranch(event.target.value)}>
               <option value="">All branches</option>
@@ -7098,7 +7103,7 @@ function AdminView({
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
             </select>
-          </label>
+          </label> : null}
         </div>
 
         {handover && (
@@ -7169,10 +7174,10 @@ function AdminView({
                 </small>
               )}
             </label>
-            <label>
+            {isOwner ? <label>
               Branch
               <select name="branchId" defaultValue="">
-                <option value="">Your own branch</option>
+                <option value="">Select branch</option>
                 {adminBranches
                   .filter((branch) => branch.active)
                   .map((branch) => (
@@ -7181,7 +7186,7 @@ function AdminView({
                     </option>
                   ))}
               </select>
-            </label>
+            </label> : null}
             <label>
               Department
               <input name="department" placeholder="e.g. Admissions" />
@@ -7215,7 +7220,7 @@ function AdminView({
             <SelectAllControl checked={staffSelection.allSelected} onChange={staffSelection.toggleAll} label="Select all shown staff except yourself" />
           </div>
           <BulkActionBar count={staffSelection.selected.length} onClear={staffSelection.clear}>
-            <select
+            {isOwner ? <select
               aria-label="Move selected staff to branch"
               defaultValue=""
               disabled={working}
@@ -7229,7 +7234,7 @@ function AdminView({
               {adminBranches.filter((branch) => branch.active).map((branch) => (
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
-            </select>
+            </select> : null}
             <button className="ghostButton" disabled={working} onClick={() => void bulkUpdateStaff({ active: true })}>Reactivate</button>
             <button className="ghostButton dangerAction" disabled={working} onClick={() => {
               if (confirm(`Deactivate ${staffSelection.selected.length} selected staff account${staffSelection.selected.length === 1 ? "" : "s"}? Their history will be retained.`)) void bulkUpdateStaff({ active: false });
@@ -7292,7 +7297,7 @@ function AdminView({
                       )}
                     </td>
                     <td>
-                      <select
+                      {isOwner ? <select
                         aria-label={`Branch for ${person.display_name}`}
                         value={person.branch_id ?? ""}
                         disabled={working}
@@ -7310,7 +7315,7 @@ function AdminView({
                             {branch.name}
                           </option>
                         ))}
-                      </select>
+                      </select> : branchName(person.branch_id)}
                     </td>
                     <td>{person.department || "—"}</td>
                     <td>{person.active ? "Active" : "Deactivated"}</td>
@@ -7503,13 +7508,14 @@ function AdminView({
 
       <MergeClientsPanel />
 
+      {isOwner ? (
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
             <span className="kicker">MASTERS</span>
             <h2>Branches</h2>
           </div>
-          {isOwner && (
+          {
             <button
               className="primaryButton"
               onClick={() => setAddingBranch(!addingBranch)}
@@ -7517,9 +7523,9 @@ function AdminView({
               <Plus size={16} />
               {addingBranch ? "Close" : "Add branch"}
             </button>
-          )}
+          }
         </div>
-        {isOwner && addingBranch && (
+        {addingBranch && (
           <form
             className="stackedForm"
             onSubmit={async (event) => {
@@ -7599,6 +7605,9 @@ function AdminView({
           ))
         )}
       </article>
+      ) : null}
+
+      <LegacyImportPanel branches={isOwner ? adminBranches : []} />
 
       <article className="panel permissionPanel">
         <div className="panelHead">
@@ -7658,10 +7667,7 @@ function CaseDrawer({
   edit,
   remove,
   moveStage,
-  assign,
   refresh,
-  staff,
-  canAssign,
   canModify,
   lifecycleReady,
   schemaWarning,
@@ -7677,10 +7683,7 @@ function CaseDrawer({
     stage: LifecycleStage,
     reason: string,
   ) => Promise<void>;
-  assign: (record: CaseRecord, ownerId: string) => Promise<void>;
   refresh: () => Promise<void>;
-  staff: StaffRecord[];
-  canAssign: boolean;
   canModify: boolean;
   lifecycleReady: boolean;
   schemaWarning: string;
@@ -7694,10 +7697,7 @@ function CaseDrawer({
       edit={edit}
       remove={remove}
       moveStage={moveStage}
-      assign={assign}
       refresh={refresh}
-      staff={staff}
-      canAssign={canAssign}
       canModify={canModify}
       lifecycleReady={lifecycleReady}
       schemaWarning={schemaWarning}
@@ -7856,10 +7856,7 @@ function CaseDrawerBody({
   edit,
   remove,
   moveStage,
-  assign,
   refresh,
-  staff,
-  canAssign,
   canModify,
   lifecycleReady,
   schemaWarning,
@@ -7875,10 +7872,7 @@ function CaseDrawerBody({
     stage: LifecycleStage,
     reason: string,
   ) => Promise<void>;
-  assign: (record: CaseRecord, ownerId: string) => Promise<void>;
   refresh: () => Promise<void>;
-  staff: StaffRecord[];
-  canAssign: boolean;
   canModify: boolean;
   lifecycleReady: boolean;
   schemaWarning: string;
@@ -7903,9 +7897,6 @@ function CaseDrawerBody({
   const [expiry, setExpiry] = useState(item.visaExpiry || "");
   const [recordedExpiry, setRecordedExpiry] = useState(item.visaExpiry || "");
   const [savingExpiry, setSavingExpiry] = useState(false);
-  const [owner, setOwner] = useState(item.ownerId);
-  const [collaborator, setCollaborator] = useState("");
-  const [assigning, setAssigning] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [file, setFile] = useState<CaseFile | null>(null);
   const [newItem, setNewItem] = useState("");
@@ -8261,7 +8252,7 @@ function CaseDrawerBody({
                 <span className="kicker">NEXT PRIORITY</span>
                 <h3>{nextWork}</h3>
                 <p>
-                  {stageLabelFor(stage, direct)} · {item.owner || "No owner assigned"}
+                  {stageLabelFor(stage, direct)}
                   {item.due ? ` · due ${item.due}` : " · no deadline set"}
                 </p>
               </div>
@@ -8308,85 +8299,15 @@ function CaseDrawerBody({
                     : "Study abroad",
                 ],
                 ["Target", item.target],
-                ["Owner", item.owner || "Unassigned"],
                 ["Branch", item.branch],
+                ["Latest activity", item.lastActivity],
+                ["Updated by", item.lastActivityBy || "System"],
                 ["Visa expiry", item.visaExpiry],
                 ["Opened", day(item.createdAt)],
                 ["Completed", item.completedAt],
                 ["Reopened", item.reopenedAt],
               ]}
             />
-            {canAssign && (
-              <section className="assignPanel">
-                <span className="kicker">CASE OWNER</span>
-                <h3>{item.owner || "Unassigned"}</h3>
-                <p className="assignHint">
-                  Reassign this case to another member of the team. They are
-                  notified and it moves into their queue.
-                </p>
-                <div className="assignRow">
-                  <select
-                    value={owner}
-                    onChange={(e) => setOwner(e.target.value)}
-                    aria-label="Assign case to"
-                  >
-                    <option value="">Select a staff member</option>
-                    {staff.map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.display_name}
-                        {person.id === item.ownerId ? " (current owner)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="primaryButton"
-                    disabled={assigning || !owner || owner === item.ownerId}
-                    onClick={async () => {
-                      setAssigning(true);
-                      try {
-                        await assign(item, owner);
-                      } finally {
-                        setAssigning(false);
-                      }
-                    }}
-                  >
-                    <UserCog size={15} />
-                    {assigning ? "Assigning…" : "Assign"}
-                  </button>
-                </div>
-              </section>
-            )}
-            <section className="caseWorkPanel caseTeamPanel">
-              <div className="caseWorkPanelHead">
-                <div>
-                  <span className="kicker">CASE TEAM</span>
-                  <h3>People working together</h3>
-                </div>
-              </div>
-              <div className="caseTeamList">
-                <span><strong>{item.owner || "Unassigned"}</strong><small>Accountable owner</small></span>
-                {(file?.collaborators ?? []).map((person) => (
-                  <span key={person.profileId}>
-                    <strong>{person.name}</strong><small>Collaborator</small>
-                    {canAssign && <button className="linkButton" onClick={() => void operation({ action: "remove_collaborator", caseId, profileId: person.profileId })}>Remove</button>}
-                  </span>
-                ))}
-              </div>
-              {canAssign && (
-                <div className="assignRow">
-                  <select value={collaborator} onChange={(event) => setCollaborator(event.target.value)} aria-label="Add case collaborator">
-                    <option value="">Add a colleague</option>
-                    {staff.filter((person) => person.id !== item.ownerId && !(file?.collaborators ?? []).some((member) => member.profileId === person.id)).map((person) => (
-                      <option key={person.id} value={person.id}>{person.display_name}</option>
-                    ))}
-                  </select>
-                  <button className="ghostButton" disabled={!collaborator || working} onClick={async () => {
-                    if (await operation({ action: "add_collaborator", caseId, profileId: collaborator })) setCollaborator("");
-                  }}><Plus size={14} /> Add to case</button>
-                </div>
-              )}
-            </section>
             <section className="lifecyclePanel">
               <span className="kicker">CASE PIPELINE</span>
               <ol className="lifecycleTrack">
@@ -9026,7 +8947,7 @@ function CaseDrawerBody({
             onClick={() => remove(item.id)}
           >
             <Trash2 size={15} />
-            {canAssign ? "Archive" : "Request archive"}
+            Archive
           </button>
         </div>
           </main>
@@ -11139,6 +11060,7 @@ export default function Home() {
     );
   const role = identity?.role || "staff",
     signedIn = Boolean(identity),
+    canViewAllBranches = identity?.sourceLevel === "platform_owner" || identity?.sourceLevel === "super_admin",
     // Every internal case-team member can complete finance work for a case
     // they are allowed to work on. Branch-wide commissions, masters and staff
     // redistribution remain management functions.
@@ -11589,18 +11511,11 @@ export default function Home() {
       }
     },
     exportData = () => {
-      // A case officer exports the cases assigned to them, not everything they
-      // can see for cover. Visibility is the real boundary -- what is on screen
-      // is on screen -- but a one-click dump of a colleague's clients is not
-      // something the CRM should hand out, and every export is recorded.
-      const mine =
-        role === "staff"
-          ? cases.filter(
-              (c) =>
-                c.ownerId === identity?.profileId ||
-                c.collaboratorIds?.includes(identity?.profileId ?? ""),
-            )
-          : cases;
+      // The workspace payload is already restricted by the database to the
+      // signed-in user's branch (or the organisation for Super Admin). Export
+      // therefore follows the same visible boundary instead of restoring the
+      // retired assignment-based access model.
+      const mine = cases;
       const ids = new Set(mine.map((c) => c.dbId || c.id));
       const scope =
         role === "staff"
@@ -11661,66 +11576,6 @@ export default function Home() {
           : "Live data exported. The export is on the audit trail.",
       );
     };
-  const assignCase = async (record: CaseRecord, ownerId: string) => {
-    if (!record.dbId) {
-      say("This case could not be identified.");
-      return;
-    }
-    try {
-      const response = await fetch("/api/crm/workspace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "assign",
-          caseId: record.dbId,
-          ownerId,
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok)
-        throw new Error(result.error || "The case could not be reassigned.");
-      setSelected(null);
-      await loadWorkspace();
-      const owner = staff.find((person) => person.id === ownerId);
-      say(`${record.id} assigned to ${owner?.display_name || "the new owner"}`);
-    } catch (reason) {
-      say(
-        reason instanceof Error
-          ? reason.message
-          : "The case could not be reassigned.",
-      );
-    }
-  };
-  const bulkAssignCases = async (records: CaseRecord[], ownerId: string) => {
-    const caseIds = records.map((record) => record.dbId).filter(Boolean) as string[];
-    if (caseIds.length === 0) {
-      say("None of the selected cases could be identified.");
-      return;
-    }
-    try {
-      const response = await fetch("/api/crm/workspace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "bulk_assign", caseIds, ownerId }),
-      });
-      const result = await response.json();
-      if (!response.ok)
-        throw new Error(result.error || "The cases could not be reassigned.");
-      await loadWorkspace();
-      const owner = staff.find((person) => person.id === ownerId);
-      const failed = Number(result.failed ?? 0);
-      say(
-        `${result.succeeded ?? caseIds.length} case${(result.succeeded ?? caseIds.length) === 1 ? "" : "s"} assigned to ${owner?.display_name || "the new owner"}` +
-          (failed > 0 ? ` (${failed} could not be reassigned).` : "."),
-      );
-    } catch (reason) {
-      say(
-        reason instanceof Error
-          ? reason.message
-          : "The cases could not be reassigned.",
-      );
-    }
-  };
   const moveCaseStage = async (
     record: CaseRecord,
     stage: LifecycleStage,
@@ -12097,6 +11952,7 @@ export default function Home() {
         setActive={setActive}
         onOpenCase={openCaseWorkspace}
         serviceMode={serviceMode}
+        canViewAllBranches={canViewAllBranches}
       />
     );
   else if (active === "work")
@@ -12431,9 +12287,8 @@ export default function Home() {
         setFilter={setFilter}
         openModal={open}
         onSelect={openCaseWorkspace}
-        staff={staff}
-        canBulkAssign={canManageBranch}
-        onBulkAssign={bulkAssignCases}
+        canViewAllBranches={canViewAllBranches}
+        canArchiveDirectly={canManageBranch}
         onBulkStage={bulkMoveCases}
         onBulkArchive={bulkArchiveCases}
       />
@@ -12491,6 +12346,13 @@ export default function Home() {
         setOpen={setMenuOpen}
         role={role}
         serviceMode={serviceMode}
+        branchName={
+          role === "super_admin"
+            ? "All branches"
+            : branches.find((branch) => branch.id === identity?.branchId)?.name ||
+              cases.find((record) => record.branch)?.branch ||
+              "Branch workspace"
+        }
       />
       <main className="mainArea">
         <header className={`topbar ${role === "client" ? "clientOnly" : ""}`}>
@@ -12725,6 +12587,13 @@ export default function Home() {
           {content}
         </div>
       </main>
+      <MobileNavigation
+        active={active}
+        setActive={setActive}
+        role={role}
+        serviceMode={serviceMode}
+        openMenu={() => setMenuOpen(true)}
+      />
       {role !== "client" ? (
         <CaseDrawer
           key={selected
@@ -12738,13 +12607,10 @@ export default function Home() {
               ].sort().join("|") || selected.dbId
             : "closed"}
           moveStage={moveCaseStage}
-          assign={assignCase}
           refresh={loadWorkspace}
-          staff={staff}
           lifecycleReady={!schemaWarning}
           schemaWarning={schemaWarning}
           storageConnected={storageConnected}
-          canAssign={Boolean(role === "super_admin" || role === "admin" || selected?.ownerId === identity?.profileId)}
           canModify={true}
           item={selected}
           close={() => {
