@@ -523,3 +523,131 @@ body {
   .unifiedLoginCard > footer { align-items: flex-start; text-align: left; }
   .sidebar .brandHome .brandMark { width: 178px; flex-basis: 178px; }
 }
+
+/* Approved Admin dashboard — Figma frame 98:18. */
+.dashboardFilters { display: none; }
+.sidebar .brandHome { width: 100%; }
+.sidebar .brandHome .brandMark {
+  width: 190px;
+  height: 40px;
+  flex-basis: 190px;
+  background: transparent url("/maximus-logo.svg") left center / contain no-repeat;
+}
+.sidebar .navDropdownGroup {
+  margin-top: 10px;
+  padding: 7px 6px 6px;
+  border: 1px solid rgba(122, 181, 213, .14);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .035);
+}
+.sidebar .navDropdownGroup p {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 4px 5px;
+  color: #9bc5dc;
+}
+.sidebar .navDropdownGroup p svg { color: #e88b2b; }
+.sidebar .navDropdownGroup button { min-height: 34px; padding-block: 6px; }
+.topbarPrimary { gap: 10px; }
+.topbarPrimary .searchWrap { min-width: 230px; }
+.serviceAndFinder { gap: 8px; }
+.topActions { gap: 8px; }
+.messageShortcut {
+  position: relative;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid #d6e2e8;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #18384c;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.messageShortcut:hover,
+.messageShortcut.active { border-color: #6aabc8; background: #edf7fa; color: #176f9a; }
+.messageShortcut b {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #e88b2b;
+  font-size: 9px;
+}
+.signedAccount { max-width: 235px; }
+.signedAccount > span { min-width: 0; }
+.signedAccount > span b,
+.signedAccount > span small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pageTitle { margin-bottom: 16px; }
+.pageTitle h1 { font-family: inherit; font-weight: 760; }
+.signalGrid .signal:nth-child(1) { border-top: 3px solid #2185b4; }
+.signalGrid .signal:nth-child(2) { border-top: 3px solid #e3a12c; }
+.signalGrid .signal:nth-child(3) { border-top: 3px solid #e0705f; }
+.signalGrid .signal:nth-child(4) { border-top: 3px solid #33a483; }
+.caseTableHeader,
+.priorityCaseTable .caseRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.3fr) minmax(130px, .9fr) minmax(180px, 1.2fr) minmax(95px, .65fr) 20px;
+  gap: 14px;
+  align-items: center;
+}
+.caseTableHeader {
+  padding: 12px 9px 9px;
+  color: #6f8290;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.priorityCaseTable .caseRow { min-height: 74px; }
+.priorityCaseTable .status { margin-top: 1px; }
+.dashboardAdminTools {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #e7eef1;
+}
+.dashboardAdminTools > .kicker { display: block; margin-bottom: 8px; color: #d36e28; }
+.dashboardAdminTools > button {
+  width: 100%;
+  min-height: 55px;
+  margin-top: 6px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 9px;
+  display: grid;
+  grid-template-columns: 30px 1fr 16px;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  color: #173348;
+  background: #f5f8f9;
+  cursor: pointer;
+}
+.dashboardAdminTools > button:hover { background: #ebf4f7; }
+.dashboardAdminTools > button > svg:first-child { color: #2185b4; }
+.dashboardAdminTools span strong,
+.dashboardAdminTools span small { display: block; }
+.dashboardAdminTools span strong { font-size: 11px; }
+.dashboardAdminTools span small { margin-top: 3px; color: #738794; font-size: 9px; }
+
+@media (max-width: 1380px) {
+  .signedAccount > .avatar,
+  .signedAccount > span { display: none; }
+  .signedAccount { max-width: none; }
+}
+@media (max-width: 760px) {
+  .messageShortcut span { display: none; }
+  .messageShortcut { width: 38px; padding: 0; justify-content: center; }
+  .messageShortcut b { position: absolute; top: -6px; right: -6px; }
+  .caseTableHeader { display: none; }
+  .priorityCaseTable .caseRow { grid-template-columns: 1fr auto 18px; }
+  .priorityCaseTable .caseRow > span:nth-child(2),
+  .priorityCaseTable .caseRow > span:nth-child(4) { display: none; }
+}

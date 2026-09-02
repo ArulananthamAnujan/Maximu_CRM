@@ -1439,8 +1439,8 @@ function Sidebar({
       </div>
       <nav>
         {groups.map((g) => (
-          <div className="navGroup" key={g.label}>
-            <p>{g.label}</p>
+          <div className={`navGroup ${["Operations", "Communication", "Branch management", "Organisation"].includes(g.label) ? "navDropdownGroup" : ""}`} key={g.label}>
+            <p>{g.label}{["Operations", "Communication", "Branch management", "Organisation"].includes(g.label) ? <ChevronDown size={12} /> : null}</p>
             {g.items.map(([key, label, Icon]) => (
               <button
                 key={key}
@@ -1549,6 +1549,7 @@ function WorkspaceDashboard({
   setActive,
   onOpenCase,
   serviceMode,
+  role,
 }: {
   cases: CaseRecord[];
   tasks: TaskRecord[];
@@ -1558,6 +1559,7 @@ function WorkspaceDashboard({
   setActive: (x: ModuleKey) => void;
   onOpenCase: (x: CaseRecord) => void;
   serviceMode: ServiceMode;
+  role: AppRole;
 }) {
   const [dashboardSearch, setDashboardSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
@@ -1594,6 +1596,7 @@ function WorkspaceDashboard({
     completed = workspaceCases.filter((c) => c.status === "completed").length,
     today = new Date().toISOString().slice(0, 10),
     openTasks = tasks.filter((task) => !task.completed),
+    dueToday = openTasks.filter((task) => task.due === today),
     overdueTasks = openTasks.filter((task) => task.due && task.due < today),
     pendingDocuments = documents.filter(
       (document) => !["received", "completed", "uploaded"].includes(document.status.toLowerCase()),
@@ -1602,6 +1605,13 @@ function WorkspaceDashboard({
       .filter((appointment) => appointment.date >= today)
       .sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`)),
     nextAppointments = upcomingAppointments.slice(0, 3),
+    visaDeadlines = workspaceCases.filter(
+      (record) => record.lifecycleStage === "visa" && record.status !== "completed",
+    ),
+    priorityCases = [...workspaceCases].sort((a, b) => {
+      const healthRank = { critical: 0, attention: 1, healthy: 2 };
+      return healthRank[a.health] - healthRank[b.health] || (a.due || "9999").localeCompare(b.due || "9999");
+    }),
     openList = direct ? "direct_visas" : "students",
     branchOptions = [...new Set(allWorkspaceCases.map((c) => c.branch).filter(Boolean))].sort(),
     ownerOptions = [...new Set(allWorkspaceCases.map((c) => c.owner).filter(Boolean))].sort(),
@@ -1732,7 +1742,7 @@ function WorkspaceDashboard({
       <section className="signalGrid">
         <button className="signal ocean" onClick={() => setActive(openList)}>
           <div>
-            <span>{direct ? "Active clients" : "Active students"}</span>
+            <span>Active cases</span>
             <strong>
               {workspaceCases.filter((c) => c.status !== "completed").length}
             </strong>
@@ -1744,9 +1754,9 @@ function WorkspaceDashboard({
         </button>
         <button className="signal sunshine" onClick={() => setActive(openList)}>
           <div>
-            <span>Need attention</span>
-            <strong>{attention}</strong>
-            <small>Health or deadline risk</small>
+            <span>Due today</span>
+            <strong>{dueToday.length}</strong>
+            <small>Open tasks requiring action</small>
           </div>
           <div className="signalIcon amber">
             <AlertTriangle size={22} />
@@ -1754,9 +1764,9 @@ function WorkspaceDashboard({
         </button>
         <button className="signal coral" onClick={() => setActive(openList)}>
           <div>
-            <span>Waiting</span>
-            <strong>{waiting}</strong>
-            <small>Client or third-party action</small>
+            <span>Awaiting documents</span>
+            <strong>{pendingDocuments.length}</strong>
+            <small>Document requests still open</small>
           </div>
           <div className="signalIcon">
             <Clock3 size={22} />
@@ -1764,9 +1774,9 @@ function WorkspaceDashboard({
         </button>
         <button className="signal mint" onClick={() => setActive("case_complete")}>
           <div>
-            <span>{direct ? "Case complete" : "Completed"}</span>
-            <strong>{completed}</strong>
-            <small>Finalised outcomes</small>
+            <span>Visa deadlines</span>
+            <strong>{visaDeadlines.length}</strong>
+            <small>Active visa matters</small>
           </div>
           <div className="signalIcon green">
             <Check size={22} />
@@ -1778,7 +1788,7 @@ function WorkspaceDashboard({
           <div className="panelHead">
             <div>
               <span className="kicker">LIVE WORKSPACE</span>
-              <h2>Recent {direct ? "client matters" : "student journeys"}</h2>
+              <h2>Priority cases</h2>
             </div>
             <button className="ghostButton" onClick={() => setActive(openList)}>
               View all <ArrowRight size={15} />
@@ -1799,8 +1809,11 @@ function WorkspaceDashboard({
               onAction={() => openModal("case")}
             />
           ) : (
-            <div className="caseTable">
-              {workspaceCases.slice(0, 5).map((c) => (
+            <div className="caseTable priorityCaseTable">
+              <div className="caseTableHeader" aria-hidden="true">
+                <span>Client &amp; case</span><span>Stage</span><span>Next action</span><span>Due</span><span />
+              </div>
+              {priorityCases.slice(0, 5).map((c) => (
                 <button
                   className="caseRow compactRecord"
                   key={c.id}
@@ -1814,10 +1827,11 @@ function WorkspaceDashboard({
                   </span>
                   <span>
                     <b>{c.stage}</b>
-                    <small>{c.target || "No target added"}</small>
+                    <small><Status value={c.health} /></small>
                   </span>
                   <span>
-                    <Status value={c.health} />
+                    <b>{c.target || "Open case workspace"}</b>
+                    <small>{c.applicationStatus || c.matterType}</small>
                   </span>
                   <span>{c.due || "No due date"}</span>
                   <ArrowRight size={16} />
@@ -1876,6 +1890,14 @@ function WorkspaceDashboard({
                     <ArrowRight size={14} />
                   </button>
                 ))}
+              </div>
+            ) : null}
+            {(role === "admin" || role === "super_admin") ? (
+              <div className="dashboardAdminTools">
+                <span className="kicker">ADMIN TOOLS</span>
+                <button onClick={() => setActive("administration")}><UserCog size={16} /><span><strong>Invite staff</strong><small>Add a team member</small></span><ArrowRight size={14} /></button>
+                <button onClick={() => setActive("administration")}><Settings size={16} /><span><strong>Staff &amp; Masters</strong><small>Roles, branches and master data</small></span><ArrowRight size={14} /></button>
+                <button onClick={() => setActive("workflows")}><Workflow size={16} /><span><strong>Workflow Templates</strong><small>Manage repeatable processes</small></span><ArrowRight size={14} /></button>
               </div>
             ) : null}
           </article>
@@ -12038,6 +12060,9 @@ export default function Home() {
   const education = cases.filter((c) => c.serviceType !== "direct_visa"),
     visa = cases.filter((c) => c.serviceType === "direct_visa");
   const unreadAlerts = alerts.filter((alert) => !alert.read_at);
+  const unreadMessages = messages.filter((message) =>
+    ["unread", "received", "inbound"].includes(message.status.toLowerCase()),
+  );
   // The portal is titled from its own labels: the staff ones name commissions,
   // partner claims and internal drafts, none of which is a client's business.
   // Every client on file once, for connecting a portal login to their record.
@@ -12095,6 +12120,7 @@ export default function Home() {
         setActive={setActive}
         onOpenCase={openCaseWorkspace}
         serviceMode={serviceMode}
+        role={role}
       />
     );
   else if (active === "work")
@@ -12569,6 +12595,18 @@ export default function Home() {
               </div>
             ) : null}
             <div className="topActions">
+              {role !== "client" ? (
+                <button
+                  className={`messageShortcut ${active === "communications" ? "active" : ""}`}
+                  onClick={() => setActive("communications")}
+                  aria-label="Open Messages"
+                  title="Open Messages"
+                >
+                  <Mail size={17} />
+                  <span>Messages</span>
+                  {unreadMessages.length > 0 ? <b>{unreadMessages.length}</b> : null}
+                </button>
+              ) : null}
               <div className="signedAccount">
                 <div className="avatar small">{roleConfig[role].initials}</div>
                 <span>
@@ -12706,12 +12744,10 @@ export default function Home() {
               </span>
               <h1>
                 {active === "dashboard"
-                  ? serviceMode === "study"
-                    ? "Study Abroad dashboard"
-                    : "Direct Visa dashboard"
+                  ? `Good afternoon, ${(identity?.displayName || roleConfig[role].label).split(" ")[0]}`
                   : screenMeta[0]}
               </h1>
-              <p>{screenMeta[2]}</p>
+              <p>{active === "dashboard" ? "Here is the work that needs your attention today." : screenMeta[2]}</p>
             </div>
             {role !== "client" && (["dashboard", "enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete", "reports", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) ? (
               <div className="titleActions">
