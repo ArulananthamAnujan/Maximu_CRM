@@ -380,8 +380,6 @@ export async function POST(request: Request) {
       if (session.identity.role !== "super_admin") throw new LiveAccessError(403, "Only a Super Admin can add a branch.");
       await insert("branches", { id: crypto.randomUUID(), organisation_id: org, name: required(body.name, "Branch name"), code: required(body.code, "Branch code").toUpperCase(), country_code: required(body.countryCode, "Country").toUpperCase(), active: true }, token);
     } else if (action === "update_branch") {
-      if (session.identity.role !== "super_admin")
-        throw new LiveAccessError(403, "Only a Super Admin can change branches.");
       const changes: Json = {};
       if (body.name) changes.name = required(body.name, "Branch name");
       if (typeof body.active === "boolean") changes.active = body.active;

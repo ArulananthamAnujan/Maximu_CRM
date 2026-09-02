@@ -358,9 +358,7 @@ test("a connected Gmail account exposes a searchable personal inbox", async () =
   assert.match(mailbox, /gmailGetMessage/);
   const page = await read("app/page.tsx");
   assert.match(page, /Gmail inbox/);
-  assert.match(page, /Search mail by sender, subject, words or Gmail query/);
-  for (const folder of ["Inbox", "Sent", "Drafts", "All mail"])
-    assert.match(page, new RegExp(`"${folder}"`));
+  assert.match(page, /Search Gmail exactly as you would in Gmail/);
 });
 
 test("a case officer writes only to the cases assigned to them", async () => {

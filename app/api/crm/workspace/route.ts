@@ -261,28 +261,6 @@ export async function GET(request: Request) {
     }
     const branchById = new Map(branches.map((row) => [String(row.id), row]));
     const profileById = new Map(profiles.map((row) => [String(row.id), row]));
-    const pendingDocumentsByCase = new Map<string, number>();
-    for (const document of documents) {
-      if (!document.case_id) continue;
-      const state = String(document.status ?? "").toLowerCase();
-      if (["received", "completed", "uploaded", "verified"].includes(state)) continue;
-      const key = String(document.case_id);
-      pendingDocumentsByCase.set(key, (pendingDocumentsByCase.get(key) ?? 0) + 1);
-    }
-    const overdueTasksByCase = new Map<string, number>();
-    const today = new Date().toISOString().slice(0, 10);
-    for (const task of tasks) {
-      if (!task.case_id || task.status === "completed" || !task.due_at) continue;
-      if (String(task.due_at).slice(0, 10) >= today) continue;
-      const key = String(task.case_id);
-      overdueTasksByCase.set(key, (overdueTasksByCase.get(key) ?? 0) + 1);
-    }
-    const latestAuditByCase = new Map<string, Json>();
-    for (const event of audit) {
-      if (!event.case_id) continue;
-      const key = String(event.case_id);
-      if (!latestAuditByCase.has(key)) latestAuditByCase.set(key, event);
-    }
     const threadById = new Map(threads.map((row) => [String(row.id), row]));
     const applicationByCase = new Map<string, Json>();
     for (const application of applications) {
@@ -334,8 +312,6 @@ export async function GET(request: Request) {
         const visaMatter = visaMatterByCase.get(String(row.id)) ?? {};
         const owner = profileById.get(String(row.owner_id)) ?? {};
         const branch = branchById.get(String(row.branch_id)) ?? {};
-        const latestActivity = latestAuditByCase.get(String(row.id)) ?? {};
-        const activityActor = profileById.get(String(latestActivity.actor_id)) ?? {};
         const name = [client.first_name, client.last_name]
           .filter(Boolean)
           .join(" ");
@@ -394,13 +370,6 @@ export async function GET(request: Request) {
           lostReason: enquiry.lost_reason ?? "",
           applicationStatus: latestApplication.status ?? "",
           visaCategory: row.matter_type ?? visaMatter.visa_subclass ?? "",
-          nextAction: row.next_action ?? "",
-          stageEnteredAt: row.stage_entered_at ?? row.opened_at ?? "",
-          lastActivity: latestActivity.summary ?? "Case opened",
-          lastActivityAt: latestActivity.occurred_at ?? row.stage_entered_at ?? row.opened_at ?? "",
-          lastActivityBy: activityActor.display_name ?? "",
-          pendingDocuments: pendingDocumentsByCase.get(String(row.id)) ?? 0,
-          overdueTasks: overdueTasksByCase.get(String(row.id)) ?? 0,
         };
       }),
       tasks: tasks.map((row) => ({

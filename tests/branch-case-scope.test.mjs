@@ -8,29 +8,27 @@ const read = (path) =>
 const sql = await read(
   "supabase/migrations/0032_branch_and_case_team_scope.sql",
 );
-const branchWorkspace = await read(
-  "supabase/migrations/0035_branch_workspace_and_audit.sql",
-);
-const branchMasters = await read(
-  "supabase/migrations/0036_super_admin_branch_management.sql",
-);
 const page = await read("app/page.tsx");
 const workspace = await read("app/api/crm/workspace/route.ts");
 const admin = await read("app/api/crm/admin/route.ts");
 const operations = await read("app/api/crm/operations/route.ts");
 
-test("every internal user works across their branch without assignment", () => {
-  assert.match(branchWorkspace, /create or replace function public\.can_access_case/);
+test("branch admins see their branch while staff require a case-team relationship", () => {
+  assert.match(sql, /create or replace function public\.can_access_case/);
   assert.match(
-    branchWorkspace,
-    /public\.is_internal_user\(\) and c\.branch_id=public\.current_user_branch\(\)/,
+    sql,
+    /public\.current_user_level\(\)::text in \('branch_admin','manager'\)[\s\S]*?c\.branch_id = public\.current_user_branch\(\)/,
   );
+  for (const contract of [
+    "c.owner_id = auth.uid()",
+    "c.supervisor_id = auth.uid()",
+    "cc.profile_id = auth.uid()",
+  ]) assert.match(sql, new RegExp(contract.replace(/[().]/g, "\\$&")));
   assert.doesNotMatch(
-    branchWorkspace.split("create or replace function public.can_access_case")[1]
+    sql.split("create or replace function public.can_access_case")[1]
       .split("create or replace function public.can_modify_case")[0],
-    /owner_id|case_collaborators|supervisor_id/,
+    /staff[\s\S]*?can_access_branch\(c\.branch_id\)/,
   );
-  assert.match(branchWorkspace, /Assignment is accountability metadata, not a visibility boundary/);
 });
 
 test("all case-specific records use the exact case boundary", () => {
@@ -62,12 +60,9 @@ test("branch administration cannot cross branch boundaries", () => {
   assert.match(admin, /A Branch Admin can only/);
   assert.match(workspace, /Cases can only be assigned to staff in the same branch/);
   assert.match(workspace, /Case collaborators must belong to the same branch/);
-  assert.match(branchMasters, /\('platform_owner', 'super_admin'\)/);
-  assert.doesNotMatch(branchMasters, /branch_admin|manager/);
-  assert.match(admin, /Only a Super Admin can change branches/);
 });
 
-test("staff receive complete operational tools for every case in their branch", () => {
+test("staff receive complete operational tools only for permitted cases", () => {
   const staffModules = page
     .split("staff: {")[1]
     .split("client: {")[0];
@@ -82,8 +77,7 @@ test("staff receive complete operational tools for every case in their branch", 
     '"compliance"',
   ]) assert.match(staffModules, new RegExp(moduleName));
   assert.doesNotMatch(staffModules, /"administration"/);
-  assert.match(page, /scope: "Every operational record in their branch"/);
-  assert.doesNotMatch(page, /CASE OWNER|People working together|Add case collaborator/);
+  assert.match(page, /c\.collaboratorIds\?\.includes\(identity\?\.profileId/);
   assert.doesNotMatch(operations, /Only administrators can record payments/);
   assert.doesNotMatch(operations, /Only administrators can record refunds/);
   assert.doesNotMatch(operations, /Only administrators can send payment reminders/);

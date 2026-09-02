@@ -54,26 +54,19 @@ test("complete intake persists structured case-file records", () => {
   assert.match(workspace, /maskPassport/);
 });
 
-test("dashboards expose role-correct filters, operational metrics, and cross-tab refresh", () => {
+test("dashboards expose filters, category summaries, and cross-tab refresh", () => {
   for (const label of [
     "Filter dashboard by branch",
+    "Filter dashboard by staff",
     "Filter dashboard by country",
     "Filter dashboard by visa category",
     "Filter dashboard by intake",
-    "Total active",
-    "New enquiries",
-    "Overdue work",
-    "Awaiting action",
-    "Visa expiry risk",
-    "Responsibility not set",
+    "Visa category summary",
+    "Application status summary",
   ]) assert.match(page, new RegExp(label));
-  assert.match(page, /canViewAllBranches \? <select aria-label="Filter dashboard by branch"/);
-  assert.doesNotMatch(page, /Filter dashboard by staff/);
   assert.match(page, /maximus\.workspaceRefresh/);
   assert.match(workspace, /applicationStatus/);
   assert.match(workspace, /visaCategory/);
-  for (const field of ["nextAction", "lastActivity", "lastActivityBy", "pendingDocuments", "overdueTasks"])
-    assert.match(workspace, new RegExp(field));
 });
 
 test("application entry stores partner, associate, notes and milestone dates", () => {
