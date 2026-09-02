@@ -12517,7 +12517,7 @@ export default function Home() {
         serviceMode={serviceMode}
       />
       <main className="mainArea">
-        <header className={`topbar ${role === "client" ? "clientOnly" : ""}`}>
+        <header className={`topbar ${role === "client" ? "clientOnly" : ""} ${role !== "client" && active !== "dashboard" ? "moduleFocused" : ""}`}>
           <div className="topbarPrimary">
             <button
               className="menuButton"

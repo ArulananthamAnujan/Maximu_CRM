@@ -512,6 +512,31 @@ body {
   .recordTable td { padding: 7px 3px; }
 }
 
+/* Focused module view: once a user opens a tab, remove dashboard shortcuts and
+   show only that module's own controls and records. */
+.topbar.moduleFocused {
+  height: 72px;
+  min-height: 72px;
+}
+.topbar.moduleFocused .topbarSecondary,
+.topbar.moduleFocused .serviceAndFinder,
+.topbar.moduleFocused .messageShortcut,
+.topbar.moduleFocused .quickButton {
+  display: none;
+}
+.topbar.moduleFocused .topbarPrimary .searchWrap {
+  width: min(620px, 58vw);
+  max-width: 620px;
+}
+.topbar.moduleFocused .topActions { margin-left: auto; }
+
+@media (max-width: 700px) {
+  .topbar.moduleFocused {
+    height: 66px;
+    min-height: 66px;
+  }
+}
+
 @media (max-width: 480px) {
   .loginStory { padding: 22px 19px; }
   .loginBenefits { display: none; }
