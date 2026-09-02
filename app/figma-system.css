@@ -512,6 +512,195 @@ body {
   .recordTable td { padding: 7px 3px; }
 }
 
+/* Full Gmail workspace. The CRM shell steps away while Messages is open. */
+.appShell.gmailMode { display: block; background: #f6f8fc; }
+.gmailMode > .sidebar,
+.gmailMode .topbar,
+.gmailMode .pageTitle { display: none; }
+.gmailMode .mainArea {
+  width: 100%;
+  min-height: 100vh;
+  margin-left: 0;
+}
+.gmailMode .content {
+  width: 100%;
+  max-width: none;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.gmailWorkspace {
+  width: 100%;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: 64px minmax(0, 1fr);
+  color: #202124;
+  background: #f6f8fc;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.gmailWorkspace button,
+.gmailWorkspace input { font-family: inherit; }
+.gmailWorkspaceHeader {
+  display: grid;
+  grid-template-columns: 218px 110px minmax(320px, 720px) minmax(190px, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px 8px 10px;
+  background: #f6f8fc;
+}
+.gmailBackToCrm {
+  min-width: 0;
+  height: 46px;
+  padding: 0 10px;
+  border: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 23px;
+  background: transparent;
+  cursor: pointer;
+}
+.gmailBackToCrm:hover { background: #e8eaed; }
+.gmailBackToCrm img { width: 158px; height: 34px; object-fit: contain; }
+.gmailBrand { display: flex; align-items: center; gap: 9px; color: #5f6368; }
+.gmailBrand svg { color: #ea4335; }
+.gmailBrand strong { font-size: 20px; font-weight: 500; }
+.gmailSearchBar {
+  height: 48px;
+  display: grid;
+  grid-template-columns: 38px 1fr auto;
+  align-items: center;
+  padding: 0 7px 0 13px;
+  border-radius: 24px;
+  background: #eaf1fb;
+}
+.gmailSearchBar:focus-within { background: #fff; box-shadow: 0 1px 2px rgba(60,64,67,.3), 0 1px 3px 1px rgba(60,64,67,.15); }
+.gmailSearchBar svg { color: #5f6368; }
+.gmailSearchBar input { min-width: 0; height: 100%; border: 0; outline: 0; color: #202124; background: transparent; font-size: 15px; }
+.gmailSearchBar button { height: 34px; padding: 0 13px; border: 0; border-radius: 17px; color: #0b57d0; background: transparent; font-size: 12px; font-weight: 700; cursor: pointer; }
+.gmailSearchBar button:hover { background: #dce8f8; }
+.gmailAccount { justify-self: end; min-width: 0; display: flex; align-items: center; gap: 10px; }
+.gmailAccount > span { min-width: 0; text-align: right; }
+.gmailAccount strong,
+.gmailAccount small { display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gmailAccount strong { font-size: 12px; }
+.gmailAccount small { margin-top: 2px; color: #5f6368; font-size: 10px; }
+.gmailAccount > div,
+.gmailSenderLine > div { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: #e88b2b; font-size: 12px; font-weight: 800; }
+.gmailWorkspaceBody { min-height: 0; display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 8px; padding: 0 8px 8px 0; }
+.gmailFolderRail { min-height: 0; display: flex; flex-direction: column; padding: 8px 12px 14px 8px; }
+.gmailCompose {
+  width: 142px;
+  min-height: 56px;
+  margin: 0 0 16px 8px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #001d35;
+  background: #c2e7ff;
+  box-shadow: 0 1px 2px rgba(60,64,67,.18);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.gmailCompose:hover { box-shadow: 0 1px 3px rgba(60,64,67,.3), 0 4px 8px 3px rgba(60,64,67,.15); }
+.gmailFolderRail nav { display: grid; gap: 1px; }
+.gmailFolderRail nav button {
+  min-height: 32px;
+  padding: 0 13px 0 25px;
+  border: 0;
+  border-radius: 0 16px 16px 0;
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  color: #3c4043;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+.gmailFolderRail nav button:hover { background: #e8eaed; }
+.gmailFolderRail nav button.active { color: #001d35; background: #d3e3fd; font-weight: 700; }
+.gmailFolderRail nav button b { font-size: 11px; }
+.gmailCaseNote { margin: auto 8px 10px; padding: 12px; border-radius: 12px; display: flex; gap: 8px; color: #5f6368; background: #edf3fa; font-size: 10px; line-height: 1.45; }
+.gmailCaseNote svg { flex: 0 0 auto; color: #0b57d0; }
+.gmailDisconnect { margin: 0 8px; padding: 8px; border: 0; color: #5f6368; background: transparent; font-size: 10px; cursor: pointer; }
+.gmailDisconnect:hover { color: #b3261e; }
+.gmailMailboxPane { min-width: 0; min-height: 0; overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 1px 2px rgba(60,64,67,.08); }
+.gmailMailboxToolbar { min-height: 48px; padding: 0 16px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid #eef0f2; color: #5f6368; }
+.gmailMailboxToolbar input { width: 16px; height: 16px; }
+.gmailMailboxToolbar button { width: 36px; height: 36px; border: 0; border-radius: 50%; display: grid; place-items: center; color: #5f6368; background: transparent; cursor: pointer; }
+.gmailMailboxToolbar button:hover { background: #f1f3f4; }
+.gmailMailboxToolbar strong { margin-left: 4px; color: #202124; font-size: 14px; text-transform: capitalize; }
+.gmailMailboxToolbar > span { margin-left: auto; font-size: 11px; }
+.gmailMailList { height: calc(100% - 49px); overflow-y: auto; }
+.gmailMailRow { min-height: 44px; display: grid; grid-template-columns: 28px 30px minmax(0, 1fr); align-items: center; padding: 0 12px 0 16px; border-bottom: 1px solid #eceff1; color: #5f6368; background: #f2f6fc; box-shadow: inset 0 -1px 0 rgba(100,121,143,.08); }
+.gmailMailRow.unread { color: #202124; background: #fff; }
+.gmailMailRow:hover { position: relative; z-index: 1; box-shadow: 0 1px 2px rgba(60,64,67,.3), 0 1px 4px rgba(60,64,67,.15); }
+.gmailMailRow > input { width: 16px; height: 16px; }
+.gmailMailRow > svg { color: #9aa0a6; }
+.gmailStar { width: 28px; height: 32px; padding: 0; border: 0; display: grid; place-items: center; color: #9aa0a6; background: transparent; cursor: pointer; }
+.gmailStar.starred { color: #f4b400; }
+.gmailMailOpen { min-width: 0; height: 43px; padding: 0; border: 0; display: grid; grid-template-columns: minmax(145px, .65fr) minmax(260px, 2fr) 74px; align-items: center; gap: 18px; color: inherit; background: transparent; text-align: left; cursor: pointer; }
+.gmailMailOpen > strong,
+.gmailMailOpen > span,
+.gmailMailOpen em { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gmailMailOpen > strong { font-size: 12px; }
+.gmailMailOpen > span { display: block; font-size: 12px; }
+.gmailMailOpen b { color: #202124; font-weight: 700; }
+.gmailMailOpen em { color: #5f6368; font-style: normal; }
+.gmailMailOpen time { justify-self: end; font-size: 10px; font-weight: 600; }
+.gmailMailRow.unread .gmailMailOpen > strong,
+.gmailMailRow.unread .gmailMailOpen time { font-weight: 800; }
+.gmailEmptyFolder,
+.gmailLoading { height: calc(100% - 49px); display: grid; place-items: center; color: #5f6368; font-size: 13px; }
+.gmailLoading { grid-auto-flow: column; justify-content: center; gap: 10px; }
+.gmailLoading svg { animation: spin 1s linear infinite; }
+.gmailMailboxError { margin: 12px 18px; padding: 10px 12px; border-radius: 8px; color: #b3261e; background: #fce8e6; font-size: 12px; }
+.gmailConnectState { height: 100%; max-width: 520px; margin: auto; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.gmailConnectState > svg { color: #ea4335; }
+.gmailConnectState h1 { margin: 18px 0 8px; font-size: 25px; font-weight: 500; }
+.gmailConnectState p { margin: 0 0 22px; color: #5f6368; font-size: 14px; line-height: 1.6; }
+.gmailConnectState button { min-height: 42px; padding: 0 18px; border: 0; border-radius: 21px; display: flex; align-items: center; gap: 8px; color: #fff; background: #0b57d0; font-weight: 700; cursor: pointer; }
+.gmailConnectState span,
+.gmailConnectState em { margin-top: 12px; color: #5f6368; font-size: 11px; font-style: normal; }
+.gmailConnectState em { color: #b3261e; }
+.gmailReader { height: 100%; overflow-y: auto; }
+.gmailReaderContent { padding: 18px 28px 40px; }
+.gmailReaderContent h1 { margin: 2px 0 24px; font-size: 23px; font-weight: 400; }
+.gmailSenderLine { display: grid; grid-template-columns: 40px 1fr auto; align-items: center; gap: 10px; }
+.gmailSenderLine span strong,
+.gmailSenderLine span small { display: block; }
+.gmailSenderLine span strong { font-size: 13px; }
+.gmailSenderLine span small,
+.gmailSenderLine time { margin-top: 3px; color: #5f6368; font-size: 10px; }
+.gmailReaderContent pre { margin: 28px 48px 32px; white-space: pre-wrap; color: #202124; font: 13px/1.65 Arial, Helvetica, sans-serif; }
+.gmailReplyActions { display: flex; gap: 10px; margin-left: 48px; }
+.gmailReplyActions button { min-height: 38px; padding: 0 16px; border: 1px solid #dadce0; border-radius: 19px; display: flex; align-items: center; gap: 7px; color: #3c4043; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
+.gmailReplyActions button:hover { background: #f8fafd; }
+
+@media (max-width: 900px) {
+  .gmailWorkspaceHeader { grid-template-columns: 52px minmax(0, 1fr) auto; }
+  .gmailBackToCrm { width: 44px; padding: 0; justify-content: center; }
+  .gmailBackToCrm img,
+  .gmailBrand { display: none; }
+  .gmailWorkspaceBody { grid-template-columns: 72px minmax(0, 1fr); }
+  .gmailFolderRail { padding-inline: 6px; }
+  .gmailCompose { width: 56px; padding: 0; justify-content: center; border-radius: 16px; font-size: 0; }
+  .gmailFolderRail nav button { grid-template-columns: 1fr; justify-items: center; padding: 0; border-radius: 16px; }
+  .gmailFolderRail nav button span,
+  .gmailFolderRail nav button b,
+  .gmailCaseNote,
+  .gmailDisconnect { display: none; }
+  .gmailMailOpen { grid-template-columns: minmax(110px, .6fr) minmax(180px, 1.5fr) 60px; gap: 10px; }
+  .gmailAccount > span { display: none; }
+}
+
 /* Focused module view: once a user opens a tab, remove dashboard shortcuts and
    show only that module's own controls and records. */
 .topbar.moduleFocused {

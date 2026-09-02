@@ -5,6 +5,7 @@ import { orgDate, orgDateTime } from "@/lib/timezone";
 import {
   Activity,
   AlertTriangle,
+  Archive,
   ArrowRight,
   BarChart3,
   Bell,
@@ -14,6 +15,7 @@ import {
   Building2,
   CalendarDays,
   Check,
+  ChevronLeft,
   ChevronDown,
   CircleDollarSign,
   Clock3,
@@ -25,6 +27,7 @@ import {
   Filter,
   FolderOpen,
   GraduationCap,
+  Inbox,
   LockKeyhole,
   LogOut,
   Mail,
@@ -48,6 +51,7 @@ import {
   RefreshCw,
   Send,
   Sparkles,
+  Star,
 } from "lucide-react";
 
 type ModuleKey =
@@ -3149,6 +3153,7 @@ function MessagesView({
   canSend,
   onBulkAction,
   onCampaignChange,
+  onClose,
 }: {
   items: MessageRecord[];
   campaigns: CampaignRecord[];
@@ -3160,6 +3165,7 @@ function MessagesView({
   canSend: boolean;
   onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
   onCampaignChange: () => Promise<void>;
+  onClose: () => void;
 }) {
   // A discarded draft is kept for the record but is not part of the outbox.
   const [showDiscarded, setShowDiscarded] = useState(false);
@@ -3172,11 +3178,13 @@ function MessagesView({
   const [mailboxError, setMailboxError] = useState("");
   const [gmailMessages, setGmailMessages] = useState<Array<{
     id: string; threadId: string; from: string; to: string; subject: string;
-    date: string; snippet: string; body: string; unread: boolean; inbox: boolean; sent: boolean;
+    date: string; snippet: string; body: string; unread: boolean; inbox: boolean; sent: boolean; starred: boolean;
   }>>([]);
   const [gmailSearch, setGmailSearch] = useState("");
   const [gmailLoading, setGmailLoading] = useState(false);
   const [openGmailId, setOpenGmailId] = useState<string | null>(null);
+  const [mailFolder, setMailFolder] = useState<"inbox" | "starred" | "sent" | "drafts">("inbox");
+  const [localStars, setLocalStars] = useState<Set<string>>(new Set());
   const [sendingId, setSendingId] = useState<string | null>(null);
   // Sent locally, ahead of the next full refresh -- kept separate from the
   // shared items/setItems wiring so a send can never collide with the
@@ -3250,12 +3258,17 @@ function MessagesView({
     }
   };
 
-  const loadGmailInbox = async (search = gmailSearch) => {
+  const loadGmailInbox = async (
+    search = gmailSearch,
+    folder: "inbox" | "starred" | "sent" | "drafts" = mailFolder,
+  ) => {
+    if (folder === "drafts") return;
     setGmailLoading(true);
     setMailboxError("");
     try {
       const params = new URLSearchParams({ view: "inbox" });
-      if (search.trim()) params.set("q", search.trim());
+      const folderQuery = folder === "inbox" ? "in:inbox" : folder === "sent" ? "in:sent" : "is:starred";
+      params.set("q", `${folderQuery}${search.trim() ? ` ${search.trim()}` : ""}`);
       const response = await fetch(`/api/crm/mailbox?${params}`, { cache: "no-store" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Gmail could not be loaded.");
@@ -3267,6 +3280,11 @@ function MessagesView({
       setGmailLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (canSend && mailbox?.connected && gmailMessages.length === 0)
+      void loadGmailInbox("", "inbox");
+  }, [canSend, mailbox?.connected]);
 
   const sendNow = async (message: MessageRecord) => {
     setSendingId(message.id);
@@ -3302,200 +3320,119 @@ function MessagesView({
     message.channel === "email" && !sentIds.has(message.id) && message.status.toLowerCase() !== "sent",
   );
   const selection = useBulkSelection(selectable);
+  const draftMessages = items.filter((message) =>
+    message.channel === "email" && !discarded(message) && !sentIds.has(message.id) && message.status.toLowerCase() !== "sent",
+  );
+  const openedGmail = gmailMessages.find((message) => message.id === openGmailId) ?? null;
+  const openFolder = (folder: "inbox" | "starred" | "sent" | "drafts") => {
+    setMailFolder(folder);
+    setOpenGmailId(null);
+    if (folder !== "drafts") void loadGmailInbox("", folder);
+  };
+  const formatMailDate = (value: string) => {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  };
   return (
-    <>
-    <article className="panel listPanel">
-      <div className="panelHead">
-        <div>
-          <span className="kicker">CASE MESSAGES</span>
-          <h2>Shared case communication</h2>
+    <section className="gmailWorkspace" aria-label="Gmail workspace">
+      <header className="gmailWorkspaceHeader">
+        <button className="gmailBackToCrm" onClick={onClose} title="Back to CRM dashboard">
+          <ChevronLeft size={20} />
+          <img src="/maximus-logo-dark.svg" alt="Maximus Education and Migration" />
+        </button>
+        <div className="gmailBrand"><Mail size={25} /><strong>Gmail</strong></div>
+        <form className="gmailSearchBar" onSubmit={(event) => { event.preventDefault(); void loadGmailInbox(gmailSearch, mailFolder); }}>
+          <Search size={20} />
+          <input value={gmailSearch} onChange={(event) => setGmailSearch(event.target.value)} placeholder="Search Gmail exactly as you would in Gmail" />
+          <button disabled={gmailLoading} aria-label="Search Gmail">Search</button>
+        </form>
+        <div className="gmailAccount">
+          <span><strong>{mailbox?.email || "Maximus Gmail"}</strong><small>{mailbox?.connected ? "Connected to CRM" : "Not connected"}</small></span>
+          <div>{(mailbox?.email || "MG").slice(0, 2).toUpperCase()}</div>
         </div>
-        <div className="panelHeadActions">
-          {discardedCount > 0 && (
-            <button
-              className="ghostButton"
-              onClick={() => setShowDiscarded(!showDiscarded)}
-            >
-              {showDiscarded
-                ? "Hide discarded"
-                : `Show ${discardedCount} discarded`}
-            </button>
-          )}
-          <button
-            className="primaryButton"
-            onClick={() => openModal("message")}
-          >
-            <Plus size={16} />
-            Compose
-          </button>
-        </div>
-      </div>
-      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search client, subject or message content" resultCount={shown.length}>
-        <label className="compactFilter">Channel<select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value)}><option value="">All channels</option><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></select></label>
-        <label className="compactFilter">Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
-      </ListFilterBar>
-      {canSend && mailbox?.oauthConfigured ? (
-        <p className="modalNotice">
-          {mailbox.connected ? (
-            <>
-              <Check size={14} />
-              Sending as <b>{mailbox.email}</b>.{" "}
-              <button className="ghostButton" onClick={() => void disconnectMailbox()}>
-                Disconnect
-              </button>
-            </>
-          ) : (
-            <>
-              <Link2 size={14} />
-              Drafts are recorded against the case. Connect your Gmail account to
-              send one directly from here.{" "}
-              <button
-                className="ghostButton"
-                onClick={() => {
-                  window.location.href = "/api/auth/gmail/start";
-                }}
-              >
-                <Link2 size={14} />
-                Connect Gmail
-              </button>
-            </>
-          )}
-        </p>
-      ) : (
-        <p className="modalNotice">
-          <AlertTriangle size={14} />
-          Drafts are recorded against the case.{" "}
-          {canSend
-            ? "Gmail sending is not set up on this deployment yet -- send it from your own mailbox and mark the draft ready."
-            : "Your case team sends the reply -- nothing is dispatched from here."}
-        </p>
-      )}
-      {mailboxError && <p className="caseWorkError">{mailboxError}</p>}
-      {canSend && mailbox?.connected && (
-        <section className="gmailPortalInbox" aria-label="Connected Gmail inbox">
-          <div className="panelHead">
-            <div><span className="kicker">CONNECTED MAILBOX</span><h3>Gmail inbox</h3></div>
-            <button className="ghostButton" disabled={gmailLoading} onClick={() => void loadGmailInbox()}>
-              <RefreshCw size={15} /> {gmailLoading ? "Loading…" : "Refresh inbox"}
-            </button>
-          </div>
-          <form className="listFilterBar" onSubmit={(event) => { event.preventDefault(); void loadGmailInbox(gmailSearch); }}>
-            <Search size={16} />
-            <input value={gmailSearch} onChange={(event) => setGmailSearch(event.target.value)} placeholder="Search Gmail exactly as you would in Gmail" />
-            <button className="ghostButton" disabled={gmailLoading}>Search</button>
-          </form>
-          {gmailMessages.length === 0 ? (
-            <p className="coverageIntro">Select “Refresh inbox” to load the latest 50 messages from {mailbox.email}.</p>
-          ) : (
-            <div className="gmailMessageList">
-              {gmailMessages.map((message) => (
-                <article key={message.id} className={message.unread ? "gmailMessage unread" : "gmailMessage"}>
-                  <button onClick={() => setOpenGmailId(openGmailId === message.id ? null : message.id)}>
-                    <span><b>{message.sent ? `To: ${message.to}` : message.from}</b><small>{new Date(message.date).toLocaleString()}</small></span>
-                    <strong>{message.subject}</strong>
-                    <p>{message.snippet}</p>
-                  </button>
-                  {openGmailId === message.id && <div className="gmailMessageBody"><pre>{message.body || message.snippet}</pre></div>}
-                </article>
-              ))}
+      </header>
+      <div className="gmailWorkspaceBody">
+        <aside className="gmailFolderRail">
+          <button className="gmailCompose" onClick={() => openModal("message")}><Plus size={20} />Compose</button>
+          <nav>
+            <button className={mailFolder === "inbox" ? "active" : ""} onClick={() => openFolder("inbox")}><Inbox size={18} /><span>Inbox</span>{gmailMessages.filter((message) => message.unread).length > 0 ? <b>{gmailMessages.filter((message) => message.unread).length}</b> : null}</button>
+            <button className={mailFolder === "starred" ? "active" : ""} onClick={() => openFolder("starred")}><Star size={18} /><span>Starred</span></button>
+            <button className={mailFolder === "sent" ? "active" : ""} onClick={() => openFolder("sent")}><Send size={18} /><span>Sent</span></button>
+            <button className={mailFolder === "drafts" ? "active" : ""} onClick={() => openFolder("drafts")}><FileText size={18} /><span>Drafts</span>{draftMessages.length > 0 ? <b>{draftMessages.length}</b> : null}</button>
+          </nav>
+          <div className="gmailCaseNote"><Link2 size={15} /><span>Messages sent here remain linked to the client case.</span></div>
+          {mailbox?.connected ? <button className="gmailDisconnect" onClick={() => void disconnectMailbox()}>Disconnect Gmail</button> : null}
+        </aside>
+        <main className="gmailMailboxPane">
+          {!mailbox?.oauthConfigured || !mailbox.connected ? (
+            <div className="gmailConnectState">
+              <Mail size={42} />
+              <h1>Connect your Gmail inbox</h1>
+              <p>Open your complete Maximus mailbox here and keep every client conversation connected to the correct case.</p>
+              {mailbox?.oauthConfigured ? <button onClick={() => { window.location.href = "/api/auth/gmail/start"; }}><Link2 size={17} />Connect Gmail</button> : <span>Gmail OAuth must be configured for this deployment.</span>}
+              {mailboxError ? <em>{mailboxError}</em> : null}
             </div>
-          )}
-        </section>
-      )}
-      {shown.length === 0 ? (
-        <EmptyState
-          icon={Mail}
-          title={discardedCount > 0 ? "Nothing in the outbox" : "No messages"}
-          copy="Choose a case and send a message. The CRM uses the email saved in that case profile."
-          action="Compose message"
-          onAction={() => openModal("message")}
-        />
-      ) : (
-        <>
-        {selectable.length > 0 && (
-          <div className="listSelectionTools">
-            <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} label="Select all shown drafts" />
-          </div>
-        )}
-        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
-          <button className="ghostButton" onClick={async () => {
-            await onBulkAction("message", "toggle", selection.selected.map((item) => item.id), { completed: true });
-            selection.clear();
-          }}>Mark ready</button>
-          <button className="ghostButton" onClick={async () => {
-            await onBulkAction("message", "toggle", selection.selected.map((item) => item.id), { completed: false });
-            selection.clear();
-          }}>Return to draft</button>
-          <button className="ghostButton dangerAction" onClick={async () => {
-            if (!confirm(`Discard ${selection.selected.length} selected draft${selection.selected.length === 1 ? "" : "s"}?`)) return;
-            await onBulkAction("message", "delete", selection.selected.map((item) => item.id));
-            selection.clear();
-          }}><Trash2 size={14} /> Discard</button>
-        </BulkActionBar>
-        {shown.map((m) => {
-          const sent = sentIds.has(m.id) || m.status.toLowerCase() === "sent";
-          return (
-            <div className="functionalRow bulkEnabled" key={m.id}>
-              {!sent ? (
-                <RowSelection checked={selection.selectedIds.has(m.id)} onChange={() => selection.toggle(m.id)} label={`Select ${m.subject}`} />
-              ) : <span className="bulkSelectionSpacer" />}
-              <div className="docIcon">
-                <Mail size={17} />
+          ) : openedGmail ? (
+            <article className="gmailReader">
+              <div className="gmailMailboxToolbar">
+                <button onClick={() => setOpenGmailId(null)} aria-label="Back to message list"><ChevronLeft size={19} /></button>
+                <button aria-label="Archive"><Archive size={18} /></button>
+                <button aria-label="Delete"><Trash2 size={18} /></button>
               </div>
-              <div>
-                <strong>{m.subject}</strong>
-                <span>
-                  {humanise(m.channel)} · {cases.find((item) => (item.dbId || item.id) === m.caseId)?.name || "Linked case"} · {messageWhen(m)}
-                </span>
+              <div className="gmailReaderContent">
+                <h1>{openedGmail.subject}</h1>
+                <div className="gmailSenderLine"><div>{(openedGmail.sent ? openedGmail.to : openedGmail.from).slice(0, 2).toUpperCase()}</div><span><strong>{openedGmail.sent ? `To: ${openedGmail.to}` : openedGmail.from}</strong><small>to {openedGmail.sent ? openedGmail.to : openedGmail.to || mailbox.email}</small></span><time>{new Date(openedGmail.date).toLocaleString()}</time></div>
+                <pre>{openedGmail.body || openedGmail.snippet}</pre>
+                <div className="gmailReplyActions"><button onClick={() => openModal("message")}><ArrowRight size={16} />Reply</button><button onClick={() => openModal("message")}><Send size={16} />Forward</button></div>
               </div>
-              <Status value={sent ? "Sent" : m.status} />
-              {sent ? null : (
-                <>
-                  {canSend && ((m.channel === "email" && mailbox?.connected) || (m.channel === "whatsapp" && whatsappConfigured) || (m.channel === "sms" && smsConfigured)) && (
-                    <button
-                      className="ghostButton"
-                      onClick={() => void sendNow(m)}
-                      disabled={sendingId === m.id}
-                    >
-                      <Send size={14} />
-                      {sendingId === m.id ? "Sending…" : "Send now"}
-                    </button>
-                  )}
-                  <button
-                    className="ghostButton"
-                    onClick={() =>
-                      setItems(
-                        items.map((x) =>
-                          x.id === m.id
-                            ? {
-                                ...x,
-                                status: x.status === "Draft" ? "Ready" : "Draft",
-                              }
-                            : x,
-                        ),
-                      )
-                    }
-                  >
-                    {m.status === "Draft" ? "Mark ready" : "Return to draft"}
-                  </button>
-                  <button
-                    className="iconButton"
-                    onClick={() => setItems(items.filter((x) => x.id !== m.id))}
-                    aria-label="Delete message"
-                    title="Delete message"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </>
+            </article>
+          ) : (
+            <>
+              <div className="gmailMailboxToolbar">
+                <input type="checkbox" aria-label="Select all messages" />
+                <button disabled={gmailLoading} onClick={() => void loadGmailInbox("", mailFolder)} aria-label="Refresh inbox"><RefreshCw size={18} /></button>
+                <button aria-label="Archive"><Archive size={18} /></button>
+                <strong>{mailFolder === "drafts" ? "Drafts" : humanise(mailFolder)}</strong>
+                <span>{mailFolder === "drafts" ? `${draftMessages.length} drafts` : `${gmailMessages.length} messages`}</span>
+              </div>
+              {mailboxError ? <p className="gmailMailboxError">{mailboxError}</p> : null}
+              {gmailLoading ? <div className="gmailLoading"><RefreshCw size={20} />Loading messages…</div> : mailFolder === "drafts" ? (
+                <div className="gmailMailList">
+                  {draftMessages.length === 0 ? <div className="gmailEmptyFolder">No saved drafts.</div> : draftMessages.map((message) => (
+                    <div className="gmailMailRow" key={message.id}>
+                      <input type="checkbox" aria-label={`Select ${message.subject}`} />
+                      <Star size={17} />
+                      <button className="gmailMailOpen" onClick={() => openModal("message")}>
+                        <strong>{cases.find((item) => (item.dbId || item.id) === message.caseId)?.name || "Linked case"}</strong>
+                        <span><b>{message.subject}</b><em> — {message.body}</em></span>
+                        <time>{messageWhen(message).replace("Drafted ", "")}</time>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : gmailMessages.length === 0 ? (
+                <div className="gmailEmptyFolder">No messages in {mailFolder}.</div>
+              ) : (
+                <div className="gmailMailList">
+                  {gmailMessages.map((message) => {
+                    const starred = message.starred || localStars.has(message.id);
+                    return <div className={`gmailMailRow ${message.unread ? "unread" : ""}`} key={message.id}>
+                      <input type="checkbox" aria-label={`Select ${message.subject}`} />
+                      <button className={starred ? "gmailStar starred" : "gmailStar"} onClick={() => setLocalStars((current) => { const next = new Set(current); if (next.has(message.id)) next.delete(message.id); else next.add(message.id); return next; })} aria-label={starred ? "Unstar message" : "Star message"}><Star size={17} fill={starred ? "currentColor" : "none"} /></button>
+                      <button className="gmailMailOpen" onClick={() => setOpenGmailId(message.id)}>
+                        <strong>{message.sent ? `To: ${message.to}` : message.from}</strong>
+                        <span><b>{message.subject}</b><em> — {message.snippet}</em></span>
+                        <time>{formatMailDate(message.date)}</time>
+                      </button>
+                    </div>;
+                  })}
+                </div>
               )}
-            </div>
-          );
-        })}
-        </>
-      )}
-    </article>
-    {canSend && <CampaignsPanel items={campaigns} cases={cases} onChange={onCampaignChange} />}
-    </>
+            </>
+          )}
+        </main>
+      </div>
+    </section>
   );
 }
 
@@ -12181,6 +12118,7 @@ export default function Home() {
         canSend={true}
         onBulkAction={bulkMutateRemote}
         onCampaignChange={loadWorkspace}
+        onClose={() => setActive("dashboard")}
       />
     );
   else if (active === "courseFinder")
@@ -12491,7 +12429,7 @@ export default function Home() {
       );
   }
   return (
-    <div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}`}>
+    <div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}${active === "communications" && role !== "client" ? " gmailMode" : ""}`}>
       {schemaWarning && (
         <div className="schemaBanner" role="status">
           <AlertTriangle size={15} />

@@ -69,6 +69,7 @@ export async function GET(request: Request) {
           unread: message.labelIds?.includes("UNREAD") ?? false,
           inbox: message.labelIds?.includes("INBOX") ?? false,
           sent: message.labelIds?.includes("SENT") ?? false,
+          starred: message.labelIds?.includes("STARRED") ?? false,
         };
       }));
       result.messages = messages;
