@@ -1224,32 +1224,35 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
             Simple. Connected. Easy to follow.
           </div>
           <span>MAXIMUS EDUCATION & MIGRATION</span>
-          <h1>One secure login for every Maximus journey.</h1>
+          <h1>
+            One secure account.
+            <br />
+            Every Maximus journey.
+          </h1>
           <p>
-            Staff, administrators and clients enter through the same doorway.
-            Supabase verifies the account and the CRM automatically applies its
-            real role and record access.
+            Staff, administrators, students and clients sign in from one
+            trusted place. Maximus opens the correct workspace for each account.
           </p>
           <div className="loginBenefits">
             <div>
               <Check size={18} />
               <span>
-                <b>Live records</b>
-                <small>Cases and tasks saved centrally</small>
+                <b>Connected records</b>
+                <small>Cases, tasks and communication together</small>
               </span>
             </div>
             <div>
               <CalendarCheck2 size={18} />
               <span>
-                <b>Connected work</b>
-                <small>Deadlines and appointments together</small>
+                <b>Clear next steps</b>
+                <small>Deadlines and appointments in one view</small>
               </span>
             </div>
             <div>
               <ShieldCheck size={18} />
               <span>
-                <b>Protected roles</b>
-                <small>Database-enforced access for every account</small>
+                <b>Protected access</b>
+                <small>Each account opens only the correct workspace</small>
               </span>
             </div>
           </div>
@@ -1289,12 +1292,11 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
             </span>
             <h2>
               {portal === "staff"
-                ? "Sign in to your workspace"
-                : "Open your Maximus journey"}
+                ? "Sign in to your account"
+                : "Sign in to your portal"}
             </h2>
             <p>
-              Your role is detected from your authorised CRM profile after
-              sign-in.
+              Use the email address registered with your Maximus account.
             </p>
           </div>
           <div className="loginFields">
@@ -1334,6 +1336,20 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
               </span>
             </label>
           </div>
+          <div className="loginRecoveryRow">
+            <button
+              type="button"
+              onClick={() =>
+                window.alert(
+                  portal === "staff"
+                    ? "Please contact your Maximus administrator to reset your password."
+                    : "Please contact your Maximus adviser to reset your portal password.",
+                )
+              }
+            >
+              Forgot password?
+            </button>
+          </div>
           {error ? (
             <div className="loginError">
               <AlertTriangle size={16} />
@@ -1345,24 +1361,46 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
             <ArrowRight size={18} />
           </button>
           {portal === "staff" ? (
+            <>
+              <div className="loginDivider" aria-hidden="true">
+                <span>OR</span>
+              </div>
+              <button
+                type="button"
+                className="googleLoginButton"
+                onClick={() => {
+                  window.location.href = "/api/auth/google/start";
+                }}
+              >
+                Continue with Google Workspace
+              </button>
+            </>
+          ) : null}
+          <div className="loginAccessGuidance">
             <button
               type="button"
-              className="googleLoginButton"
-              onClick={() => {
-                window.location.href = "/api/auth/google/start";
-              }}
+              onClick={() =>
+                window.alert(
+                  portal === "staff"
+                    ? "Please contact your Maximus adviser to have your client portal connected to your record."
+                    : "Please contact your Maximus adviser to create and connect your portal account.",
+                )
+              }
             >
-              <div className="googleG">G</div>
-              <span>
-                <b>Continue with Google Workspace</b>
-                <small>Sign in with your Google account</small>
-              </span>
-              <ChevronDown size={17} />
+              {portal === "staff"
+                ? "Student or client? Create your portal account"
+                : "Need portal access? Create your portal account"}
+              <ArrowRight size={12} />
             </button>
-          ) : null}
+            <small>
+              {portal === "staff"
+                ? "Staff access is activated through an administrator invitation."
+                : "Portal access is connected to your existing Maximus record."}
+            </small>
+          </div>
           <footer>
             <LockKeyhole size={16} />
-            Credentials are verified securely by Supabase.
+            Secure, role-based access to your Maximus workspace.
           </footer>
         </form>
       </div>
