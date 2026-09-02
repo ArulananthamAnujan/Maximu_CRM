@@ -92,6 +92,7 @@ export async function GET(request: Request) {
       visaMatters,
       visaHistory,
       collaborators,
+      caseNotes,
     ] = await Promise.all([
       safeRest(
         `clients?select=*&archived_at=is.null&order=updated_at.desc&limit=${RECORD_LIMIT}`,
@@ -203,6 +204,11 @@ export async function GET(request: Request) {
         token,
         degraded,
       ),
+      safeRest(
+        "case_notes?select=case_id,author_id,body,created_at&order=created_at.desc&limit=5000",
+        token,
+        degraded,
+      ),
     ]);
 
     // A dataset fetched exactly up to its cap may have more rows the
@@ -261,6 +267,11 @@ export async function GET(request: Request) {
     }
     const branchById = new Map(branches.map((row) => [String(row.id), row]));
     const profileById = new Map(profiles.map((row) => [String(row.id), row]));
+    const latestNoteByCase = new Map<string, Json>();
+    for (const note of caseNotes) {
+      const key = String(note.case_id);
+      if (!latestNoteByCase.has(key)) latestNoteByCase.set(key, note);
+    }
     const threadById = new Map(threads.map((row) => [String(row.id), row]));
     const applicationByCase = new Map<string, Json>();
     for (const application of applications) {
@@ -311,6 +322,8 @@ export async function GET(request: Request) {
         const latestApplication = applicationByCase.get(String(row.id)) ?? {};
         const visaMatter = visaMatterByCase.get(String(row.id)) ?? {};
         const owner = profileById.get(String(row.owner_id)) ?? {};
+        const latestNote = latestNoteByCase.get(String(row.id)) ?? {};
+        const latestNoteAuthor = profileById.get(String(latestNote.author_id)) ?? {};
         const branch = branchById.get(String(row.branch_id)) ?? {};
         const name = [client.first_name, client.last_name]
           .filter(Boolean)
@@ -370,6 +383,9 @@ export async function GET(request: Request) {
           lostReason: enquiry.lost_reason ?? "",
           applicationStatus: latestApplication.status ?? "",
           visaCategory: row.matter_type ?? visaMatter.visa_subclass ?? "",
+          latestNote: latestNote.body ?? "",
+          latestNoteAt: latestNote.created_at ?? "",
+          latestNoteAuthor: latestNoteAuthor.display_name ?? "",
         };
       }),
       tasks: tasks.map((row) => ({

@@ -132,6 +132,9 @@ type CaseRecord = {
   lostReason: string;
   applicationStatus: string;
   visaCategory: string;
+  latestNote: string;
+  latestNoteAt: string;
+  latestNoteAuthor: string;
 };
 // One student can hold several offers at once, so an application is a record in
 // its own right rather than something inferred from the case it belongs to.
@@ -1924,6 +1927,8 @@ function CaseWorkspace({
   onBulkAssign,
   onBulkStage,
   onBulkArchive,
+  onAddNote,
+  onMoveStage,
 }: {
   title: string;
   // Which screen this is, so a saved view is offered back only on the same
@@ -1939,6 +1944,8 @@ function CaseWorkspace({
   onBulkAssign: (records: CaseRecord[], ownerId: string) => Promise<void>;
   onBulkStage: (records: CaseRecord[], stage: LifecycleStage) => Promise<void>;
   onBulkArchive: (records: CaseRecord[]) => Promise<void>;
+  onAddNote: (record: CaseRecord, note: string) => Promise<void>;
+  onMoveStage: (record: CaseRecord, stage: LifecycleStage, reason: string) => Promise<void>;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [assigning, setAssigning] = useState(false);
@@ -1949,6 +1956,7 @@ function CaseWorkspace({
   const [branchFilter, setBranchFilter] = useState("all");
   const [healthFilter, setHealthFilter] = useState("all");
   const [dueFilter, setDueFilter] = useState("all");
+  const [rowActionId, setRowActionId] = useState("");
   // A screen switch must not carry a selection from one case list into the
   // next; adjusted here, during render, rather than in an effect.
   const [selectionModule, setSelectionModule] = useState(module);
@@ -1983,7 +1991,7 @@ function CaseWorkspace({
     if (filter !== "all" && record.status !== filter) return false;
     if (
       listQuery &&
-      !`${record.name} ${record.id} ${record.email} ${record.type} ${record.target}`
+      !`${record.name} ${record.id} ${record.email} ${record.type} ${record.target} ${record.latestNote}`
         .toLowerCase()
         .includes(listQuery.toLowerCase())
     ) return false;
@@ -2296,7 +2304,7 @@ function CaseWorkspace({
               Archive selected
             </button>
           </BulkActionBar>
-          <div className="richTable">
+          <div className="richTable caseWorkTable">
             <div className="richHeaderWrap">
               <span className="rowCheckboxCell">
                 <input
@@ -2309,10 +2317,9 @@ function CaseWorkspace({
               <div className="richHeader">
                 <span>Client</span>
                 <span>Matter</span>
-                <span>Stage</span>
-                <span>Owner</span>
-                <span>Health</span>
-                <span>Due</span>
+                <span>Current stage</span>
+                <span>Latest note</span>
+                <span>Move to</span>
               </div>
             </div>
             {shown.map((c) => (
@@ -2325,34 +2332,79 @@ function CaseWorkspace({
                     onChange={() => toggleOne(c.id)}
                   />
                 </span>
-                <button className="richRow" onClick={() => onSelect(c)}>
-                  <span className="clientCell">
+                <div className="richRow">
+                  <button type="button" className="caseRowOpen clientCell" onClick={() => onSelect(c)}>
                     <b>{c.name}</b>
                     <small>
                       {c.id} · {c.branch || "No branch"}
                     </small>
-                  </span>
-                  <span>
+                  </button>
+                  <button type="button" className="caseRowOpen" onClick={() => onSelect(c)}>
                     <b>{c.type}</b>
                     <small>{c.target || "No target"}</small>
-                  </span>
-                  <span className="progressCell">
+                  </button>
+                  <button type="button" className="caseRowOpen progressCell" onClick={() => onSelect(c)}>
                     <b>{c.stage}</b>
                     <div>
                       <i style={{ width: `${c.progress}%` }} />
                     </div>
                     <small>{c.progress}% complete</small>
+                  </button>
+                  <span className="latestCaseNote">
+                    <button type="button" className="caseNotePreview" onClick={() => onSelect(c)}>
+                      <b>{c.latestNote || "No notes yet"}</b>
+                      <small>
+                        {c.latestNoteAt
+                          ? `${c.latestNoteAuthor || "Team member"} · ${orgDateTime(c.latestNoteAt)}`
+                          : "Add the first note for this case"}
+                      </small>
+                    </button>
+                    <button
+                      type="button"
+                      className="addCaseNote"
+                      disabled={rowActionId === c.id}
+                      onClick={async () => {
+                        const note = window.prompt(`Add a note for ${c.name}`);
+                        if (!note?.trim()) return;
+                        setRowActionId(c.id);
+                        await onAddNote(c, note.trim());
+                        setRowActionId("");
+                      }}
+                    >
+                      <Plus size={13} /> Add note
+                    </button>
                   </span>
-                  <span>
-                    <b>{c.owner || "Unassigned"}</b>
+                  <span className="caseMoveCell">
+                    <select
+                      aria-label={`Move ${c.name} to another section`}
+                      disabled={rowActionId === c.id}
+                      defaultValue=""
+                      onChange={async (event) => {
+                        const stage = event.target.value as LifecycleStage;
+                        if (!stage) return;
+                        const reason = window.prompt(
+                          `Reason for moving ${c.name} to ${stageLabelFor(stage, c.serviceType === "direct_visa")}`,
+                          "Progressed to the next section",
+                        );
+                        if (reason === null) {
+                          event.target.value = "";
+                          return;
+                        }
+                        setRowActionId(c.id);
+                        await onMoveStage(c, stage, reason);
+                        setRowActionId("");
+                        event.target.value = "";
+                      }}
+                    >
+                      <option value="">Move to…</option>
+                      {allowedStageMoves(c.lifecycleStage).map((stage) => (
+                        <option key={stage} value={stage}>
+                          {stageLabelFor(stage, c.serviceType === "direct_visa")}
+                        </option>
+                      ))}
+                    </select>
                   </span>
-                  <span>
-                    <Status value={c.health} />
-                  </span>
-                  <span>
-                    <b>{c.due || "Not set"}</b>
-                  </span>
-                </button>
+                </div>
               </div>
             ))}
           </div>
@@ -12398,6 +12450,15 @@ export default function Home() {
         onBulkAssign={bulkAssignCases}
         onBulkStage={bulkMoveCases}
         onBulkArchive={bulkArchiveCases}
+        onAddNote={async (record, note) => {
+          if (!record.dbId) return say("This case could not be identified.");
+          await postOperation("case_note", {
+            caseId: record.dbId,
+            body: note,
+            visibility: "case_team",
+          });
+        }}
+        onMoveStage={moveCaseStage}
       />
     );
     // These two screens lead with the records themselves. The case list stays
