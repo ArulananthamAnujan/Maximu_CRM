@@ -1221,17 +1221,13 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
         <section className="loginStory">
           <div className="loginGlow">
             <Sparkles size={17} />
-            Simple. Connected. Easy to follow.
+            Secure Maximus workspace
           </div>
           <span>MAXIMUS EDUCATION & MIGRATION</span>
-          <h1>
-            One secure account.
-            <br />
-            Every Maximus journey.
-          </h1>
+          <h1>Welcome back to Maximus.</h1>
           <p>
-            Staff, administrators, students and clients sign in from one
-            trusted place. Maximus opens the correct workspace for each account.
+            One secure place for your education and migration work. Sign in and
+            we will open the right workspace for your account.
           </p>
           <div className="loginBenefits">
             <div>
@@ -1251,8 +1247,8 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
             <div>
               <ShieldCheck size={18} />
               <span>
-                <b>Protected access</b>
-                <small>Each account opens only the correct workspace</small>
+                <b>Role-based access</b>
+                <small>Only the right people see each workspace</small>
               </span>
             </div>
           </div>
@@ -1270,8 +1266,8 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
             >
               <UserCog size={19} />
               <span>
-                <b>Staff</b>
-                <small>Team and administrators</small>
+                <b>Staff workspace</b>
+                <small>Super Admin, Admin &amp; Staff</small>
               </span>
             </button>
             <button
@@ -1292,8 +1288,8 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
             </span>
             <h2>
               {portal === "staff"
-                ? "Sign in to your account"
-                : "Sign in to your portal"}
+                ? "Sign in to Maximus"
+                : "Open your journey"}
             </h2>
             <p>
               Use the email address registered with your Maximus account.
@@ -1336,20 +1332,6 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
               </span>
             </label>
           </div>
-          <div className="loginRecoveryRow">
-            <button
-              type="button"
-              onClick={() =>
-                window.alert(
-                  portal === "staff"
-                    ? "Please contact your Maximus administrator to reset your password."
-                    : "Please contact your Maximus adviser to reset your portal password.",
-                )
-              }
-            >
-              Forgot password?
-            </button>
-          </div>
           {error ? (
             <div className="loginError">
               <AlertTriangle size={16} />
@@ -1357,47 +1339,25 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
             </div>
           ) : null}
           <button className="singleLoginButton" type="submit" disabled={busy}>
-            {busy ? "Signing in…" : "Sign in securely"}
+            {busy ? "Signing in…" : "Sign in"}
             <ArrowRight size={18} />
           </button>
           {portal === "staff" ? (
-            <>
-              <div className="loginDivider" aria-hidden="true">
-                <span>OR</span>
-              </div>
-              <button
-                type="button"
-                className="googleLoginButton"
-                onClick={() => {
-                  window.location.href = "/api/auth/google/start";
-                }}
-              >
-                Continue with Google Workspace
-              </button>
-            </>
-          ) : null}
-          <div className="loginAccessGuidance">
             <button
               type="button"
-              onClick={() =>
-                window.alert(
-                  portal === "staff"
-                    ? "Please contact your Maximus adviser to have your client portal connected to your record."
-                    : "Please contact your Maximus adviser to create and connect your portal account.",
-                )
-              }
+              className="googleLoginButton"
+              onClick={() => {
+                window.location.href = "/api/auth/google/start";
+              }}
             >
-              {portal === "staff"
-                ? "Student or client? Create your portal account"
-                : "Need portal access? Create your portal account"}
-              <ArrowRight size={12} />
+              <div className="googleG">G</div>
+              <span>
+                <b>Continue with Google</b>
+                <small>Use your Maximus Workspace account</small>
+              </span>
+              <ChevronDown size={17} />
             </button>
-            <small>
-              {portal === "staff"
-                ? "Staff access is activated through an administrator invitation."
-                : "Portal access is connected to your existing Maximus record."}
-            </small>
-          </div>
+          ) : null}
           <footer>
             <LockKeyhole size={16} />
             Secure, role-based access to your Maximus workspace.
