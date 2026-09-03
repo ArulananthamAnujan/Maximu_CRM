@@ -9301,6 +9301,281 @@ body {
   outline-color: rgba(123, 78, 174, 0.34);
 }
 
+/* Dedicated case lists: one useful, full-width view per journey section. */
+.journeyListPanel,
+.detailedRecordsPanel {
+  padding: 0;
+  overflow: hidden;
+}
+.journeyListIntro,
+.detailedRecordsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 22px;
+  border-bottom: 1px solid #e4ecf2;
+  background: linear-gradient(110deg, #fff 0%, #f7fbfd 72%, #fff8ef 100%);
+}
+.journeyListIntro h2,
+.detailedRecordsHead h2 {
+  margin: 4px 0 3px;
+  color: var(--ink);
+  font-size: 20px;
+  letter-spacing: -.025em;
+}
+.journeyListIntro p,
+.detailedRecordsHead p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.journeyRecordCount,
+.detailedRecordsSummary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #60788b;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.journeyRecordCount strong,
+.detailedRecordsSummary strong {
+  color: var(--brand);
+  font-size: 18px;
+}
+.detailedRecordsSummary { gap: 10px; }
+.journeyDataTable { width: 100%; }
+.journeyDataHeader,
+.journeyDataRow {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.08fr) minmax(190px, 1.14fr) minmax(175px, .95fr) minmax(220px, 1.28fr) minmax(150px, .78fr);
+  gap: 18px;
+  align-items: center;
+}
+.journeyDataHeader {
+  min-height: 42px;
+  padding: 0 20px;
+  background: #f6f9fb;
+  color: #71869a;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.journeyDataRow {
+  min-height: 104px;
+  padding: 14px 20px;
+  border-top: 1px solid #e8eef2;
+  background: #fff;
+  transition: background .16s ease, box-shadow .16s ease;
+}
+.journeyDataRow:hover {
+  position: relative;
+  z-index: 1;
+  background: #fbfdfe;
+  box-shadow: inset 3px 0 #ef8c2f;
+}
+.journeyPrimaryCell,
+.journeyInfoCell,
+.journeyNoteCell > button:first-child {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.journeyPrimaryCell strong,
+.journeyPrimaryCell span,
+.journeyPrimaryCell small,
+.journeyInfoCell strong,
+.journeyInfoCell span,
+.journeyNoteCell strong,
+.journeyNoteCell span {
+  display: block;
+}
+.journeyPrimaryCell strong,
+.journeyInfoCell strong,
+.journeyNoteCell strong {
+  overflow: hidden;
+  color: #102f45;
+  font-size: 11.5px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+}
+.journeyPrimaryCell span,
+.journeyPrimaryCell small,
+.journeyInfoCell span,
+.journeyNoteCell span {
+  margin-top: 4px;
+  color: #71869a;
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+.journeyPrimaryCell span { color: #1c7ead; font-weight: 700; }
+.journeyProgress {
+  display: block;
+  width: min(150px, 94%);
+  height: 4px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5edf2;
+}
+.journeyProgress > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1680b1, #37a7c8);
+}
+.journeyNoteCell { min-width: 0; }
+.journeyNoteCell > button:first-child { width: 100%; }
+.journeyNoteCell strong {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+}
+.journeyAddNote {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1679a8;
+  font: inherit;
+  font-size: 9.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.journeyActionsCell {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+.journeyActionsCell select {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 28px 0 9px;
+  border: 1px solid #d5e1e8;
+  border-radius: 9px;
+  background: #fff;
+  color: #24465e;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+}
+.journeyOpenCase,
+.recordOpenButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid #cfe0ea;
+  border-radius: 9px;
+  background: #f4fafd;
+  color: #126f9a;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.journeyOpenCase:hover,
+.recordOpenButton:hover { background: #e9f6fb; }
+
+/* Dense operational records become readable cards instead of wide sliders. */
+.detailedRecordList { display: grid; }
+.detailedRecordCard {
+  display: grid;
+  grid-template-columns: minmax(190px, .9fr) minmax(0, 2.7fr) 104px;
+  gap: 22px;
+  align-items: center;
+  min-height: 150px;
+  padding: 18px 22px;
+  border-top: 1px solid #e6edf2;
+  background: white;
+}
+.detailedRecordCard:first-child { border-top: 0; }
+.detailedRecordCard:hover { background: #fbfdfe; box-shadow: inset 3px 0 #ef8c2f; }
+.detailedRecordIdentity { min-width: 0; }
+.detailedRecordIdentity h3 { margin: 8px 0 3px; color: #102f45; font-size: 14px; }
+.detailedRecordIdentity p { margin: 0; color: #49677d; font-size: 11px; line-height: 1.4; }
+.detailedRecordIdentity small { display: block; margin-top: 6px; color: #7a8fa0; font-size: 9.5px; }
+.recordStatusPill {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #e5f6ee;
+  color: #08784e;
+  font-size: 8.5px;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.detailedRecordFacts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 15px 18px;
+  min-width: 0;
+}
+.visaFacts { grid-template-columns: repeat(3, minmax(140px, 1fr)); }
+.detailedRecordFacts span { min-width: 0; }
+.detailedRecordFacts small,
+.detailedRecordFacts strong { display: block; }
+.detailedRecordFacts small {
+  margin-bottom: 4px;
+  color: #8193a2;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.detailedRecordFacts strong {
+  overflow: hidden;
+  color: #1b3b52;
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+}
+.detailedRecordFacts .overdueFact strong { color: #c94b3f; }
+.recordOpenButton { justify-content: center; }
+
+@media (max-width: 1180px) {
+  .journeyDataHeader,
+  .journeyDataRow { grid-template-columns: minmax(160px, 1fr) minmax(170px, 1fr) minmax(160px, .9fr) minmax(190px, 1.2fr); }
+  .journeyDataHeader span:last-child { display: none; }
+  .journeyActionsCell { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+  .journeyActionsCell select { width: 180px; }
+  .journeyOpenCase { width: 120px; }
+  .detailedRecordCard { grid-template-columns: 180px 1fr; }
+  .recordOpenButton { grid-column: 2; width: 120px; }
+  .detailedRecordFacts { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
+}
+@media (max-width: 760px) {
+  .journeyListIntro,
+  .detailedRecordsHead { align-items: flex-start; padding: 17px; }
+  .journeyListIntro p,
+  .detailedRecordsHead p { display: none; }
+  .journeyDataHeader { display: none; }
+  .journeyDataRow { grid-template-columns: 1fr; gap: 13px; padding: 17px; }
+  .journeyDataRow > * { padding-bottom: 11px; border-bottom: 1px solid #edf2f5; }
+  .journeyDataRow > *:last-child { padding-bottom: 0; border-bottom: 0; }
+  .journeyActionsCell { grid-column: auto; justify-content: stretch; }
+  .journeyActionsCell select,
+  .journeyOpenCase { width: 100%; }
+  .detailedRecordCard { grid-template-columns: 1fr; gap: 16px; padding: 17px; }
+  .detailedRecordFacts,
+  .visaFacts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .recordOpenButton { grid-column: auto; width: 100%; }
+}
+
 /* Product-quality workspace hierarchy and readable template management. */
 .templateWorkspace {
   display: grid;

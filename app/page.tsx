@@ -1915,449 +1915,175 @@ function CaseWorkspace({
   title,
   module,
   cases,
-  filter,
-  setFilter,
   openModal,
   onSelect,
-  onBulkStage,
-  onBulkArchive,
   onAddNote,
   onMoveStage,
 }: {
   title: string;
-  // Which screen this is, so a saved view is offered back only on the same
-  // screen it was saved from.
   module: string;
   cases: CaseRecord[];
-  filter: string;
-  setFilter: (x: string) => void;
   openModal: (x: ModalType) => void;
   onSelect: (x: CaseRecord) => void;
-  onBulkStage: (records: CaseRecord[], stage: LifecycleStage) => Promise<void>;
-  onBulkArchive: (records: CaseRecord[]) => Promise<void>;
   onAddNote: (record: CaseRecord, note: string) => Promise<void>;
   onMoveStage: (record: CaseRecord, stage: LifecycleStage, reason: string) => Promise<void>;
 }) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [assigning, setAssigning] = useState(false);
-  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
-  const [showFilters, setShowFilters] = useState(false);
-  const [listQuery, setListQuery] = useState("");
-  const [branchFilter, setBranchFilter] = useState("all");
-  const [healthFilter, setHealthFilter] = useState("all");
-  const [dueFilter, setDueFilter] = useState("all");
   const [rowActionId, setRowActionId] = useState("");
-  // A screen switch must not carry a selection from one case list into the
-  // next; adjusted here, during render, rather than in an effect.
-  const [selectionModule, setSelectionModule] = useState(module);
-  if (selectionModule !== module) {
-    setSelectionModule(module);
-    setSelectedIds(new Set());
-  }
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const response = await fetch(
-          `/api/crm/saved-views?module=${encodeURIComponent(module)}`,
-          { cache: "no-store" },
-        );
-        const result = await response.json();
-        if (!cancelled && response.ok) setSavedViews(result.views ?? []);
-      } catch {
-        // A saved view is a convenience; its absence is not worth an error.
-      }
-    })();
-    return () => {
-      cancelled = true;
+  const headings = module === "enquiries"
+    ? ["Enquirer", "Contact & source", "Interest & intake", "Latest note", "Actions"]
+    : module === "students"
+      ? ["Student", "Study plan", "Journey", "Latest note", "Actions"]
+      : module === "direct_visas"
+        ? ["Client", "Visa profile", "Journey", "Latest note", "Actions"]
+        : module === "defer"
+          ? ["Client", "Deferred matter", "Next step", "Latest note", "Actions"]
+          : module === "case_complete"
+            ? ["Client", "Final outcome", "Completed", "Last note", "Actions"]
+            : ["Client", "Matter", "Journey", "Latest note", "Actions"];
+
+  const contextFor = (record: CaseRecord) => {
+    if (module === "enquiries") return {
+      primary: record.email || "No email recorded",
+      secondary: [record.phone, record.source, record.campaign].filter(Boolean).join(" · ") || "No source recorded",
     };
-  }, [module]);
-
-  const today = new Date().toISOString().slice(0, 10);
-  const weekAhead = new Date(Date.parse(`${today}T00:00:00Z`) + 7 * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
-  const shown = cases.filter((record) => {
-    if (filter !== "all" && record.status !== filter) return false;
-    if (
-      listQuery &&
-      !`${record.name} ${record.id} ${record.email} ${record.type} ${record.target} ${record.latestNote}`
-        .toLowerCase()
-        .includes(listQuery.toLowerCase())
-    ) return false;
-    if (branchFilter !== "all" && record.branchId !== branchFilter) return false;
-    if (healthFilter !== "all" && record.health !== healthFilter) return false;
-    if (dueFilter === "overdue" && (!record.due || record.due >= today)) return false;
-    if (
-      dueFilter === "next7" &&
-      (!record.due || record.due < today || record.due > weekAhead)
-    ) return false;
-    if (dueFilter === "none" && record.due) return false;
-    return true;
-  });
-  const activeFilterCount = [
-    listQuery,
-    branchFilter !== "all" ? branchFilter : "",
-    healthFilter !== "all" ? healthFilter : "",
-    dueFilter !== "all" ? dueFilter : "",
-  ].filter(Boolean).length;
-  const clearFilters = () => {
-    setListQuery("");
-    setBranchFilter("all");
-    setHealthFilter("all");
-    setDueFilter("all");
+    if (module === "students") return {
+      primary: record.target || record.type || "Study plan not recorded",
+      secondary: [record.destinationCountry, record.intake].filter(Boolean).join(" · ") || "Destination and intake not recorded",
+    };
+    if (module === "direct_visas" || module === "visas") return {
+      primary: record.visaCategory || record.type || "Visa category not recorded",
+      secondary: [record.destinationCountry, record.visaExpiry ? `Current visa expires ${orgDate(record.visaExpiry)}` : ""].filter(Boolean).join(" · ") || "Visa details not recorded",
+    };
+    if (module === "defer") return {
+      primary: record.target || record.type || "Deferred case",
+      secondary: record.lostReason || (record.deferredApplications ? `${record.deferredApplications} deferred application${record.deferredApplications === 1 ? "" : "s"}` : "Reason not recorded"),
+    };
+    if (module === "case_complete") return {
+      primary: record.target || record.type || "Case completed",
+      secondary: record.destinationCountry || record.applicationStatus || "Outcome details available in the case",
+    };
+    return {
+      primary: record.type || "Matter not recorded",
+      secondary: record.target || record.destinationCountry || "No target recorded",
+    };
   };
-  const toggleOne = (id: string) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const toggleAll = () =>
-    setSelectedIds((prev) =>
-      prev.size === shown.length ? new Set() : new Set(shown.map((c) => c.id)),
-    );
-  const selectedRecords = shown.filter((c) => selectedIds.has(c.id));
-  const bulkStageOptions = LIFECYCLE_STAGES.filter((stage) =>
-    selectedRecords.every((record) =>
-      allowedStageMoves(record.lifecycleStage).includes(stage),
-    ),
-  );
 
-  const saveCurrentView = async () => {
-    const name = window.prompt("Name this view (for example, \"My waiting cases\")");
-    if (!name?.trim()) return;
-    try {
-      const response = await fetch("/api/crm/saved-views", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "create",
-          module,
-          name: name.trim(),
-          filters: {
-            filter,
-            query: listQuery,
-            branch: branchFilter,
-            health: healthFilter,
-            due: dueFilter,
-          },
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "The view could not be saved.");
-      setSavedViews(result.views ?? []);
-    } catch {
-      // Non-critical; the filter tab itself still works.
-    }
-  };
-  const deleteView = async (id: string) => {
-    try {
-      const response = await fetch("/api/crm/saved-views", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete", id, module }),
-      });
-      const result = await response.json();
-      if (response.ok) setSavedViews(result.views ?? []);
-    } catch {
-      // Non-critical.
-    }
+  const journeyFor = (record: CaseRecord) => {
+    if (module === "enquiries") return {
+      primary: [record.target, record.destinationCountry].filter(Boolean).join(" · ") || "Interest not recorded",
+      secondary: record.intake ? `Intake ${record.intake}` : `${record.progress}% profile complete`,
+    };
+    if (module === "defer") return {
+      primary: record.due ? `Review ${orgDate(record.due)}` : "Review date not set",
+      secondary: record.applicationStatus || "Waiting for the case to resume",
+    };
+    if (module === "case_complete") return {
+      primary: record.completedAt ? orgDate(record.completedAt) : "Completion date not recorded",
+      secondary: record.reopenedAt ? `Last reopened ${orgDate(record.reopenedAt)}` : `${record.progress}% complete`,
+    };
+    return {
+      primary: stageLabelFor(record.lifecycleStage, record.serviceType === "direct_visa"),
+      secondary: [record.applicationStatus, `${record.progress}% complete`].filter(Boolean).join(" · "),
+    };
   };
 
   return (
-    <article className="panel listPanel">
-      <div className="toolbar">
-        <div className="tabs">
-          {[
-            ["all", "All"],
-            ["active", "Active"],
-            ["waiting", "Waiting"],
-            ["completed", "Completed"],
-          ].map(([k, l]) => (
-            <button
-              key={k}
-              className={filter === k ? "selected" : ""}
-              onClick={() => setFilter(k)}
-            >
-              {l}
-            </button>
-          ))}
-        </div>
+    <article className={`panel journeyListPanel journeyList-${module}`}>
+      <div className="journeyListIntro">
         <div>
-          <button
-            className="ghostButton"
-            aria-expanded={showFilters}
-            onClick={() => setShowFilters((value) => !value)}
-          >
-            <Filter size={15} />
-            Filters{activeFilterCount ? ` (${activeFilterCount})` : ""}
-          </button>
-          <button className="primaryButton" onClick={() => openModal("case")}>
-            <Plus size={16} />
-            Add new
-          </button>
+          <span className="kicker">FULL {title.toUpperCase()} VIEW</span>
+          <h2>{title}</h2>
+          <p>Everything the branch needs for the next action, without opening each case.</p>
         </div>
+        <span className="journeyRecordCount"><strong>{cases.length}</strong> records</span>
       </div>
-      {showFilters ? (
-        <div className="caseFilterPanel">
-          <label className="caseFilterSearch">
-            <span>Search this list</span>
-            <div>
-              <Search size={16} />
-              <input
-                value={listQuery}
-                onChange={(event) => setListQuery(event.target.value)}
-                placeholder="Name, case number, email or matter"
-              />
-            </div>
-          </label>
-          <label>
-            <span>Branch</span>
-            <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
-              <option value="all">All branches</option>
-              {Array.from(
-                new Map(
-                  cases
-                    .filter((record) => record.branchId)
-                    .map((record) => [record.branchId, record.branch]),
-                ).entries(),
-              ).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Case health</span>
-            <select value={healthFilter} onChange={(event) => setHealthFilter(event.target.value)}>
-              <option value="all">All health states</option>
-              <option value="critical">Critical</option>
-              <option value="attention">Needs attention</option>
-              <option value="healthy">Healthy</option>
-            </select>
-          </label>
-          <label>
-            <span>Due date</span>
-            <select value={dueFilter} onChange={(event) => setDueFilter(event.target.value)}>
-              <option value="all">Any due date</option>
-              <option value="overdue">Overdue</option>
-              <option value="next7">Next 7 days</option>
-              <option value="none">No due date</option>
-            </select>
-          </label>
-          <div className="caseFilterSummary">
-            <strong>{shown.length}</strong>
-            <span>of {cases.length} cases</span>
-            {activeFilterCount ? <button className="linkButton" onClick={clearFilters}>Clear filters</button> : null}
-          </div>
-        </div>
-      ) : null}
-      <div className="savedViewsBar">
-        {savedViews.map((view) => (
-            <span className="savedViewChip" key={view.id}>
-              <button
-                type="button"
-                onClick={() => {
-                  setFilter(String(view.filters?.filter ?? "all"));
-                  setListQuery(String(view.filters?.query ?? ""));
-                  setBranchFilter(String(view.filters?.branch ?? "all"));
-                  setHealthFilter(String(view.filters?.health ?? "all"));
-                  setDueFilter(String(view.filters?.due ?? "all"));
-                  setShowFilters(true);
-                }}
-              >
-                {view.name}
-              </button>
-              <button
-                type="button"
-                aria-label={`Delete saved view ${view.name}`}
-                onClick={() => void deleteView(view.id)}
-              >
-                <X size={11} />
-              </button>
-            </span>
-          ))}
-        <button type="button" className="savedViewSave" onClick={() => void saveCurrentView()}>
-          <Plus size={11} />
-          Save this view
-        </button>
-      </div>
-      {shown.length === 0 ? (
+      {cases.length === 0 ? (
         <EmptyState
           icon={Users}
           title={`No ${title.toLowerCase()} found`}
-          copy="Use Add new to create a secure record in the shared Maximus workspace."
-          action="Add record"
+          copy="Create a secure record in the shared Maximus workspace."
+          action="New enquiry"
           onAction={() => openModal("case")}
         />
       ) : (
-        <>
-          <BulkActionBar
-            count={selectedRecords.length}
-            onClear={() => setSelectedIds(new Set())}
-          >
-            <select
-              aria-label="Move selected cases to stage"
-              disabled={assigning}
-              defaultValue=""
-              onChange={async (event) => {
-                const stage = event.target.value as LifecycleStage;
-                if (!stage) return;
-                setAssigning(true);
-                await onBulkStage(selectedRecords, stage);
-                setAssigning(false);
-                setSelectedIds(new Set());
-                event.target.value = "";
-              }}
-            >
-              <option value="">Move stage…</option>
-              {bulkStageOptions.map((stage) => (
-                <option key={stage} value={stage}>{stageLabelFor(stage, cases[0]?.serviceType === "direct_visa")}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="ghostButton"
-              onClick={() =>
-                downloadCsv(
-                  `${module}-selected.csv`,
-                  selectedRecords.map((record) => ({
-                    caseNumber: record.id,
-                    client: record.name,
-                    email: record.email,
-                    phone: record.phone,
-                    matter: record.type,
-                    stage: record.lifecycleStage,
-                    branch: record.branch,
-                    due: record.due,
-                    health: record.health,
-                    status: record.status,
-                  })),
-                )
-              }
-            >
-              <Download size={14} /> Export selected
-            </button>
-            <button
-              type="button"
-              className="ghostButton dangerAction"
-              disabled={assigning}
-              onClick={async () => {
-                const verb = "archive";
-                if (!confirm(`${verb[0].toUpperCase()}${verb.slice(1)} ${selectedRecords.length} selected case${selectedRecords.length === 1 ? "" : "s"}?`)) return;
-                setAssigning(true);
-                await onBulkArchive(selectedRecords);
-                setAssigning(false);
-                setSelectedIds(new Set());
-              }}
-            >
-              Archive selected
-            </button>
-          </BulkActionBar>
-          <div className="richTable caseWorkTable">
-            <div className="richHeaderWrap">
-              <span className="rowCheckboxCell">
-                <input
-                  type="checkbox"
-                  aria-label="Select all shown cases"
-                  checked={selectedRecords.length > 0 && selectedRecords.length === shown.length}
-                  onChange={toggleAll}
-                />
-              </span>
-              <div className="richHeader">
-                <span>Client</span>
-                <span>Matter</span>
-                <span>Current stage</span>
-                <span>Latest note</span>
-                <span>Move to</span>
-              </div>
-            </div>
-            {shown.map((c) => (
-              <div className="richRowWrap" key={c.id}>
-                <span className="rowCheckboxCell">
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${c.name}`}
-                    checked={selectedIds.has(c.id)}
-                    onChange={() => toggleOne(c.id)}
-                  />
-                </span>
-                <div className="richRow">
-                  <button type="button" className="caseRowOpen clientCell" onClick={() => onSelect(c)}>
-                    <b>{c.name}</b>
-                    <small>
-                      {c.id} · {c.branch || "No branch"}
-                    </small>
+        <div className="journeyDataTable">
+          <div className="journeyDataHeader">
+            {headings.map((heading) => <span key={heading}>{heading}</span>)}
+          </div>
+          {cases.map((record) => {
+            const context = contextFor(record);
+            const journey = journeyFor(record);
+            return (
+              <div className="journeyDataRow" key={record.id}>
+                <button type="button" className="journeyPrimaryCell" onClick={() => onSelect(record)}>
+                  <strong>{record.name}</strong>
+                  <span>{record.id}</span>
+                  <small>{record.branch || "Branch not recorded"}</small>
+                </button>
+                <button type="button" className="journeyInfoCell" onClick={() => onSelect(record)}>
+                  <strong>{context.primary}</strong>
+                  <span>{context.secondary}</span>
+                </button>
+                <button type="button" className="journeyInfoCell" onClick={() => onSelect(record)}>
+                  <strong>{journey.primary}</strong>
+                  <span>{journey.secondary}</span>
+                  {module !== "case_complete" && module !== "defer" ? (
+                    <i className="journeyProgress"><i style={{ width: `${record.progress}%` }} /></i>
+                  ) : null}
+                </button>
+                <div className="journeyNoteCell">
+                  <button type="button" onClick={() => onSelect(record)}>
+                    <strong>{record.latestNote || "No notes yet"}</strong>
+                    <span>{record.latestNoteAt ? `${record.latestNoteAuthor || "Team member"} · ${orgDateTime(record.latestNoteAt)}` : "Add the first note for this case"}</span>
                   </button>
-                  <button type="button" className="caseRowOpen" onClick={() => onSelect(c)}>
-                    <b>{c.type}</b>
-                    <small>{c.target || "No target"}</small>
-                  </button>
-                  <button type="button" className="caseRowOpen progressCell" onClick={() => onSelect(c)}>
-                    <b>{c.stage}</b>
-                    <div>
-                      <i style={{ width: `${c.progress}%` }} />
-                    </div>
-                    <small>{c.progress}% complete</small>
-                  </button>
-                  <span className="latestCaseNote">
-                    <button type="button" className="caseNotePreview" onClick={() => onSelect(c)}>
-                      <b>{c.latestNote || "No notes yet"}</b>
-                      <small>
-                        {c.latestNoteAt
-                          ? `${c.latestNoteAuthor || "Team member"} · ${orgDateTime(c.latestNoteAt)}`
-                          : "Add the first note for this case"}
-                      </small>
-                    </button>
-                    <button
-                      type="button"
-                      className="addCaseNote"
-                      disabled={rowActionId === c.id}
-                      onClick={async () => {
-                        const note = window.prompt(`Add a note for ${c.name}`);
-                        if (!note?.trim()) return;
-                        setRowActionId(c.id);
-                        await onAddNote(c, note.trim());
-                        setRowActionId("");
-                      }}
-                    >
-                      <Plus size={13} /> Add note
-                    </button>
-                  </span>
-                  <span className="caseMoveCell">
-                    <select
-                      aria-label={`Move ${c.name} to another section`}
-                      disabled={rowActionId === c.id}
-                      defaultValue=""
-                      onChange={async (event) => {
-                        const stage = event.target.value as LifecycleStage;
-                        if (!stage) return;
-                        const reason = window.prompt(
-                          `Reason for moving ${c.name} to ${stageLabelFor(stage, c.serviceType === "direct_visa")}`,
-                          "Progressed to the next section",
-                        );
-                        if (reason === null) {
-                          event.target.value = "";
-                          return;
-                        }
-                        setRowActionId(c.id);
-                        await onMoveStage(c, stage, reason);
-                        setRowActionId("");
+                  <button
+                    type="button"
+                    className="journeyAddNote"
+                    disabled={rowActionId === record.id}
+                    onClick={async () => {
+                      const note = window.prompt(`Add a note for ${record.name}`);
+                      if (!note?.trim()) return;
+                      setRowActionId(record.id);
+                      await onAddNote(record, note.trim());
+                      setRowActionId("");
+                    }}
+                  ><Plus size={13} /> Note</button>
+                </div>
+                <div className="journeyActionsCell">
+                  <select
+                    aria-label={`Move ${record.name} to another section`}
+                    disabled={rowActionId === record.id}
+                    defaultValue=""
+                    onChange={async (event) => {
+                      const stage = event.target.value as LifecycleStage;
+                      if (!stage) return;
+                      const reason = window.prompt(
+                        `Reason for moving ${record.name} to ${stageLabelFor(stage, record.serviceType === "direct_visa")}`,
+                        "Progressed to the next section",
+                      );
+                      if (reason === null) {
                         event.target.value = "";
-                      }}
-                    >
-                      <option value="">Move to…</option>
-                      {allowedStageMoves(c.lifecycleStage).map((stage) => (
-                        <option key={stage} value={stage}>
-                          {stageLabelFor(stage, c.serviceType === "direct_visa")}
-                        </option>
-                      ))}
-                    </select>
-                  </span>
+                        return;
+                      }
+                      setRowActionId(record.id);
+                      await onMoveStage(record, stage, reason);
+                      setRowActionId("");
+                      event.target.value = "";
+                    }}
+                  >
+                    <option value="">Move to…</option>
+                    {allowedStageMoves(record.lifecycleStage).map((stage) => (
+                      <option key={stage} value={stage}>{stageLabelFor(stage, record.serviceType === "direct_visa")}</option>
+                    ))}
+                  </select>
+                  <button type="button" className="journeyOpenCase" onClick={() => onSelect(record)}>
+                    Open case <ArrowRight size={14} />
+                  </button>
                 </div>
               </div>
-            ))}
-          </div>
-        </>
+            );
+          })}
+        </div>
       )}
     </article>
   );
@@ -2384,102 +2110,51 @@ function ApplicationsBoard({
   onOpen: (caseId: string) => void;
 }) {
   const [showArchived, setShowArchived] = useState(false);
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("");
   const archivedCount = rows.filter((row) => row.archived).length;
-  const statuses = [...new Set(rows.map((row) => row.status).filter(Boolean))].sort();
-  const shown = (showArchived ? rows : rows.filter((row) => !row.archived))
-    .filter((row) => !status || row.status === status)
-    .filter((row) => matchesSearch(query, [row.client, row.institution, row.course, row.campus, row.intake, row.reference, row.caseNumber, row.associate, row.partner]));
-  const selection = useBulkSelection(shown);
+  const shown = showArchived ? rows : rows.filter((row) => !row.archived);
   return (
-    <article className="panel listPanel">
-      <div className="panelHead">
+    <article className="panel detailedRecordsPanel">
+      <div className="detailedRecordsHead">
         <div>
           <span className="kicker">EVERY APPLICATION</span>
           <h2>Institution applications</h2>
+          <p>Course, institution, references and important dates in one complete view.</p>
         </div>
-        {archivedCount > 0 && (
-          <button
-            className="ghostButton"
-            onClick={() => setShowArchived(!showArchived)}
-          >
-            {showArchived
-              ? "Hide withdrawn"
-              : `Show ${archivedCount} withdrawn`}
-          </button>
-        )}
+        <div className="detailedRecordsSummary">
+          <span><strong>{shown.length}</strong> applications</span>
+          {archivedCount > 0 && (
+            <button className="ghostButton" onClick={() => setShowArchived(!showArchived)}>
+              {showArchived ? "Hide withdrawn" : `Show ${archivedCount} withdrawn`}
+            </button>
+          )}
+        </div>
       </div>
-      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search student, institution, course, intake or reference" resultCount={shown.length}>
-        <label className="compactFilter">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
-      </ListFilterBar>
       {shown.length === 0 ? (
         <BoardEmpty what="applications" />
       ) : (
-        <>
-        <div className="listSelectionTools">
-          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        <div className="detailedRecordList">
+          {shown.map((row) => (
+            <article key={row.id} className={`detailedRecordCard${row.archived ? " archivedRow" : ""}`}>
+              <div className="detailedRecordIdentity">
+                <span className="recordStatusPill">{humanise(row.status)}{row.archived ? " · Withdrawn" : ""}</span>
+                <h3>{row.client || "Student not recorded"}</h3>
+                <p>{row.institution || "Institution not recorded"}</p>
+                <small>{row.caseNumber || "Case reference pending"}</small>
+              </div>
+              <div className="detailedRecordFacts applicationFacts">
+                <span><small>Course</small><strong>{row.course || "Not recorded"}</strong></span>
+                <span><small>Campus &amp; intake</small><strong>{[row.campus, row.intake].filter(Boolean).join(" · ") || "Not recorded"}</strong></span>
+                <span><small>Application reference</small><strong>{row.reference || "Not issued"}</strong></span>
+                <span><small>Partner / associate</small><strong>{[row.partner, row.associate].filter(Boolean).join(" · ") || "Direct"}</strong></span>
+                <span><small>Submitted</small><strong>{row.submittedOn ? orgDate(row.submittedOn) : "Not submitted"}</strong></span>
+                <span><small>Offer / CoE</small><strong>{[row.offerOn && `Offer ${orgDate(row.offerOn)}`, row.coeOn && `CoE ${orgDate(row.coeOn)}`].filter(Boolean).join(" · ") || "Waiting"}</strong></span>
+                <span className={overdue(row.deadlineOn) ? "overdueFact" : ""}><small>Deadline</small><strong>{row.deadlineOn ? orgDate(row.deadlineOn) : "Not set"}</strong></span>
+                <span><small>Latest application note</small><strong>{row.notes || "No application note"}</strong></span>
+              </div>
+              <button className="recordOpenButton" onClick={() => onOpen(row.caseId)}>Open case <ArrowRight size={15} /></button>
+            </article>
+          ))}
         </div>
-        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
-          <button className="ghostButton" onClick={() => downloadCsv("applications-selected.csv", selection.selected as unknown as Record<string, unknown>[])}>
-            <Download size={14} /> Export selected
-          </button>
-        </BulkActionBar>
-        <div className="recordTableWrap">
-          <table className="recordTable boardTable">
-            <thead>
-              <tr>
-                <th scope="col" className="selectionColumn"><span className="srOnly">Select</span></th>
-                <th scope="col">Student</th>
-                <th scope="col">Institution</th>
-                <th scope="col">Course</th>
-                <th scope="col">Campus</th>
-                <th scope="col">Intake</th>
-                <th scope="col">Reference</th>
-                <th scope="col">Partner / associate</th>
-                <th scope="col">Status</th>
-                <th scope="col">Submitted</th>
-                <th scope="col">Offer</th>
-                <th scope="col">CoE</th>
-                <th scope="col">Deadline</th>
-                <th scope="col">Case</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((row) => (
-                <tr key={row.id} className={row.archived ? "archivedRow" : ""}>
-                  <td className="selectionColumn"><RowSelection checked={selection.selectedIds.has(row.id)} onChange={() => selection.toggle(row.id)} label={`Select ${row.client || "application"}`} /></td>
-                  <td>{row.client || "—"}</td>
-                  <td>{row.institution || "—"}</td>
-                  <td>{row.course || "—"}</td>
-                  <td>{row.campus || "—"}</td>
-                  <td>{row.intake || "—"}</td>
-                  <td>{row.reference || "—"}</td>
-                  <td>{[row.partner, row.associate].filter(Boolean).join(" · ") || "—"}</td>
-                  <td>
-                    {humanise(row.status)}
-                    {row.archived ? " · withdrawn" : ""}
-                  </td>
-                  <td>{row.submittedOn || "—"}</td>
-                  <td>{row.offerOn || "—"}</td>
-                  <td>{row.coeOn || "—"}</td>
-                  <td className={overdue(row.deadlineOn) ? "overdueCell" : ""}>
-                    {row.deadlineOn || "—"}
-                  </td>
-                  <td>
-                    <button
-                      className="linkButton"
-                      onClick={() => onOpen(row.caseId)}
-                    >
-                      {row.caseNumber || "Open case"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        </>
       )}
     </article>
   );
@@ -2492,106 +2167,40 @@ function VisaMattersBoard({
   rows: VisaMatterRow[];
   onOpen: (caseId: string) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState("");
-  const statuses = [...new Set(rows.map((row) => row.status).filter(Boolean))].sort();
-  const shown = rows
-    .filter((row) => !status || row.status === status)
-    .filter((row) => matchesSearch(query, [row.client, row.subclass, row.matterType, row.destination, row.currentVisa, row.trn, row.reference, row.agent, row.owner, row.marn, row.caseNumber]));
-  const selection = useBulkSelection(shown);
   return (
-    <article className="panel listPanel">
-      <div className="panelHead">
+    <article className="panel detailedRecordsPanel">
+      <div className="detailedRecordsHead">
         <div>
           <span className="kicker">EVERY VISA MATTER</span>
           <h2>Visa matters</h2>
+          <p>Visa identity, lodgement, compliance dates and outcome together.</p>
         </div>
+        <span className="detailedRecordsSummary"><strong>{rows.length}</strong> visa matters</span>
       </div>
-      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search client, visa subclass, TRN, MARN or destination" resultCount={shown.length}>
-        <label className="compactFilter">Status<select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
-      </ListFilterBar>
-      {shown.length === 0 ? (
+      {rows.length === 0 ? (
         <BoardEmpty what="visa matters" />
       ) : (
-        <>
-        <div className="listSelectionTools">
-          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
+        <div className="detailedRecordList">
+          {rows.map((row) => (
+            <article key={row.id} className="detailedRecordCard">
+              <div className="detailedRecordIdentity">
+                <span className="recordStatusPill">{humanise(row.status)}</span>
+                <h3>{row.client || "Client not recorded"}</h3>
+                <p>{row.subclass || row.matterType || "Visa type not recorded"}</p>
+                <small>{row.caseNumber || "Case reference pending"}</small>
+              </div>
+              <div className="detailedRecordFacts visaFacts">
+                <span><small>Destination</small><strong>{row.destination || "Not recorded"}</strong></span>
+                <span className={overdue(row.currentVisaExpiry) ? "overdueFact" : ""}><small>Current visa &amp; expiry</small><strong>{[row.currentVisa, row.currentVisaExpiry && orgDate(row.currentVisaExpiry)].filter(Boolean).join(" · ") || "Not recorded"}</strong></span>
+                <span><small>Lodged / TRN</small><strong>{[row.lodgedOn && orgDate(row.lodgedOn), row.trn || row.reference].filter(Boolean).join(" · ") || "Not lodged"}</strong></span>
+                <span><small>Agent / MARN</small><strong>{[row.agent || row.owner, row.marn].filter(Boolean).join(" · ") || "Not recorded"}</strong></span>
+                <span className={row.informationDueOn && !row.informationProvidedOn && overdue(row.informationDueOn) ? "overdueFact" : ""}><small>Information request</small><strong>{row.informationDueOn ? `${orgDate(row.informationDueOn)}${row.informationProvidedOn ? " · Answered" : " · Pending"}` : "None"}</strong></span>
+                <span><small>Decision / outcome</small><strong>{[row.decisionOn && orgDate(row.decisionOn), row.outcome && humanise(row.outcome)].filter(Boolean).join(" · ") || "Pending"}</strong></span>
+              </div>
+              <button className="recordOpenButton" onClick={() => onOpen(row.caseId)}>Open case <ArrowRight size={15} /></button>
+            </article>
+          ))}
         </div>
-        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
-          <button className="ghostButton" onClick={() => downloadCsv("visa-matters-selected.csv", selection.selected as unknown as Record<string, unknown>[])}>
-            <Download size={14} /> Export selected
-          </button>
-        </BulkActionBar>
-        <div className="recordTableWrap">
-          <table className="recordTable boardTable">
-            <thead>
-              <tr>
-                <th scope="col" className="selectionColumn"><span className="srOnly">Select</span></th>
-                <th scope="col">Client</th>
-                <th scope="col">Subclass</th>
-                <th scope="col">Destination</th>
-                <th scope="col">Current visa</th>
-                <th scope="col">Expiry</th>
-                <th scope="col">Lodged</th>
-                <th scope="col">TRN</th>
-                <th scope="col">Agent</th>
-                <th scope="col">MARN</th>
-                <th scope="col">Status</th>
-                <th scope="col">s56 due</th>
-                <th scope="col">Outcome</th>
-                <th scope="col">Case</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((row) => (
-                <tr key={row.id}>
-                  <td className="selectionColumn"><RowSelection checked={selection.selectedIds.has(row.id)} onChange={() => selection.toggle(row.id)} label={`Select ${row.client || "visa matter"}`} /></td>
-                  <td>{row.client || "—"}</td>
-                  <td>{row.subclass || row.matterType || "—"}</td>
-                  <td>{row.destination || "—"}</td>
-                  <td>{row.currentVisa || "—"}</td>
-                  <td
-                    className={
-                      overdue(row.currentVisaExpiry) ? "overdueCell" : ""
-                    }
-                  >
-                    {row.currentVisaExpiry || "—"}
-                  </td>
-                  <td>{row.lodgedOn || "Not lodged"}</td>
-                  <td>{row.trn || row.reference || "—"}</td>
-                  <td>{row.agent || row.owner || "Unassigned"}</td>
-                  <td>{row.marn || "—"}</td>
-                  <td>{humanise(row.status)}</td>
-                  <td
-                    className={
-                      row.informationDueOn &&
-                      !row.informationProvidedOn &&
-                      overdue(row.informationDueOn)
-                        ? "overdueCell"
-                        : ""
-                    }
-                  >
-                    {row.informationDueOn
-                      ? row.informationProvidedOn
-                        ? `${row.informationDueOn} · answered`
-                        : row.informationDueOn
-                      : "—"}
-                  </td>
-                  <td>{row.outcome ? humanise(row.outcome) : "—"}</td>
-                  <td>
-                    <button
-                      className="linkButton"
-                      onClick={() => onOpen(row.caseId)}
-                    >
-                      {row.caseNumber || "Open case"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        </>
       )}
     </article>
   );
@@ -11157,7 +10766,6 @@ export default function Home() {
   const [active, setActive] = useState<ModuleKey>("dashboard"),
     [menuOpen, setMenuOpen] = useState(false),
     [query, setQuery] = useState(""),
-    [filter, setFilter] = useState("all"),
     [modal, setModal] = useState<ModalType>(null),
     [presetCaseId, setPresetCaseId] = useState(""),
     [selected, setSelected] = useState<CaseRecord | null>(null),
@@ -12451,12 +12059,8 @@ export default function Home() {
         }
         module={active}
         cases={list}
-        filter={filter}
-        setFilter={setFilter}
         openModal={open}
         onSelect={openCaseWorkspace}
-        onBulkStage={bulkMoveCases}
-        onBulkArchive={bulkArchiveCases}
         onAddNote={async (record, note) => {
           if (!record.dbId) return say("This case could not be identified.");
           await postOperation("case_note", {
@@ -12468,30 +12072,23 @@ export default function Home() {
         onMoveStage={moveCaseStage}
       />
     );
-    // These two screens lead with the records themselves. The case list stays
-    // underneath, because a case can sit at the stage before anything has been
-    // lodged and must not disappear from view.
+    // Application and visa records already contain their full operational
+    // detail. Do not append a second generic case table beneath them.
     content =
       active === "applications" ? (
-        <>
-          <ApplicationsBoard
-            rows={applicationRows.filter((row) =>
-              cases.some((c) => c.dbId === row.caseId && inStream(c)),
-            )}
-            onOpen={openCase}
-          />
-          {caseList}
-        </>
+        <ApplicationsBoard
+          rows={applicationRows.filter((row) =>
+            cases.some((c) => c.dbId === row.caseId && inStream(c)),
+          )}
+          onOpen={openCase}
+        />
       ) : active === "visas" ? (
-        <>
-          <VisaMattersBoard
-            rows={visaMatterRows.filter((row) =>
-              cases.some((c) => c.dbId === row.caseId && inStream(c)),
-            )}
-            onOpen={openCase}
-          />
-          {caseList}
-        </>
+        <VisaMattersBoard
+          rows={visaMatterRows.filter((row) =>
+            cases.some((c) => c.dbId === row.caseId && inStream(c)),
+          )}
+          onOpen={openCase}
+        />
       ) : (
         caseList
       );
