@@ -339,6 +339,21 @@ test("branch staff share their branch workspace and every material change is att
   assert.match(sql, /email_messages/);
 });
 
+test("case work is branch-wide while the interface attributes every action", async () => {
+  const page = await read("app/page.tsx");
+  const caseFile = await read("app/api/crm/casefile/route.ts");
+  const drawer = page.split("function CaseDrawer(")[1].split("type CaseTab")[0] +
+    page.split("function CaseDrawerBody(")[1].split("function HistorySection")[0];
+  const caseList = page.split("function CaseWorkspace(")[1].split("const overdue")[0];
+  assert.doesNotMatch(drawer, /CASE OWNER|Reassign this case|Add a colleague|Accountable owner/);
+  assert.doesNotMatch(caseList, /Assign selected cases|All owners|ownerFilter/);
+  assert.match(page, /shared with all staff in/);
+  assert.match(page, /Every action records the staff member/);
+  assert.match(page, /View complete audit trail/);
+  assert.match(caseFile, /profiles\?select=id,display_name,email/);
+  assert.match(caseFile, /actorName/);
+});
+
 test("staff onboarding emails a secure setup link and every user can change password", async () => {
   const admin = await read("app/api/crm/admin/route.ts");
   assert.match(admin, /type: "recovery"/);

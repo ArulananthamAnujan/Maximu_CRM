@@ -43,6 +43,7 @@ export async function GET(request: Request) {
       visaMatters,
       dependants,
       documents,
+      tasks,
       notes,
       lifecycle,
       audit,
@@ -53,7 +54,6 @@ export async function GET(request: Request) {
       preferences,
       visaHistory,
       declarations,
-      collaborators,
       communications,
       whatsappCommunications,
     ] = await Promise.all([
@@ -69,6 +69,10 @@ export async function GET(request: Request) {
       ),
       get<Json[]>(
         `documents?select=*&case_id=eq.${caseId}&order=created_at.desc`,
+        token,
+      ),
+      get<Json[]>(
+        `tasks?select=*&case_id=eq.${caseId}&order=due_at.asc.nullslast,created_at.desc&limit=100`,
         token,
       ),
       get<Json[]>(
@@ -112,10 +116,6 @@ export async function GET(request: Request) {
         token,
       ),
       get<Json[]>(
-        `case_collaborators?select=profile_id,added_at,profiles!case_collaborators_profile_id_fkey(display_name,email)&case_id=eq.${caseId}&order=added_at.asc`,
-        token,
-      ),
-      get<Json[]>(
         `email_messages?select=id,sender,recipients,direction,body_preview,sent_at,created_at,delivery_state,email_threads!inner(case_id,subject)&email_threads.case_id=eq.${caseId}&order=created_at.desc&limit=200`,
         token,
       ),
@@ -124,6 +124,28 @@ export async function GET(request: Request) {
         token,
       ),
     ]);
+
+    const actorIds = Array.from(
+      new Set(
+        [
+          ...notes.map((row) => row.author_id),
+          ...lifecycle.map((row) => row.changed_by),
+          ...audit.map((row) => row.actor_id),
+        ].filter((value): value is string => typeof value === "string" && value.length > 0),
+      ),
+    );
+    const actorProfiles = actorIds.length
+      ? await get<Json[]>(
+          `profiles?select=id,display_name,email&id=in.(${actorIds.join(",")})`,
+          token,
+        )
+      : [];
+    const actorNames = new Map(
+      actorProfiles.map((profile) => [
+        String(profile.id),
+        String(profile.display_name || profile.email || "Staff member"),
+      ]),
+    );
 
     return appendRefreshCookies(
       Response.json({
@@ -140,14 +162,9 @@ export async function GET(request: Request) {
           return visible;
         }),
         documents,
+        tasks,
         notes,
         invoices,
-        collaborators: collaborators.map((row) => ({
-          profileId: row.profile_id,
-          addedAt: row.added_at,
-          name: (row.profiles as Json | null)?.display_name ?? "Team member",
-          email: (row.profiles as Json | null)?.email ?? "",
-        })),
         communications: [...communications.map((row) => ({
           id: row.id,
           channel: "email",
@@ -177,7 +194,7 @@ export async function GET(request: Request) {
           visaHistory,
           declarations,
         },
-        timeline: buildTimeline(notes, lifecycle, audit),
+        timeline: buildTimeline(notes, lifecycle, audit, actorNames),
       }),
       session.refreshed,
       request,
@@ -562,12 +579,14 @@ type TimelineEntry = {
   title: string;
   detail: string | null;
   actorId: string | null;
+  actorName: string;
 };
 
 function buildTimeline(
   notes: Json[],
   lifecycle: Json[],
   audit: Json[],
+  actorNames: Map<string, string>,
 ): TimelineEntry[] {
   const entries: TimelineEntry[] = [
     ...notes.map((row) => ({
@@ -577,6 +596,7 @@ function buildTimeline(
       title: "Note",
       detail: typeof row.body === "string" ? row.body : null,
       actorId: (row.author_id as string) ?? null,
+      actorName: actorNames.get(String(row.author_id ?? "")) ?? "Staff member",
     })),
     ...lifecycle.map((row) => ({
       id: `stage-${row.id}`,
@@ -585,6 +605,7 @@ function buildTimeline(
       title: `${row.from_stage ?? "new"} → ${row.to_stage}`,
       detail: (row.reason as string) ?? null,
       actorId: (row.changed_by as string) ?? null,
+      actorName: actorNames.get(String(row.changed_by ?? "")) ?? "Staff member",
     })),
     ...audit.map((row) => ({
       id: `audit-${row.id}`,
@@ -593,6 +614,7 @@ function buildTimeline(
       title: String(row.summary ?? row.action ?? "Action"),
       detail: null,
       actorId: (row.actor_id as string) ?? null,
+      actorName: actorNames.get(String(row.actor_id ?? "")) ?? "Staff member",
     })),
   ];
   return entries

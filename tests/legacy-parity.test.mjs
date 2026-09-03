@@ -57,13 +57,13 @@ test("complete intake persists structured case-file records", () => {
 test("dashboards expose filters, category summaries, and cross-tab refresh", () => {
   for (const label of [
     "Filter dashboard by branch",
-    "Filter dashboard by staff",
     "Filter dashboard by country",
     "Filter dashboard by visa category",
     "Filter dashboard by intake",
     "Visa category summary",
     "Application status summary",
   ]) assert.match(page, new RegExp(label));
+  assert.doesNotMatch(page, /Filter dashboard by staff/);
   assert.match(page, /maximus\.workspaceRefresh/);
   assert.match(workspace, /applicationStatus/);
   assert.match(workspace, /visaCategory/);

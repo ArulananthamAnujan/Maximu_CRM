@@ -9713,8 +9713,8 @@ body { font-size: 14px; }
   grid-template-areas:
     "priority priority"
     "health health"
-    "workflow owner"
-    "facts team";
+    "workflow audit"
+    "facts audit";
   gap: 14px;
   align-items: start;
 }
@@ -9736,8 +9736,27 @@ body { font-size: 14px; }
 .caseHome > .drawerHealth { grid-area: health; margin: 0; background: #fff; }
 .caseHome > .lifecyclePanel { grid-area: workflow; margin: 0; padding: 18px; border: 1px solid #d8e4e9; background: #fff; }
 .caseHome > .caseFactsPanel { grid-area: facts; margin: 0; padding: 18px; border: 1px solid #d8e4e9; background: #fff; }
-.caseHome > .assignPanel { grid-area: owner; margin: 0; padding: 18px; border: 1px solid #d8e4e9; background: #fff; }
-.caseHome > .caseTeamPanel { grid-area: team; margin: 0; padding: 18px; border: 1px solid #d8e4e9; background: #fff; }
+.caseHome > .caseAuditPanel { grid-area: audit; margin: 0; padding: 18px; border: 1px solid #d8e4e9; background: #fff; }
+.caseAtGlance { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.caseAtGlance .missingValue { color: #d63d35; }
+.caseQuickNote { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin: 12px 0; }
+.caseQuickNote input { min-width: 0; min-height: 39px; }
+.caseLastNote { margin-bottom: 12px; padding: 11px 12px; border-radius: 9px; background: #fff5e5; }
+.caseLastNote > span { color: #cf5f18; font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+.caseLastNote p { margin: 5px 0; color: var(--ink); font-size: 11px; line-height: 1.45; }
+.caseLastNote small { color: var(--muted); font-size: 9px; }
+.caseTaskSummary { display: grid; gap: 7px; margin: 0 0 12px; }
+.caseTaskSummary > strong { color: var(--ink); font-size: 11px; }
+.caseTaskSummary > div { padding: 9px 10px; border-radius: 8px; background: #f4f8fa; }
+.caseTaskSummary span, .caseTaskSummary small { display: block; }
+.caseTaskSummary span { color: var(--ink); font-size: 10px; font-weight: 700; }
+.caseTaskSummary small { margin-top: 2px; color: var(--muted); font-size: 8px; }
+.caseAuditList { display: grid; gap: 0; margin: 4px 0 12px; padding: 0; list-style: none; }
+.caseAuditList li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 9px; align-items: center; padding: 9px 0; border-top: 1px solid #d8e4e9; }
+.caseAuditList li > span { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 999px; background: #1682a3; color: #fff; font-size: 8px; font-weight: 800; }
+.caseAuditList strong, .caseAuditList small { display: block; }
+.caseAuditList strong { color: var(--ink); font-size: 10px; line-height: 1.3; }
+.caseAuditList small { margin-top: 3px; color: var(--muted); font-size: 8px; line-height: 1.35; }
 .caseWorkspaceContent > .caseWorkPanel,
 .caseWorkspaceContent > .assignPanel,
 .caseWorkspaceContent > .lifecyclePanel,
@@ -9763,8 +9782,9 @@ body { font-size: 14px; }
   .caseWorkspaceLayout { grid-template-columns: 165px minmax(0, 1fr); gap: 16px; }
   .caseHome {
     grid-template-columns: 1fr;
-    grid-template-areas: "priority" "health" "workflow" "facts" "owner" "team";
+    grid-template-areas: "priority" "health" "workflow" "audit" "facts";
   }
+  .caseAtGlance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 760px) {
@@ -9793,6 +9813,9 @@ body { font-size: 14px; }
   .casePriorityBar { align-items: flex-start; flex-direction: column; }
   .casePriorityBar .primaryButton { width: 100%; justify-content: center; }
   .caseSectionHead h2 { font-size: 21px; }
+  .caseAtGlance { grid-template-columns: 1fr; }
+  .caseAtGlance > div { border-right: 0; border-bottom: 1px solid var(--line); }
+  .caseQuickNote { grid-template-columns: 1fr; }
 }
 
 .caseInvoiceTable { min-width: 880px; }

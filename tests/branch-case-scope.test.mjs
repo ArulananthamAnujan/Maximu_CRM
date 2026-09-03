@@ -77,7 +77,8 @@ test("staff receive complete operational tools only for permitted cases", () => 
     '"compliance"',
   ]) assert.match(staffModules, new RegExp(moduleName));
   assert.doesNotMatch(staffModules, /"administration"/);
-  assert.match(page, /c\.collaboratorIds\?\.includes\(identity\?\.profileId/);
+  assert.match(page, /shared with all staff in/);
+  assert.doesNotMatch(page, /Assign selected cases to/);
   assert.doesNotMatch(operations, /Only administrators can record payments/);
   assert.doesNotMatch(operations, /Only administrators can record refunds/);
   assert.doesNotMatch(operations, /Only administrators can send payment reminders/);

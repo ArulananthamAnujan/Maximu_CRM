@@ -651,7 +651,7 @@ const roleConfig: Record<
   admin: {
     label: "Admin",
     legacy: "Admin · Branch Manager / Manager",
-    scope: "Assigned branches, staff and operational records",
+    scope: "Own branch staff and operational records",
     initials: "AD",
     modules: [
       "dashboard",
@@ -679,7 +679,7 @@ const roleConfig: Record<
   staff: {
     label: "Staff",
     legacy: "Employee teams",
-    scope: "Assigned cases and approved case-team collaborations",
+    scope: "All cases and operational records in their branch",
     initials: "ST",
     modules: [
       "dashboard",
@@ -716,8 +716,8 @@ const permissionRows = [
   ["Organisation, branches and integrations", true, false, false, false],
   ["Staff invitations, activation and roles", true, true, false, false],
   ["All organisation cases", true, false, false, false],
-  ["Assigned branch cases", true, true, false, false],
-  ["Assigned or collaborated cases", true, true, true, false],
+  ["All cases in their branch", true, true, true, false],
+  ["Branch-wide shared case work", true, true, true, false],
   ["Own journey and next steps", false, false, false, true],
   ["Documents", true, true, true, true],
   ["Gmail and internal communication", true, true, true, true],
@@ -1570,7 +1570,6 @@ function WorkspaceDashboard({
 }) {
   const [dashboardSearch, setDashboardSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
-  const [ownerFilter, setOwnerFilter] = useState("");
   const [countryFilter, setCountryFilter] = useState("");
   const [intakeFilter, setIntakeFilter] = useState("");
   const [visaTypeFilter, setVisaTypeFilter] = useState("");
@@ -1590,7 +1589,6 @@ function WorkspaceDashboard({
       return (
         (!dashboardSearch || searchable.includes(dashboardSearch.toLowerCase())) &&
         (!branchFilter || c.branch === branchFilter) &&
-        (!ownerFilter || c.owner === ownerFilter) &&
         (!countryFilter || c.destinationCountry === countryFilter) &&
         (!intakeFilter || c.intake.toLowerCase().includes(intakeFilter.toLowerCase())) &&
         (!visaTypeFilter || c.visaCategory === visaTypeFilter) &&
@@ -1621,7 +1619,6 @@ function WorkspaceDashboard({
     }),
     openList = direct ? "direct_visas" : "students",
     branchOptions = [...new Set(allWorkspaceCases.map((c) => c.branch).filter(Boolean))].sort(),
-    ownerOptions = [...new Set(allWorkspaceCases.map((c) => c.owner).filter(Boolean))].sort(),
     countryOptions = [...new Set(allWorkspaceCases.map((c) => c.destinationCountry).filter(Boolean))].sort(),
     visaTypeOptions = [...new Set(allWorkspaceCases.map((c) => c.visaCategory).filter(Boolean))].sort(),
     categoryCounts = [...workspaceCases.reduce((map, record) => {
@@ -1691,7 +1688,6 @@ function WorkspaceDashboard({
           <input value={dashboardSearch} onChange={(event) => setDashboardSearch(event.target.value)} placeholder="Search client, case, email, mobile or target" />
         </div>
         <select aria-label="Filter dashboard by branch" value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="">All branches</option>{branchOptions.map((value) => <option key={value}>{value}</option>)}</select>
-        <select aria-label="Filter dashboard by staff" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}><option value="">All staff</option>{ownerOptions.map((value) => <option key={value}>{value}</option>)}</select>
         <select aria-label="Filter dashboard by country" value={countryFilter} onChange={(event) => setCountryFilter(event.target.value)}><option value="">All countries</option>{countryOptions.map((value) => <option key={value}>{value}</option>)}</select>
         {direct ? (
           <select aria-label="Filter dashboard by visa category" value={visaTypeFilter} onChange={(event) => setVisaTypeFilter(event.target.value)}><option value="">All visa categories</option>{visaTypeOptions.map((value) => <option key={value}>{value}</option>)}</select>
@@ -1700,7 +1696,7 @@ function WorkspaceDashboard({
         )}
         <label>Created from<input type="date" value={createdFrom} onChange={(event) => setCreatedFrom(event.target.value)} /></label>
         <label>Created to<input type="date" value={createdTo} onChange={(event) => setCreatedTo(event.target.value)} /></label>
-        <button className="ghostButton" onClick={() => { setDashboardSearch(""); setBranchFilter(""); setOwnerFilter(""); setCountryFilter(""); setIntakeFilter(""); setVisaTypeFilter(""); setCreatedFrom(""); setCreatedTo(""); }}>Reset</button>
+        <button className="ghostButton" onClick={() => { setDashboardSearch(""); setBranchFilter(""); setCountryFilter(""); setIntakeFilter(""); setVisaTypeFilter(""); setCreatedFrom(""); setCreatedTo(""); }}>Reset</button>
         <span>{workspaceCases.length} of {allWorkspaceCases.length} records</span>
       </section>
       <section className="operationsBrief" aria-label="Today's priorities">
@@ -1922,9 +1918,6 @@ function CaseWorkspace({
   setFilter,
   openModal,
   onSelect,
-  staff,
-  canBulkAssign,
-  onBulkAssign,
   onBulkStage,
   onBulkArchive,
   onAddNote,
@@ -1939,9 +1932,6 @@ function CaseWorkspace({
   setFilter: (x: string) => void;
   openModal: (x: ModalType) => void;
   onSelect: (x: CaseRecord) => void;
-  staff: StaffRecord[];
-  canBulkAssign: boolean;
-  onBulkAssign: (records: CaseRecord[], ownerId: string) => Promise<void>;
   onBulkStage: (records: CaseRecord[], stage: LifecycleStage) => Promise<void>;
   onBulkArchive: (records: CaseRecord[]) => Promise<void>;
   onAddNote: (record: CaseRecord, note: string) => Promise<void>;
@@ -1952,7 +1942,6 @@ function CaseWorkspace({
   const [savedViews, setSavedViews] = useState<SavedView[]>([]);
   const [showFilters, setShowFilters] = useState(false);
   const [listQuery, setListQuery] = useState("");
-  const [ownerFilter, setOwnerFilter] = useState("all");
   const [branchFilter, setBranchFilter] = useState("all");
   const [healthFilter, setHealthFilter] = useState("all");
   const [dueFilter, setDueFilter] = useState("all");
@@ -1995,7 +1984,6 @@ function CaseWorkspace({
         .toLowerCase()
         .includes(listQuery.toLowerCase())
     ) return false;
-    if (ownerFilter !== "all" && record.ownerId !== ownerFilter) return false;
     if (branchFilter !== "all" && record.branchId !== branchFilter) return false;
     if (healthFilter !== "all" && record.health !== healthFilter) return false;
     if (dueFilter === "overdue" && (!record.due || record.due >= today)) return false;
@@ -2008,14 +1996,12 @@ function CaseWorkspace({
   });
   const activeFilterCount = [
     listQuery,
-    ownerFilter !== "all" ? ownerFilter : "",
     branchFilter !== "all" ? branchFilter : "",
     healthFilter !== "all" ? healthFilter : "",
     dueFilter !== "all" ? dueFilter : "",
   ].filter(Boolean).length;
   const clearFilters = () => {
     setListQuery("");
-    setOwnerFilter("all");
     setBranchFilter("all");
     setHealthFilter("all");
     setDueFilter("all");
@@ -2052,7 +2038,6 @@ function CaseWorkspace({
           filters: {
             filter,
             query: listQuery,
-            owner: ownerFilter,
             branch: branchFilter,
             health: healthFilter,
             due: dueFilter,
@@ -2128,16 +2113,6 @@ function CaseWorkspace({
             </div>
           </label>
           <label>
-            <span>Owner</span>
-            <select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}>
-              <option value="all">All owners</option>
-              <option value="">Unassigned</option>
-              {staff.filter((person) => person.active).map((person) => (
-                <option key={person.id} value={person.id}>{person.display_name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
             <span>Branch</span>
             <select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}>
               <option value="all">All branches</option>
@@ -2183,7 +2158,6 @@ function CaseWorkspace({
                 onClick={() => {
                   setFilter(String(view.filters?.filter ?? "all"));
                   setListQuery(String(view.filters?.query ?? ""));
-                  setOwnerFilter(String(view.filters?.owner ?? "all"));
                   setBranchFilter(String(view.filters?.branch ?? "all"));
                   setHealthFilter(String(view.filters?.health ?? "all"));
                   setDueFilter(String(view.filters?.due ?? "all"));
@@ -2220,31 +2194,6 @@ function CaseWorkspace({
             count={selectedRecords.length}
             onClear={() => setSelectedIds(new Set())}
           >
-            {canBulkAssign && (
-              <select
-                aria-label="Assign selected cases to"
-                disabled={assigning}
-                defaultValue=""
-                onChange={async (event) => {
-                  const ownerId = event.target.value;
-                  if (!ownerId) return;
-                  setAssigning(true);
-                  await onBulkAssign(selectedRecords, ownerId);
-                  setAssigning(false);
-                  setSelectedIds(new Set());
-                  event.target.value = "";
-                }}
-              >
-                <option value="">Assign to…</option>
-                {staff
-                  .filter((person) => person.active && person.level !== "student")
-                  .map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.display_name}
-                    </option>
-                  ))}
-              </select>
-            )}
             <select
               aria-label="Move selected cases to stage"
               disabled={assigning}
@@ -2277,7 +2226,6 @@ function CaseWorkspace({
                     phone: record.phone,
                     matter: record.type,
                     stage: record.lifecycleStage,
-                    owner: record.owner,
                     branch: record.branch,
                     due: record.due,
                     health: record.health,
@@ -2293,7 +2241,7 @@ function CaseWorkspace({
               className="ghostButton dangerAction"
               disabled={assigning}
               onClick={async () => {
-                const verb = canBulkAssign ? "archive" : "request archive for";
+                const verb = "archive";
                 if (!confirm(`${verb[0].toUpperCase()}${verb.slice(1)} ${selectedRecords.length} selected case${selectedRecords.length === 1 ? "" : "s"}?`)) return;
                 setAssigning(true);
                 await onBulkArchive(selectedRecords);
@@ -2441,7 +2389,7 @@ function ApplicationsBoard({
   const statuses = [...new Set(rows.map((row) => row.status).filter(Boolean))].sort();
   const shown = (showArchived ? rows : rows.filter((row) => !row.archived))
     .filter((row) => !status || row.status === status)
-    .filter((row) => matchesSearch(query, [row.client, row.institution, row.course, row.campus, row.intake, row.reference, row.owner, row.caseNumber, row.associate, row.partner]));
+    .filter((row) => matchesSearch(query, [row.client, row.institution, row.course, row.campus, row.intake, row.reference, row.caseNumber, row.associate, row.partner]));
   const selection = useBulkSelection(shown);
   return (
     <article className="panel listPanel">
@@ -2493,7 +2441,6 @@ function ApplicationsBoard({
                 <th scope="col">Offer</th>
                 <th scope="col">CoE</th>
                 <th scope="col">Deadline</th>
-                <th scope="col">Owner</th>
                 <th scope="col">Case</th>
               </tr>
             </thead>
@@ -2518,7 +2465,6 @@ function ApplicationsBoard({
                   <td className={overdue(row.deadlineOn) ? "overdueCell" : ""}>
                     {row.deadlineOn || "—"}
                   </td>
-                  <td>{row.owner || "Unassigned"}</td>
                   <td>
                     <button
                       className="linkButton"
@@ -7667,10 +7613,7 @@ function CaseDrawer({
   edit,
   remove,
   moveStage,
-  assign,
   refresh,
-  staff,
-  canAssign,
   canModify,
   lifecycleReady,
   schemaWarning,
@@ -7686,10 +7629,7 @@ function CaseDrawer({
     stage: LifecycleStage,
     reason: string,
   ) => Promise<void>;
-  assign: (record: CaseRecord, ownerId: string) => Promise<void>;
   refresh: () => Promise<void>;
-  staff: StaffRecord[];
-  canAssign: boolean;
   canModify: boolean;
   lifecycleReady: boolean;
   schemaWarning: string;
@@ -7703,10 +7643,7 @@ function CaseDrawer({
       edit={edit}
       remove={remove}
       moveStage={moveStage}
-      assign={assign}
       refresh={refresh}
-      staff={staff}
-      canAssign={canAssign}
       canModify={canModify}
       lifecycleReady={lifecycleReady}
       schemaWarning={schemaWarning}
@@ -7742,7 +7679,7 @@ const caseTabs: [CaseTab, string][] = [
 ];
 
 const caseTabDescriptions: Record<CaseTab, string> = {
-  overview: "Priorities, ownership, deadlines and the case workflow.",
+  overview: "Priorities, branch-wide access, deadlines and the complete case workflow.",
   applications: "Institution applications, offers, enrolment and COE progress.",
   visa: "Visa preparation, lodgement, checks and decision details.",
   documents: "Outstanding requests, received files and the document checklist.",
@@ -7761,9 +7698,9 @@ type CaseFile = {
   visaMatter: Record<string, unknown> | null;
   dependants: Record<string, unknown>[];
   documents: Record<string, unknown>[];
+  tasks: Record<string, unknown>[];
   notes: CaseNote[];
   invoices: Record<string, unknown>[];
-  collaborators: { profileId: string; name: string; email: string; addedAt: string }[];
   communications: { id: string; channel?: string; sender: string; recipients: string[]; direction: string; body: string; sentAt: string; status: string; subject: string }[];
   intake: {
     education: Record<string, unknown>[];
@@ -7779,6 +7716,8 @@ type CaseFile = {
     kind: string;
     title: string;
     detail: string | null;
+    actorId: string | null;
+    actorName: string;
   }[];
 };
 
@@ -7865,10 +7804,7 @@ function CaseDrawerBody({
   edit,
   remove,
   moveStage,
-  assign,
   refresh,
-  staff,
-  canAssign,
   canModify,
   lifecycleReady,
   schemaWarning,
@@ -7884,10 +7820,7 @@ function CaseDrawerBody({
     stage: LifecycleStage,
     reason: string,
   ) => Promise<void>;
-  assign: (record: CaseRecord, ownerId: string) => Promise<void>;
   refresh: () => Promise<void>;
-  staff: StaffRecord[];
-  canAssign: boolean;
   canModify: boolean;
   lifecycleReady: boolean;
   schemaWarning: string;
@@ -7912,9 +7845,6 @@ function CaseDrawerBody({
   const [expiry, setExpiry] = useState(item.visaExpiry || "");
   const [recordedExpiry, setRecordedExpiry] = useState(item.visaExpiry || "");
   const [savingExpiry, setSavingExpiry] = useState(false);
-  const [owner, setOwner] = useState(item.ownerId);
-  const [collaborator, setCollaborator] = useState("");
-  const [assigning, setAssigning] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [file, setFile] = useState<CaseFile | null>(null);
   const [newItem, setNewItem] = useState("");
@@ -8153,6 +8083,11 @@ function CaseDrawerBody({
     { label: "Client profile", tabs: ["client", "family", "history"] },
     { label: "Records", tabs: ["finance", "timeline"] },
   ];
+  const latestNote = file?.notes[0] ?? null;
+  const openCaseTasks = (file?.tasks ?? [])
+    .filter((task) => String(task.status ?? "open") !== "completed")
+    .slice(0, 3);
+  const recentActivity = (file?.timeline ?? []).slice(0, 5);
 
   return (
     <div className="drawerBackdrop" onClick={close}>
@@ -8270,7 +8205,7 @@ function CaseDrawerBody({
                 <span className="kicker">NEXT PRIORITY</span>
                 <h3>{nextWork}</h3>
                 <p>
-                  {stageLabelFor(stage, direct)} · {item.owner || "No owner assigned"}
+                  {stageLabelFor(stage, direct)} · shared with all staff in {item.branch || "this branch"}
                   {item.due ? ` · due ${item.due}` : " · no deadline set"}
                 </p>
               </div>
@@ -8291,17 +8226,27 @@ function CaseDrawerBody({
                 Open work area <ArrowRight size={15} />
               </button>
             </section>
-            <div className="drawerHealth">
+            <div className="drawerHealth caseAtGlance">
               <div>
-                <small>Health</small>
-                <Status value={item.health} />
+                <small>Stage</small>
+                <strong>{stageLabelFor(stage, direct)}</strong>
               </div>
               <div>
                 <small>Progress</small>
                 <strong>{item.progress}%</strong>
               </div>
               <div>
-                <small>Due</small>
+                <small>Branch access</small>
+                <strong>{item.branch || "Current branch"}</strong>
+              </div>
+              <div>
+                <small>Visa expiry</small>
+                <strong className={item.visaExpiry ? "" : "missingValue"}>
+                  {item.visaExpiry || "Missing"}
+                </strong>
+              </div>
+              <div>
+                <small>Next deadline</small>
                 <strong>{item.due || "Not set"}</strong>
               </div>
             </div>
@@ -8317,7 +8262,6 @@ function CaseDrawerBody({
                     : "Study abroad",
                 ],
                 ["Target", item.target],
-                ["Owner", item.owner || "Unassigned"],
                 ["Branch", item.branch],
                 ["Visa expiry", item.visaExpiry],
                 ["Opened", day(item.createdAt)],
@@ -8325,76 +8269,86 @@ function CaseDrawerBody({
                 ["Reopened", item.reopenedAt],
               ]}
             />
-            {canAssign && (
-              <section className="assignPanel">
-                <span className="kicker">CASE OWNER</span>
-                <h3>{item.owner || "Unassigned"}</h3>
-                <p className="assignHint">
-                  Reassign this case to another member of the team. They are
-                  notified and it moves into their queue.
-                </p>
-                <div className="assignRow">
-                  <select
-                    value={owner}
-                    onChange={(e) => setOwner(e.target.value)}
-                    aria-label="Assign case to"
-                  >
-                    <option value="">Select a staff member</option>
-                    {staff.map((person) => (
-                      <option key={person.id} value={person.id}>
-                        {person.display_name}
-                        {person.id === item.ownerId ? " (current owner)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="primaryButton"
-                    disabled={assigning || !owner || owner === item.ownerId}
-                    onClick={async () => {
-                      setAssigning(true);
-                      try {
-                        await assign(item, owner);
-                      } finally {
-                        setAssigning(false);
-                      }
-                    }}
-                  >
-                    <UserCog size={15} />
-                    {assigning ? "Assigning…" : "Assign"}
-                  </button>
-                </div>
-              </section>
-            )}
-            <section className="caseWorkPanel caseTeamPanel">
+            <section className="caseWorkPanel caseAuditPanel">
               <div className="caseWorkPanelHead">
                 <div>
-                  <span className="kicker">CASE TEAM</span>
-                  <h3>People working together</h3>
+                  <span className="kicker">ACTIVITY &amp; AUDIT</span>
+                  <h3>Every action records the staff member</h3>
                 </div>
               </div>
-              <div className="caseTeamList">
-                <span><strong>{item.owner || "Unassigned"}</strong><small>Accountable owner</small></span>
-                {(file?.collaborators ?? []).map((person) => (
-                  <span key={person.profileId}>
-                    <strong>{person.name}</strong><small>Collaborator</small>
-                    {canAssign && <button className="linkButton" onClick={() => void operation({ action: "remove_collaborator", caseId, profileId: person.profileId })}>Remove</button>}
-                  </span>
-                ))}
-              </div>
-              {canAssign && (
-                <div className="assignRow">
-                  <select value={collaborator} onChange={(event) => setCollaborator(event.target.value)} aria-label="Add case collaborator">
-                    <option value="">Add a colleague</option>
-                    {staff.filter((person) => person.id !== item.ownerId && !(file?.collaborators ?? []).some((member) => member.profileId === person.id)).map((person) => (
-                      <option key={person.id} value={person.id}>{person.display_name}</option>
-                    ))}
-                  </select>
-                  <button className="ghostButton" disabled={!collaborator || working} onClick={async () => {
-                    if (await operation({ action: "add_collaborator", caseId, profileId: collaborator })) setCollaborator("");
-                  }}><Plus size={14} /> Add to case</button>
+              <p className="caseWorkEmpty">
+                Everyone in {item.branch || "the branch"} can work on this case.
+                Each change is time-stamped against the staff member who made it.
+              </p>
+              <form
+                className="caseQuickNote"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (!newNote.trim()) return;
+                  if (
+                    await operation({
+                      action: "case_note",
+                      caseId,
+                      body: newNote.trim(),
+                    })
+                  )
+                    setNewNote("");
+                }}
+              >
+                <input
+                  value={newNote}
+                  onChange={(event) => setNewNote(event.target.value)}
+                  placeholder="Add a note for everyone in this branch"
+                  aria-label="Add a shared case note"
+                />
+                <button className="primaryButton" disabled={working || !newNote.trim()}>
+                  Save note
+                </button>
+              </form>
+              {latestNote && (
+                <div className="caseLastNote">
+                  <span>LAST NOTE</span>
+                  <p>{latestNote.body}</p>
+                  <small>{orgDateTime(latestNote.created_at)} · {item.branch}</small>
                 </div>
               )}
+              {openCaseTasks.length > 0 && (
+                <div className="caseTaskSummary">
+                  <strong>{openCaseTasks.length} open case task{openCaseTasks.length === 1 ? "" : "s"}</strong>
+                  {openCaseTasks.map((task) => (
+                    <div key={String(task.id)}>
+                      <span>{String(task.title || "Case task")}</span>
+                      <small>
+                        {task.due_at ? `Due ${orgDate(task.due_at)}` : "No deadline"}
+                        {task.priority ? ` · ${humanise(task.priority)} priority` : ""}
+                      </small>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <ol className="caseAuditList">
+                {recentActivity.map((entry) => (
+                  <li key={entry.id}>
+                    <span aria-hidden="true">
+                      {entry.actorName
+                        .split(" ")
+                        .slice(0, 2)
+                        .map((part) => part[0])
+                        .join("")
+                        .toUpperCase() || "S"}
+                    </span>
+                    <div>
+                      <strong>{humanise(entry.title)}</strong>
+                      <small>
+                        {entry.actorName} · {orgDateTime(entry.at)} · {item.branch}
+                      </small>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <button className="ghostButton" onClick={() => setTab("timeline")}>
+                View complete audit trail
+              </button>
             </section>
             <section className="lifecyclePanel">
               <span className="kicker">CASE PIPELINE</span>
@@ -8936,8 +8890,8 @@ function CaseDrawerBody({
           <section className="caseWorkPanel">
             <span className="kicker">FILE NOTE AND ACTIVITY</span>
             <p className="caseWorkEmpty">
-              Every note, stage change and recorded action, newest first. Write
-              up oral advice and client instructions here as they happen.
+              Every note, stage change and recorded action, newest first. Each
+              entry identifies the staff member who performed it.
             </p>
             <form
               className="inlineAdd"
@@ -8978,7 +8932,7 @@ function CaseDrawerBody({
                       <b>{humanise(entry.title)}</b>
                       {entry.detail && <p>{entry.detail}</p>}
                       <small>
-                        {orgDateTime(entry.at)}
+                        {entry.actorName} · {orgDateTime(entry.at)} · {item.branch}
                         {entry.kind === "private_note" ? " · private" : ""}
                       </small>
                     </div>
@@ -9035,7 +8989,7 @@ function CaseDrawerBody({
             onClick={() => remove(item.id)}
           >
             <Trash2 size={15} />
-            {canAssign ? "Archive" : "Request archive"}
+            {canModify ? "Archive" : "Request archive"}
           </button>
         </div>
           </main>
@@ -10389,29 +10343,9 @@ function RecordModal({
                     ))}
                   </select>
                 </label>
-                {role === "staff" ? (
-                  // A new case can only be created for oneself when staff --
-                  // the database accepts nothing else -- and reassigning an
-                  // existing one belongs to the dedicated, admin-gated
-                  // reassignment control on the case, not this form. Editing
-                  // still has to carry the case's current owner along rather
-                  // than silently reset it to whoever is editing.
-                  editing?.ownerId ? (
-                    <input type="hidden" name="ownerId" value={editing.ownerId} />
-                  ) : null
-                ) : (
-                  <label>
-                    Assigned staff
-                    <select name="ownerId" defaultValue={editing?.ownerId ?? ""}>
-                      <option value="">You</option>
-                      {staff.map((person) => (
-                        <option key={person.id} value={person.id}>
-                          {person.display_name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
+                {editing?.ownerId ? (
+                  <input type="hidden" name="ownerId" value={editing.ownerId} />
+                ) : null}
                 <label>
                   Course or visa target
                   <input
@@ -11598,22 +11532,13 @@ export default function Home() {
       }
     },
     exportData = () => {
-      // A case officer exports the cases assigned to them, not everything they
-      // can see for cover. Visibility is the real boundary -- what is on screen
-      // is on screen -- but a one-click dump of a colleague's clients is not
-      // something the CRM should hand out, and every export is recorded.
-      const mine =
-        role === "staff"
-          ? cases.filter(
-              (c) =>
-                c.ownerId === identity?.profileId ||
-                c.collaboratorIds?.includes(identity?.profileId ?? ""),
-            )
-          : cases;
+      // Case work is shared throughout the branch. Exports therefore follow
+      // the same visible branch boundary and remain fully auditable.
+      const mine = cases;
       const ids = new Set(mine.map((c) => c.dbId || c.id));
       const scope =
         role === "staff"
-          ? "own cases"
+          ? "branch"
           : role === "admin"
             ? "branch"
             : "organisation";
@@ -11666,70 +11591,10 @@ export default function Home() {
       URL.revokeObjectURL(url);
       say(
         role === "staff"
-          ? `Exported ${mine.length} of your cases. The export is on the audit trail.`
+          ? `Exported ${mine.length} branch cases. The export is on the audit trail.`
           : "Live data exported. The export is on the audit trail.",
       );
     };
-  const assignCase = async (record: CaseRecord, ownerId: string) => {
-    if (!record.dbId) {
-      say("This case could not be identified.");
-      return;
-    }
-    try {
-      const response = await fetch("/api/crm/workspace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "assign",
-          caseId: record.dbId,
-          ownerId,
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok)
-        throw new Error(result.error || "The case could not be reassigned.");
-      setSelected(null);
-      await loadWorkspace();
-      const owner = staff.find((person) => person.id === ownerId);
-      say(`${record.id} assigned to ${owner?.display_name || "the new owner"}`);
-    } catch (reason) {
-      say(
-        reason instanceof Error
-          ? reason.message
-          : "The case could not be reassigned.",
-      );
-    }
-  };
-  const bulkAssignCases = async (records: CaseRecord[], ownerId: string) => {
-    const caseIds = records.map((record) => record.dbId).filter(Boolean) as string[];
-    if (caseIds.length === 0) {
-      say("None of the selected cases could be identified.");
-      return;
-    }
-    try {
-      const response = await fetch("/api/crm/workspace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "bulk_assign", caseIds, ownerId }),
-      });
-      const result = await response.json();
-      if (!response.ok)
-        throw new Error(result.error || "The cases could not be reassigned.");
-      await loadWorkspace();
-      const owner = staff.find((person) => person.id === ownerId);
-      const failed = Number(result.failed ?? 0);
-      say(
-        `${result.succeeded ?? caseIds.length} case${(result.succeeded ?? caseIds.length) === 1 ? "" : "s"} assigned to ${owner?.display_name || "the new owner"}` +
-          (failed > 0 ? ` (${failed} could not be reassigned).` : "."),
-      );
-    } catch (reason) {
-      say(
-        reason instanceof Error
-          ? reason.message
-          : "The cases could not be reassigned.",
-      );
-    }
-  };
   const moveCaseStage = async (
     record: CaseRecord,
     stage: LifecycleStage,
@@ -12445,9 +12310,6 @@ export default function Home() {
         setFilter={setFilter}
         openModal={open}
         onSelect={openCaseWorkspace}
-        staff={staff}
-        canBulkAssign={canManageBranch}
-        onBulkAssign={bulkAssignCases}
         onBulkStage={bulkMoveCases}
         onBulkArchive={bulkArchiveCases}
         onAddNote={async (record, note) => {
@@ -12771,13 +12633,10 @@ export default function Home() {
               ].sort().join("|") || selected.dbId
             : "closed"}
           moveStage={moveCaseStage}
-          assign={assignCase}
           refresh={loadWorkspace}
-          staff={staff}
           lifecycleReady={!schemaWarning}
           schemaWarning={schemaWarning}
           storageConnected={storageConnected}
-          canAssign={Boolean(role === "super_admin" || role === "admin" || selected?.ownerId === identity?.profileId)}
           canModify={true}
           item={selected}
           close={() => {
