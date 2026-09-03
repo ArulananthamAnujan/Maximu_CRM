@@ -9778,6 +9778,235 @@ body { font-size: 14px; }
 .caseWindow .lifecyclePanel,
 .caseWindow .drawerHealth { max-width: none; }
 
+/* Full-page agent case workspace. This mirrors the approved case mock-up:
+   one compact working surface with the important case signals visible at once. */
+.caseWindow .caseDrawer.wide {
+  padding: 0;
+  background: #f5f8f9;
+}
+.caseWindowTopbar { display: none; }
+.caseWindow .caseWindowTopbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 46px;
+  padding: 0 18px;
+  background: #0d3144;
+  color: #d9e8ef;
+  border-top: 3px solid #f28b22;
+}
+.caseWindow .caseWindowTopbar img { width: 126px; height: auto; }
+.caseWindow .caseWindowTopbar > span {
+  justify-self: end;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .05em;
+}
+.caseWindow .caseWindowTopbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 1px solid #67808d;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 9px;
+}
+.caseWindow .caseWindowTopbar > b { font-size: 10px; white-space: nowrap; }
+.caseWindow .drawerHead {
+  position: relative;
+  top: auto;
+  z-index: 1;
+  margin: 0 0 0 205px;
+  padding: 24px 26px 15px;
+  border-bottom: 0;
+  background: #fff;
+  backdrop-filter: none;
+}
+.caseWindow .drawerHead > div > span { color: #d95f14; }
+.caseWindow .drawerHead h2 { margin: 6px 0 2px; font-size: 28px; }
+.caseWindow .drawerHead .iconButton { display: none; }
+.caseWindow .caseWorkspaceLayout {
+  grid-template-columns: 205px minmax(0, 1fr);
+  gap: 0;
+  max-width: none;
+  margin: 0;
+}
+.caseLeftRail { min-width: 0; }
+.caseRailSummary,
+.caseRailBranch { display: none; }
+.caseWindow .caseLeftRail {
+  position: sticky;
+  top: 46px;
+  align-self: start;
+  min-height: calc(100vh - 46px);
+  margin-top: -104px;
+  padding: 18px 13px;
+  background: #0d3144;
+  color: #d7e5eb;
+}
+.caseWindow .caseRailSummary {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 5px 0 14px;
+  border-bottom: 1px solid rgba(255,255,255,.12);
+}
+.caseWindow .caseRailSummary > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 999px;
+  background: #f28b22;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+}
+.caseWindow .caseRailSummary strong,
+.caseWindow .caseRailSummary small { display: block; min-width: 0; }
+.caseWindow .caseRailSummary strong { overflow: hidden; color: #fff; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.caseWindow .caseRailSummary small { margin-top: 2px; color: #9eb7c3; font-size: 8px; }
+.caseWindow .caseRailSummary > b {
+  justify-self: start;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #f28b22;
+  color: #fff;
+  font-size: 7px;
+  text-transform: uppercase;
+}
+.caseWindow .caseTabs {
+  position: static;
+  display: grid;
+  gap: 11px;
+  margin: 13px 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.caseWindow .caseNavGroup > span { color: #7fa3b4; }
+.caseWindow .caseTabs .caseNavGroup button { color: #c4d5dd; }
+.caseWindow .caseTabs .caseNavGroup button.active {
+  border-color: transparent;
+  background: #174a61;
+  color: #fff;
+  box-shadow: inset 3px 0 0 #f28b22;
+}
+.caseWindow .caseTabs button b { background: #187fa3; color: #fff; }
+.caseWindow .caseRailBranch {
+  display: grid;
+  gap: 3px;
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 9px;
+  background: #174a61;
+}
+.caseWindow .caseRailBranch span { color: #7fa3b4; font-size: 7px; font-weight: 800; letter-spacing: .08em; }
+.caseWindow .caseRailBranch strong { color: #fff; font-size: 10px; }
+.caseWindow .caseRailBranch small { color: #9eb7c3; font-size: 8px; }
+.caseWindow .caseWorkspaceContent { padding: 0 26px 28px; background: #fff; }
+.caseWindow .caseSectionHead { margin: 0 0 14px; padding: 0 0 14px; }
+.caseWindow .caseSectionHead h2 { display: none; }
+.caseWindow .caseSectionHead p { display: none; }
+.caseWindow .caseSectionHead .kicker { color: #d95f14; }
+.caseWindow .caseHome {
+  grid-template-columns: minmax(0, 1.75fr) minmax(255px, .72fr);
+  grid-template-areas:
+    "priority priority"
+    "health health"
+    "workflow audit"
+    "admissions audit"
+    "documents client"
+    "communication client"
+    "bottom client";
+  gap: 13px;
+}
+.caseWindow .caseHome > .caseFactsPanel { display: none; }
+.caseWindow .casePriorityBar { padding: 13px 15px; border-radius: 9px; }
+.caseWindow .casePriorityBar h3 { font-size: 15px !important; }
+.caseWindow .caseAtGlance { border-radius: 9px; }
+.caseWindow .caseAtGlance > div { padding: 11px 13px; }
+.caseWindow .caseAtGlance small { font-size: 8px; }
+.caseWindow .caseAtGlance strong { margin-top: 3px; font-size: 11px; }
+.caseWindow .caseHome > .lifecyclePanel { grid-area: workflow; padding: 14px; border-radius: 9px; }
+.caseWindow .caseHome > .caseAuditPanel { grid-area: audit; padding: 14px; border-radius: 9px; }
+.agentApplicationsPanel { grid-area: admissions; }
+.agentDocumentsPanel { grid-area: documents; }
+.agentCommunicationPanel { grid-area: communication; }
+.agentBottomSummary { grid-area: bottom; display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+.agentClientPanel { grid-area: client; }
+.caseWindow .caseHome .caseWorkPanel { margin: 0; padding: 14px; border: 1px solid #d8e4e9; border-radius: 9px; background: #fff; }
+.caseWindow .caseWorkPanelHead { margin-bottom: 8px; }
+.caseWindow .caseWorkPanel h3,
+.caseWindow .agentBottomSummary h3 { margin: 3px 0 7px; font-size: 14px; }
+.compactButton { min-height: 30px; padding: 6px 10px; font-size: 9px; }
+.agentSummaryRows { display: grid; }
+.agentSummaryRows > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid #e3ecef;
+  text-align: left;
+}
+.agentSummaryRows span,
+.agentSummaryRows strong,
+.agentSummaryRows small { display: block; }
+.agentSummaryRows strong { color: var(--ink); font-size: 10px; }
+.agentSummaryRows b { color: #d77918; font-size: 8px; text-transform: uppercase; }
+.agentSummaryRows small { margin-top: 2px; color: var(--muted); font-size: 8px; }
+.agentProgress { height: 6px; overflow: hidden; border-radius: 999px; background: #dce8ec; }
+.agentProgress span { display: block; height: 100%; border-radius: inherit; background: #20a86b; }
+.agentDocumentChips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 9px 0; }
+.agentDocumentChips span { padding: 7px 8px; border-radius: 6px; font-size: 8px; }
+.agentDocumentChips .done { background: #e9f8f1; color: #08784b; }
+.agentDocumentChips .missing { background: #fff3df; color: #8d4a0c; }
+.agentPanelFooter { margin-left: auto; }
+.agentMessagePreview {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  background: #eaf7fb;
+  text-align: left;
+}
+.agentMessagePreview > span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 999px; background: #1682a3; color: #fff; font-size: 8px; font-weight: 800; }
+.agentMessagePreview strong { color: var(--ink); font-size: 10px; }
+.agentMessagePreview p { max-width: 600px; margin: 2px 0; overflow: hidden; color: #526b79; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.agentMessagePreview small { color: var(--muted); font-size: 7px; }
+.agentMessagePreview > b { padding: 6px 9px; border-radius: 6px; background: #1682a3; color: #fff; font-size: 8px; }
+.agentAlert { display: grid; gap: 2px; margin: 7px 0 9px; padding: 10px; border-radius: 7px; background: #fff3df; color: #a34c14; }
+.agentAlert.ready { background: #e9f8f1; color: #08784b; }
+.agentAlert strong { font-size: 9px; }
+.agentAlert small { font-size: 7px; }
+.agentFinanceFacts { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 8px 0; }
+.agentFinanceFacts span { display: grid; gap: 2px; padding: 9px; border-radius: 7px; background: #f3f8fa; }
+.agentFinanceFacts small { color: var(--muted); font-size: 7px; }
+.agentFinanceFacts strong { color: var(--ink); font-size: 11px; }
+.agentClientPanel dl { display: grid; gap: 8px; margin: 10px 0; }
+.agentClientPanel dl > div { display: flex; justify-content: space-between; gap: 10px; }
+.agentClientPanel dt { color: var(--muted); font-size: 8px; }
+.agentClientPanel dd { margin: 0; overflow-wrap: anywhere; color: var(--ink); font-size: 8px; font-weight: 700; text-align: right; }
+.agentClientPanel .missingValue { color: #d63d35; }
+
+@media (max-width: 1050px) {
+  .caseWindow .caseHome {
+    grid-template-columns: 1fr;
+    grid-template-areas: "priority" "health" "workflow" "admissions" "documents" "communication" "bottom" "client" "audit";
+  }
+}
+
 @media (max-width: 980px) {
   .caseWorkspaceLayout { grid-template-columns: 165px minmax(0, 1fr); gap: 16px; }
   .caseHome {
@@ -9788,6 +10017,17 @@ body { font-size: 14px; }
 }
 
 @media (max-width: 760px) {
+  .caseWindow .caseWindowTopbar { grid-template-columns: 1fr auto; }
+  .caseWindow .caseWindowTopbar > span,
+  .caseWindow .caseWindowTopbar > b { display: none; }
+  .caseWindow .drawerHead { margin-left: 0; padding: 18px 16px 12px; }
+  .caseWindow .caseWorkspaceLayout { display: block; }
+  .caseWindow .caseLeftRail { position: static; min-height: 0; margin-top: 0; padding: 10px 12px 0; }
+  .caseWindow .caseRailSummary,
+  .caseWindow .caseRailBranch { display: none; }
+  .caseWindow .caseWorkspaceContent { padding: 0 14px 22px; }
+  .agentBottomSummary { grid-template-columns: 1fr; }
+  .agentDocumentChips { grid-template-columns: 1fr 1fr; }
   .caseWorkspaceLayout { display: block; }
   .caseTabs,
   .caseWindow .caseTabs {

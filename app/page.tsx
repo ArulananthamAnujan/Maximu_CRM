@@ -8088,10 +8088,33 @@ function CaseDrawerBody({
     .filter((task) => String(task.status ?? "open") !== "completed")
     .slice(0, 3);
   const recentActivity = (file?.timeline ?? []).slice(0, 5);
+  const overviewApplications = (file?.applications ?? []).slice(0, 2);
+  const completedDocuments = checklist.filter(
+    (entry) => entry.status === "completed" || entry.status === "waived",
+  ).length;
+  const documentProgress = checklist.length
+    ? Math.round((completedDocuments / checklist.length) * 100)
+    : 0;
+  const latestCommunication = file?.communications[0] ?? null;
+  const invoiceTotal = (file?.invoices ?? []).reduce(
+    (sum, invoice) =>
+      sum + Number(invoice.total ?? invoice.amount ?? invoice.total_amount ?? 0),
+    0,
+  );
 
   return (
     <div className="drawerBackdrop" onClick={close}>
       <aside className="caseDrawer wide" onClick={(e) => e.stopPropagation()}>
+        <div className="caseWindowTopbar">
+          <img src="/maximus-logo.svg" alt="Maximus Education and Migration" />
+          <span>
+            {direct ? "DIRECT VISA" : "STUDY ABROAD"} / ACTIVE CASE WORKSPACE
+          </span>
+          <button type="button" onClick={close}>
+            <ArrowLeft size={13} /> Back to CRM
+          </button>
+          <b>{item.latestNoteAuthor || "Branch staff"}</b>
+        </div>
         <div className="drawerHead">
           <div>
             <span>{item.id}</span>
@@ -8115,6 +8138,16 @@ function CaseDrawerBody({
         </div>
 
         <div className="caseWorkspaceLayout">
+          <aside className="caseLeftRail">
+            <div className="caseRailSummary">
+              <span>{item.name.slice(0, 2).toUpperCase()}</span>
+              <div>
+                <strong>{item.name}</strong>
+                <small>{item.id}</small>
+              </div>
+              <b>{stageLabelFor(stage, direct)}</b>
+              <small>{direct ? "Direct visa" : "Study abroad"}</small>
+            </div>
           <nav className="caseTabs" role="tablist" aria-label="Case sections">
             {compact ? (
               <>
@@ -8175,6 +8208,12 @@ function CaseDrawerBody({
               })
             )}
           </nav>
+          <div className="caseRailBranch">
+            <span>BRANCH WORKSPACE</span>
+            <strong>{item.branch || "Current branch"}</strong>
+            <small>All branch staff have access</small>
+          </div>
+          </aside>
 
           <main className="caseWorkspaceContent">
             <header className="caseSectionHead">
@@ -8519,6 +8558,111 @@ function CaseDrawerBody({
                   )}
                 </div>
               )}
+            </section>
+            {!direct && (
+              <section className="caseWorkPanel agentApplicationsPanel">
+                <div className="caseWorkPanelHead">
+                  <div>
+                    <span className="kicker">ADMISSIONS</span>
+                    <h3>Applications in progress</h3>
+                  </div>
+                  <button className="primaryButton compactButton" onClick={() => setTab("applications")}>
+                    <Plus size={13} /> Add application
+                  </button>
+                </div>
+                <div className="agentSummaryRows">
+                  {overviewApplications.length ? overviewApplications.map((application) => (
+                    <button key={String(application.id)} onClick={() => setTab("applications")}>
+                      <span>
+                        <strong>{text(application.course) || "Course application"}</strong>
+                        <small>{text(application.institution) || "Institution not recorded"}</small>
+                      </span>
+                      <span>
+                        <b>{humanise(application.status || "draft")}</b>
+                        <small>{application.deadline_at ? `Due ${day(application.deadline_at)}` : "Open application"}</small>
+                      </span>
+                      <ArrowRight size={14} />
+                    </button>
+                  )) : (
+                    <p className="caseWorkEmpty">No institution applications have been added yet.</p>
+                  )}
+                </div>
+              </section>
+            )}
+            <section className="caseWorkPanel agentDocumentsPanel">
+              <div className="caseWorkPanelHead">
+                <div>
+                  <span className="kicker">DOCUMENTS</span>
+                  <h3>{completedDocuments} of {checklist.length || 0} required documents ready</h3>
+                </div>
+                <button className="primaryButton compactButton" onClick={() => setTab("documents")}>
+                  Request missing
+                </button>
+              </div>
+              <div className="agentProgress"><span style={{ width: `${documentProgress}%` }} /></div>
+              <div className="agentDocumentChips">
+                {checklist.slice(0, 4).map((entry) => (
+                  <span key={entry.id} className={entry.status === "completed" || entry.status === "waived" ? "done" : "missing"}>
+                    {entry.title}
+                  </span>
+                ))}
+                {!checklist.length ? <small>No checklist items have been configured.</small> : null}
+              </div>
+              <button className="ghostButton agentPanelFooter" onClick={() => setTab("documents")}>Open document workspace</button>
+            </section>
+            <section className="caseWorkPanel agentCommunicationPanel">
+              <div className="caseWorkPanelHead">
+                <div>
+                  <span className="kicker">COMMUNICATION</span>
+                  <h3>Latest student conversation</h3>
+                </div>
+                <button className="ghostButton" onClick={() => setTab("communication")}>Open inbox</button>
+              </div>
+              {latestCommunication ? (
+                <button className="agentMessagePreview" onClick={() => setTab("communication")}>
+                  <span>{latestCommunication.sender.slice(0, 2).toUpperCase()}</span>
+                  <div>
+                    <strong>{latestCommunication.subject || "Student message"}</strong>
+                    <p>{latestCommunication.body || "Open the conversation to read this message."}</p>
+                    <small>{orgDateTime(latestCommunication.sentAt)}</small>
+                  </div>
+                  <b>Reply</b>
+                </button>
+              ) : (
+                <p className="caseWorkEmpty">No messages have been recorded for this case.</p>
+              )}
+            </section>
+            <div className="agentBottomSummary">
+              <section className="caseWorkPanel">
+                <span className="kicker">VISA &amp; COMPLIANCE</span>
+                <h3>Current visa details required</h3>
+                <div className={`agentAlert ${item.visaExpiry ? "ready" : ""}`}>
+                  <strong>{item.visaExpiry ? `Visa expiry ${item.visaExpiry}` : "Visa type and expiry are not recorded."}</strong>
+                  <small>{item.visaExpiry ? "The case can progress to the visa stage." : "This blocks movement to the visa stage."}</small>
+                </div>
+                <button className="primaryButton compactButton" onClick={() => setTab("visa")}>Record visa details</button>
+              </section>
+              <section className="caseWorkPanel">
+                <span className="kicker">FINANCE</span>
+                <h3>Account position</h3>
+                <div className="agentFinanceFacts">
+                  <span><small>Invoices</small><strong>{file?.invoices.length ?? 0}</strong></span>
+                  <span><small>Total</small><strong>${invoiceTotal.toLocaleString()}</strong></span>
+                </div>
+                <button className="ghostButton" onClick={() => setTab("finance")}>Open finance</button>
+              </section>
+            </div>
+            <section className="caseWorkPanel agentClientPanel">
+              <span className="kicker">CLIENT PROFILE</span>
+              <h3>Essential student details</h3>
+              <dl>
+                <div><dt>Email</dt><dd>{text(client.email) || item.email || "Not recorded"}</dd></div>
+                <div><dt>Mobile</dt><dd>{text(client.mobile) || item.phone || "Not recorded"}</dd></div>
+                <div><dt>Date of birth</dt><dd>{day(client.date_of_birth) || "Not recorded"}</dd></div>
+                <div><dt>Nationality</dt><dd>{text(client.nationality) || "Not recorded"}</dd></div>
+                <div><dt>Current visa</dt><dd className={item.visaExpiry ? "" : "missingValue"}>{text(visa?.visa_type) || "Not recorded"}</dd></div>
+              </dl>
+              <button className="ghostButton" onClick={() => setTab("client")}>View full profile</button>
             </section>
           </div>
         )}
