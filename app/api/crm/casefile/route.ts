@@ -124,6 +124,13 @@ export async function GET(request: Request) {
         token,
       ),
     ]);
+    const legacyActivity = await get<Json[]>(
+      `legacy_activity_events?select=*&case_id=eq.${caseId}&order=occurred_at.desc&limit=500`,
+      token,
+    ).catch((error) => {
+      if (error instanceof SupabaseError && error.status === 404) return [];
+      throw error;
+    });
 
     const actorIds = Array.from(
       new Set(
@@ -131,6 +138,7 @@ export async function GET(request: Request) {
           ...notes.map((row) => row.author_id),
           ...lifecycle.map((row) => row.changed_by),
           ...audit.map((row) => row.actor_id),
+          ...legacyActivity.map((row) => row.actor_profile_id),
         ].filter((value): value is string => typeof value === "string" && value.length > 0),
       ),
     );
@@ -194,7 +202,7 @@ export async function GET(request: Request) {
           visaHistory,
           declarations,
         },
-        timeline: buildTimeline(notes, lifecycle, audit, actorNames),
+        timeline: buildTimeline(notes, lifecycle, audit, actorNames, legacyActivity),
       }),
       session.refreshed,
       request,
@@ -587,6 +595,7 @@ function buildTimeline(
   lifecycle: Json[],
   audit: Json[],
   actorNames: Map<string, string>,
+  legacyActivity: Json[] = [],
 ): TimelineEntry[] {
   const entries: TimelineEntry[] = [
     ...notes.map((row) => ({
@@ -615,6 +624,15 @@ function buildTimeline(
       detail: null,
       actorId: (row.actor_id as string) ?? null,
       actorName: actorNames.get(String(row.actor_id ?? "")) ?? "Staff member",
+    })),
+    ...legacyActivity.map((row) => ({
+      id: `legacy-${row.id}`,
+      at: String(row.occurred_at ?? ""),
+      kind: String(row.event_type ?? "legacy_action"),
+      title: String(row.subject ?? row.event_type ?? "Legacy CRM activity"),
+      detail: typeof row.body === "string" ? row.body : null,
+      actorId: (row.actor_profile_id as string) ?? null,
+      actorName: actorNames.get(String(row.actor_profile_id ?? "")) ?? String(row.actor_label ?? "Legacy staff member"),
     })),
   ];
   return entries

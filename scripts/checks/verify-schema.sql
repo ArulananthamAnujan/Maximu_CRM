@@ -92,6 +92,14 @@ with expected(area, kind, name, detail) as (values
   ('Legacy workflow parity (0036)', 'column',   'invoices.discount',              'Preserves discounts separately from subtotal, tax and payment totals'),
   ('Legacy workflow parity (0036)', 'column',   'invoices.payment_method',        'Preserves how the initial or recorded invoice payment was received'),
   ('Legacy workflow parity (0036)', 'column',   'invoices.description',           'Preserves invoice service and payment context from the previous CRM')
+  ,('Lossless legacy migration (0037)', 'table', 'legacy_record_snapshots',       'Complete checksummed source rows with protected fields encrypted')
+  ,('Lossless legacy migration (0037)', 'table', 'legacy_activity_events',         'Old comments, status history and staff attribution')
+  ,('Lossless legacy migration (0037)', 'table', 'legacy_file_manifests',          'Attachment copy and checksum reconciliation')
+  ,('Lossless legacy migration (0037)', 'table', 'legacy_finance_line_items',      'Student-level invoice and commission details')
+  ,('Lossless legacy migration (0037)', 'table', 'legacy_staff_directory',         'Inactive and historical staff attribution')
+  ,('Lossless legacy migration (0037)', 'table', 'legacy_master_records',          'Old CRM reference and standard-document records')
+  ,('Lossless legacy migration (0037)', 'column','import_batches.source_checksum', 'Whole-export reconciliation checksum')
+  ,('Lossless legacy migration (0037)', 'column','import_rows.protected_data',      'Encrypted sensitive source values')
 )
 select
   e.area,

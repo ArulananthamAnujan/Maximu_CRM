@@ -6492,6 +6492,27 @@ const LEGACY_IMPORT_TYPES = [
   ["payments", "Payments"],
   ["commission_claims", "Partner and university commission invoices"],
   ["commission_payments", "Commission payments and receipts"],
+  ["dependants", "Spouses, children and dependants"],
+  ["education_history", "Education history (all rows)"],
+  ["employment_history", "Employment history (all rows)"],
+  ["test_results", "English test history (all attempts)"],
+  ["study_preferences", "Study preferences"],
+  ["visa_history", "Previous visa history"],
+  ["lifecycle_events", "Case status and stage history"],
+  ["application_comments", "Application comments and history"],
+  ["visa_comments", "Visa comments and history"],
+  ["task_comments", "Task comments and history"],
+  ["payment_receipts", "Client payment receipts"],
+  ["finance_line_items", "Invoice and commission line items"],
+  ["campaigns", "Communication campaigns"],
+  ["campaign_recipients", "Campaign recipient and delivery history"],
+  ["email_templates", "Email and message templates"],
+  ["standard_documents", "Standard document library"],
+  ["staff_history", "Staff directory and inactive staff"],
+  ["login_activity", "Historical login activity"],
+  ["activity_events", "Audit and activity history"],
+  ["master_records", "Master lists and reference data"],
+  ["file_manifest", "Attachment copy/checksum manifest"],
 ] as const;
 
 function legacyHeader(value: unknown): string {
@@ -6538,6 +6559,7 @@ async function readLegacyWorkbook(file: File): Promise<Record<string, unknown>[]
 function LegacyImportPanel({ branches }: { branches: AdminBranch[] }) {
   const [entityType, setEntityType] = useState("clients");
   const [branchId, setBranchId] = useState("");
+  const [sourceTimezone, setSourceTimezone] = useState("Australia/Melbourne");
   const [batchId, setBatchId] = useState("");
   const [summary, setSummary] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
@@ -6547,22 +6569,21 @@ function LegacyImportPanel({ branches }: { branches: AdminBranch[] }) {
     try {
       const rows = await readLegacyWorkbook(file);
       if (!rows.length) throw new Error("The selected export has no data rows.");
-      const response = await fetch("/api/crm/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "validate", entityType, branchId: branchId || null, fileName: file.name, sourceSystem: "legacy_maximus", rows }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "The export could not be validated.");
-      setSummary(`${result.total} rows checked · ${result.valid} ready · ${result.invalid} need correction`);
-      setErrors((result.errors ?? []).flatMap((item: { row: number; errors: string[] }) => item.errors.map((error) => `Row ${item.row}: ${error}`)));
-      if (!result.invalid) setBatchId(result.batchId);
+      let currentBatch = "", result: {batchId:string;total:number;received:number;valid:number;invalid:number;ready:boolean;errors:Array<{row:number;errors:string[]}>}|null = null;
+      const validationErrors:string[]=[];
+      for(let offset=0;offset<rows.length;offset+=500){const chunk=rows.slice(offset,offset+500);const response=await fetch("/api/crm/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"validate",entityType,branchId:branchId||null,fileName:file.name,sourceSystem:"legacy_maximus",sourceTimezone,batchId:currentBatch||null,rowOffset:offset,totalRows:rows.length,finalChunk:offset+chunk.length===rows.length,rows:chunk})});result=await response.json();if(!response.ok)throw new Error((result as {error?:string}).error||"The export could not be validated.");currentBatch=result.batchId;validationErrors.push(...(result.errors??[]).flatMap(item=>item.errors.map(error=>`Row ${item.row}: ${error}`)));}
+      if(!result)throw new Error("The export could not be validated.");
+      setSummary(`${result.received} of ${result.total} rows checked · ${result.valid} ready · ${result.invalid} need correction`);
+      setErrors(validationErrors);if(result.ready)setBatchId(result.batchId);
     } catch (reason) { setErrors([reason instanceof Error ? reason.message : "The export could not be read."]); }
     finally { setWorking(false); }
   };
   const commit = async () => {
     setWorking(true); setErrors([]);
     try {
-      const response = await fetch("/api/crm/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "commit", batchId }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "The import could not be completed.");
-      setSummary(`${result.imported} ${humanise(entityType)} records imported with their legacy identifiers preserved.`); setBatchId("");
+      let result:{remaining:boolean;importedTotal:number;reconciliation?:{summary?:string;pendingFiles?:unknown[]};error?:string}={remaining:true,importedTotal:0};
+      do{const response=await fetch("/api/crm/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"commit",batchId})});result=await response.json();if(!response.ok){const detail=result.reconciliation?.summary;throw new Error(detail||result.error||"The import could not be completed.");}}while(result.remaining);
+      setSummary(result.reconciliation?.summary||`${result.importedTotal} ${humanise(entityType)} records imported and reconciled.`); setBatchId("");
     } catch (reason) { setErrors([reason instanceof Error ? reason.message : "The import could not be completed."]); }
     finally { setWorking(false); }
   };
@@ -6573,6 +6594,7 @@ function LegacyImportPanel({ branches }: { branches: AdminBranch[] }) {
       <div className="stackedForm">
         <label>Export type<select value={entityType} onChange={(event) => { setEntityType(event.target.value); setBatchId(""); setSummary(""); setErrors([]); }}>{LEGACY_IMPORT_TYPES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
         <label>Default branch<select value={branchId} onChange={(event) => setBranchId(event.target.value)}><option value="">Use branch column / my branch</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label>
+        <label>Old CRM timezone<select value={sourceTimezone} onChange={(event)=>setSourceTimezone(event.target.value)}><option value="Australia/Melbourne">Australia/Melbourne</option><option value="Asia/Colombo">Asia/Colombo</option><option value="Asia/Dhaka">Asia/Dhaka</option><option value="UTC">UTC</option></select></label>
         <label>Old CRM export<input type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" disabled={working} onChange={(event) => { const file = event.target.files?.[0]; if (file) void validateFile(file); }} /></label>
         {summary && <p className="coverageIntro">{summary}</p>}
         {errors.length > 0 && <div className="caseWorkError" role="alert">{errors.slice(0, 25).map((error) => <div key={error}>{error}</div>)}</div>}

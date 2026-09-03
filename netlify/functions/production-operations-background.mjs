@@ -9,6 +9,8 @@ const TABLES = [
   "organisation_settings", "course_source_registry",
   "whatsapp_messages", "sms_messages", "communication_campaigns", "campaign_recipients", "public_intake_links",
   "legacy_external_keys", "import_batches", "import_rows",
+  "legacy_record_snapshots", "legacy_activity_events", "legacy_file_manifests",
+  "legacy_finance_line_items", "legacy_staff_directory", "legacy_master_records",
 ];
 const env = (name) => globalThis.Netlify?.env?.get(name) ?? "";
 const base = () => String(env("SUPABASE_URL")).replace(/\/$/, "");
