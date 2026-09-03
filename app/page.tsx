@@ -6,6 +6,7 @@ import {
   Activity,
   AlertTriangle,
   Archive,
+  ArrowLeft,
   ArrowRight,
   BarChart3,
   Bell,
