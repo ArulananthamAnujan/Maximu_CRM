@@ -129,6 +129,11 @@ type CaseRecord = {
   intake: string;
   source: string;
   campaign: string;
+  priority: string;
+  passportMasked: string;
+  partner: string;
+  documentSummary: string;
+  deferReason: string;
   leadScore: number;
   lostReason: string;
   applicationStatus: string;
@@ -144,6 +149,9 @@ type ApplicationRow = {
   caseId: string;
   caseNumber: string;
   client: string;
+  email: string;
+  phone: string;
+  passportMasked: string;
   institution: string;
   course: string;
   campus: string;
@@ -159,6 +167,10 @@ type ApplicationRow = {
   associate: string;
   partner: string;
   notes: string;
+  documentSummary: string;
+  latestNote: string;
+  latestNoteBy: string;
+  latestNoteAt: string;
   archived: boolean;
 };
 type VisaMatterRow = {
@@ -166,6 +178,9 @@ type VisaMatterRow = {
   caseId: string;
   caseNumber: string;
   client: string;
+  email: string;
+  phone: string;
+  passportMasked: string;
   matterType: string;
   currentVisa: string;
   subclass: string;
@@ -184,6 +199,11 @@ type VisaMatterRow = {
   decisionOn: string;
   outcome: string;
   owner: string;
+  branch: string;
+  documentSummary: string;
+  latestNote: string;
+  latestNoteBy: string;
+  latestNoteAt: string;
 };
 // A client who already looks like the person being entered, and why they
 // matched. Shown before a second record is created for one human being.
@@ -202,9 +222,17 @@ type DuplicateMatch = {
 type TaskRecord = {
   id: string;
   title: string;
+  description: string;
   caseId: string;
   due: string;
   priority: string;
+  type: string;
+  branch: string;
+  assignedTo: string;
+  createdBy: string;
+  completedBy: string;
+  createdAt: string;
+  updatedAt: string;
   completed: boolean;
 };
 type AppointmentRecord = {
@@ -257,16 +285,21 @@ type CampaignRecord = {
 };
 type InvoiceRecord = {
   id: string;
+  caseId: string;
   invoiceNumber: string;
   client: string;
   currency: string;
   subtotal: number;
+  discount: number;
   tax: number;
   amount: number;
   paid: number;
   credited: number;
   balance: number;
   type: string;
+  paymentMethod: string;
+  description: string;
+  createdBy: string;
   issued: string;
   due: string;
   status: string;
@@ -2051,26 +2084,32 @@ function CaseWorkspace({
     if (module === "enquiries") return {
       primary: record.email || "No email recorded",
       secondary: [record.phone, record.source, record.campaign].filter(Boolean).join(" · ") || "No source recorded",
+      tertiary: `${humanise(record.priority)} priority · ${record.documentSummary}`,
     };
     if (module === "students") return {
       primary: record.target || record.type || "Study plan not recorded",
       secondary: [record.destinationCountry, record.intake].filter(Boolean).join(" · ") || "Destination and intake not recorded",
+      tertiary: [record.source, record.partner, record.passportMasked && `Passport ${record.passportMasked}`, record.documentSummary].filter(Boolean).join(" · "),
     };
     if (module === "direct_visas" || module === "visas") return {
       primary: record.visaCategory || record.type || "Visa category not recorded",
       secondary: [record.destinationCountry, record.visaExpiry ? `Current visa expires ${orgDate(record.visaExpiry)}` : ""].filter(Boolean).join(" · ") || "Visa details not recorded",
+      tertiary: [record.passportMasked && `Passport ${record.passportMasked}`, record.documentSummary].filter(Boolean).join(" · "),
     };
     if (module === "defer") return {
       primary: record.target || record.type || "Deferred case",
-      secondary: record.lostReason || (record.deferredApplications ? `${record.deferredApplications} deferred application${record.deferredApplications === 1 ? "" : "s"}` : "Reason not recorded"),
+      secondary: record.deferReason || record.lostReason || (record.deferredApplications ? `${record.deferredApplications} deferred application${record.deferredApplications === 1 ? "" : "s"}` : "Reason not recorded"),
+      tertiary: [record.intake && `New intake ${record.intake}`, record.documentSummary].filter(Boolean).join(" · "),
     };
     if (module === "case_complete") return {
       primary: record.target || record.type || "Case completed",
       secondary: record.destinationCountry || record.applicationStatus || "Outcome details available in the case",
+      tertiary: [record.documentSummary, record.partner].filter(Boolean).join(" · "),
     };
     return {
       primary: record.type || "Matter not recorded",
       secondary: record.target || record.destinationCountry || "No target recorded",
+      tertiary: record.documentSummary,
     };
   };
 
@@ -2123,12 +2162,13 @@ function CaseWorkspace({
               <div className="journeyDataRow" key={record.id}>
                 <button type="button" className="journeyPrimaryCell" onClick={() => onSelect(record)}>
                   <strong>{record.name}</strong>
-                  <span>{record.id}</span>
-                  <small>{record.branch || "Branch not recorded"}</small>
+                  <span>{record.id} · {record.branch || "Branch not recorded"}</span>
+                  <small>{[record.email, record.phone].filter(Boolean).join(" · ") || "Contact not recorded"}</small>
                 </button>
                 <button type="button" className="journeyInfoCell" onClick={() => onSelect(record)}>
                   <strong>{context.primary}</strong>
                   <span>{context.secondary}</span>
+                  <small>{context.tertiary || "No additional operational details"}</small>
                 </button>
                 <button type="button" className="journeyInfoCell" onClick={() => onSelect(record)}>
                   <strong>{journey.primary}</strong>
@@ -2246,6 +2286,7 @@ function ApplicationsBoard({
                 <h3>{row.client || "Student not recorded"}</h3>
                 <p>{row.institution || "Institution not recorded"}</p>
                 <small>{row.caseNumber || "Case reference pending"}</small>
+                <small>{[row.email, row.phone].filter(Boolean).join(" · ") || "Contact not recorded"}</small>
               </div>
               <div className="detailedRecordFacts applicationFacts">
                 <span><small>Course</small><strong>{row.course || "Not recorded"}</strong></span>
@@ -2255,7 +2296,10 @@ function ApplicationsBoard({
                 <span><small>Submitted</small><strong>{row.submittedOn ? orgDate(row.submittedOn) : "Not submitted"}</strong></span>
                 <span><small>Offer / CoE</small><strong>{[row.offerOn && `Offer ${orgDate(row.offerOn)}`, row.coeOn && `CoE ${orgDate(row.coeOn)}`].filter(Boolean).join(" · ") || "Waiting"}</strong></span>
                 <span className={overdue(row.deadlineOn) ? "overdueFact" : ""}><small>Deadline</small><strong>{row.deadlineOn ? orgDate(row.deadlineOn) : "Not set"}</strong></span>
-                <span><small>Latest application note</small><strong>{row.notes || "No application note"}</strong></span>
+                <span><small>Branch &amp; passport</small><strong>{[row.branch, row.passportMasked && `Passport ${row.passportMasked}`].filter(Boolean).join(" · ") || "Not recorded"}</strong></span>
+                <span><small>Documents</small><strong>{row.documentSummary}</strong></span>
+                <span><small>Application note</small><strong>{row.notes || "No application note"}</strong></span>
+                <span><small>Latest case note</small><strong>{row.latestNote || "No case note"}{row.latestNoteAt ? ` · ${row.latestNoteBy || "Branch staff"} ${orgDateTime(row.latestNoteAt)}` : ""}</strong></span>
               </div>
               <button className="recordOpenButton" onClick={() => onOpen(row.caseId)}>Open case <ArrowRight size={15} /></button>
             </article>
@@ -2294,6 +2338,7 @@ function VisaMattersBoard({
                 <h3>{row.client || "Client not recorded"}</h3>
                 <p>{row.subclass || row.matterType || "Visa type not recorded"}</p>
                 <small>{row.caseNumber || "Case reference pending"}</small>
+                <small>{[row.email, row.phone].filter(Boolean).join(" · ") || "Contact not recorded"}</small>
               </div>
               <div className="detailedRecordFacts visaFacts">
                 <span><small>Destination</small><strong>{row.destination || "Not recorded"}</strong></span>
@@ -2302,6 +2347,9 @@ function VisaMattersBoard({
                 <span><small>Agent / MARN</small><strong>{[row.agent || row.owner, row.marn].filter(Boolean).join(" · ") || "Not recorded"}</strong></span>
                 <span className={row.informationDueOn && !row.informationProvidedOn && overdue(row.informationDueOn) ? "overdueFact" : ""}><small>Information request</small><strong>{row.informationDueOn ? `${orgDate(row.informationDueOn)}${row.informationProvidedOn ? " · Answered" : " · Pending"}` : "None"}</strong></span>
                 <span><small>Decision / outcome</small><strong>{[row.decisionOn && orgDate(row.decisionOn), row.outcome && humanise(row.outcome)].filter(Boolean).join(" · ") || "Pending"}</strong></span>
+                <span><small>Branch &amp; passport</small><strong>{[row.branch, row.passportMasked && `Passport ${row.passportMasked}`].filter(Boolean).join(" · ") || "Not recorded"}</strong></span>
+                <span><small>Documents</small><strong>{row.documentSummary}</strong></span>
+                <span><small>Latest case note</small><strong>{row.latestNote || "No case note"}{row.latestNoteAt ? ` · ${row.latestNoteBy || "Branch staff"} ${orgDateTime(row.latestNoteAt)}` : ""}</strong></span>
               </div>
               <button className="recordOpenButton" onClick={() => onOpen(row.caseId)}>Open case <ArrowRight size={15} /></button>
             </article>
@@ -2315,13 +2363,11 @@ function VisaMattersBoard({
 function TasksView({
   tasks,
   cases,
-  setTasks,
   openModal,
   onBulkAction,
 }: {
   tasks: TaskRecord[];
   cases: CaseRecord[];
-  setTasks: (x: TaskRecord[]) => void;
   openModal: (x: ModalType) => void;
   onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
 }) {
@@ -2331,7 +2377,7 @@ function TasksView({
   const shown = tasks
     .filter((task) => state === "all" || (state === "done" ? task.completed : !task.completed))
     .filter((task) => !priority || task.priority === priority)
-    .filter((task) => matchesSearch(query, [task.title, task.priority, task.due, cases.find((c) => c.dbId === task.caseId)?.name]));
+    .filter((task) => matchesSearch(query, [task.title, task.description, task.type, task.branch, task.assignedTo, task.createdBy, task.priority, task.due, cases.find((c) => c.dbId === task.caseId)?.name]));
   const priorities = [...new Set(tasks.map((task) => task.priority).filter(Boolean))].sort();
   const selection = useBulkSelection(shown);
   const run = async (operation: string, extra: Record<string, unknown> = {}) => {
@@ -2385,27 +2431,24 @@ function TasksView({
             <RowSelection checked={selection.selectedIds.has(t.id)} onChange={() => selection.toggle(t.id)} label={`Select ${t.title}`} />
             <button
               className={`taskCheck ${t.completed ? "done" : ""}`}
-              onClick={() =>
-                setTasks(
-                  tasks.map((x) =>
-                    x.id === t.id ? { ...x, completed: !x.completed } : x,
-                  ),
-                )
-              }
+              onClick={() => void onBulkAction("task", "toggle", [t.id], { completed: !t.completed })}
+              aria-label={t.completed ? `Reopen ${t.title}` : `Complete ${t.title}`}
             >
               {t.completed ? <Check size={15} /> : null}
             </button>
             <div>
               <strong>{t.title}</strong>
-              <span>
-                {cases.find((c) => c.dbId === t.caseId)?.name || "General task"} ·
-                Due {t.due || "not set"}
-              </span>
+              <span>{t.description || "No task description"}</span>
+              <small>{cases.find((c) => c.dbId === t.caseId)?.name || "General task"} · {humanise(t.type)} · {t.branch || "Personal work"}</small>
+              <small>Created by {t.createdBy || "Branch staff"}{t.assignedTo ? ` · Responsible: ${t.assignedTo}` : ""}{t.completedBy ? ` · Completed by ${t.completedBy}` : ""}</small>
             </div>
-            <Status value={t.priority} />
+            <div className={overdue(t.due) && !t.completed ? "taskDueBlock overdueFact" : "taskDueBlock"}><small>Due</small><strong>{t.due ? orgDate(t.due) : "Not set"}</strong></div>
+            <Status value={t.completed ? "Completed" : t.priority} />
             <button
               className="iconButton"
-              onClick={() => setTasks(tasks.filter((x) => x.id !== t.id))}
+              onClick={() => {
+                if (confirm(`Delete “${t.title}”?`)) void onBulkAction("task", "delete", [t.id]);
+              }}
               aria-label="Delete task"
               title="Delete task"
             >
@@ -2679,6 +2722,7 @@ function CalendarView({
                   <span>
                     {a.client || "Internal"} · {a.type}
                   </span>
+                  {a.responseNote ? <small>{a.responseNote}</small> : null}
                 </div>
                 <Status value={a.status} />
                 {a.status === "requested" ? (
@@ -2805,6 +2849,8 @@ function DocumentsView({
                     <span>
                       {d.folder || "Unfiled"} · {d.fileName}
                     </span>
+                    <small>{d.note || "No document instructions"}</small>
+                    <small>{d.due ? `Due ${orgDate(d.due)}` : "No due date"}{d.createdAt ? ` · Recorded ${orgDateTime(d.createdAt)}` : ""}</small>
                   </div>
                   <Status value={d.status} />
                   <button
@@ -3212,7 +3258,6 @@ function CampaignsPanel({ items, cases, onChange }: {
 function FinanceView({
   items,
   openModal,
-  setItems,
   canManage,
   onRefund,
   onCreditNote,
@@ -3222,7 +3267,6 @@ function FinanceView({
 }: {
   items: InvoiceRecord[];
   openModal: (x: ModalType) => void;
-  setItems: (x: InvoiceRecord[]) => void;
   // Invoices are writable only by manager level and above, so a case officer
   // sees the ledger without controls the database would refuse.
   canManage: boolean;
@@ -3236,6 +3280,8 @@ function FinanceView({
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
   const total = items.reduce((s, x) => s + x.amount, 0);
+  const outstanding = items.reduce((s, x) => s + x.balance, 0);
+  const received = items.reduce((s, x) => s + x.paid, 0);
   const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
   const types = [...new Set(items.map((item) => item.type).filter(Boolean))].sort();
   const shown = items
@@ -3254,22 +3300,14 @@ function FinanceView({
         <article>
           <span>Outstanding</span>
           <strong>
-            $
-            {items
-              .filter((x) => x.status !== "Paid")
-              .reduce((s, x) => s + x.amount, 0)
-              .toLocaleString()}
+            ${outstanding.toLocaleString()}
           </strong>
           <small>Live CRM total</small>
         </article>
         <article>
           <span>Paid</span>
           <strong>
-            $
-            {items
-              .filter((x) => x.status === "Paid")
-              .reduce((s, x) => s + x.amount, 0)
-              .toLocaleString()}
+            ${received.toLocaleString()}
           </strong>
           <small>Live CRM total</small>
         </article>
@@ -3315,8 +3353,9 @@ function FinanceView({
             <button className="ghostButton" onClick={() => downloadCsv("invoices-selected.csv", selection.selected.map((invoice) => ({
               invoiceNumber: invoice.invoiceNumber, client: invoice.client,
               type: invoice.type, currency: invoice.currency, subtotal: invoice.subtotal,
-              tax: invoice.tax, total: invoice.amount, paid: invoice.paid,
+              discount: invoice.discount, tax: invoice.tax, total: invoice.amount, paid: invoice.paid,
               balance: invoice.balance, issued: invoice.issued, due: invoice.due,
+              paymentMethod: invoice.paymentMethod, description: invoice.description,
               status: invoice.status,
             })))}><Download size={14} /> Export selected</button>
             {canManage && (
@@ -3327,21 +3366,33 @@ function FinanceView({
               }}><Trash2 size={14} /> Void selected</button>
             )}
           </BulkActionBar>
+          <div className="invoiceRecordList">
           {shown.map((i) => (
-            <div className="functionalRow bulkEnabled" key={i.id}>
+            <article className="invoiceRecordCard" key={i.id}>
               <RowSelection checked={selection.selectedIds.has(i.id)} onChange={() => selection.toggle(i.id)} label={`Select invoice ${i.invoiceNumber || i.client}`} />
-              <div>
-                <strong>{i.invoiceNumber || i.client}</strong>
-                <span>{i.client} · Due {i.due || "not set"}</span>
+              <div className="invoiceIdentity">
+                <Status value={i.status} />
+                <strong>{i.invoiceNumber || "Invoice"}</strong>
+                <span>{i.client}</span>
+                <small>{humanise(i.type)} · Issued {i.issued ? orgDate(i.issued) : "not recorded"}</small>
+                <small className={overdue(i.due) && i.balance > 0 ? "overdueFact" : ""}>Due {i.due ? orgDate(i.due) : "not set"}{i.createdBy ? ` · Created by ${i.createdBy}` : ""}</small>
               </div>
-              <b>{i.currency} {i.amount.toLocaleString()}</b>
-              {i.pdfDocumentId ? (
-                <a className="ghostButton" href={`/api/crm/documents?documentId=${i.pdfDocumentId}`}>
-                  <FileText size={14} /> Invoice PDF
-                </a>
-              ) : null}
-              {canManage ? (
-                <>
+              <div className="invoiceFacts">
+                <span><small>Subtotal</small><strong>{i.currency} {i.subtotal.toLocaleString()}</strong></span>
+                <span><small>Discount</small><strong>{i.currency} {i.discount.toLocaleString()}</strong></span>
+                <span><small>Tax / GST</small><strong>{i.currency} {i.tax.toLocaleString()}</strong></span>
+                <span><small>Grand total</small><strong>{i.currency} {i.amount.toLocaleString()}</strong></span>
+                <span><small>Paid / credited</small><strong>{i.currency} {i.paid.toLocaleString()} / {i.credited.toLocaleString()}</strong></span>
+                <span className={i.balance > 0 ? "overdueFact" : ""}><small>Balance</small><strong>{i.currency} {i.balance.toLocaleString()}</strong></span>
+                <span><small>Payment mode</small><strong>{i.paymentMethod ? humanise(i.paymentMethod) : "Not recorded"}</strong></span>
+                <span className="invoiceDescription"><small>Description</small><strong>{i.description || "No description"}</strong></span>
+              </div>
+              <div className="invoiceActions">
+                {i.pdfDocumentId ? (
+                  <a className="ghostButton" href={`/api/crm/documents?documentId=${i.pdfDocumentId}`}><FileText size={14} /> Invoice PDF</a>
+                ) : null}
+                {canManage ? (
+                  <>
                   <button
                     className="ghostButton"
                     onClick={() => onPayment(i)}
@@ -3364,18 +3415,20 @@ function FinanceView({
                   ) : null}
                   <button
                     className="iconButton"
-                    onClick={() => setItems(items.filter((x) => x.id !== i.id))}
-                    aria-label="Delete invoice"
-                    title="Delete invoice"
+                    onClick={() => {
+                      if (confirm(`Void invoice ${i.invoiceNumber}? Its history will be retained.`)) void onBulkAction("invoice", "delete", [i.id]);
+                    }}
+                    aria-label="Void invoice"
+                    title="Void invoice"
                   >
                     <Trash2 size={16} />
                   </button>
-                </>
-              ) : (
-                <Status value={i.status} />
-              )}
-            </div>
+                  </>
+                ) : null}
+              </div>
+            </article>
           ))}
+          </div>
           </>
         )}
       </article>
@@ -10561,6 +10614,10 @@ function RecordModal({
                 Task title
                 <input name="title" required />
               </label>
+              <label className="full">
+                Description
+                <textarea name="description" placeholder="What needs to be done and what a colleague needs to know" />
+              </label>
               <label>
                 Case
                 <select name="caseId">
@@ -10578,11 +10635,34 @@ function RecordModal({
               </label>
               <label>
                 Priority
-                <select name="priority">
-                  <option>Normal</option>
-                  <option>Attention</option>
-                  <option>Critical</option>
+                <select name="priority" defaultValue="medium">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
                 </select>
+              </label>
+              <label>
+                Task type
+                <select name="taskType" defaultValue="case_work">
+                  <option value="case_work">Case work</option>
+                  <option value="follow_up">Follow-up</option>
+                  <option value="documents">Documents</option>
+                  <option value="application">Application</option>
+                  <option value="visa">Visa</option>
+                  <option value="finance">Finance</option>
+                  <option value="internal">Internal</option>
+                </select>
+              </label>
+              <label>
+                Responsible staff
+                <select name="assignedTo" defaultValue="">
+                  <option value="">Me</option>
+                  {staff.map((person) => (
+                    <option key={person.id} value={person.id}>{person.display_name}</option>
+                  ))}
+                </select>
+                <small>The whole branch can still see case-linked work.</small>
               </label>
             </>
           )}
@@ -10910,6 +10990,10 @@ function RecordModal({
                 </select>
               </label>
               <label>
+                Invoice date
+                <input name="issuedOn" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required />
+              </label>
+              <label>
                 Subtotal
                 <input
                   name="subtotal"
@@ -10920,12 +11004,40 @@ function RecordModal({
                 />
               </label>
               <label>
+                Discount
+                <input name="discount" type="number" min="0" step="0.01" defaultValue="0" />
+              </label>
+              <label>
                 Tax / GST
                 <input name="tax" type="number" min="0" step="0.01" defaultValue="0" required />
               </label>
               <label>
+                Initial payment received
+                <input name="initialPaid" type="number" min="0" step="0.01" defaultValue="0" />
+              </label>
+              <label>
+                Payment mode
+                <select name="paymentMethod" defaultValue="">
+                  <option value="">Not paid yet</option>
+                  <option value="bank_transfer">Bank transfer</option>
+                  <option value="card">Card</option>
+                  <option value="cash">Cash</option>
+                  <option value="eftpos">EFTPOS</option>
+                  <option value="online">Online payment</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label>
+                Payment reference
+                <input name="paymentReference" placeholder="Receipt or transaction reference" />
+              </label>
+              <label>
                 Due date
                 <input name="due" type="date" />
+              </label>
+              <label className="full">
+                Description
+                <textarea name="description" placeholder="Services, instalment or other information shown with this invoice" />
               </label>
               <label className="full">
                 Invoice PDF
@@ -11842,23 +11954,6 @@ export default function Home() {
         completed: changed.status !== "Draft",
       });
   };
-  const syncInvoices = (next: InvoiceRecord[]) => {
-    const removed = invoices.find(
-      (item) => !next.some((candidate) => candidate.id === item.id),
-    );
-    const changed = next.find(
-      (item) =>
-        invoices.find((previous) => previous.id === item.id)?.status !==
-        item.status,
-    );
-    setInvoices(next);
-    if (removed) void mutateRemote("invoice", "delete", removed.id);
-    else if (changed)
-      void mutateRemote("invoice", "toggle", changed.id, {
-        completed: changed.status === "Paid",
-        amount: changed.amount,
-      });
-  };
   const syncWorkflows = (next: WorkflowRecord[]) => {
     const changed = next.find(
       (item) =>
@@ -11998,7 +12093,6 @@ export default function Home() {
       <TasksView
         tasks={tasks}
         cases={cases}
-        setTasks={syncTasks}
         openModal={open}
         onBulkAction={bulkMutateRemote}
       />
@@ -12062,7 +12156,6 @@ export default function Home() {
         <FinanceView
           items={visibleInvoices}
           openModal={open}
-          setItems={syncInvoices}
           canManage={canManageCaseFinance}
           onRefund={(invoice) => {
             if (

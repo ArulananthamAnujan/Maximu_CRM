@@ -272,6 +272,25 @@ export async function GET(request: Request) {
       const key = String(note.case_id);
       if (!latestNoteByCase.has(key)) latestNoteByCase.set(key, note);
     }
+    const latestJourneyByCase = new Map<string, Json>();
+    for (const milestone of stageHistory)
+      latestJourneyByCase.set(String(milestone.case_id), milestone);
+    const documentSummaryByCase = new Map<string, string>();
+    const documentCountsByCase = new Map<string, { total: number; ready: number; waiting: number }>();
+    for (const document of documents) {
+      if (!document.case_id || document.state === "archived") continue;
+      const key = String(document.case_id);
+      const counts = documentCountsByCase.get(key) ?? { total: 0, ready: 0, waiting: 0 };
+      counts.total += 1;
+      if (["verified", "uploaded"].includes(String(document.state))) counts.ready += 1;
+      else counts.waiting += 1;
+      documentCountsByCase.set(key, counts);
+    }
+    for (const [key, counts] of documentCountsByCase)
+      documentSummaryByCase.set(
+        key,
+        `${counts.ready}/${counts.total} ready${counts.waiting ? ` · ${counts.waiting} waiting` : ""}`,
+      );
     const threadById = new Map(threads.map((row) => [String(row.id), row]));
     const applicationByCase = new Map<string, Json>();
     for (const application of applications) {
@@ -324,7 +343,9 @@ export async function GET(request: Request) {
         const owner = profileById.get(String(row.owner_id)) ?? {};
         const latestNote = latestNoteByCase.get(String(row.id)) ?? {};
         const latestNoteAuthor = profileById.get(String(latestNote.author_id)) ?? {};
+        const latestJourney = latestJourneyByCase.get(String(row.id)) ?? {};
         const branch = branchById.get(String(row.branch_id)) ?? {};
+        const applicationDetails = (latestApplication.details as Json | null) ?? {};
         const name = [client.first_name, client.last_name]
           .filter(Boolean)
           .join(" ");
@@ -379,6 +400,14 @@ export async function GET(request: Request) {
           intake: latestApplication.intake ?? caseIntake.intake ?? clientIntake.intake ?? "",
           source: client.source ?? "",
           campaign: enquiry.campaign ?? "",
+          priority: row.priority ?? enquiry.priority ?? "medium",
+          passportMasked: client.passport_masked ?? "",
+          partner: applicationDetails.partner ?? "",
+          documentSummary: documentSummaryByCase.get(String(row.id)) ?? "No documents",
+          deferReason:
+            row.lifecycle_stage === "deferred"
+              ? latestJourney.reason ?? applicationDetails.defer_reason ?? applicationDetails.notes ?? ""
+              : applicationDetails.defer_reason ?? "",
           leadScore: Number(enquiry.score ?? 0),
           lostReason: enquiry.lost_reason ?? "",
           applicationStatus: latestApplication.status ?? "",
@@ -395,9 +424,17 @@ export async function GET(request: Request) {
       tasks: tasks.map((row) => ({
         id: row.id,
         title: row.title,
+        description: row.description ?? "",
         caseId: row.case_id ?? "",
         due: dateOnly(row.due_at),
         priority: row.priority ?? "medium",
+        type: row.task_type ?? row.department ?? "case_work",
+        branch: branchById.get(String(caseById.get(String(row.case_id))?.branch_id))?.name ?? "",
+        assignedTo: profileById.get(String(row.assigned_to))?.display_name ?? "",
+        createdBy: profileById.get(String(row.assigned_by))?.display_name ?? "",
+        completedBy: profileById.get(String(row.completed_by))?.display_name ?? "",
+        createdAt: row.created_at ?? "",
+        updatedAt: row.updated_at ?? row.completed_at ?? row.created_at ?? "",
         completed: row.status === "completed",
       })),
       appointments: appointments.map((row) => ({
@@ -482,10 +519,12 @@ export async function GET(request: Request) {
         const credited = creditedByInvoice.get(String(row.id)) ?? 0;
         return {
           id: row.id,
+          caseId: String(row.case_id ?? ""),
           invoiceNumber: String(row.invoice_number ?? ""),
           client: fullClientName(clientById.get(String(row.client_id))),
           currency: String(row.currency ?? "AUD"),
           subtotal: Number(row.subtotal ?? 0),
+          discount: Number(row.discount ?? 0),
           tax: Number(row.tax ?? 0),
           amount: total,
           paid,
@@ -495,6 +534,9 @@ export async function GET(request: Request) {
           // a commission claim raised against a partner, for instance -- is
           // never a client's business and is filtered out on the way to them.
           type: String(row.invoice_type ?? "professional_fee"),
+          paymentMethod: String(row.payment_method ?? ""),
+          description: String(row.description ?? ""),
+          createdBy: String(profileById.get(String(row.created_by))?.display_name ?? ""),
           issued: String(row.issued_on ?? ""),
           due: String(row.due_on ?? ""),
           status:
@@ -587,11 +629,16 @@ export async function GET(request: Request) {
         const parent = caseById.get(String(row.case_id)) ?? {};
         const client = clientById.get(String(parent.client_id)) ?? {};
         const details = (row.details as Json | null) ?? {};
+        const latestNote = latestNoteByCase.get(String(row.case_id)) ?? {};
+        const latestNoteAuthor = profileById.get(String(latestNote.author_id)) ?? {};
         return {
           id: String(row.id),
           caseId: String(row.case_id),
           caseNumber: parent.case_number ?? "",
           client: fullClientName(client),
+          email: client.email ?? "",
+          phone: client.mobile ?? "",
+          passportMasked: client.passport_masked ?? "",
           institution: row.institution ?? "",
           course: row.course ?? "",
           campus: row.campus ?? "",
@@ -607,6 +654,10 @@ export async function GET(request: Request) {
           associate: details.associate ?? "",
           partner: details.partner ?? "",
           notes: details.notes ?? "",
+          documentSummary: documentSummaryByCase.get(String(row.case_id)) ?? "No documents",
+          latestNote: latestNote.body ?? "",
+          latestNoteBy: latestNoteAuthor.display_name ?? "",
+          latestNoteAt: latestNote.created_at ?? "",
           archived: Boolean(row.archived_at),
         };
       }),
@@ -616,11 +667,16 @@ export async function GET(request: Request) {
       visaMatters: visaMatters.map((row) => {
         const parent = caseById.get(String(row.case_id)) ?? {};
         const client = clientById.get(String(parent.client_id)) ?? {};
+        const latestNote = latestNoteByCase.get(String(row.case_id)) ?? {};
+        const latestNoteAuthor = profileById.get(String(latestNote.author_id)) ?? {};
         return {
           id: String(row.id),
           caseId: String(row.case_id),
           caseNumber: parent.case_number ?? "",
           client: fullClientName(client),
+          email: client.email ?? "",
+          phone: client.mobile ?? "",
+          passportMasked: client.passport_masked ?? "",
           matterType: parent.matter_type ?? "",
           currentVisa: String(
             heldVisaByClient.get(String(parent.client_id))?.visa_type ?? "",
@@ -641,6 +697,11 @@ export async function GET(request: Request) {
           decisionOn: dateOnly(row.decision_at),
           outcome: row.outcome ?? "",
           owner: profileById.get(String(parent.owner_id))?.display_name ?? "",
+          branch: branchById.get(String(parent.branch_id))?.name ?? "",
+          documentSummary: documentSummaryByCase.get(String(row.case_id)) ?? "No documents",
+          latestNote: latestNote.body ?? "",
+          latestNoteBy: latestNoteAuthor.display_name ?? "",
+          latestNoteAt: latestNote.created_at ?? "",
         };
       }),
     };
@@ -1207,6 +1268,7 @@ export async function POST(request: Request) {
 
     if (action === "task") {
       const id = crypto.randomUUID();
+      const assignedTo = nullable(body.assignedTo) ?? actor;
       await insert(
         "tasks",
         {
@@ -1214,8 +1276,10 @@ export async function POST(request: Request) {
           organisation_id: org,
           case_id: nullable(body.caseId),
           title: required(body.title, "Task title"),
-          assigned_to: actor,
+          description: nullable(body.description),
+          assigned_to: assignedTo,
           assigned_by: actor,
+          task_type: nullable(body.taskType) ?? "case_work",
           priority: String(body.priority || "medium").toLowerCase(),
           status: "open",
           due_at: nullableDate(body.due),
@@ -1609,11 +1673,21 @@ export async function POST(request: Request) {
         throw new LiveAccessError(403, "That case is not available to you.");
       const clientId = String(invoiceCase.client_id);
       const subtotal = moneyAmount(body.subtotal ?? body.amount, "Subtotal");
+      const discount = moneyAmount(body.discount ?? 0, "Discount", true);
+      if (discount > subtotal)
+        throw new InputError("Discount cannot exceed the invoice subtotal.");
       const tax = moneyAmount(body.tax ?? 0, "Tax", true);
-      const total = Math.round((subtotal + tax) * 100) / 100;
+      const total = Math.round((subtotal - discount + tax) * 100) / 100;
+      const initialPaid = moneyAmount(body.initialPaid ?? 0, "Paid amount", true);
+      if (initialPaid > total)
+        throw new InputError("Paid amount cannot exceed the invoice total.");
       const currency = invoiceCurrency(body.currency);
       const invoiceType = invoiceTypeValue(body.invoiceType);
       const invoiceNumber = `INV-${new Date().getUTCFullYear()}-${id.slice(0, 8).toUpperCase()}`;
+      const issuedOn = body.issuedOn
+        ? requiredDay(body.issuedOn, "Invoice date")
+        : new Date().toISOString().slice(0, 10);
+      const paymentMethod = nullable(body.paymentMethod);
       await insert(
         "invoices",
         {
@@ -1625,15 +1699,49 @@ export async function POST(request: Request) {
           invoice_type: invoiceType,
           currency,
           subtotal,
+          discount,
           tax,
           total,
-          state: "issued",
-          issued_on: new Date().toISOString().slice(0, 10),
+          paid: initialPaid,
+          payment_method: paymentMethod,
+          description: nullable(body.description),
+          state: initialPaid >= total ? "paid" : initialPaid > 0 ? "part_paid" : "issued",
+          issued_on: issuedOn,
           due_on: nullable(body.due),
           created_by: actor,
         },
         token,
       );
+      if (initialPaid > 0) {
+        const paymentId = crypto.randomUUID();
+        const receiptId = crypto.randomUUID();
+        await insert(
+          "payments",
+          {
+            id: paymentId,
+            organisation_id: org,
+            invoice_id: id,
+            amount: initialPaid,
+            currency,
+            method: paymentMethod,
+            reference: nullable(body.paymentReference),
+            transaction_type: "payment",
+            recorded_by: actor,
+          },
+          token,
+        );
+        await insert(
+          "payment_receipts",
+          {
+            id: receiptId,
+            organisation_id: org,
+            payment_id: paymentId,
+            receipt_number: `RCT-${new Date().getUTCFullYear()}-${receiptId.slice(0, 8).toUpperCase()}`,
+            issued_by: actor,
+          },
+          token,
+        );
+      }
       // Every invoice gets a protected file slot, even when the PDF is added
       // later. The normal document uploader then stores it in the client's
       // Accounts and Receipts folder and keeps replacement/version history.
@@ -2200,6 +2308,8 @@ export async function POST(request: Request) {
             await patchRow("tasks", id, {
               status: completed ? "completed" : "open",
               completed_at: completed ? new Date().toISOString() : null,
+              completed_by: completed ? actor : null,
+              updated_at: new Date().toISOString(),
             }, token);
           } else if (resource === "task" && operation === "delete") {
             await deleteRow("tasks", id, token);

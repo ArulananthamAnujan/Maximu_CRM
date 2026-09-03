@@ -85,7 +85,13 @@ with expected(area, kind, name, detail) as (values
   ('Case cover visibility (0034)', 'function',  'can_view_case',               'The case board stays branch-wide read for cover and handover, distinct from the narrower working-detail boundary'),
   ('Case cover visibility (0034)', 'function',  'can_access_client',           'Restored to 0018''s branch-wide read boundary; can_modify_client remains the separate, narrower write boundary'),
   ('Case cover visibility (0034)', 'function',  'can_modify_client',           'Restored to the owner/case-team write boundary, independent of the now-wider can_access_client read boundary'),
-  ('Case cover visibility (0034)', 'policy',    'invoices.invoices_scoped_select', 'A client-level invoice''s finance detail stays case-team scoped even though the case itself is branch-visible')
+  ('Case cover visibility (0034)', 'policy',    'invoices.invoices_scoped_select', 'A client-level invoice''s finance detail stays case-team scoped even though the case itself is branch-visible'),
+  ('Legacy workflow parity (0036)', 'column',   'tasks.task_type',               'Preserves the operational category of imported and newly-created tasks'),
+  ('Legacy workflow parity (0036)', 'column',   'tasks.completed_by',            'Records the staff member who actually completed a branch-visible task'),
+  ('Legacy workflow parity (0036)', 'column',   'tasks.updated_at',               'Preserves the last operational change time shown in the task register'),
+  ('Legacy workflow parity (0036)', 'column',   'invoices.discount',              'Preserves discounts separately from subtotal, tax and payment totals'),
+  ('Legacy workflow parity (0036)', 'column',   'invoices.payment_method',        'Preserves how the initial or recorded invoice payment was received'),
+  ('Legacy workflow parity (0036)', 'column',   'invoices.description',           'Preserves invoice service and payment context from the previous CRM')
 )
 select
   e.area,
