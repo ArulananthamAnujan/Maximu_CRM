@@ -157,10 +157,13 @@ test("a new case is rejected when the email address is malformed", async () => {
   assert.match(result.body.error, /valid email/i);
 });
 
-test("a new case is rejected without a visa expiry date", async () => {
+test("a new enquiry can be captured before its visa expiry is known", async () => {
   const result = await post({ ...NEW_CASE, visaExpiry: "" });
-  assert.equal(result.status, 400);
-  assert.match(result.body.error, /visa expiry/i);
+  assert.equal(result.status, 200);
+  const caseWrite = result.requests.find(
+    (r) => r.path === "/rest/v1/cases" && r.method === "POST",
+  );
+  assert.equal(caseWrite.body.visa_expiry_on, null);
 });
 
 test("a valid case records the email and visa expiry it was given", async () => {

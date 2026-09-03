@@ -379,6 +379,112 @@ const STUDY_MATTER_TYPES = [
   "Student visa",
 ];
 
+const COUNTRY_CALLING_CODES = [
+  ["Australia", "+61"],
+  ["Bangladesh", "+880"],
+  ["Canada / United States", "+1"],
+  ["India", "+91"],
+  ["Nepal", "+977"],
+  ["New Zealand", "+64"],
+  ["Pakistan", "+92"],
+  ["Sri Lanka", "+94"],
+  ["United Arab Emirates", "+971"],
+  ["United Kingdom", "+44"],
+] as const;
+
+const COMMON_VISA_TYPES = [
+  "Student Subclass 500",
+  "Visitor Subclass 600",
+  "Temporary Graduate Subclass 485",
+  "Training Visa Subclass 407",
+  "Employer Sponsored Subclass 482",
+  "Skilled Independent Subclass 189",
+  "Skilled Nominated Subclass 190",
+  "Skilled Work Regional Subclass 491",
+  "Partner 820/801",
+  "Partner 309/100",
+  "Protection Subclass 866",
+  "Other",
+] as const;
+
+const ENQUIRY_MAIN_STATUSES = [
+  "New Inquiry",
+  "Potential",
+  "Follow Up",
+  "Waiting for Documents",
+  "Documents Received",
+  "Confirmed",
+  "Prospect",
+  "Looking for Employer",
+  "Not Responding",
+  "Processed",
+  "Cancelled",
+  "Not Interested",
+] as const;
+
+const ENQUIRY_DETAIL_STATUSES = [
+  "No status",
+  "Call back",
+  "Appointment booked",
+  "Missing documents",
+  "Application underway",
+  "Payment pending",
+  "Future intake",
+  "Not responding",
+  "Wrong number",
+  "Rejected",
+] as const;
+
+type StudyChoiceDraft = {
+  institutionId: string;
+  institution: string;
+  course: string;
+  campus: string;
+  intake: string;
+  start: string;
+  end: string;
+  reference: string;
+  status: string;
+  deadline: string;
+  associate: string;
+  partner: string;
+};
+
+type EducationDraft = {
+  qualification: string;
+  institution: string;
+  field: string;
+  country: string;
+  start: string;
+  end: string;
+  result: string;
+  backlogs: string;
+};
+
+type EmploymentDraft = {
+  employer: string;
+  position: string;
+  country: string;
+  start: string;
+  end: string;
+  hours: string;
+  duties: string;
+};
+
+const blankStudyChoice = (): StudyChoiceDraft => ({
+  institutionId: "", institution: "", course: "", campus: "", intake: "",
+  start: "", end: "", reference: "", status: "draft", deadline: "",
+  associate: "", partner: "",
+});
+const blankEducation = (): EducationDraft => ({
+  qualification: "", institution: "", field: "", country: "", start: "",
+  end: "", result: "", backlogs: "",
+});
+const blankEmployment = (): EmploymentDraft => ({
+  employer: "", position: "", country: "", start: "", end: "", hours: "",
+  duties: "",
+});
+
 const DIRECT_VISA_MATTER_TYPES = [
   "Migration enquiry",
   "Student Subclass 500",
@@ -7408,6 +7514,36 @@ function FactList({
   );
 }
 
+function LegacyDataPanel({
+  client,
+  caseRecord,
+}: {
+  client: Record<string, unknown>;
+  caseRecord: Record<string, unknown>;
+}) {
+  const clientFields = ((client.custom_fields as Record<string, unknown> | null)
+    ?.legacy_data ?? {}) as Record<string, unknown>;
+  const caseFields = ((caseRecord.custom_fields as Record<string, unknown> | null)
+    ?.legacy_data ?? {}) as Record<string, unknown>;
+  const protectedKey = /(password|secret|token|credential|card|cvv|passport|tfn|tax_file)/i;
+  const combined = new Map<string, unknown>();
+  for (const [key, value] of [...Object.entries(clientFields), ...Object.entries(caseFields)]) {
+    if (!combined.has(key) && !protectedKey.test(key) && text(value)) combined.set(key, value);
+  }
+  const rows = Array.from(combined.entries()).map(([key, value]) => [
+    key.replace(/[_-]+/g, " ").replace(/^\w/, (letter) => letter.toUpperCase()),
+    Array.isArray(value) ? value.join(", ") : typeof value === "object" ? JSON.stringify(value) : value,
+  ] as [string, unknown]);
+  if (!rows.length) return null;
+  return (
+    <FactList
+      title="Legacy CRM imported fields"
+      rows={rows}
+      className="legacyImportedFields"
+    />
+  );
+}
+
 function CaseDrawerBody({
   item,
   close,
@@ -8356,6 +8492,10 @@ function CaseDrawerBody({
                 ]}
               />
             )}
+            <LegacyDataPanel
+              client={client}
+              caseRecord={file?.case ?? {}}
+            />
           </>
         )}
 
@@ -9848,6 +9988,18 @@ function RecordModal({
   );
   const [checklistCaseId, setChecklistCaseId] = useState("");
   const [checklistSelection, setChecklistSelection] = useState<Set<string>>(new Set());
+  const [studyChoices, setStudyChoices] = useState<StudyChoiceDraft[]>([
+    blankStudyChoice(),
+  ]);
+  const [educationRows, setEducationRows] = useState<EducationDraft[]>([
+    blankEducation(),
+  ]);
+  const [employmentRows, setEmploymentRows] = useState<EmploymentDraft[]>([
+    blankEmployment(),
+  ]);
+  const [intakeInstitutions, setIntakeInstitutions] = useState<CourseInstitution[]>([]);
+  const [intakeCourses, setIntakeCourses] = useState<Record<string, CourseFinderCourse[]>>({});
+  const [catalogueWarning, setCatalogueWarning] = useState("");
   const switchWorkspace = (next: "Study Abroad" | "Direct Visa") => {
     setWorkspace(next);
     if (!editing)
@@ -9864,6 +10016,9 @@ function RecordModal({
   if (openKey !== openFor) {
     setOpenFor(openKey);
     setChecklistCaseId(presetCaseId || "");
+    setStudyChoices([blankStudyChoice()]);
+    setEducationRows([blankEducation()]);
+    setEmploymentRows([blankEmployment()]);
     setChecklistSelection(
       presetCaseId
         ? new Set(
@@ -9887,6 +10042,42 @@ function RecordModal({
         (nextWorkspace === "Direct Visa" ? "Migration enquiry" : "Education enquiry"),
     );
   }
+  useEffect(() => {
+    if (type !== "case" || editing || workspace !== "Study Abroad") return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch("/api/crm/course-finder?limit=100&page=1", {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Course catalogue unavailable.");
+        setIntakeInstitutions(result.institutions || []);
+        const grouped: Record<string, CourseFinderCourse[]> = {};
+        for (const course of (result.courses || []) as CourseFinderCourse[]) {
+          grouped[course.institution_id] = [...(grouped[course.institution_id] || []), course];
+        }
+        setIntakeCourses(grouped);
+        setCatalogueWarning("");
+      } catch (reason) {
+        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        setCatalogueWarning("Course Finder could not be loaded. You can still type the institution and course manually.");
+      }
+    })();
+    return () => controller.abort();
+  }, [type, editing, workspace]);
+  const loadInstitutionCourses = async (institutionId: string) => {
+    if (!institutionId || intakeCourses[institutionId]) return;
+    try {
+      const response = await fetch(`/api/crm/course-finder?institution=${institutionId}&limit=100&page=1`, { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok) throw new Error();
+      setIntakeCourses((current) => ({ ...current, [institutionId]: result.courses || [] }));
+    } catch {
+      setCatalogueWarning("Courses for that institution could not be loaded. You can still type the course manually.");
+    }
+  };
   if (!type) return null;
   const isClientAppointment = role === "client" && type === "appointment";
   const isClientMessage = role === "client" && type === "message";
@@ -10042,12 +10233,16 @@ function RecordModal({
                 </label>
                 <label>
                   Mobile *
-                  <input
-                    name="phone"
-                    required
-                    defaultValue={editing?.phone}
-                    placeholder="+61 412 345 678"
-                  />
+                  <span className="phoneFieldPair">
+                    <input name="phoneCountryCode" aria-label="Mobile country code" list="callingCodes" defaultValue="+61" />
+                    <datalist id="callingCodes">{COUNTRY_CALLING_CODES.map(([country, code]) => <option key={`${country}-${code}`} value={code}>{country}</option>)}</datalist>
+                    <input
+                      name="phone"
+                      required
+                      defaultValue={editing?.phone}
+                      placeholder="412 345 678"
+                    />
+                  </span>
                 </label>
                 <label>
                   Date of birth
@@ -10074,13 +10269,13 @@ function RecordModal({
                   </select>
                 </label>
                 <label>
-                  Visa expiry date *
+                  Current visa expiry date
                   <input
                     name="visaExpiry"
                     type="date"
-                    required
                     defaultValue={editing?.visaExpiry}
                   />
+                  <small>Optional at enquiry. Required before moving the case to Visa.</small>
                 </label>
                 <label>
                   Branch
@@ -10109,24 +10304,26 @@ function RecordModal({
                   />
                 </label>
                 <label>
-                  CRM status
+                  Main enquiry status
                   <select
                     name="stage"
                     defaultValue={editing?.stage || "New Inquiry"}
                   >
-                    <option>New Inquiry</option>
-                    <option>Potential</option>
-                    <option>Follow Up</option>
-                    <option>Waiting for Documents</option>
-                    <option>Documents Received</option>
-                    <option>Confirmed</option>
-                    <option>Prospect</option>
-                    <option>Looking for Employer</option>
-                    <option>Not Responding</option>
-                    <option>Processed</option>
-                    <option>Cancelled</option>
-                    <option>Not Interested</option>
+                    {ENQUIRY_MAIN_STATUSES.map((status) => <option key={status}>{status}</option>)}
                   </select>
+                </label>
+                <label>
+                  Detailed status
+                  <select name="subStatus" defaultValue="No status">
+                    {ENQUIRY_DETAIL_STATUSES.map((status) => <option key={status}>{status}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Visa type
+                  <input name="visaType" list="commonVisaTypes" placeholder="Select or type the visa type" />
+                  <datalist id="commonVisaTypes">
+                    {COMMON_VISA_TYPES.map((visaType) => <option key={visaType} value={visaType} />)}
+                  </datalist>
                 </label>
                 <label>
                   Next follow-up
@@ -10179,7 +10376,7 @@ function RecordModal({
                   <details open>
                     <summary>Personal, contact and passport details</summary>
                     <div className="intakeFields">
-                      <label>Alternate mobile<input name="alternatePhone" placeholder="+61 412 345 678" /></label>
+                      <label>Alternate mobile<span className="phoneFieldPair"><input name="alternatePhoneCountryCode" aria-label="Alternate mobile country code" list="callingCodes" defaultValue="+61" /><input name="alternatePhone" placeholder="412 345 678" /></span></label>
                       <label>Gender<select name="gender" defaultValue=""><option value="">Select gender</option><option>Male</option><option>Female</option><option>Other</option><option>Prefer not to say</option></select></label>
                       <label>Marital status<select name="maritalStatus" defaultValue=""><option value="">Select status</option><option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option><option>Separated</option></select></label>
                       <label>Country of birth<input name="countryOfBirth" /></label>
@@ -10202,24 +10399,50 @@ function RecordModal({
                       <div className="intakeFields">
                         <label>Destination country<select name="destinationCountry" defaultValue=""><option value="">Select country</option>{DESTINATION_COUNTRIES.map((country) => <option key={country}>{country}</option>)}</select></label>
                         <label>Study level<select name="studyLevel" defaultValue=""><option value="">Select level</option><option>Certificate III</option><option>Certificate IV</option><option>Diploma</option><option>Advanced Diploma</option><option>Bachelor Degree</option><option>Graduate Certificate</option><option>Graduate Diploma</option><option>Master Degree</option><option>Master by Research</option><option>PhD</option></select></label>
-                        <label>Preferred institution<input name="preferredInstitution" /></label>
-                        <label>Preferred course<input name="preferredCourse" /></label>
-                        <label>Target intake<input name="intake" placeholder="e.g. February 2027" /></label>
-                        <label>Proposed course start<input name="proposedCourseStart" type="date" /></label>
-                        <label>Proposed course end<input name="proposedCourseEnd" type="date" /></label>
                         <label>Second destination choice<select name="secondaryDestination" defaultValue=""><option value="">No second choice</option>{DESTINATION_COUNTRIES.map((country) => <option key={country}>{country}</option>)}</select></label>
                         <label>Annual budget<input name="annualBudget" type="number" min="0" step="0.01" /></label>
                         <label>Funding source<input name="fundingSource" /></label>
-                        <label>Application institution<input name="applicationInstitution" /></label>
-                        <label>Application course<input name="applicationCourse" /></label>
-                        <label>Campus<input name="applicationCampus" /></label>
-                        <label>Application reference<input name="applicationReference" /></label>
-                        <label>Application status<select name="applicationStatus" defaultValue="draft">{APPLICATION_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{humanise(option)}</option>)}</select></label>
-                        <label>Application deadline<input name="applicationDeadline" type="date" /></label>
-                        <label>Associate / sub-agent<input name="associate" /></label>
-                        <label>Institution partner<input name="partner" /></label>
                         <label className="checkboxLabel"><input name="accommodationRequired" type="checkbox" />Accommodation required</label>
                         <label className="checkboxLabel"><input name="scholarshipRequired" type="checkbox" />Scholarship required</label>
+                        <input type="hidden" name="studyChoicesJson" value={JSON.stringify(studyChoices)} />
+                        <input type="hidden" name="preferredInstitution" value={studyChoices[0]?.institution || ""} />
+                        <input type="hidden" name="preferredCourse" value={studyChoices[0]?.course || ""} />
+                        <input type="hidden" name="applicationInstitution" value={studyChoices[0]?.institution || ""} />
+                        <input type="hidden" name="applicationCourse" value={studyChoices[0]?.course || ""} />
+                        <input type="hidden" name="intake" value={studyChoices[0]?.intake || ""} />
+                        <input type="hidden" name="proposedCourseStart" value={studyChoices[0]?.start || ""} />
+                        <input type="hidden" name="proposedCourseEnd" value={studyChoices[0]?.end || ""} />
+                        <datalist id="intakeInstitutions">
+                          {intakeInstitutions.map((institution) => <option key={institution.id} value={institution.name}>{institution.country}{institution.city ? ` · ${institution.city}` : ""}</option>)}
+                        </datalist>
+                        <div className="repeatableIntakeList wide">
+                          <div className="repeatableSectionHead">
+                            <div><strong>Suggested universities and courses</strong><small>Add every option discussed with the client.</small></div>
+                            <button type="button" className="ghostButton" onClick={() => setStudyChoices((rows) => [...rows, blankStudyChoice()])}><Plus size={14} /> Add another</button>
+                          </div>
+                          {catalogueWarning ? <p className="fieldHint">{catalogueWarning}</p> : null}
+                          {studyChoices.map((choice, index) => {
+                            const update = (changes: Partial<StudyChoiceDraft>) => setStudyChoices((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...changes } : row));
+                            const courses = choice.institutionId ? intakeCourses[choice.institutionId] || [] : [];
+                            return (
+                              <fieldset className="repeatableIntakeRow" key={`study-choice-${index}`}>
+                                <legend>Choice {index + 1}</legend>
+                                <label>University / institution<input list="intakeInstitutions" value={choice.institution} onChange={(event) => { const institution = intakeInstitutions.find((item) => item.name === event.target.value); update({ institution: event.target.value, institutionId: institution?.id || "", course: institution?.id === choice.institutionId ? choice.course : "" }); if (institution) void loadInstitutionCourses(institution.id); }} /></label>
+                                <label>Course<input list={`intakeCourses-${index}`} value={choice.course} onChange={(event) => update({ course: event.target.value })} /><datalist id={`intakeCourses-${index}`}>{courses.map((course) => <option key={course.id} value={course.name}>{[course.level, course.campus].filter(Boolean).join(" · ")}</option>)}</datalist></label>
+                                <label>Campus<input value={choice.campus} onChange={(event) => update({ campus: event.target.value })} /></label>
+                                <label>Intake<input value={choice.intake} onChange={(event) => update({ intake: event.target.value })} placeholder="e.g. February 2027" /></label>
+                                <label>Proposed course start<input type="date" value={choice.start} onChange={(event) => update({ start: event.target.value })} /></label>
+                                <label>Course end<input type="date" value={choice.end} onChange={(event) => update({ end: event.target.value })} /></label>
+                                <label>Application reference<input value={choice.reference} onChange={(event) => update({ reference: event.target.value })} /></label>
+                                <label>Application status<select value={choice.status} onChange={(event) => update({ status: event.target.value })}>{APPLICATION_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{humanise(option)}</option>)}</select></label>
+                                <label>Application deadline<input type="date" value={choice.deadline} onChange={(event) => update({ deadline: event.target.value })} /></label>
+                                <label>Associate / sub-agent<input value={choice.associate} onChange={(event) => update({ associate: event.target.value })} /></label>
+                                <label>Institution partner<input value={choice.partner} onChange={(event) => update({ partner: event.target.value })} /></label>
+                                {studyChoices.length > 1 ? <button type="button" className="removeRepeatable" onClick={() => setStudyChoices((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}>Remove choice</button> : null}
+                              </fieldset>
+                            );
+                          })}
+                        </div>
                       </div>
                     ) : (
                       <div className="intakeFields">
@@ -10245,14 +10468,26 @@ function RecordModal({
                   <details>
                     <summary>Education, English test and employment</summary>
                     <div className="intakeFields">
-                      <label>Highest qualification<input name="qualification" /></label>
-                      <label>Institution / board<input name="educationInstitution" /></label>
-                      <label>Field / stream<input name="fieldOfStudy" /></label>
-                      <label>Country<input name="educationCountry" /></label>
-                      <label>Started<input name="educationStart" type="date" /></label>
-                      <label>Completed<input name="educationEnd" type="date" /></label>
-                      <label>Result / grade<input name="educationResult" /></label>
-                      <label>Backlogs / failed subjects<input name="educationBacklogs" type="number" min="0" /></label>
+                      <input type="hidden" name="educationRowsJson" value={JSON.stringify(educationRows)} />
+                      <input type="hidden" name="educationInstitution" value={educationRows[0]?.institution || ""} />
+                      <input type="hidden" name="qualification" value={educationRows[0]?.qualification || ""} />
+                      <div className="repeatableIntakeList wide">
+                        <div className="repeatableSectionHead"><div><strong>Academic history</strong><small>Add every qualification from the legacy record.</small></div><button type="button" className="ghostButton" onClick={() => setEducationRows((rows) => [...rows, blankEducation()])}><Plus size={14} /> Add qualification</button></div>
+                        {educationRows.map((education, index) => {
+                          const update = (changes: Partial<EducationDraft>) => setEducationRows((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...changes } : row));
+                          return <fieldset className="repeatableIntakeRow" key={`education-${index}`}><legend>Qualification {index + 1}</legend>
+                            <label>Qualification<input value={education.qualification} onChange={(event) => update({ qualification: event.target.value })} /></label>
+                            <label>Institution / board<input value={education.institution} onChange={(event) => update({ institution: event.target.value })} /></label>
+                            <label>Subjects / stream<input value={education.field} onChange={(event) => update({ field: event.target.value })} /></label>
+                            <label>Country<input value={education.country} onChange={(event) => update({ country: event.target.value })} /></label>
+                            <label>Started<input type="date" value={education.start} onChange={(event) => update({ start: event.target.value })} /></label>
+                            <label>Year passed / completed<input type="date" value={education.end} onChange={(event) => update({ end: event.target.value })} /></label>
+                            <label>Percentage / grade<input value={education.result} onChange={(event) => update({ result: event.target.value })} /></label>
+                            <label>Backlogs / failed subjects<input type="number" min="0" value={education.backlogs} onChange={(event) => update({ backlogs: event.target.value })} /></label>
+                            {educationRows.length > 1 ? <button type="button" className="removeRepeatable" onClick={() => setEducationRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}>Remove qualification</button> : null}
+                          </fieldset>;
+                        })}
+                      </div>
                       <label>English test<select name="testType" defaultValue=""><option value="">No test recorded</option><option>IELTS</option><option>PTE</option><option>TOEFL</option><option>Duolingo</option><option>CELPIP</option><option>OET</option></select></label>
                       <label>Test date<input name="testDate" type="date" /></label>
                       <label>Overall<input name="testOverall" type="number" step="0.01" /></label>
@@ -10266,13 +10501,29 @@ function RecordModal({
                       <label>Quantitative<input name="aptitudeQuantitative" type="number" step="0.01" /></label>
                       <label>Analytical<input name="aptitudeAnalytical" type="number" step="0.01" /></label>
                       <label>Verbal<input name="aptitudeVerbal" type="number" step="0.01" /></label>
-                      <label>Employer<input name="employer" /></label>
-                      <label>Position<input name="jobTitle" /></label>
-                      <label>Employment country<input name="employmentCountry" /></label>
-                      <label>Employment start<input name="employmentStart" type="date" /></label>
-                      <label>Employment end<input name="employmentEnd" type="date" /></label>
-                      <label>Hours per week<input name="hoursPerWeek" type="number" step="0.5" min="0" /></label>
-                      <label className="wide">Main duties<input name="duties" /></label>
+                      <input type="hidden" name="employmentRowsJson" value={JSON.stringify(employmentRows)} />
+                      <input type="hidden" name="employer" value={employmentRows[0]?.employer || ""} />
+                      <input type="hidden" name="jobTitle" value={employmentRows[0]?.position || ""} />
+                      <div className="repeatableIntakeList wide">
+                        <div className="repeatableSectionHead"><div><strong>Work experience</strong><small>Total experience is calculated from the dates supplied.</small></div><button type="button" className="ghostButton" onClick={() => setEmploymentRows((rows) => [...rows, blankEmployment()])}><Plus size={14} /> Add employer</button></div>
+                        {employmentRows.map((employment, index) => {
+                          const update = (changes: Partial<EmploymentDraft>) => setEmploymentRows((rows) => rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...changes } : row));
+                          const start = employment.start ? new Date(employment.start) : null;
+                          const end = employment.end ? new Date(employment.end) : new Date();
+                          const months = start && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) ? Math.max(0, (end.getFullYear() - start.getFullYear()) * 12 + end.getMonth() - start.getMonth()) : 0;
+                          return <fieldset className="repeatableIntakeRow" key={`employment-${index}`}><legend>Employment {index + 1}</legend>
+                            <label>Company name<input value={employment.employer} onChange={(event) => update({ employer: event.target.value })} /></label>
+                            <label>Position<input value={employment.position} onChange={(event) => update({ position: event.target.value })} /></label>
+                            <label>Country<input value={employment.country} onChange={(event) => update({ country: event.target.value })} /></label>
+                            <label>Start date<input type="date" value={employment.start} onChange={(event) => update({ start: event.target.value })} /></label>
+                            <label>End date<input type="date" value={employment.end} onChange={(event) => update({ end: event.target.value })} /></label>
+                            <label>Total experience<input value={months ? `${Math.floor(months / 12)}y ${months % 12}m` : ""} readOnly /></label>
+                            <label>Hours per week<input type="number" step="0.5" min="0" value={employment.hours} onChange={(event) => update({ hours: event.target.value })} /></label>
+                            <label className="wide">Main duties<input value={employment.duties} onChange={(event) => update({ duties: event.target.value })} /></label>
+                            {employmentRows.length > 1 ? <button type="button" className="removeRepeatable" onClick={() => setEmploymentRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}>Remove employment</button> : null}
+                          </fieldset>;
+                        })}
+                      </div>
                     </div>
                   </details>
 
@@ -11197,6 +11448,18 @@ export default function Home() {
       invoicePdfValue instanceof File && invoicePdfValue.size > 0
         ? invoicePdfValue
         : undefined;
+    const joinCallingCode = (code: unknown, value: unknown) => {
+      const phone = String(value ?? "").trim();
+      if (!phone || phone.startsWith("+")) return phone;
+      return `${String(code ?? "").trim()}${phone.replace(/^0+/, "")}`;
+    };
+    if (modal === "case") {
+      payload.phone = joinCallingCode(payload.phoneCountryCode, payload.phone);
+      payload.alternatePhone = joinCallingCode(
+        payload.alternatePhoneCountryCode,
+        payload.alternatePhone,
+      );
+    }
     if (
       invoicePdf &&
       invoicePdf.type !== "application/pdf" &&

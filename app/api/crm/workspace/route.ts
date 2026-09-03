@@ -382,7 +382,11 @@ export async function GET(request: Request) {
           leadScore: Number(enquiry.score ?? 0),
           lostReason: enquiry.lost_reason ?? "",
           applicationStatus: latestApplication.status ?? "",
-          visaCategory: row.matter_type ?? visaMatter.visa_subclass ?? "",
+          visaCategory:
+            visaMatter.visa_subclass ??
+            caseIntake.visaType ??
+            row.matter_type ??
+            "",
           latestNote: latestNote.body ?? "",
           latestNoteAt: latestNote.created_at ?? "",
           latestNoteAuthor: latestNoteAuthor.display_name ?? "",
@@ -1016,7 +1020,10 @@ export async function POST(request: Request) {
     if (action === "case") {
       const displayName = required(body.name, "Client name");
       const emailAddress = requiredEmail(body.email);
-      const visaExpiry = requiredDay(body.visaExpiry, "Visa expiry date");
+      // The old CRM allowed an enquiry to be captured before current-visa
+      // details were known. The lifecycle transition still requires this date
+      // before the case can enter Visa or Completed.
+      const visaExpiry = nullableDay(body.visaExpiry);
       const lifecycleEnabled = await lifecycleReady(token);
       const parts = displayName.split(/\s+/);
       const firstName = parts.shift() || displayName;
@@ -1101,7 +1108,7 @@ export async function POST(request: Request) {
             priority: "medium",
             progress: Number(body.progress ?? 0),
             target: nullable(body.target),
-            next_action: nullable(body.stage),
+            next_action: nullable(body.subStatus) ?? nullable(body.stage),
             due_at: nullableDate(body.due),
             // Written only when the lifecycle migration has been applied, so
             // an out-of-date database still accepts new cases.
@@ -1170,7 +1177,7 @@ export async function POST(request: Request) {
           case_id: caseId,
           branch_id: branchId, assigned_to: ownerId, source: nullable(body.source),
           campaign: nullable(body.campaign), priority: "medium",
-          status: nullable(body.stage)?.toLowerCase().replace(/\s+/g, "_") || "new",
+          status: (nullable(body.subStatus) ?? nullable(body.stage))?.toLowerCase().replace(/\s+/g, "_") || "new",
           score: leadScore(body), next_follow_up_at: followUp,
           lost_reason: nullable(body.lostReason),
           converted_at: null,
@@ -2566,47 +2573,67 @@ async function persistCompleteIntake({
     await addDependant("spouse", "spouse");
     await addDependant("child", "child");
 
-    const educationInstitution = nullable(body.educationInstitution);
-    const qualification = nullable(body.qualification);
-    if (educationInstitution && qualification)
+    const educationRows = jsonRows(body.educationRowsJson);
+    if (!educationRows.length && (nullable(body.educationInstitution) || nullable(body.qualification)))
+      educationRows.push({
+        institution: body.educationInstitution,
+        qualification: body.qualification,
+        field: body.fieldOfStudy,
+        country: body.educationCountry,
+        start: body.educationStart,
+        end: body.educationEnd,
+        result: body.educationResult,
+        backlogs: body.educationBacklogs,
+      });
+    for (const education of educationRows) {
+      const institution = nullable(education.institution);
+      const qualification = nullable(education.qualification);
+      if (!institution && !qualification) continue;
       await insert(
         "client_education_history",
         {
-          id: crypto.randomUUID(),
-          organisation_id: organisationId,
-          client_id: clientId,
-          country_code: nullable(body.educationCountry),
-          institution: educationInstitution,
-          qualification,
-          field_of_study: nullable(body.fieldOfStudy),
-          started_on: nullableDay(body.educationStart),
-          completed_on: nullableDay(body.educationEnd),
-          result: nullable(body.educationResult),
-          details: { backlogs: nullableNumber(body.educationBacklogs) },
+          id: crypto.randomUUID(), organisation_id: organisationId, client_id: clientId,
+          country_code: nullable(education.country),
+          institution: institution || "Not supplied",
+          qualification: qualification || "Not supplied",
+          field_of_study: nullable(education.field),
+          started_on: nullableDay(education.start),
+          completed_on: nullableDay(education.end),
+          result: nullable(education.result),
+          details: { backlogs: nullableNumber(education.backlogs) },
         },
         token,
       );
+    }
 
-    const employer = nullable(body.employer);
-    const jobTitle = nullable(body.jobTitle);
-    if (employer && jobTitle)
+    const employmentRows = jsonRows(body.employmentRowsJson);
+    if (!employmentRows.length && (nullable(body.employer) || nullable(body.jobTitle)))
+      employmentRows.push({
+        employer: body.employer, position: body.jobTitle, country: body.employmentCountry,
+        start: body.employmentStart, end: body.employmentEnd,
+        hours: body.hoursPerWeek, duties: body.duties,
+      });
+    for (const employment of employmentRows) {
+      const employer = nullable(employment.employer);
+      const jobTitle = nullable(employment.position);
+      if (!employer && !jobTitle) continue;
+      const startedOn = nullableDay(employment.start);
+      const endedOn = nullableDay(employment.end);
+      const months = startedOn
+        ? Math.max(0, Math.round((new Date(`${endedOn || new Date().toISOString().slice(0, 10)}T12:00:00Z`).getTime() - new Date(`${startedOn}T12:00:00Z`).getTime()) / 2629800000))
+        : null;
       await insert(
         "client_employment_history",
         {
-          id: crypto.randomUUID(),
-          organisation_id: organisationId,
-          client_id: clientId,
-          employer,
-          job_title: jobTitle,
-          country_code: nullable(body.employmentCountry),
-          started_on: nullableDay(body.employmentStart),
-          ended_on: nullableDay(body.employmentEnd),
-          hours_per_week: nullableNumber(body.hoursPerWeek),
-          duties: nullable(body.duties),
-          details: {},
+          id: crypto.randomUUID(), organisation_id: organisationId, client_id: clientId,
+          employer: employer || "Not supplied", job_title: jobTitle || "Not supplied",
+          country_code: nullable(employment.country), started_on: startedOn, ended_on: endedOn,
+          hours_per_week: nullableNumber(employment.hours), duties: nullable(employment.duties),
+          details: { total_experience_months: months },
         },
         token,
       );
+    }
 
     const testType = nullable(body.testType);
     if (testType)
@@ -2646,7 +2673,23 @@ async function persistCompleteIntake({
         token,
       );
 
-    if (serviceType === "study_abroad" && nullable(body.destinationCountry))
+    const studyChoices = jsonRows(body.studyChoicesJson);
+    if (!studyChoices.length && (nullable(body.applicationInstitution) || nullable(body.preferredInstitution)))
+      studyChoices.push({
+        institution: body.applicationInstitution ?? body.preferredInstitution,
+        course: body.applicationCourse ?? body.preferredCourse,
+        campus: body.applicationCampus,
+        intake: body.intake,
+        start: body.proposedCourseStart,
+        end: body.proposedCourseEnd,
+        reference: body.applicationReference,
+        status: body.applicationStatus,
+        deadline: body.applicationDeadline,
+        associate: body.associate,
+        partner: body.partner,
+      });
+    const firstStudyChoice = studyChoices.find((choice) => nullable(choice.institution) || nullable(choice.course));
+    if (serviceType === "study_abroad" && (nullable(body.destinationCountry) || firstStudyChoice))
       await insert(
         "study_preferences",
         {
@@ -2655,14 +2698,14 @@ async function persistCompleteIntake({
           client_id: clientId,
           destination_countries: [nullable(body.destinationCountry), nullable(body.secondaryDestination)].filter(Boolean),
           study_levels: stringArray(body.studyLevel),
-          preferred_institutions: stringArray(body.preferredInstitution),
-          fields_of_study: stringArray(body.preferredCourse),
-          target_intakes: stringArray(body.intake),
+          preferred_institutions: studyChoices.map((choice) => nullable(choice.institution)).filter((value): value is string => Boolean(value)),
+          fields_of_study: studyChoices.map((choice) => nullable(choice.course)).filter((value): value is string => Boolean(value)),
+          target_intakes: studyChoices.map((choice) => nullable(choice.intake)).filter((value): value is string => Boolean(value)),
           annual_budget: nullableNumber(body.annualBudget),
           funding_source: nullable(body.fundingSource),
           accommodation_required: checked(body.accommodationRequired),
           scholarship_required: checked(body.scholarshipRequired),
-          notes: [nullable(body.remarks), body.proposedCourseStart ? `Proposed course: ${body.proposedCourseStart} to ${body.proposedCourseEnd || "not supplied"}` : null].filter(Boolean).join(" · ") || null,
+          notes: [nullable(body.remarks), firstStudyChoice?.start ? `Proposed course: ${firstStudyChoice.start} to ${firstStudyChoice.end || "not supplied"}` : null].filter(Boolean).join(" · ") || null,
         },
         token,
       );
@@ -2709,34 +2752,40 @@ async function persistCompleteIntake({
     }
   }
 
-  const applicationInstitution = nullable(body.applicationInstitution);
-  const applicationCourse = nullable(body.applicationCourse);
-  if (serviceType === "study_abroad" && applicationInstitution && applicationCourse) {
-    const status = completeApplicationStatus(body.applicationStatus);
-    const now = new Date().toISOString();
-    await insert(
-      "education_applications",
-      {
-        id: crypto.randomUUID(),
-        organisation_id: organisationId,
-        case_id: caseId,
-        institution: applicationInstitution,
-        course: applicationCourse,
-        campus: nullable(body.applicationCampus),
-        intake: nullable(body.intake),
-        application_reference: nullable(body.applicationReference),
-        status,
-        deadline_at: nullableDay(body.applicationDeadline),
-        ...(["submitted", "offer_received", "offer_accepted", "coe_received"].includes(status) ? { submitted_at: now } : {}),
-        ...(["offer_received", "offer_accepted", "coe_received"].includes(status) ? { offer_received_at: now } : {}),
-        ...(status === "coe_received" ? { coe_received_at: now } : {}),
-        details: {
-          associate: nullable(body.associate),
-          partner: nullable(body.partner),
+  const applicationChoices = jsonRows(body.studyChoicesJson);
+  if (!applicationChoices.length && (nullable(body.applicationInstitution) || nullable(body.applicationCourse)))
+    applicationChoices.push({
+      institution: body.applicationInstitution, course: body.applicationCourse,
+      campus: body.applicationCampus, intake: body.intake,
+      reference: body.applicationReference, status: body.applicationStatus,
+      deadline: body.applicationDeadline, associate: body.associate, partner: body.partner,
+      start: body.proposedCourseStart, end: body.proposedCourseEnd,
+    });
+  if (serviceType === "study_abroad") {
+    for (const application of applicationChoices) {
+      const institution = nullable(application.institution);
+      const course = nullable(application.course);
+      if (!institution || !course) continue;
+      const status = completeApplicationStatus(application.status);
+      const now = new Date().toISOString();
+      await insert(
+        "education_applications",
+        {
+          id: crypto.randomUUID(), organisation_id: organisationId, case_id: caseId,
+          institution, course, campus: nullable(application.campus),
+          intake: nullable(application.intake), application_reference: nullable(application.reference),
+          status, deadline_at: nullableDay(application.deadline),
+          ...(["submitted", "offer_received", "offer_accepted", "coe_received"].includes(status) ? { submitted_at: now } : {}),
+          ...(["offer_received", "offer_accepted", "coe_received"].includes(status) ? { offer_received_at: now } : {}),
+          ...(status === "coe_received" ? { coe_received_at: now } : {}),
+          details: {
+            associate: nullable(application.associate), partner: nullable(application.partner),
+            proposed_course_start: nullableDay(application.start), proposed_course_end: nullableDay(application.end),
+          },
         },
-      },
-      token,
-    );
+        token,
+      );
+    }
   }
 
   if (serviceType === "direct_visa")
@@ -2747,7 +2796,7 @@ async function persistCompleteIntake({
         organisation_id: organisationId,
         case_id: caseId,
         destination_country: nullable(body.migrationDestination) ?? "Australia",
-        visa_subclass: nullable(body.matterType),
+        visa_subclass: nullable(body.visaType) ?? nullable(body.matterType),
         status: "assessment",
         current_visa_expiry: nullableDay(body.visaExpiry),
         details: {
@@ -2767,6 +2816,19 @@ async function persistCompleteIntake({
 function stringArray(value: unknown): string[] {
   const parsed = nullable(value);
   return parsed ? [parsed] : [];
+}
+
+function jsonRows(value: unknown): Json[] {
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) throw new Error();
+    return parsed
+      .filter((row): row is Json => typeof row === "object" && row !== null && !Array.isArray(row))
+      .slice(0, 50);
+  } catch {
+    throw new InputError("A repeatable intake section contains invalid data.");
+  }
 }
 
 function checked(value: unknown): boolean {
@@ -2994,9 +3056,9 @@ function intakeFields(body: Json, excluded: string[]): Json {
   }
   return result;
 }
-// Email and visa expiry are mandatory on the intake form: a case cannot be
-// worked without a contact address, and the visa stage is meaningless without
-// the expiry it is worked against.
+// Email is mandatory at intake so correspondence can be linked immediately.
+// Visa expiry remains optional until the case moves into Visa, where the
+// lifecycle transition validates it.
 function requiredEmail(value: unknown): string {
   const parsed = required(value, "Email address").toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed))

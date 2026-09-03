@@ -5011,6 +5011,70 @@ body {
 .intakeFields label.wide {
   grid-column: span 2;
 }
+.intakeFields > .wide {
+  grid-column: 1 / -1;
+}
+.phoneFieldPair {
+  display: grid;
+  grid-template-columns: minmax(125px, 0.8fr) minmax(0, 1.6fr);
+  gap: 7px;
+}
+.phoneFieldPair input,
+.phoneFieldPair select {
+  margin-top: 6px;
+}
+.repeatableIntakeList {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid #dfe9f1;
+  padding-top: 12px;
+}
+.repeatableSectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.repeatableSectionHead div {
+  display: grid;
+  gap: 2px;
+}
+.repeatableSectionHead strong {
+  color: #123f62;
+  font-size: 13px;
+}
+.repeatableSectionHead small {
+  color: #71869a;
+  font-size: 11px;
+}
+.repeatableIntakeRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 11px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #d8e6ef;
+  border-radius: 12px;
+  background: #fff;
+}
+.repeatableIntakeRow legend {
+  padding: 0 6px;
+  color: #d16c2d;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+.removeRepeatable {
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  color: #ba3f46;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
 .intakeFields input,
 .intakeFields select,
 .intakeFields textarea {
@@ -5048,6 +5112,15 @@ body {
   }
   .intakeFields label.wide {
     grid-column: auto;
+  }
+  .intakeFields > .wide {
+    grid-column: auto;
+  }
+  .repeatableIntakeRow {
+    grid-template-columns: 1fr;
+  }
+  .phoneFieldPair {
+    grid-template-columns: 1fr;
   }
   .recordModal.intakeModal {
     width: 96vw;

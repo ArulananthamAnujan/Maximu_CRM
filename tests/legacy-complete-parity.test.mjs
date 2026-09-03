@@ -24,6 +24,15 @@ test("legacy exports keep stable relationships across every supported module", a
   assert.match(route, /email_messages/);
   assert.match(route, /whatsapp_messages/);
   assert.match(route, /staffByLabel/);
+  assert.match(route, /client_education_history/);
+  assert.match(route, /client_employment_history/);
+  assert.match(route, /study_preferences/);
+  assert.match(page, /Legacy CRM imported fields/);
+  assert.match(page, /name="studyChoicesJson"/);
+  assert.match(page, /name="educationRowsJson"/);
+  assert.match(page, /name="employmentRowsJson"/);
+  assert.match(page, /Detailed status/);
+  assert.match(page, /Visa type/);
 });
 
 test("legacy staging protects passport data before it reaches the database", async () => {
