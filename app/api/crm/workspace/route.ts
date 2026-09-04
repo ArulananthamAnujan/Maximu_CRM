@@ -95,12 +95,12 @@ export async function GET(request: Request) {
       caseNotes,
     ] = await Promise.all([
       safeRest(
-        `clients?select=*&archived_at=is.null&order=updated_at.desc&limit=${RECORD_LIMIT}`,
+        `clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle&archived_at=is.null&order=updated_at.desc&limit=${RECORD_LIMIT}`,
         token,
         degraded,
       ),
-      safeRest(`cases?select=*&order=opened_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
-      safeRest(`enquiries?select=*&order=created_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
+      safeRest(`cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at&order=opened_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
+      safeRest(`enquiries?select=id,case_id,client_id,branch_id,assigned_to,source,campaign,priority,status,score,next_follow_up_at,lost_reason,created_at,converted_at&order=created_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
       safeRest("workflow_stages?select=*&order=position.asc", token, degraded),
       safeRest(`tasks?select=*&order=created_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
       safeRest(
