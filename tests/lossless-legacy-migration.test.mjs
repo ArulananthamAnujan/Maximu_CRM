@@ -14,6 +14,7 @@ test("legacy migration is chunked, resumable and reconciled", async () => {
   assert.match(route, /saveSnapshot/);
   assert.match(route, /reconcileBatch/);
   assert.match(route, /if\(remaining\).*imported_rows/);
+  assert.match(route, /status=eq\.valid&order=row_number\.asc&limit=10/);
   assert.match(page, /offset\+=500/);
   assert.match(page, /do\{const response=.*action:"commit"/s);
   assert.match(page, /while\(result\.remaining\)/);

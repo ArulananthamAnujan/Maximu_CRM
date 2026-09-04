@@ -57,7 +57,10 @@ export async function POST(request: Request) {
       const batches=await get(`import_batches?select=*&id=eq.${batchId}&limit=1`,token) as Json[];
       if(!batches[0]||Number(batches[0].invalid_rows)>0)throw new InputError("Resolve all invalid rows before importing.");
       if(!["ready","importing","failed"].includes(String(batches[0].status)))throw new InputError("Finish validating every chunk before importing.");
-      const rows=await get(`import_rows?select=id,row_number,normalized_data,raw_data,protected_data,source_checksum,status&batch_id=eq.${batchId}&status=eq.valid&order=row_number.asc&limit=100`,token) as Json[];
+      // Keep each commit request comfortably below the serverless execution limit.
+      // The client already repeats commit calls until `remaining` reaches zero,
+      // so smaller pages retain the same resumable and idempotent behaviour.
+      const rows=await get(`import_rows?select=id,row_number,normalized_data,raw_data,protected_data,source_checksum,status&batch_id=eq.${batchId}&status=eq.valid&order=row_number.asc&limit=10`,token) as Json[];
       await patch("import_batches",batchId,{status:"importing"},token);
       const entityType=legacyEntity((isObject(batches[0].mapping)?batches[0].mapping:{}).entity_type);
       const sourceSystem=String(batches[0].source_system||"legacy_maximus");
