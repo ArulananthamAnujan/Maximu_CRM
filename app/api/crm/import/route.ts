@@ -38,7 +38,10 @@ export async function POST(request: Request) {
       const priorKeys=new Set<string>((requestedBatchId?await getAll(`import_rows?select=source_key&batch_id=eq.${batchId}`,token):[]).map(row=>String(row.source_key||"")));
       const chunkKeys=new Set<string>();
       const normalized=await Promise.all(rows.map((row,index)=>normalizeRow(row,rowOffset+index+1,branches,entityType,sourceTimezone)));
-      for(const row of normalized){if(priorKeys.has(row.sourceKey)||chunkKeys.has(row.sourceKey))row.errors.push("Duplicate source_key in this import batch");chunkKeys.add(row.sourceKey);}
+      for(const row of normalized){
+        if(row.sourceKey&&(priorKeys.has(row.sourceKey)||chunkKeys.has(row.sourceKey)))row.errors.push("Duplicate source_key in this import batch");
+        if(row.sourceKey)chunkKeys.add(row.sourceKey);
+      }
       const invalid=normalized.filter(row=>row.errors.length);
       const declaredRows=Math.max(rows.length,numberValue(body.totalRows,rows.length));
       if(!existingBatch)await insert("import_batches",{id:batchId,organisation_id:org,source_system:optional(body.sourceSystem)||"legacy_maximus",source_file_name:optional(body.fileName),status:"validating",total_rows:declaredRows,declared_rows:declaredRows,received_rows:0,source_timezone:sourceTimezone,mapping:{...(isObject(body.mapping)?body.mapping:{}),entity_type:entityType},started_by:session.identity.profileId},token);
@@ -237,8 +240,9 @@ async function importLegacyEntity(entity:string,data:Json,org:string,sourceSyste
   const sourceKey=required(data.source_key,"Source key");
   const existing=await externalTarget(org,sourceSystem,entity,sourceKey,token);
   let id=existing??crypto.randomUUID();
-  const at=(value:unknown)=>dateValue(value,data.__source_timezone);
-  const day=(value:unknown)=>dayValue(value,data.__source_timezone);
+  const sourceTimezone=optional(data.__source_timezone)??undefined;
+  const at=(value:unknown)=>dateValue(value,sourceTimezone);
+  const day=(value:unknown)=>dayValue(value,sourceTimezone);
   const write=async(table:string,value:Json)=>{if(existing){const{id:_ignored,...changes}=value;await patch(table,id,changes,token);}else await insert(table,value,token);};
   if(entity==="clients"){
     await write("clients",{id,organisation_id:org,branch_id:data.branch_id,crm_id:data.crm_id||`LEGACY-${id.slice(0,8).toUpperCase()}`,first_name:data.first_name,last_name:data.last_name,email:data.email,mobile:data.mobile,date_of_birth:day(data.date_of_birth),nationality:data.nationality,gender:data.gender,marital_status:optional(data.marital_status)?.toLowerCase(),country_of_birth:data.country_of_birth,current_country:data.current_country,preferred_language:data.preferred_language,passport_country:data.passport_country,passport_expiry:day(data.passport_expiry),address:{line1:data.address_line??null,city:data.city??null,state:data.state??null,postcode:data.postcode??null},source:"legacy_import",current_lifecycle:data.current_lifecycle||"enquiry",...(data.passport_number_encrypted?{passport_number_encrypted:data.passport_number_encrypted,passport_masked:data.passport_masked}:{}),custom_fields:{legacy_source_key:sourceKey,alternatePhone:data.alternate_phone??null,passportIssueDate:day(data.passport_issue_date??data.date_of_issue),legacy_data:data.legacy_data},created_at:at(data.created_at??data.created_date)??undefined,updated_at:at(data.updated_at??data.updated_date)??new Date().toISOString()});

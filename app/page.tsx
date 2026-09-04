@@ -6571,7 +6571,15 @@ function LegacyImportPanel({ branches }: { branches: AdminBranch[] }) {
       if (!rows.length) throw new Error("The selected export has no data rows.");
       let currentBatch = "", result: {batchId:string;total:number;received:number;valid:number;invalid:number;ready:boolean;errors:Array<{row:number;errors:string[]}>}|null = null;
       const validationErrors:string[]=[];
-      for(let offset=0;offset<rows.length;offset+=100){const chunk=rows.slice(offset,offset+100);const response=await fetch("/api/crm/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"validate",entityType,branchId:branchId||null,fileName:file.name,sourceSystem:"legacy_maximus",sourceTimezone,batchId:currentBatch||null,rowOffset:offset,totalRows:rows.length,finalChunk:offset+chunk.length===rows.length,rows:chunk})});result=await response.json();if(!response.ok)throw new Error((result as {error?:string}).error||"The export could not be validated.");currentBatch=result.batchId;validationErrors.push(...(result.errors??[]).flatMap(item=>item.errors.map(error=>`Row ${item.row}: ${error}`)));}
+      for(let offset=0;offset<rows.length;offset+=100){
+        const chunk=rows.slice(offset,offset+100);
+        const response=await fetch("/api/crm/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"validate",entityType,branchId:branchId||null,fileName:file.name,sourceSystem:"legacy_maximus",sourceTimezone,batchId:currentBatch||null,rowOffset:offset,totalRows:rows.length,finalChunk:offset+chunk.length===rows.length,rows:chunk})});
+        const chunkResult:{batchId:string;total:number;received:number;valid:number;invalid:number;ready:boolean;errors:Array<{row:number;errors:string[]}>;error?:string}=await response.json();
+        if(!response.ok)throw new Error(chunkResult.error||"The export could not be validated.");
+        result=chunkResult;
+        currentBatch=chunkResult.batchId;
+        validationErrors.push(...(chunkResult.errors??[]).flatMap(item=>item.errors.map(error=>`Row ${item.row}: ${error}`)));
+      }
       if(!result)throw new Error("The export could not be validated.");
       setSummary(`${result.received} of ${result.total} rows checked · ${result.valid} ready · ${result.invalid} need correction`);
       setErrors(validationErrors);if(result.ready)setBatchId(result.batchId);
