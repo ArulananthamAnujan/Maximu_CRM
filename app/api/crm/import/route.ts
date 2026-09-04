@@ -69,8 +69,7 @@ export async function POST(request: Request) {
       for(const profile of staffRows){const id=String(profile.id);for(const label of [profile.id,profile.email,profile.display_name]){const key=optional(label)?.toLowerCase();if(key)staffByLabel.set(key,id);}}
       const legacyStaff=await getAll("legacy_staff_directory?select=source_key,display_name,email,target_profile_id",token) as Json[];
       for(const profile of legacyStaff){const target=validUuid(profile.target_profile_id);if(!target)continue;for(const label of [profile.source_key,profile.email,profile.display_name]){const key=optional(label)?.toLowerCase();if(key)staffByLabel.set(key,target);}}
-      let imported=0;
-      for(const row of rows){
+      const importedRows=await Promise.all(rows.map(async row=>{
         const original=isObject(row.normalized_data)?row.normalized_data:{};
         const staffId=(value:unknown)=>{const label=optional(value);return label?staffByLabel.get(label.toLowerCase())??validUuid(label):null;};
         const ownerLabel=original.assigned_to??original.assigned_staff??original.case_officer??original.owner??original.owner_email;
@@ -80,8 +79,9 @@ export async function POST(request: Request) {
           : await importLegacyEntity(entityType,data,org,sourceSystem,session.identity.profileId,token);
         await saveSnapshot({org,sourceSystem,entityType,sourceKey:required(data.source_key,"Source key"),targetId:target,targetTable:targetTable(entityType),displayData:(row.raw_data as Json)??{},protectedData:optional(row.protected_data),sourceChecksum:required(row.source_checksum,"Source checksum"),actor:session.identity.profileId},token);
         await patch("import_rows",String(row.id),{status:"imported",target_client_id:entityType==="clients"?target:null,target_record_id:target,imported_at:new Date().toISOString()},token);
-        imported+=1;
-      }
+        return 1;
+      }));
+      const imported=importedRows.reduce((total,count)=>total+count,0);
       const importedTotal=Number(batches[0].imported_rows??0)+imported;
       const remaining=(await get(`import_rows?select=id&batch_id=eq.${batchId}&status=eq.valid&limit=1`,token) as Json[]).length;
       if(remaining){await patch("import_batches",batchId,{imported_rows:importedTotal},token);return Response.json({ok:true,imported,importedTotal,remaining:true});}
