@@ -756,21 +756,24 @@ async function safeRestPaged(
   degraded?: string[],
 ): Promise<Json[]> {
   const pageSize = 1000;
-  try {
-    const pages = await Promise.all(
-      Array.from({ length: Math.ceil(maxRows / pageSize) }, (_, page) => {
-        const offset = page * pageSize;
-        const limit = Math.min(pageSize, maxRows - offset);
-        return rest<Json[]>(`${path}&limit=${limit}&offset=${offset}`, token);
-      }),
-    );
-    return pages.flat().slice(0, maxRows);
-  } catch (error) {
-    const dataset = path.split("?")[0];
-    console.error(`Workspace dataset unavailable: ${dataset}`, error);
-    degraded?.push(dataset);
-    return [];
+  const rows: Json[] = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const limit = Math.min(pageSize, maxRows - offset);
+    try {
+      const page = await rest<Json[]>(
+        `${path}&limit=${limit}&offset=${offset}`,
+        token,
+      );
+      rows.push(...page);
+      if (page.length < limit) break;
+    } catch (error) {
+      const dataset = path.split("?")[0];
+      console.error(`Workspace dataset unavailable: ${dataset}`, error);
+      degraded?.push(dataset);
+      break;
+    }
   }
+  return rows;
 }
 
 async function safeRest(
