@@ -48,12 +48,11 @@ export function allowedLifecycleMoves(from: LifecycleStage): LifecycleStage[] {
   return moves;
 }
 
-// Raised well past what a single agency realistically holds, but a limit is
-// still a limit: RECORD_LIMIT rows fetched exactly at the cap means there may
-// be more the interface never asked for, so that is reported rather than
-// silently dropped. Real pagination -- fetching further pages on request --
-// is a larger, separate change to how every screen loads its data; this is
-// the honest stopgap for it.
+// Core client/case rows are deliberately allowed a wider window than the
+// supporting datasets. Their selects stay narrow so a branch such as Demo
+// Head Office can receive its complete imported enquiry list without restoring
+// the oversized legacy payload that previously collapsed the board to zero.
+const CLIENT_CASE_LIMIT = 2000;
 const RECORD_LIMIT = 800;
 
 export async function GET(request: Request) {
@@ -95,12 +94,12 @@ export async function GET(request: Request) {
       caseNotes,
     ] = await Promise.all([
       safeRest(
-        `clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle&archived_at=is.null&order=updated_at.desc&limit=${RECORD_LIMIT}`,
+        `clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle&archived_at=is.null&order=updated_at.desc&limit=${CLIENT_CASE_LIMIT}`,
         token,
         degraded,
       ),
-      safeRest(`cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at&order=opened_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
-      safeRest(`enquiries?select=id,case_id,client_id,branch_id,assigned_to,source,campaign,priority,status,score,next_follow_up_at,lost_reason,created_at,converted_at&order=created_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
+      safeRest(`cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at&order=opened_at.desc&limit=${CLIENT_CASE_LIMIT}`, token, degraded),
+      safeRest(`enquiries?select=id,case_id,client_id,branch_id,assigned_to,source,campaign,priority,status,score,next_follow_up_at,lost_reason,created_at,converted_at&order=created_at.desc&limit=${CLIENT_CASE_LIMIT}`, token, degraded),
       safeRest("workflow_stages?select=*&order=position.asc", token, degraded),
       safeRest(`tasks?select=*&order=created_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
       safeRest(
@@ -215,15 +214,16 @@ export async function GET(request: Request) {
     // interface never saw -- flagged rather than silently short.
     const truncated = (
       [
-        ["clients", clients],
-        ["cases", cases],
-        ["tasks", tasks],
-        ["appointments", appointments],
-        ["documents", documents],
-        ["invoices", invoices],
+        ["clients", clients, CLIENT_CASE_LIMIT],
+        ["cases", cases, CLIENT_CASE_LIMIT],
+        ["enquiries", enquiries, CLIENT_CASE_LIMIT],
+        ["tasks", tasks, RECORD_LIMIT],
+        ["appointments", appointments, RECORD_LIMIT],
+        ["documents", documents, RECORD_LIMIT],
+        ["invoices", invoices, RECORD_LIMIT],
       ] as const
     )
-      .filter(([, rows]) => rows.length === RECORD_LIMIT)
+      .filter(([, rows, limit]) => rows.length === limit)
       .map(([name]) => name);
 
     // A deferral is an application moved to a later intake, not a phrase typed
