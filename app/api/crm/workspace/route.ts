@@ -93,13 +93,24 @@ export async function GET(request: Request) {
       collaborators,
       caseNotes,
     ] = await Promise.all([
-      safeRest(
-        `clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle&archived_at=is.null&order=updated_at.desc&limit=${CLIENT_CASE_LIMIT}`,
+      safeRestPaged(
+        "clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle&archived_at=is.null&order=updated_at.desc",
         token,
+        CLIENT_CASE_LIMIT,
         degraded,
       ),
-      safeRest(`cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at&order=opened_at.desc&limit=${CLIENT_CASE_LIMIT}`, token, degraded),
-      safeRest(`enquiries?select=id,case_id,client_id,branch_id,assigned_to,source,campaign,priority,status,score,next_follow_up_at,lost_reason,created_at,converted_at&order=created_at.desc&limit=${CLIENT_CASE_LIMIT}`, token, degraded),
+      safeRestPaged(
+        "cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at&order=opened_at.desc",
+        token,
+        CLIENT_CASE_LIMIT,
+        degraded,
+      ),
+      safeRestPaged(
+        "enquiries?select=id,case_id,client_id,branch_id,assigned_to,source,campaign,priority,status,score,next_follow_up_at,lost_reason,created_at,converted_at&order=created_at.desc",
+        token,
+        CLIENT_CASE_LIMIT,
+        degraded,
+      ),
       safeRest("workflow_stages?select=*&order=position.asc", token, degraded),
       safeRest(`tasks?select=*&order=created_at.desc&limit=${RECORD_LIMIT}`, token, degraded),
       safeRest(
@@ -736,6 +747,30 @@ async function lifecycleReady(token: string): Promise<boolean> {
     lifecycleMigrationApplied = false;
   }
   return lifecycleMigrationApplied;
+}
+
+async function safeRestPaged(
+  path: string,
+  token: string,
+  maxRows: number,
+  degraded?: string[],
+): Promise<Json[]> {
+  const pageSize = 1000;
+  try {
+    const pages = await Promise.all(
+      Array.from({ length: Math.ceil(maxRows / pageSize) }, (_, page) => {
+        const offset = page * pageSize;
+        const limit = Math.min(pageSize, maxRows - offset);
+        return rest<Json[]>(`${path}&limit=${limit}&offset=${offset}`, token);
+      }),
+    );
+    return pages.flat().slice(0, maxRows);
+  } catch (error) {
+    const dataset = path.split("?")[0];
+    console.error(`Workspace dataset unavailable: ${dataset}`, error);
+    degraded?.push(dataset);
+    return [];
+  }
 }
 
 async function safeRest(
