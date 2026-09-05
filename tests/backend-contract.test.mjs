@@ -34,10 +34,12 @@ test("large enquiry directories load independently and never fail as an empty li
   const route = await read("app/api/crm/enquiries/route.ts");
   assert.match(route, /lifecycle_stage=eq\.enquiry/);
   assert.match(route, /const PAGE_SIZE = 500/);
-  assert.match(route, /for \(let offset = 0/);
-  assert.match(route, /case_notes\?select=case_id,author_id,body,created_at/);
-  assert.match(route, /documents\?select=case_id,state/);
-  assert.match(page, /fetch\("\/api\/crm\/enquiries"/);
+  assert.match(route, /supabasePageRequest/);
+  assert.match(route, /limit=\$\{limit\}&offset=\$\{offset\}/);
+  assert.match(route, /restByIds\("case_notes", "case_id,author_id,body,created_at"/);
+  assert.match(route, /restByIds\("documents", "case_id,state"/);
+  assert.match(page, /\/api\/crm\/enquiries\?offset=\$\{offset\}&limit=\$\{pageSize\}/);
+  assert.match(page, /while \(offset < total/);
   assert.match(page, /Enquiries could not be loaded/);
   assert.match(page, /onRetry/);
   assert.match(page, /const pageSize = 50/);

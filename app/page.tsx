@@ -11512,13 +11512,28 @@ export default function Home() {
     setEnquiriesLoading(true);
     setEnquiriesError("");
     try {
-      const response = await fetch("/api/crm/enquiries", { cache: "no-store" });
-      const result = await response.json();
-      if (!response.ok)
-        throw new Error(
-          result.error || "The enquiry directory could not be loaded.",
+      const pageSize = 500;
+      const enquiryCases: CaseRecord[] = [];
+      let offset = 0;
+      let total = Number.POSITIVE_INFINITY;
+      while (offset < total && offset < 20_000) {
+        const response = await fetch(
+          `/api/crm/enquiries?offset=${offset}&limit=${pageSize}`,
+          { cache: "no-store" },
         );
-      const enquiryCases = (result.records || []) as CaseRecord[];
+        const result = await response.json();
+        if (!response.ok)
+          throw new Error(
+            result.error || "The enquiry directory could not be loaded.",
+          );
+        const next = (result.records || []) as CaseRecord[];
+        enquiryCases.push(...next);
+        total = result.count !== null && Number.isFinite(Number(result.count))
+          ? Number(result.count)
+          : total;
+        offset += next.length;
+        if (next.length < pageSize) break;
+      }
       setCases((current) => [
         ...current.filter((record) => record.lifecycleStage !== "enquiry"),
         ...enquiryCases,
@@ -12735,7 +12750,7 @@ export default function Home() {
           <span>{schemaWarning}</span>
         </div>
       )}
-      {truncated.length > 0 && (
+      {active !== "enquiries" && truncated.length > 0 && (
         <div className="truncationBanner" role="status">
           <AlertTriangle size={15} />
           <span>

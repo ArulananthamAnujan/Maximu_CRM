@@ -88,6 +88,30 @@ export async function supabaseRequest<T>(
   return JSON.parse(body) as T;
 }
 
+/** Read a PostgREST page together with its RLS-scoped exact total. */
+export async function supabasePageRequest<T>(
+  path: string,
+  init: RequestInit = {},
+  accessToken?: string,
+): Promise<{ data: T; count: number | null }> {
+  const { url, publishableKey } = supabaseConfig();
+  const headers = new Headers(init.headers);
+  headers.set("apikey", publishableKey);
+  headers.set("Prefer", "count=exact");
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  const response = await fetch(`${url}${path}`, { ...init, headers });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new SupabaseError(response.status, detail || response.statusText);
+  }
+  const body = await response.text();
+  const total = response.headers.get("content-range")?.split("/").pop();
+  return {
+    data: (body.trim() ? JSON.parse(body) : []) as T,
+    count: total && total !== "*" ? Number(total) : null,
+  };
+}
+
 export function readCookie(request: Request, name: string): string | null {
   const cookie = request.headers.get("cookie") ?? "";
   for (const part of cookie.split(";")) {

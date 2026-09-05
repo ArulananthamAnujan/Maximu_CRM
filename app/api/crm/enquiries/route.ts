@@ -5,6 +5,7 @@ import {
 } from "@/server/supabase-session";
 import {
   SupabaseError,
+  supabasePageRequest,
   supabaseRequest,
 } from "@/server/supabase";
 
@@ -18,7 +19,8 @@ type Json = Record<string, unknown>;
 // Keeping this response narrow prevents Netlify's buffered response limit from
 // turning a valid branch into a misleading empty enquiry screen.
 const PAGE_SIZE = 500;
-const MAX_ROWS = 10_000;
+const MAX_PAGE_SIZE = 500;
+const RELATED_CHUNK_SIZE = 120;
 
 export async function GET(request: Request) {
   try {
@@ -27,35 +29,31 @@ export async function GET(request: Request) {
       throw new LiveAccessError(403, "This view is available to staff only.");
 
     const token = session.accessToken;
-    const [cases, clients, enquiries, branches, profiles, notes, documents] = await Promise.all([
-      restAll(
-        "cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,due_at,lifecycle_stage,visa_expiry_on,opened_at&lifecycle_stage=eq.enquiry&order=opened_at.desc.nullslast,id.asc",
-        token,
-      ),
-      restAll(
-        "clients?select=id,first_name,last_name,email,mobile,source,passport_masked&archived_at=is.null&order=updated_at.desc.nullslast,id.asc",
-        token,
-      ),
-      restAll(
-        "enquiries?select=id,case_id,client_id,source,campaign,priority,score,lost_reason,created_at&order=created_at.desc.nullslast,id.asc",
-        token,
-      ),
-      restAll(
-        "branches?select=id,name&active=eq.true&order=name.asc,id.asc",
-        token,
-      ),
-      restAll(
-        "profiles?select=id,display_name&active=eq.true&order=display_name.asc,id.asc",
-        token,
-      ),
-      restAll(
-        "case_notes?select=case_id,author_id,body,created_at&order=created_at.desc,id.asc",
-        token,
-      ).catch(() => [] as Json[]),
-      restAll(
-        "documents?select=case_id,state&state=neq.archived&order=case_id.asc,id.asc",
-        token,
-      ).catch(() => [] as Json[]),
+    const url = new URL(request.url);
+    const limit = Math.min(
+      MAX_PAGE_SIZE,
+      Math.max(1, Number(url.searchParams.get("limit")) || PAGE_SIZE),
+    );
+    const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
+    const casesPath = `/rest/v1/cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,due_at,lifecycle_stage,visa_expiry_on,opened_at&lifecycle_stage=eq.enquiry&order=opened_at.desc.nullslast,id.asc&limit=${limit}&offset=${offset}`;
+    const page = offset === 0
+      ? await supabasePageRequest<Json[]>(casesPath, { method: "GET" }, token)
+      : {
+          data: await supabaseRequest<Json[]>(casesPath, { method: "GET" }, token),
+          count: null,
+        };
+    const cases = page.data;
+    const caseIds = uniqueIds(cases, "id");
+    const clientIds = uniqueIds(cases, "client_id");
+    const branchIds = uniqueIds(cases, "branch_id");
+    const ownerIds = uniqueIds(cases, "owner_id");
+    const [clients, enquiries, branches, profiles, notes, documents] = await Promise.all([
+      restByIds("clients", "id,first_name,last_name,email,mobile,source,passport_masked", "id", clientIds, token),
+      restByIds("enquiries", "id,case_id,client_id,source,campaign,priority,score,lost_reason,created_at", "case_id", caseIds, token, "&order=created_at.desc.nullslast,id.asc"),
+      restByIds("branches", "id,name", "id", branchIds, token),
+      restByIds("profiles", "id,display_name", "id", ownerIds, token),
+      restByIds("case_notes", "case_id,author_id,body,created_at", "case_id", caseIds, token, "&order=created_at.desc,id.asc").catch(() => [] as Json[]),
+      restByIds("documents", "case_id,state", "case_id", caseIds, token, "&state=neq.archived&order=case_id.asc,id.asc").catch(() => [] as Json[]),
     ]);
 
     const clientById = new Map(
@@ -155,7 +153,13 @@ export async function GET(request: Request) {
 
     return appendRefreshCookies(
       Response.json(
-        { ok: true, records, count: records.length },
+        {
+          ok: true,
+          records,
+          count: page.count,
+          offset,
+          limit,
+        },
         { headers: { "Cache-Control": "no-store" } },
       ),
       session.refreshed,
@@ -180,18 +184,33 @@ export async function GET(request: Request) {
   }
 }
 
-async function restAll(path: string, token: string): Promise<Json[]> {
-  const rows: Json[] = [];
-  for (let offset = 0; offset < MAX_ROWS; offset += PAGE_SIZE) {
-    const page = await supabaseRequest<Json[]>(
-      `/rest/v1/${path}&limit=${PAGE_SIZE}&offset=${offset}`,
-      { method: "GET" },
-      token,
+function uniqueIds(rows: Json[], field: string): string[] {
+  return Array.from(
+    new Set(rows.map((row) => String(row[field] ?? "")).filter(Boolean)),
+  );
+}
+
+async function restByIds(
+  table: string,
+  select: string,
+  field: string,
+  ids: string[],
+  token: string,
+  suffix = "",
+): Promise<Json[]> {
+  if (!ids.length) return [];
+  const pages: Json[][] = [];
+  for (let start = 0; start < ids.length; start += RELATED_CHUNK_SIZE) {
+    const chunk = ids.slice(start, start + RELATED_CHUNK_SIZE);
+    pages.push(
+      await supabaseRequest<Json[]>(
+        `/rest/v1/${table}?select=${select}&${field}=in.(${chunk.join(",")})${suffix}`,
+        { method: "GET" },
+        token,
+      ),
     );
-    rows.push(...page);
-    if (page.length < PAGE_SIZE) return rows;
   }
-  throw new Error("The enquiry directory exceeds the supported page window.");
+  return pages.flat();
 }
 
 function plainDate(value: unknown): string {
