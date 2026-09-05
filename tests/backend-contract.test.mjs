@@ -74,6 +74,12 @@ test("the executive dashboard stays bounded and uses the exact enquiry total", a
   assert.match(styles, /\.dashboardMode > \.mainArea/);
   assert.match(styles, /\.dashboardMode \.dashboardGrid/);
   assert.match(styles, /\.dashboardMode \.dashboardFilters[\s\S]*display: none/);
+  const dashboardShellStart = styles.indexOf("/* Premium dashboard:");
+  const dashboardContentStart = styles.indexOf(".dashboardMode .content", dashboardShellStart);
+  const dashboardShell = styles.slice(dashboardShellStart, dashboardContentStart);
+  assert.match(dashboardShell, /\.dashboardMode\s*\{[\s\S]*display:\s*block/);
+  assert.match(dashboardShell, /\.dashboardMode > \.mainArea\s*\{[\s\S]*width:\s*auto/);
+  assert.doesNotMatch(dashboardShell, /width:\s*calc\(100%\s*-\s*248px\)/);
 });
 
 test("global CRM search provides live, permitted client suggestions", async () => {

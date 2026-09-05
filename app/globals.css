@@ -10759,12 +10759,16 @@ body { font-size: 14px; }
 .recordModal label > small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.4; }
 
 /* Premium dashboard: a calm executive overview that stays inside the viewport. */
+.dashboardMode {
+  /* The sidebar is fixed and therefore must not reserve a second flex column. */
+  display: block;
+}
 .dashboardMode > .mainArea {
   min-width: 0;
-  width: calc(100% - 248px);
-  max-width: calc(100% - 248px);
+  width: auto;
+  max-width: none;
   margin-left: 248px;
-  overflow: hidden;
+  overflow-x: clip;
 }
 .dashboardMode .content {
   width: 100%;
@@ -10849,7 +10853,9 @@ body { font-size: 14px; }
   margin: 9px 0 7px;
   color: #12354d;
   font-size: 32px;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
+  white-space: nowrap;
 }
 .dashboardMode .signal small { color: #6c8291; font-size: 11px; line-height: 1.4; }
 .dashboardMode .signalIcon {
@@ -10932,9 +10938,9 @@ body { font-size: 14px; }
 
 @media (max-width: 1180px) {
   .dashboardMode > .mainArea {
-    width: calc(100% - 248px);
-    max-width: calc(100% - 248px);
-    margin-left: 248px;
+    width: auto;
+    max-width: none;
+    margin-left: 238px;
   }
   .dashboardMode .topbarPrimary { gap: 8px; padding-inline: 16px; }
   .dashboardMode .topbarPrimary .searchWrap { width: auto; min-width: 210px; flex: 1 1 280px; }
@@ -10942,7 +10948,7 @@ body { font-size: 14px; }
 }
 
 @media (max-width: 900px) {
-  .dashboardMode > .mainArea { width: 100%; max-width: 100%; margin-left: 0; }
+  .dashboardMode > .mainArea { width: auto; max-width: none; margin-left: 0; }
   .dashboardMode .content { padding: 18px 16px 36px; }
 }
 
