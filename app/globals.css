@@ -9417,13 +9417,24 @@ body {
   color: var(--brand);
   font-size: 18px;
 }
+.journeyRecordSummary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.journeyRecordSummary > small {
+  color: #7a8f9f;
+  font-size: 12px;
+  font-weight: 650;
+}
 .detailedRecordsSummary { gap: 10px; }
 .journeyDataTable { width: 100%; }
 .journeyDataHeader,
 .journeyDataRow {
   display: grid;
-  grid-template-columns: minmax(170px, 1.08fr) minmax(190px, 1.14fr) minmax(175px, .95fr) minmax(220px, 1.28fr) minmax(150px, .78fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.18fr) minmax(0, 1.08fr) minmax(0, 1.05fr) minmax(0, 1.08fr) 146px;
+  gap: 14px;
   align-items: center;
 }
 .journeyDataHeader {
@@ -9431,14 +9442,14 @@ body {
   padding: 0 20px;
   background: #f6f9fb;
   color: #71869a;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 850;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
 .journeyDataRow {
-  min-height: 104px;
-  padding: 14px 20px;
+  min-height: 92px;
+  padding: 12px 20px;
   border-top: 1px solid #e8eef2;
   background: #fff;
   transition: background .16s ease, box-shadow .16s ease;
@@ -9474,7 +9485,7 @@ body {
 .journeyNoteCell strong {
   overflow: hidden;
   color: #102f45;
-  font-size: 11.5px;
+  font-size: 14px;
   font-weight: 800;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -9486,7 +9497,7 @@ body {
 .journeyNoteCell span {
   margin-top: 4px;
   color: #71869a;
-  font-size: 9.5px;
+  font-size: 12px;
   line-height: 1.45;
 }
 .journeyPrimaryCell span { color: #1c7ead; font-weight: 700; }
@@ -9495,7 +9506,7 @@ body {
   margin-top: 5px;
   overflow: hidden;
   color: #8a9aa7;
-  font-size: 8.5px;
+  font-size: 11px;
   line-height: 1.4;
   text-overflow: ellipsis;
 }
@@ -9508,6 +9519,62 @@ body {
   border-radius: 999px;
   background: #e5edf2;
 }
+.journeyInterestCell strong,
+.journeyNoteCell strong {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+}
+.journeyActionsCell select,
+.journeyOpenCase {
+  min-height: 34px;
+  font-size: 12px;
+}
+.journeyPagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+  border-top: 1px solid #e4ecf2;
+  background: #f8fbfd;
+  color: #60788b;
+  font-size: 12px;
+}
+.journeyPagination > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.journeyPagination strong {
+  min-width: 108px;
+  color: #173c54;
+  font-size: 12px;
+  text-align: center;
+}
+.journeyPagination .ghostButton {
+  min-height: 34px;
+  padding: 7px 11px;
+  font-size: 12px;
+}
+.journeyPagination .ghostButton:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+/* Large operational directories must never widen the whole CRM window. */
+html,
+body,
+.appShell,
+.mainArea,
+.content {
+  min-width: 0;
+  max-width: 100%;
+}
+html,
+body { overflow-x: hidden; }
 .journeyProgress > i {
   display: block;
   height: 100%;
@@ -9703,6 +9770,8 @@ body {
   .journeyActionsCell { grid-column: auto; justify-content: stretch; }
   .journeyActionsCell select,
   .journeyOpenCase { width: 100%; }
+  .journeyPagination { align-items: stretch; flex-direction: column; }
+  .journeyPagination > div { justify-content: space-between; }
   .detailedRecordCard { grid-template-columns: 1fr; gap: 16px; padding: 17px; }
   .detailedRecordFacts,
   .visaFacts { grid-template-columns: repeat(2, minmax(0, 1fr)); }

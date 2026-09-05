@@ -38,6 +38,10 @@ test("large enquiry directories load independently and never fail as an empty li
   assert.match(page, /fetch\("\/api\/crm\/enquiries"/);
   assert.match(page, /Enquiries could not be loaded/);
   assert.match(page, /onRetry/);
+  assert.match(page, /const pageSize = 50/);
+  assert.match(page, /query=\{query\}/);
+  assert.match(page, /directorySearchActive/);
+  assert.match(page, /Page \{safePage\} of \{pageCount\}/);
 });
 
 test("bulk actions are server-authorised and bounded", async () => {

@@ -2054,6 +2054,7 @@ function CaseWorkspace({
   title,
   module,
   cases,
+  query = "",
   loading = false,
   error = "",
   onRetry,
@@ -2065,6 +2066,7 @@ function CaseWorkspace({
   title: string;
   module: string;
   cases: CaseRecord[];
+  query?: string;
   loading?: boolean;
   error?: string;
   onRetry?: () => void;
@@ -2074,8 +2076,38 @@ function CaseWorkspace({
   onMoveStage: (record: CaseRecord, stage: LifecycleStage, reason: string) => Promise<void>;
 }) {
   const [rowActionId, setRowActionId] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  const filteredCases = useMemo(
+    () =>
+      cases.filter((record) =>
+        matchesSearch(query, [
+          record.name,
+          record.id,
+          record.email,
+          record.phone,
+          record.branch,
+          record.source,
+          record.campaign,
+          record.target,
+          record.destinationCountry,
+          record.intake,
+          record.latestNote,
+        ]),
+      ),
+    [cases, query],
+  );
+  const pageCount = Math.max(1, Math.ceil(filteredCases.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const firstRecord = filteredCases.length ? (safePage - 1) * pageSize + 1 : 0;
+  const lastRecord = Math.min(safePage * pageSize, filteredCases.length);
+  const visibleCases = filteredCases.slice(firstRecord ? firstRecord - 1 : 0, lastRecord);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setPage(1), 0);
+    return () => window.clearTimeout(timer);
+  }, [module, query]);
   const headings = module === "enquiries"
-    ? ["Enquirer", "Contact & source", "Interest & intake", "Latest note", "Actions"]
+    ? ["Enquirer", "Contact", "Interest", "Follow-up & note", "Actions"]
     : module === "students"
       ? ["Student", "Study plan", "Journey", "Latest note", "Actions"]
       : module === "direct_visas"
@@ -2146,7 +2178,12 @@ function CaseWorkspace({
           <h2>{title}</h2>
           <p>Everything the branch needs for the next action, without opening each case.</p>
         </div>
-        <span className="journeyRecordCount"><strong>{cases.length}</strong> records</span>
+        <div className="journeyRecordSummary">
+          <span className="journeyRecordCount"><strong>{filteredCases.length}</strong> records</span>
+          {!loading && !error && filteredCases.length > 0 ? (
+            <small>Showing {firstRecord}–{lastRecord}</small>
+          ) : null}
+        </div>
       </div>
       {loading ? (
         <EmptyState
@@ -2162,94 +2199,110 @@ function CaseWorkspace({
           action="Retry"
           onAction={onRetry}
         />
-      ) : cases.length === 0 ? (
+      ) : filteredCases.length === 0 ? (
         <EmptyState
           icon={Users}
-          title={`No ${title.toLowerCase()} found`}
-          copy="Create a secure record in the shared Maximus workspace."
-          action="New enquiry"
-          onAction={() => openModal("case")}
+          title={query ? "No matching enquiries" : `No ${title.toLowerCase()} found`}
+          copy={query ? "Try a name, reference, email, phone, branch or destination." : "Create a secure record in the shared Maximus workspace."}
+          action={query ? undefined : "New enquiry"}
+          onAction={query ? undefined : () => openModal("case")}
         />
       ) : (
-        <div className="journeyDataTable">
-          <div className="journeyDataHeader">
-            {headings.map((heading) => <span key={heading}>{heading}</span>)}
-          </div>
-          {cases.map((record) => {
-            const context = contextFor(record);
-            const journey = journeyFor(record);
-            return (
-              <div className="journeyDataRow" key={record.id}>
-                <button type="button" className="journeyPrimaryCell" onClick={() => onSelect(record)}>
-                  <strong>{record.name}</strong>
-                  <span>{record.id} · {record.branch || "Branch not recorded"}</span>
-                  <small>{[record.email, record.phone].filter(Boolean).join(" · ") || "Contact not recorded"}</small>
-                </button>
-                <button type="button" className="journeyInfoCell" onClick={() => onSelect(record)}>
-                  <strong>{context.primary}</strong>
-                  <span>{context.secondary}</span>
-                  <small>{context.tertiary || "No additional operational details"}</small>
-                </button>
-                <button type="button" className="journeyInfoCell" onClick={() => onSelect(record)}>
-                  <strong>{journey.primary}</strong>
-                  <span>{journey.secondary}</span>
-                  {module !== "case_complete" && module !== "defer" ? (
-                    <i className="journeyProgress"><i style={{ width: `${record.progress}%` }} /></i>
-                  ) : null}
-                </button>
-                <div className="journeyNoteCell">
-                  <button type="button" onClick={() => onSelect(record)}>
-                    <strong>{record.latestNote || "No notes yet"}</strong>
-                    <span>{record.latestNoteAt ? `${record.latestNoteAuthor || "Team member"} · ${orgDateTime(record.latestNoteAt)}` : "Add the first note for this case"}</span>
+        <>
+          <div className="journeyDataTable">
+            <div className="journeyDataHeader">
+              {headings.map((heading) => <span key={heading}>{heading}</span>)}
+            </div>
+            {visibleCases.map((record) => {
+              const context = contextFor(record);
+              const journey = journeyFor(record);
+              return (
+                <div className="journeyDataRow" key={record.id}>
+                  <button type="button" className="journeyPrimaryCell" onClick={() => onSelect(record)}>
+                    <strong>{record.name || "Name not recorded"}</strong>
+                    <span>{record.id}</span>
+                    <small>{record.branch || "Branch not recorded"}</small>
                   </button>
-                  <button
-                    type="button"
-                    className="journeyAddNote"
-                    disabled={rowActionId === record.id}
-                    onClick={async () => {
-                      const note = window.prompt(`Add a note for ${record.name}`);
-                      if (!note?.trim()) return;
-                      setRowActionId(record.id);
-                      await onAddNote(record, note.trim());
-                      setRowActionId("");
-                    }}
-                  ><Plus size={13} /> Note</button>
-                </div>
-                <div className="journeyActionsCell">
-                  <select
-                    aria-label={`Move ${record.name} to another section`}
-                    disabled={rowActionId === record.id}
-                    defaultValue=""
-                    onChange={async (event) => {
-                      const stage = event.target.value as LifecycleStage;
-                      if (!stage) return;
-                      const reason = window.prompt(
-                        `Reason for moving ${record.name} to ${stageLabelFor(stage, record.serviceType === "direct_visa")}`,
-                        "Progressed to the next section",
-                      );
-                      if (reason === null) {
+                  <button type="button" className="journeyInfoCell" onClick={() => onSelect(record)}>
+                    <strong title={String(context.primary)}>{context.primary}</strong>
+                    <span title={String(context.secondary)}>{context.secondary}</span>
+                    <small>{context.tertiary || "No additional operational details"}</small>
+                  </button>
+                  <button type="button" className="journeyInfoCell journeyInterestCell" onClick={() => onSelect(record)}>
+                    <strong title={String(journey.primary)}>{journey.primary}</strong>
+                    <span>{journey.secondary}</span>
+                    {module !== "case_complete" && module !== "defer" ? (
+                      <i className="journeyProgress"><i style={{ width: `${record.progress}%` }} /></i>
+                    ) : null}
+                  </button>
+                  <div className="journeyNoteCell">
+                    <button type="button" onClick={() => onSelect(record)}>
+                      <strong title={record.latestNote || "No notes yet"}>{record.latestNote || "No notes yet"}</strong>
+                      <span>{record.latestNoteAt ? `${record.latestNoteAuthor || "Team member"} · ${orgDateTime(record.latestNoteAt)}` : "No follow-up recorded"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="journeyAddNote"
+                      disabled={rowActionId === record.id}
+                      onClick={async () => {
+                        const note = window.prompt(`Add a note for ${record.name || record.id}`);
+                        if (!note?.trim()) return;
+                        setRowActionId(record.id);
+                        await onAddNote(record, note.trim());
+                        setRowActionId("");
+                      }}
+                    ><Plus size={13} /> Add note</button>
+                  </div>
+                  <div className="journeyActionsCell">
+                    <select
+                      aria-label={`Move ${record.name || record.id} to another section`}
+                      disabled={rowActionId === record.id}
+                      defaultValue=""
+                      onChange={async (event) => {
+                        const stage = event.target.value as LifecycleStage;
+                        if (!stage) return;
+                        const reason = window.prompt(
+                          `Reason for moving ${record.name || record.id} to ${stageLabelFor(stage, record.serviceType === "direct_visa")}`,
+                          "Progressed to the next section",
+                        );
+                        if (reason === null) {
+                          event.target.value = "";
+                          return;
+                        }
+                        setRowActionId(record.id);
+                        await onMoveStage(record, stage, reason);
+                        setRowActionId("");
                         event.target.value = "";
-                        return;
-                      }
-                      setRowActionId(record.id);
-                      await onMoveStage(record, stage, reason);
-                      setRowActionId("");
-                      event.target.value = "";
-                    }}
-                  >
-                    <option value="">Move to…</option>
-                    {allowedStageMoves(record.lifecycleStage).map((stage) => (
-                      <option key={stage} value={stage}>{stageLabelFor(stage, record.serviceType === "direct_visa")}</option>
-                    ))}
-                  </select>
-                  <button type="button" className="journeyOpenCase" onClick={() => onSelect(record)}>
+                      }}
+                    >
+                      <option value="">Move to…</option>
+                      {allowedStageMoves(record.lifecycleStage).map((stage) => (
+                        <option key={stage} value={stage}>{stageLabelFor(stage, record.serviceType === "direct_visa")}</option>
+                      ))}
+                    </select>
+                    <button type="button" className="journeyOpenCase" onClick={() => onSelect(record)}>
                     Open case <ArrowRight size={14} />
-                  </button>
+                    </button>
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+          {pageCount > 1 ? (
+            <nav className="journeyPagination" aria-label={`${title} pages`}>
+              <span>{firstRecord}–{lastRecord} of {filteredCases.length}</span>
+              <div>
+                <button type="button" className="ghostButton" disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                  <ChevronLeft size={15} /> Previous
+                </button>
+                <strong>Page {safePage} of {pageCount}</strong>
+                <button type="button" className="ghostButton" disabled={safePage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
+                  Next <ArrowRight size={15} />
+                </button>
               </div>
-            );
-          })}
-        </div>
+            </nav>
+          ) : null}
+        </>
       )}
     </article>
   );
@@ -11489,6 +11542,15 @@ export default function Home() {
       ),
     [cases, query],
   );
+  const directorySearchActive = ([
+    "enquiries",
+    "students",
+    "applications",
+    "visas",
+    "direct_visas",
+    "defer",
+    "case_complete",
+  ] as ModuleKey[]).includes(active);
   const open = (x: ModalType) => {
     setEditing(null);
     setFormError("");
@@ -12494,6 +12556,7 @@ export default function Home() {
         }
         module={active}
         cases={list}
+        query={query}
         loading={active === "enquiries" && enquiriesLoading}
         error={active === "enquiries" ? enquiriesError : ""}
         onRetry={() => void loadEnquiryDirectory()}
@@ -12580,7 +12643,7 @@ export default function Home() {
                 <kbd>
                   <Command size={12} />K
                 </kbd>
-                {query.length > 1 && (
+                {query.length > 1 && !directorySearchActive && (
                   <div className="searchResults">
                     {searched.length ? (
                       searched.slice(0, 7).map((c) => (
