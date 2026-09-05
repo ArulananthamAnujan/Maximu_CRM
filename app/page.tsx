@@ -2054,6 +2054,7 @@ function CaseWorkspace({
   title,
   module,
   cases,
+  scopeLabel = "",
   query = "",
   loading = false,
   error = "",
@@ -2066,6 +2067,7 @@ function CaseWorkspace({
   title: string;
   module: string;
   cases: CaseRecord[];
+  scopeLabel?: string;
   query?: string;
   loading?: boolean;
   error?: string;
@@ -2077,25 +2079,61 @@ function CaseWorkspace({
 }) {
   const [rowActionId, setRowActionId] = useState("");
   const [page, setPage] = useState(1);
+  const [officeFilter, setOfficeFilter] = useState("");
+  const [destinationFilter, setDestinationFilter] = useState("");
+  const [serviceFilter, setServiceFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
+  const [documentFilter, setDocumentFilter] = useState("");
+  const [followUpFilter, setFollowUpFilter] = useState("");
   const pageSize = 50;
+  const officeOptions = useMemo(
+    () => Array.from(new Set(cases.map((record) => record.branch).filter(Boolean))).sort(),
+    [cases],
+  );
+  const destinationOptions = useMemo(
+    () => Array.from(new Set(cases.map((record) => record.destinationCountry || record.target).filter(Boolean))).sort(),
+    [cases],
+  );
   const filteredCases = useMemo(
     () =>
-      cases.filter((record) =>
-        matchesSearch(query, [
-          record.name,
-          record.id,
-          record.email,
-          record.phone,
-          record.branch,
-          record.source,
-          record.campaign,
-          record.target,
-          record.destinationCountry,
-          record.intake,
-          record.latestNote,
-        ]),
-      ),
-    [cases, query],
+      cases.filter((record) => {
+        const destination = record.destinationCountry || record.target;
+        const matchesFollowUp =
+          !followUpFilter ||
+          (followUpFilter === "scheduled" && Boolean(record.due)) ||
+          (followUpFilter === "noted" && Boolean(record.latestNote)) ||
+          (followUpFilter === "needed" && !record.due && !record.latestNote);
+        const hasDocuments = record.documentSummary !== "No documents";
+        const hasWaitingDocuments = record.documentSummary.includes("waiting");
+        const matchesDocuments =
+          !documentFilter ||
+          (documentFilter === "ready" && hasDocuments && !hasWaitingDocuments) ||
+          (documentFilter === "waiting" && hasWaitingDocuments) ||
+          (documentFilter === "missing" && !hasDocuments);
+        return matchesSearch(query, [
+            record.name,
+            record.id,
+            record.email,
+            record.phone,
+            record.branch,
+            record.source,
+            record.campaign,
+            record.target,
+            record.destinationCountry,
+            record.intake,
+            record.latestNote,
+          ]) &&
+          (!officeFilter || record.branch === officeFilter) &&
+          (!destinationFilter || destination === destinationFilter) &&
+          (!serviceFilter || record.serviceType === serviceFilter) &&
+          (!priorityFilter || record.priority === priorityFilter) &&
+          matchesDocuments &&
+          matchesFollowUp;
+      }),
+    [cases, query, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter],
+  );
+  const hasDirectoryFilters = Boolean(
+    officeFilter || destinationFilter || serviceFilter || priorityFilter || documentFilter || followUpFilter,
   );
   const pageCount = Math.max(1, Math.ceil(filteredCases.length / pageSize));
   const safePage = Math.min(page, pageCount);
@@ -2105,9 +2143,9 @@ function CaseWorkspace({
   useEffect(() => {
     const timer = window.setTimeout(() => setPage(1), 0);
     return () => window.clearTimeout(timer);
-  }, [module, query]);
+  }, [module, query, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter]);
   const headings = module === "enquiries"
-    ? ["Enquirer", "Contact", "Interest", "Follow-up & note", "Actions"]
+    ? ["Client & reference", "Office & service", "Contact & source", "Destination", "Follow-up", "Actions"]
     : module === "students"
       ? ["Student", "Study plan", "Journey", "Latest note", "Actions"]
       : module === "direct_visas"
@@ -2153,7 +2191,7 @@ function CaseWorkspace({
 
   const journeyFor = (record: CaseRecord) => {
     if (module === "enquiries") return {
-      primary: [record.target, record.destinationCountry].filter(Boolean).join(" · ") || "Interest not recorded",
+      primary: Array.from(new Set([record.target, record.destinationCountry].filter(Boolean))).join(" · ") || "Interest not recorded",
       secondary: record.intake ? `Intake ${record.intake}` : `${record.progress}% profile complete`,
     };
     if (module === "defer") return {
@@ -2185,6 +2223,78 @@ function CaseWorkspace({
           ) : null}
         </div>
       </div>
+      {module === "enquiries" ? (
+        <div className="enquiryDirectoryFilters" aria-label="Filter enquiries">
+          <div className="enquiryScopeLabel">
+            <Building2 size={17} />
+            <span><small>Access</small><strong>{scopeLabel || "Your permitted offices"}</strong></span>
+          </div>
+          <label>
+            <span>Office</span>
+            <select value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
+              <option value="">All permitted offices</option>
+              {officeOptions.map((office) => <option key={office} value={office}>{office}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Destination</span>
+            <select value={destinationFilter} onChange={(event) => setDestinationFilter(event.target.value)}>
+              <option value="">All countries</option>
+              {destinationOptions.map((destination) => <option key={destination} value={destination}>{destination}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Service</span>
+            <select value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)}>
+              <option value="">All services</option>
+              <option value="study_abroad">Study Abroad</option>
+              <option value="direct_visa">Direct Visa</option>
+            </select>
+          </label>
+          <label>
+            <span>Priority</span>
+            <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
+              <option value="">All priorities</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+          <label>
+            <span>Documents</span>
+            <select value={documentFilter} onChange={(event) => setDocumentFilter(event.target.value)}>
+              <option value="">All document states</option>
+              <option value="ready">Ready</option>
+              <option value="waiting">Waiting</option>
+              <option value="missing">No documents</option>
+            </select>
+          </label>
+          <label>
+            <span>Follow-up</span>
+            <select value={followUpFilter} onChange={(event) => setFollowUpFilter(event.target.value)}>
+              <option value="">All follow-ups</option>
+              <option value="scheduled">Scheduled</option>
+              <option value="noted">Notes recorded</option>
+              <option value="needed">Needs follow-up</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="enquiryClearFilters"
+            disabled={!hasDirectoryFilters}
+            onClick={() => {
+              setOfficeFilter("");
+              setDestinationFilter("");
+              setServiceFilter("");
+              setPriorityFilter("");
+              setDocumentFilter("");
+              setFollowUpFilter("");
+            }}
+          >
+            <X size={14} /> Clear
+          </button>
+        </div>
+      ) : null}
       {loading ? (
         <EmptyState
           icon={RefreshCw}
@@ -2221,8 +2331,15 @@ function CaseWorkspace({
                   <button type="button" className="journeyPrimaryCell" onClick={() => onSelect(record)}>
                     <strong>{record.name || "Name not recorded"}</strong>
                     <span>{record.id}</span>
-                    <small>{record.branch || "Branch not recorded"}</small>
+                    <small>{module === "enquiries" && record.createdAt ? `Added ${orgDate(record.createdAt)}` : record.branch || "Branch not recorded"}</small>
                   </button>
+                  {module === "enquiries" ? (
+                    <button type="button" className="journeyInfoCell journeyOfficeCell" onClick={() => onSelect(record)}>
+                      <strong title={record.branch || "Office not recorded"}>{record.branch || "Office not recorded"}</strong>
+                      <span>{record.serviceType === "direct_visa" ? "Direct Visa" : "Study Abroad"}</span>
+                      <small>{record.owner ? `Handled by ${record.owner}` : "Unassigned"}</small>
+                    </button>
+                  ) : null}
                   <button type="button" className="journeyInfoCell" onClick={() => onSelect(record)}>
                     <strong title={String(context.primary)}>{context.primary}</strong>
                     <span title={String(context.secondary)}>{context.secondary}</span>
@@ -2238,8 +2355,10 @@ function CaseWorkspace({
                   <div className="journeyNoteCell">
                     <button type="button" onClick={() => onSelect(record)}>
                       <strong title={record.latestNote || "No notes yet"}>{record.latestNote || "No notes yet"}</strong>
-                      <span>{record.latestNoteAt ? `${record.latestNoteAuthor || "Team member"} · ${orgDateTime(record.latestNoteAt)}` : "No follow-up recorded"}</span>
+                      <span>{record.latestNoteAt ? `${record.latestNoteAuthor || "Team member"} · ${orgDateTime(record.latestNoteAt)}` : record.due ? `Follow up ${orgDate(record.due)}` : "No follow-up recorded"}</span>
                     </button>
+                    {module === "enquiries" ? <small className={`enquiryPriority priority-${record.priority}`}>{humanise(record.priority)} priority</small> : null}
+                    {module === "enquiries" ? <small className="enquiryDocumentState"><FileText size={12} /> {record.documentSummary}</small> : null}
                     <button
                       type="button"
                       className="journeyAddNote"
@@ -12563,6 +12682,13 @@ export default function Home() {
         }
         module={active}
         cases={list}
+        scopeLabel={
+          active === "enquiries"
+            ? role === "super_admin"
+              ? "All offices and countries"
+              : `${branches.find((branch) => branch.id === identity?.branchId)?.name || "Your office"} clients only`
+            : ""
+        }
         query={query}
         loading={active === "enquiries" && enquiriesLoading}
         error={active === "enquiries" ? enquiriesError : ""}
@@ -12602,7 +12728,7 @@ export default function Home() {
       );
   }
   return (
-    <div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}${active === "communications" && role !== "client" ? " gmailMode" : ""}`}>
+    <div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}${active === "communications" && role !== "client" ? " gmailMode" : ""}${active === "enquiries" && role !== "client" ? " enquiryFullMode" : ""}`}>
       {schemaWarning && (
         <div className="schemaBanner" role="status">
           <AlertTriangle size={15} />
@@ -12627,6 +12753,9 @@ export default function Home() {
         role={role}
         serviceMode={serviceMode}
       />
+      {active === "enquiries" && menuOpen ? (
+        <button className="sidebarBackdrop" type="button" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />
+      ) : null}
       <main className="mainArea">
         <header className={`topbar ${role === "client" ? "clientOnly" : ""} ${role !== "client" && active !== "dashboard" ? "moduleFocused" : ""}`}>
           <div className="topbarPrimary">
@@ -12645,7 +12774,7 @@ export default function Home() {
                   ref={searchRef}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder={`Search ${serviceMode === "study" ? "students and applications" : "clients and visa matters"}…`}
+                  placeholder={active === "enquiries" ? "Search client name, reference, office or country…" : `Search ${serviceMode === "study" ? "students and applications" : "clients and visa matters"}…`}
                 />
                 <kbd>
                   <Command size={12} />K

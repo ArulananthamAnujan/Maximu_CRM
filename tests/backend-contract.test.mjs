@@ -35,6 +35,8 @@ test("large enquiry directories load independently and never fail as an empty li
   assert.match(route, /lifecycle_stage=eq\.enquiry/);
   assert.match(route, /const PAGE_SIZE = 500/);
   assert.match(route, /for \(let offset = 0/);
+  assert.match(route, /case_notes\?select=case_id,author_id,body,created_at/);
+  assert.match(route, /documents\?select=case_id,state/);
   assert.match(page, /fetch\("\/api\/crm\/enquiries"/);
   assert.match(page, /Enquiries could not be loaded/);
   assert.match(page, /onRetry/);
@@ -43,6 +45,12 @@ test("large enquiry directories load independently and never fail as an empty li
   assert.match(page, /directorySearchActive/);
   assert.match(page, /Page \{safePage\} of \{pageCount\}/);
   assert.match(page, /role === "super_admin"[\s\S]*lifecycleStage === "enquiry"/);
+  assert.match(page, /enquiryFullMode/);
+  assert.match(page, /All offices and countries/);
+  assert.match(page, /All permitted offices/);
+  assert.match(page, /All countries/);
+  assert.match(page, /All document states/);
+  assert.match(page, /Office & service/);
 });
 
 test("bulk actions are server-authorised and bounded", async () => {

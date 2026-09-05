@@ -27,7 +27,7 @@ export async function GET(request: Request) {
       throw new LiveAccessError(403, "This view is available to staff only.");
 
     const token = session.accessToken;
-    const [cases, clients, enquiries, branches, profiles] = await Promise.all([
+    const [cases, clients, enquiries, branches, profiles, notes, documents] = await Promise.all([
       restAll(
         "cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,due_at,lifecycle_stage,visa_expiry_on,opened_at&lifecycle_stage=eq.enquiry&order=opened_at.desc.nullslast,id.asc",
         token,
@@ -48,6 +48,14 @@ export async function GET(request: Request) {
         "profiles?select=id,display_name&active=eq.true&order=display_name.asc,id.asc",
         token,
       ),
+      restAll(
+        "case_notes?select=case_id,author_id,body,created_at&order=created_at.desc,id.asc",
+        token,
+      ).catch(() => [] as Json[]),
+      restAll(
+        "documents?select=case_id,state&state=neq.archived&order=case_id.asc,id.asc",
+        token,
+      ).catch(() => [] as Json[]),
     ]);
 
     const clientById = new Map(
@@ -69,6 +77,21 @@ export async function GET(request: Request) {
     const profileById = new Map(
       profiles.map((row) => [String(row.id), row]),
     );
+    const latestNoteByCase = new Map<string, Json>();
+    for (const note of notes) {
+      const caseId = String(note.case_id ?? "");
+      if (caseId && !latestNoteByCase.has(caseId)) latestNoteByCase.set(caseId, note);
+    }
+    const documentCountsByCase = new Map<string, { total: number; ready: number; waiting: number }>();
+    for (const document of documents) {
+      const caseId = String(document.case_id ?? "");
+      if (!caseId) continue;
+      const counts = documentCountsByCase.get(caseId) ?? { total: 0, ready: 0, waiting: 0 };
+      counts.total += 1;
+      if (["verified", "uploaded"].includes(String(document.state))) counts.ready += 1;
+      else counts.waiting += 1;
+      documentCountsByCase.set(caseId, counts);
+    }
 
     const records = cases.map((row) => {
       const client = clientById.get(String(row.client_id)) ?? {};
@@ -79,6 +102,11 @@ export async function GET(request: Request) {
       const name = [client.first_name, client.last_name]
         .filter(Boolean)
         .join(" ");
+      const latestNote = latestNoteByCase.get(String(row.id)) ?? {};
+      const documentCounts = documentCountsByCase.get(String(row.id));
+      const documentSummary = documentCounts
+        ? `${documentCounts.ready}/${documentCounts.total} ready${documentCounts.waiting ? ` · ${documentCounts.waiting} waiting` : ""}`
+        : "No documents";
       return {
         dbId: row.id,
         clientId: row.client_id,
@@ -113,15 +141,15 @@ export async function GET(request: Request) {
         priority: row.priority ?? enquiry.priority ?? "medium",
         passportMasked: client.passport_masked ?? "",
         partner: "",
-        documentSummary: "Open the case for documents",
+        documentSummary,
         deferReason: "",
         leadScore: Number(enquiry.score ?? 0),
         lostReason: enquiry.lost_reason ?? "",
         applicationStatus: "",
         visaCategory: row.matter_type ?? "",
-        latestNote: "",
-        latestNoteAt: "",
-        latestNoteAuthor: "",
+        latestNote: latestNote.body ?? "",
+        latestNoteAt: latestNote.created_at ?? "",
+        latestNoteAuthor: profileById.get(String(latestNote.author_id))?.display_name ?? "",
       };
     });
 
