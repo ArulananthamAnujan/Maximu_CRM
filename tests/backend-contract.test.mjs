@@ -64,6 +64,18 @@ test("large enquiry directories load independently and never fail as an empty li
   assert.match(page, /enquiryDestinationLabel\(record\)/);
 });
 
+test("the executive dashboard stays bounded and uses the exact enquiry total", async () => {
+  const page = await read("app/page.tsx");
+  const styles = await read("app/globals.css");
+  assert.match(page, /loadEnquirySummary/);
+  assert.match(page, /\/api\/crm\/enquiries\?offset=0&limit=1/);
+  assert.match(page, /enquiriesTotal=\{enquiriesTotal\}/);
+  assert.match(page, /enquiryDestinationLabel\(c\)/);
+  assert.match(styles, /\.dashboardMode > \.mainArea/);
+  assert.match(styles, /\.dashboardMode \.dashboardGrid/);
+  assert.match(styles, /\.dashboardMode \.dashboardFilters[\s\S]*display: none/);
+});
+
 test("bulk actions are server-authorised and bounded", async () => {
   const page = await read("app/page.tsx");
   const workspace = await read("app/api/crm/workspace/route.ts");

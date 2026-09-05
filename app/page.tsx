@@ -1716,6 +1716,7 @@ function WorkspaceDashboard({
   onOpenCase,
   serviceMode,
   role,
+  enquiriesTotal = 0,
 }: {
   cases: CaseRecord[];
   tasks: TaskRecord[];
@@ -1726,6 +1727,7 @@ function WorkspaceDashboard({
   onOpenCase: (x: CaseRecord) => void;
   serviceMode: ServiceMode;
   role: AppRole;
+  enquiriesTotal?: number;
 }) {
   const [dashboardSearch, setDashboardSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("");
@@ -1745,10 +1747,11 @@ function WorkspaceDashboard({
     workspaceCases = allWorkspaceCases.filter((c) => {
       const searchable = `${c.name} ${c.id} ${c.email} ${c.phone} ${c.target} ${c.matterType}`.toLowerCase();
       const created = c.createdAt?.slice(0, 10) ?? "";
+      const destinations = enquiryDestinations(c);
       return (
         (!dashboardSearch || searchable.includes(dashboardSearch.toLowerCase())) &&
         (!branchFilter || c.branch === branchFilter) &&
-        (!countryFilter || c.destinationCountry === countryFilter) &&
+        (!countryFilter || destinations.includes(countryFilter)) &&
         (!intakeFilter || c.intake.toLowerCase().includes(intakeFilter.toLowerCase())) &&
         (!visaTypeFilter || c.visaCategory === visaTypeFilter) &&
         (!createdFrom || created >= createdFrom) &&
@@ -1778,7 +1781,7 @@ function WorkspaceDashboard({
     }),
     openList = direct ? "direct_visas" : "students",
     branchOptions = [...new Set(allWorkspaceCases.map((c) => c.branch).filter(Boolean))].sort(),
-    countryOptions = [...new Set(allWorkspaceCases.map((c) => c.destinationCountry).filter(Boolean))].sort(),
+    countryOptions = [...new Set(allWorkspaceCases.flatMap(enquiryDestinations))].sort(),
     visaTypeOptions = [...new Set(allWorkspaceCases.map((c) => c.visaCategory).filter(Boolean))].sort(),
     categoryCounts = [...workspaceCases.reduce((map, record) => {
       const key = direct ? record.visaCategory || "Uncategorised" : humanise(record.lifecycleStage);
@@ -1904,11 +1907,13 @@ function WorkspaceDashboard({
       <section className="signalGrid">
         <button className="signal ocean" onClick={() => setActive(openList)}>
           <div>
-            <span>Active cases</span>
+            <span>{direct ? "Active visa matters" : "Total enquiries"}</span>
             <strong>
-              {workspaceCases.filter((c) => c.status !== "completed").length}
+              {direct
+                ? workspaceCases.filter((c) => c.status !== "completed").length.toLocaleString()
+                : (enquiriesTotal || workspaceCases.filter((c) => c.lifecycleStage === "enquiry").length).toLocaleString()}
             </strong>
-            <small>{workspaceCases.length} total records</small>
+            <small>{direct ? `${workspaceCases.length.toLocaleString()} records in view` : role === "super_admin" ? "Across every permitted office" : "For your permitted office"}</small>
           </div>
           <div className="signalIcon blue">
             {direct ? <ShieldCheck size={22} /> : <GraduationCap size={22} />}
@@ -1975,30 +1980,35 @@ function WorkspaceDashboard({
               <div className="caseTableHeader" aria-hidden="true">
                 <span>Client &amp; case</span><span>Stage</span><span>Next action</span><span>Due</span><span />
               </div>
-              {priorityCases.slice(0, 5).map((c) => (
-                <button
-                  className="caseRow compactRecord"
-                  key={c.id}
-                  onClick={() => onOpenCase(c)}
-                >
-                  <span className="clientCell">
-                    <b>{c.name}</b>
-                    <small>
-                      {c.id} · {c.type}
-                    </small>
-                  </span>
-                  <span>
-                    <b>{c.stage}</b>
-                    <small><Status value={c.health} /></small>
-                  </span>
-                  <span>
-                    <b>{c.target || "Open case workspace"}</b>
-                    <small>{c.applicationStatus || c.matterType}</small>
-                  </span>
-                  <span>{c.due || "No due date"}</span>
-                  <ArrowRight size={16} />
-                </button>
-              ))}
+              {priorityCases.slice(0, 5).map((c) => {
+                const nextAction = c.lifecycleStage === "enquiry"
+                  ? enquiryDestinationLabel(c)
+                  : c.target || "Open case workspace";
+                return (
+                  <button
+                    className="caseRow compactRecord"
+                    key={c.id}
+                    onClick={() => onOpenCase(c)}
+                  >
+                    <span className="clientCell">
+                      <b>{c.name || "Client name not recorded"}</b>
+                      <small>
+                        {c.id} · {humanise(c.serviceType)}
+                      </small>
+                    </span>
+                    <span>
+                      <b>{c.stage}</b>
+                      <small><Status value={c.health} /></small>
+                    </span>
+                    <span>
+                      <b title={c.target || undefined}>{nextAction}</b>
+                      <small>{c.applicationStatus || c.matterType || "Review enquiry"}</small>
+                    </span>
+                    <span>{c.due || "No due date"}</span>
+                    <ArrowRight size={16} />
+                  </button>
+                );
+              })}
             </div>
           )}
         </article>
@@ -11581,6 +11591,18 @@ export default function Home() {
       // showing nothing rather than the workspace itself failing to load.
     }
   };
+  const loadEnquirySummary = async () => {
+    try {
+      const response = await fetch("/api/crm/enquiries?offset=0&limit=1", {
+        cache: "no-store",
+      });
+      const result = await response.json();
+      if (response.ok && Number.isFinite(Number(result.count)))
+        setEnquiriesTotal(Number(result.count));
+    } catch {
+      // Dashboard counts enhance the workspace but must never delay entry.
+    }
+  };
   const loadEnquiryDirectory = async () => {
     setEnquiriesLoading(true);
     setEnquiriesSyncing(true);
@@ -11684,6 +11706,7 @@ export default function Home() {
       landOn(result.identity.role as AppRole);
       void loadAlerts(result.identity.role as AppRole);
       if (result.identity.role !== "client") {
+        void loadEnquirySummary();
         void loadChecklistTemplates();
         void loadEmailTemplates();
       }
@@ -12463,6 +12486,7 @@ export default function Home() {
         onOpenCase={openCaseWorkspace}
         serviceMode={serviceMode}
         role={role}
+        enquiriesTotal={enquiriesTotal}
       />
     );
   else if (active === "work")
@@ -12848,7 +12872,7 @@ export default function Home() {
       );
   }
   return (
-    <div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}${active === "communications" && role !== "client" ? " gmailMode" : ""}${active === "enquiries" && role !== "client" ? " enquiryFullMode" : ""}`}>
+    <div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}${active === "dashboard" && role !== "client" ? " dashboardMode" : ""}${active === "communications" && role !== "client" ? " gmailMode" : ""}${active === "enquiries" && role !== "client" ? " enquiryFullMode" : ""}`}>
       {schemaWarning && (
         <div className="schemaBanner" role="status">
           <AlertTriangle size={15} />

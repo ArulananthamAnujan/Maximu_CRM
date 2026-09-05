@@ -10757,3 +10757,208 @@ body { font-size: 14px; }
 .sourceCoverageGrid > div { display: grid; gap: 5px; padding: 11px; border-radius: 10px; background: var(--surface-soft, rgba(127,127,127,.06)); }
 .sourceCoverageGrid span, .sourceCoverageGrid a { font-size: 12px; }
 .recordModal label > small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+
+/* Premium dashboard: a calm executive overview that stays inside the viewport. */
+.dashboardMode > .mainArea {
+  min-width: 0;
+  width: calc(100% - 248px);
+  max-width: calc(100% - 248px);
+  margin-left: 248px;
+  overflow: hidden;
+}
+.dashboardMode .content {
+  width: 100%;
+  max-width: 1500px;
+  min-width: 0;
+  margin: 0 auto;
+  padding: 24px clamp(20px, 2.4vw, 36px) 48px;
+  overflow: hidden;
+}
+.dashboardMode .pageTitle {
+  min-width: 0;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 20px 22px;
+  border: 1px solid #d9e7ef;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 92% 0%, rgba(43, 153, 202, .16), transparent 34%),
+    linear-gradient(112deg, #fff 0%, #f6fbfd 68%, #fff8ee 100%);
+  box-shadow: 0 12px 34px rgba(15, 54, 79, .07);
+}
+.dashboardMode .pageTitle > div:first-child { min-width: 0; }
+.dashboardMode .pageTitle h1 {
+  margin: 2px 0 5px;
+  color: #102f45;
+  font-size: clamp(28px, 2.4vw, 34px);
+  line-height: 1.12;
+  letter-spacing: -.035em;
+}
+.dashboardMode .pageTitle p { color: #5b7485; font-size: 14px; }
+.dashboardMode .titleActions { flex: 0 0 auto; }
+.dashboardMode .titleActions .primaryButton { white-space: nowrap; }
+
+/* The dashboard is an overview. Detailed filtering remains in the directories. */
+.dashboardMode .workspaceHero,
+.dashboardMode .dashboardFilters,
+.dashboardMode .operationsBrief,
+.dashboardMode .dashboardBreakdowns { display: none; }
+
+.dashboardMode .signalGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  min-width: 0;
+  margin-bottom: 18px;
+}
+.dashboardMode .signal {
+  position: relative;
+  min-width: 0;
+  min-height: 128px;
+  overflow: hidden;
+  padding: 18px;
+  border-color: #d8e6ed;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(19, 55, 75, .055);
+}
+.dashboardMode .signal::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  content: "";
+  background: var(--signal-accent, #2389b7);
+}
+.dashboardMode .signal.ocean {
+  --signal-accent: #228bb9;
+  background: linear-gradient(145deg, #fff 0%, #f1f9fc 100%);
+}
+.dashboardMode .signal.sunshine {
+  --signal-accent: #e79522;
+  background: linear-gradient(145deg, #fff 0%, #fff9ee 100%);
+}
+.dashboardMode .signal.coral {
+  --signal-accent: #e56b5e;
+  background: linear-gradient(145deg, #fff 0%, #fff5f2 100%);
+}
+.dashboardMode .signal.mint {
+  --signal-accent: #2ea67e;
+  background: linear-gradient(145deg, #fff 0%, #f1fbf7 100%);
+}
+.dashboardMode .signal > div:first-child { min-width: 0; }
+.dashboardMode .signal span { color: #526d7e; font-size: 13px; font-weight: 780; }
+.dashboardMode .signal > div:first-child > strong {
+  margin: 9px 0 7px;
+  color: #12354d;
+  font-size: 32px;
+  line-height: 1;
+}
+.dashboardMode .signal small { color: #6c8291; font-size: 11px; line-height: 1.4; }
+.dashboardMode .signalIcon {
+  position: relative;
+  z-index: 1;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+}
+
+.dashboardMode .dashboardGrid {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+  gap: 18px;
+  min-width: 0;
+}
+.dashboardMode .panel {
+  min-width: 0;
+  border-color: #d8e4ea;
+  border-radius: 16px;
+  box-shadow: 0 9px 28px rgba(19, 55, 75, .055);
+}
+.dashboardMode .pipelinePanel {
+  min-width: 0;
+  overflow: hidden;
+  padding: 20px;
+}
+.dashboardMode .panelHead h2 { color: #12354d; font-size: 20px; }
+.dashboardMode .caseTable { min-width: 0; overflow: hidden; }
+.dashboardMode .caseTableHeader,
+.dashboardMode .caseRow {
+  grid-template-columns: minmax(180px, 1.15fr) minmax(90px, .58fr) minmax(180px, 1fr) minmax(95px, .52fr) 18px;
+  gap: 14px;
+}
+.dashboardMode .caseTableHeader {
+  padding: 9px 10px;
+  color: #708695;
+  font-size: 10px;
+}
+.dashboardMode .caseRow.compactRecord {
+  min-width: 0;
+  min-height: 78px;
+  padding: 14px 10px;
+}
+.dashboardMode .caseRow > span { min-width: 0; }
+.dashboardMode .caseRow span b {
+  overflow: hidden;
+  color: #16384f;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dashboardMode .caseRow span small {
+  overflow: hidden;
+  color: #768b99;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dashboardMode .caseRow > span:nth-child(3) b {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.dashboardMode .caseRow > span:nth-child(4) { color: #536d7d; font-size: 12px; }
+.dashboardMode .rightRail { min-width: 0; gap: 18px; }
+.dashboardMode .rightRail .panel { min-width: 0; padding: 18px; }
+.dashboardMode .actionRow { min-height: 64px; border-radius: 10px; }
+
+@media (max-width: 1380px) {
+  .dashboardMode .signalGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboardMode .dashboardGrid { grid-template-columns: 1fr; }
+  .dashboardMode .rightRail {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .dashboardMode > .mainArea {
+    width: calc(100% - 248px);
+    max-width: calc(100% - 248px);
+    margin-left: 248px;
+  }
+  .dashboardMode .topbarPrimary { gap: 8px; padding-inline: 16px; }
+  .dashboardMode .topbarPrimary .searchWrap { width: auto; min-width: 210px; flex: 1 1 280px; }
+  .dashboardMode .signedAccount > span { max-width: 145px; }
+}
+
+@media (max-width: 900px) {
+  .dashboardMode > .mainArea { width: 100%; max-width: 100%; margin-left: 0; }
+  .dashboardMode .content { padding: 18px 16px 36px; }
+}
+
+@media (max-width: 760px) {
+  .dashboardMode .pageTitle { align-items: flex-start; flex-direction: column; padding: 18px; }
+  .dashboardMode .titleActions,
+  .dashboardMode .titleActions .primaryButton { width: 100%; }
+  .dashboardMode .titleActions .primaryButton { justify-content: center; }
+  .dashboardMode .signalGrid,
+  .dashboardMode .rightRail { grid-template-columns: 1fr; }
+  .dashboardMode .caseTableHeader { display: none; }
+  .dashboardMode .caseRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 12px;
+  }
+  .dashboardMode .caseRow > span:nth-child(2),
+  .dashboardMode .caseRow > span:nth-child(3),
+  .dashboardMode .caseRow > span:nth-child(4) { display: none; }
+}
