@@ -1290,6 +1290,25 @@ function matchesSearch(query: string, values: unknown[]) {
   );
 }
 
+function enquiryDestinations(record: Pick<CaseRecord, "destinationCountry" | "target">) {
+  const raw = String(record.destinationCountry || record.target || "");
+  return Array.from(
+    new Set(
+      raw
+        .split("|")
+        .map((country) => country.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function enquiryDestinationLabel(record: Pick<CaseRecord, "destinationCountry" | "target">) {
+  const destinations = enquiryDestinations(record);
+  if (!destinations.length) return "Destination not recorded";
+  if (destinations.length <= 2) return destinations.join(" · ");
+  return `${destinations.slice(0, 2).join(" · ")} +${destinations.length - 2} more`;
+}
+
 function ListFilterBar({
   query,
   onQuery,
@@ -2056,6 +2075,7 @@ function CaseWorkspace({
   cases,
   scopeLabel = "",
   query = "",
+  onQueryChange,
   loading = false,
   syncing = false,
   totalRecords,
@@ -2071,6 +2091,7 @@ function CaseWorkspace({
   cases: CaseRecord[];
   scopeLabel?: string;
   query?: string;
+  onQueryChange?: (query: string) => void;
   loading?: boolean;
   syncing?: boolean;
   totalRecords?: number;
@@ -2083,6 +2104,7 @@ function CaseWorkspace({
 }) {
   const [rowActionId, setRowActionId] = useState("");
   const [page, setPage] = useState(1);
+  const [searchDraft, setSearchDraft] = useState(query);
   const [officeFilter, setOfficeFilter] = useState("");
   const [destinationFilter, setDestinationFilter] = useState("");
   const [serviceFilter, setServiceFilter] = useState("");
@@ -2095,13 +2117,13 @@ function CaseWorkspace({
     [cases],
   );
   const destinationOptions = useMemo(
-    () => Array.from(new Set(cases.map((record) => record.destinationCountry || record.target).filter(Boolean))).sort(),
+    () => Array.from(new Set(cases.flatMap(enquiryDestinations))).sort(),
     [cases],
   );
   const filteredCases = useMemo(
     () =>
       cases.filter((record) => {
-        const destination = record.destinationCountry || record.target;
+        const destinations = enquiryDestinations(record);
         const matchesFollowUp =
           !followUpFilter ||
           (followUpFilter === "scheduled" && Boolean(record.due)) ||
@@ -2128,7 +2150,7 @@ function CaseWorkspace({
             record.latestNote,
           ]) &&
           (!officeFilter || record.branch === officeFilter) &&
-          (!destinationFilter || destination === destinationFilter) &&
+          (!destinationFilter || destinations.includes(destinationFilter)) &&
           (!serviceFilter || record.serviceType === serviceFilter) &&
           (!priorityFilter || record.priority === priorityFilter) &&
           matchesDocuments &&
@@ -2139,6 +2161,7 @@ function CaseWorkspace({
   const hasDirectoryFilters = Boolean(
     officeFilter || destinationFilter || serviceFilter || priorityFilter || documentFilter || followUpFilter,
   );
+  const hasDirectoryControls = hasDirectoryFilters || Boolean(query.trim()) || Boolean(searchDraft.trim());
   const isUnfilteredDirectory = module === "enquiries" && !query.trim() && !hasDirectoryFilters;
   const recordCount = isUnfilteredDirectory && typeof totalRecords === "number" && totalRecords > 0
     ? totalRecords
@@ -2152,6 +2175,7 @@ function CaseWorkspace({
     const timer = window.setTimeout(() => setPage(1), 0);
     return () => window.clearTimeout(timer);
   }, [module, query, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter]);
+  useEffect(() => setSearchDraft(query), [query]);
   const headings = module === "enquiries"
     ? ["Client & reference", "Office & service", "Contact & source", "Destination", "Follow-up", "Actions"]
     : module === "students"
@@ -2199,7 +2223,7 @@ function CaseWorkspace({
 
   const journeyFor = (record: CaseRecord) => {
     if (module === "enquiries") return {
-      primary: Array.from(new Set([record.target, record.destinationCountry].filter(Boolean))).join(" · ") || "Interest not recorded",
+      primary: enquiryDestinationLabel(record),
       secondary: record.intake ? `Intake ${record.intake}` : `${record.progress}% profile complete`,
     };
     if (module === "defer") return {
@@ -2222,7 +2246,7 @@ function CaseWorkspace({
         <div>
           <span className="kicker">FULL {title.toUpperCase()} VIEW</span>
           <h2>{title}</h2>
-          <p>Everything the branch needs for the next action, without opening each case.</p>
+          <p>{module === "enquiries" ? "Find every client, review the essentials and take the next action." : "Everything the branch needs for the next action, without opening each case."}</p>
         </div>
         <div className="journeyRecordSummary">
           <span className="journeyRecordCount"><strong>{recordCount.toLocaleString()}</strong> records</span>
@@ -2234,75 +2258,111 @@ function CaseWorkspace({
         </div>
       </div>
       {module === "enquiries" ? (
-        <div className="enquiryDirectoryFilters" aria-label="Filter enquiries">
+        <div className="enquiryDirectoryTools" aria-label="Search and filter enquiries">
+          <form
+            className="enquiryDirectorySearch"
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              onQueryChange?.(searchDraft.trim());
+            }}
+          >
+            <Search size={18} aria-hidden="true" />
+            <input
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+              placeholder="Search client name, reference, email, phone, office or country"
+              aria-label="Search enquiries"
+            />
+            {searchDraft ? (
+              <button
+                type="button"
+                className="enquirySearchReset"
+                aria-label="Clear enquiry search"
+                onClick={() => {
+                  setSearchDraft("");
+                  onQueryChange?.("");
+                }}
+              >
+                <X size={15} />
+              </button>
+            ) : null}
+            <button type="submit" className="enquirySearchButton">
+              <Search size={15} /> <span>Search</span>
+            </button>
+          </form>
           <div className="enquiryScopeLabel">
             <Building2 size={17} />
             <span><small>Access</small><strong>{scopeLabel || "Your permitted offices"}</strong></span>
           </div>
-          <label>
-            <span>Office</span>
-            <select value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
-              <option value="">All permitted offices</option>
-              {officeOptions.map((office) => <option key={office} value={office}>{office}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Destination</span>
-            <select value={destinationFilter} onChange={(event) => setDestinationFilter(event.target.value)}>
-              <option value="">All countries</option>
-              {destinationOptions.map((destination) => <option key={destination} value={destination}>{destination}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Service</span>
-            <select value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)}>
-              <option value="">All services</option>
-              <option value="study_abroad">Study Abroad</option>
-              <option value="direct_visa">Direct Visa</option>
-            </select>
-          </label>
-          <label>
-            <span>Priority</span>
-            <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
-              <option value="">All priorities</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-          </label>
-          <label>
-            <span>Documents</span>
-            <select value={documentFilter} onChange={(event) => setDocumentFilter(event.target.value)}>
-              <option value="">All document states</option>
-              <option value="ready">Ready</option>
-              <option value="waiting">Waiting</option>
-              <option value="missing">No documents</option>
-            </select>
-          </label>
-          <label>
-            <span>Follow-up</span>
-            <select value={followUpFilter} onChange={(event) => setFollowUpFilter(event.target.value)}>
-              <option value="">All follow-ups</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="noted">Notes recorded</option>
-              <option value="needed">Needs follow-up</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="enquiryClearFilters"
-            disabled={!hasDirectoryFilters}
-            onClick={() => {
-              setOfficeFilter("");
-              setDestinationFilter("");
-              setServiceFilter("");
-              setPriorityFilter("");
-              setDocumentFilter("");
-              setFollowUpFilter("");
-            }}
-          >
-            <X size={14} /> Clear
-          </button>
+          <div className="enquiryDirectoryFilters">
+            <label>
+              <span>Office</span>
+              <select value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
+                <option value="">All permitted offices</option>
+                {officeOptions.map((office) => <option key={office} value={office}>{office}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Destination</span>
+              <select value={destinationFilter} onChange={(event) => setDestinationFilter(event.target.value)}>
+                <option value="">All countries</option>
+                {destinationOptions.map((destination) => <option key={destination} value={destination}>{destination}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Service</span>
+              <select value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)}>
+                <option value="">All services</option>
+                <option value="study_abroad">Study Abroad</option>
+                <option value="direct_visa">Direct Visa</option>
+              </select>
+            </label>
+            <label>
+              <span>Priority</span>
+              <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
+                <option value="">All priorities</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </label>
+            <label>
+              <span>Documents</span>
+              <select value={documentFilter} onChange={(event) => setDocumentFilter(event.target.value)}>
+                <option value="">All document states</option>
+                <option value="ready">Ready</option>
+                <option value="waiting">Waiting</option>
+                <option value="missing">No documents</option>
+              </select>
+            </label>
+            <label>
+              <span>Follow-up</span>
+              <select value={followUpFilter} onChange={(event) => setFollowUpFilter(event.target.value)}>
+                <option value="">All follow-ups</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="noted">Notes recorded</option>
+                <option value="needed">Needs follow-up</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              className="enquiryClearFilters"
+              disabled={!hasDirectoryControls}
+              onClick={() => {
+                setSearchDraft("");
+                onQueryChange?.("");
+                setOfficeFilter("");
+                setDestinationFilter("");
+                setServiceFilter("");
+                setPriorityFilter("");
+                setDocumentFilter("");
+                setFollowUpFilter("");
+              }}
+            >
+              <X size={14} /> Clear all
+            </button>
+          </div>
         </div>
       ) : null}
       {loading ? (
@@ -12747,6 +12807,7 @@ export default function Home() {
             : ""
         }
         query={query}
+        onQueryChange={setQuery}
         loading={active === "enquiries" && enquiriesLoading}
         syncing={active === "enquiries" && enquiriesSyncing}
         totalRecords={active === "enquiries" ? enquiriesTotal : undefined}

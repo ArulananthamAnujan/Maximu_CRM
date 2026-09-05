@@ -58,6 +58,10 @@ test("large enquiry directories load independently and never fail as an empty li
   assert.match(page, /All countries/);
   assert.match(page, /All document states/);
   assert.match(page, /Office & service/);
+  assert.match(page, /className="enquiryDirectorySearch"/);
+  assert.match(page, /onQueryChange\?\.\(searchDraft\.trim\(\)\)/);
+  assert.match(page, /\.split\("\|"\)/);
+  assert.match(page, /enquiryDestinationLabel\(record\)/);
 });
 
 test("bulk actions are server-authorised and bounded", async () => {

@@ -9608,39 +9608,105 @@ body { overflow-x: hidden; }
   background: rgba(7, 28, 43, .34);
   cursor: default;
 }
-.enquiryDirectoryFilters {
+.enquiryDirectoryTools {
   display: grid;
-  grid-template-columns: minmax(200px, 1.25fr) repeat(6, minmax(122px, .8fr)) auto;
-  gap: 10px;
-  align-items: end;
-  padding: 14px 20px;
+  grid-template-columns: minmax(360px, 1.7fr) minmax(230px, .8fr);
+  gap: 12px 16px;
+  padding: 16px 20px;
   border-bottom: 1px solid #dfe9ef;
   background: #f8fbfd;
+}
+.enquiryDirectorySearch {
+  display: flex;
+  min-width: 0;
+  height: 44px;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 4px 4px 13px;
+  border: 1px solid #b9d3e2;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgba(17, 66, 94, .06);
+  color: #267da5;
+}
+.enquiryDirectorySearch:focus-within {
+  border-color: #2489b7;
+  box-shadow: 0 0 0 3px rgba(36, 137, 183, .12);
+}
+.enquiryDirectorySearch input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #102f45;
+  font-size: 14px;
+  font-weight: 600;
+}
+.enquiryDirectorySearch input::placeholder { color: #8196a5; font-weight: 500; }
+.enquirySearchReset {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #6f8797;
+  cursor: pointer;
+}
+.enquirySearchReset:hover { background: #eef5f8; color: #173c54; }
+.enquirySearchButton {
+  display: inline-flex;
+  height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 8px;
+  background: #167eac;
+  box-shadow: 0 4px 10px rgba(22, 126, 172, .18);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.enquirySearchButton:hover { background: #126f99; }
+.enquiryDirectoryFilters {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  min-width: 0;
 }
 .enquiryDirectoryFilters label {
   display: grid;
   min-width: 0;
   gap: 5px;
   color: #6d8292;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 750;
 }
 .enquiryDirectoryFilters select {
   width: 100%;
   min-width: 0;
-  height: 39px;
+  height: 41px;
   padding: 0 30px 0 10px;
   border: 1px solid #ccdce6;
   border-radius: 9px;
   background: #fff;
   color: #173c54;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 650;
 }
 .enquiryScopeLabel {
   display: flex;
   min-width: 0;
-  height: 39px;
+  height: 44px;
   align-items: center;
   gap: 9px;
   padding: 0 12px;
@@ -9652,11 +9718,11 @@ body { overflow-x: hidden; }
 .enquiryScopeLabel span,
 .enquiryScopeLabel small,
 .enquiryScopeLabel strong { display: block; min-width: 0; }
-.enquiryScopeLabel small { color: #6f8797; font-size: 10px; line-height: 1; text-transform: uppercase; letter-spacing: .06em; }
-.enquiryScopeLabel strong { margin-top: 3px; overflow: hidden; color: #173c54; font-size: 13px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+.enquiryScopeLabel small { color: #6f8797; font-size: 11px; line-height: 1; text-transform: uppercase; letter-spacing: .06em; }
+.enquiryScopeLabel strong { margin-top: 4px; overflow: hidden; color: #173c54; font-size: 14px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
 .enquiryClearFilters {
   display: inline-flex;
-  height: 39px;
+  height: 41px;
   align-items: center;
   justify-content: center;
   gap: 5px;
@@ -9665,7 +9731,7 @@ body { overflow-x: hidden; }
   border-radius: 9px;
   background: #fff;
   color: #31566d;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 750;
   cursor: pointer;
 }
@@ -9674,6 +9740,7 @@ body { overflow-x: hidden; }
 .journeyList-enquiries .journeyDataRow {
   grid-template-columns: minmax(0, 1.18fr) minmax(0, .92fr) minmax(0, 1.14fr) minmax(0, 1.08fr) minmax(0, 1.06fr) 142px;
 }
+.journeyList-enquiries .journeyListIntro p { font-size: 13px; }
 .enquiryPriority {
   display: inline-flex;
   width: max-content;
@@ -9869,8 +9936,8 @@ body { overflow-x: hidden; }
 .taskDueBlock.overdueFact strong { color: #c94b3f; }
 
 @media (max-width: 1180px) {
+  .enquiryDirectoryTools { grid-template-columns: minmax(300px, 1fr) minmax(210px, .65fr); }
   .enquiryDirectoryFilters { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
-  .enquiryScopeLabel { grid-column: span 2; }
   .journeyDataHeader,
   .journeyDataRow { grid-template-columns: minmax(160px, 1fr) minmax(170px, 1fr) minmax(160px, .9fr) minmax(190px, 1.2fr); }
   .journeyDataHeader span:last-child { display: none; }
@@ -9882,8 +9949,11 @@ body { overflow-x: hidden; }
   .detailedRecordFacts { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
 }
 @media (max-width: 760px) {
-  .enquiryDirectoryFilters { grid-template-columns: 1fr; padding: 14px 17px; }
-  .enquiryScopeLabel { grid-column: auto; }
+  .enquiryDirectoryTools { grid-template-columns: 1fr; padding: 14px 17px; }
+  .enquiryDirectoryFilters { grid-template-columns: 1fr; }
+  .enquiryDirectorySearch { grid-column: 1; }
+  .enquirySearchButton { width: 38px; padding: 0; }
+  .enquirySearchButton span { display: none; }
   .journeyListIntro,
   .detailedRecordsHead { align-items: flex-start; padding: 17px; }
   .journeyListIntro p,
