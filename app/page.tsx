@@ -2057,6 +2057,8 @@ function CaseWorkspace({
   scopeLabel = "",
   query = "",
   loading = false,
+  syncing = false,
+  totalRecords,
   error = "",
   onRetry,
   openModal,
@@ -2070,6 +2072,8 @@ function CaseWorkspace({
   scopeLabel?: string;
   query?: string;
   loading?: boolean;
+  syncing?: boolean;
+  totalRecords?: number;
   error?: string;
   onRetry?: () => void;
   openModal: (x: ModalType) => void;
@@ -2135,6 +2139,10 @@ function CaseWorkspace({
   const hasDirectoryFilters = Boolean(
     officeFilter || destinationFilter || serviceFilter || priorityFilter || documentFilter || followUpFilter,
   );
+  const isUnfilteredDirectory = module === "enquiries" && !query.trim() && !hasDirectoryFilters;
+  const recordCount = isUnfilteredDirectory && typeof totalRecords === "number" && totalRecords > 0
+    ? totalRecords
+    : filteredCases.length;
   const pageCount = Math.max(1, Math.ceil(filteredCases.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const firstRecord = filteredCases.length ? (safePage - 1) * pageSize + 1 : 0;
@@ -2217,9 +2225,11 @@ function CaseWorkspace({
           <p>Everything the branch needs for the next action, without opening each case.</p>
         </div>
         <div className="journeyRecordSummary">
-          <span className="journeyRecordCount"><strong>{filteredCases.length}</strong> records</span>
-          {!loading && !error && filteredCases.length > 0 ? (
-            <small>Showing {firstRecord}–{lastRecord}</small>
+          <span className="journeyRecordCount"><strong>{recordCount.toLocaleString()}</strong> records</span>
+          {syncing ? (
+            <small>Loaded {cases.length.toLocaleString()} of {totalRecords ? totalRecords.toLocaleString() : "all"}</small>
+          ) : !loading && !error && filteredCases.length > 0 ? (
+            <small>Showing {firstRecord.toLocaleString()}–{lastRecord.toLocaleString()}</small>
           ) : null}
         </div>
       </div>
@@ -11378,7 +11388,10 @@ export default function Home() {
       }[]
     >([]);
   const [cases, setCases] = useState<CaseRecord[]>([]),
-    [enquiriesLoading, setEnquiriesLoading] = useState(true),
+    [enquiriesLoading, setEnquiriesLoading] = useState(false),
+    [enquiriesSyncing, setEnquiriesSyncing] = useState(false),
+    [enquiriesLoaded, setEnquiriesLoaded] = useState(false),
+    [enquiriesTotal, setEnquiriesTotal] = useState(0),
     [enquiriesError, setEnquiriesError] = useState(""),
     [tasks, setTasks] = useState<TaskRecord[]>([]),
     [appointments, setAppointments] = useState<AppointmentRecord[]>([]),
@@ -11510,10 +11523,11 @@ export default function Home() {
   };
   const loadEnquiryDirectory = async () => {
     setEnquiriesLoading(true);
+    setEnquiriesSyncing(true);
     setEnquiriesError("");
+    const enquiryCases: CaseRecord[] = [];
     try {
       const pageSize = 500;
-      const enquiryCases: CaseRecord[] = [];
       let offset = 0;
       let total = Number.POSITIVE_INFINITY;
       while (offset < total && offset < 20_000) {
@@ -11531,21 +11545,29 @@ export default function Home() {
         total = result.count !== null && Number.isFinite(Number(result.count))
           ? Number(result.count)
           : total;
+        if (Number.isFinite(total)) setEnquiriesTotal(total);
         offset += next.length;
+        setCases((current) => [
+          ...current.filter((record) => record.lifecycleStage !== "enquiry"),
+          ...enquiryCases,
+        ]);
+        // The first 500 records are already ten visible table pages. Release
+        // the screen immediately and finish the remaining pages quietly.
+        if (offset === next.length) setEnquiriesLoading(false);
         if (next.length < pageSize) break;
       }
-      setCases((current) => [
-        ...current.filter((record) => record.lifecycleStage !== "enquiry"),
-        ...enquiryCases,
-      ]);
+      setEnquiriesLoaded(true);
     } catch (reason) {
-      setEnquiriesError(
-        reason instanceof Error
-          ? reason.message
-          : "The enquiry directory could not be loaded.",
-      );
+      if (!enquiryCases.length)
+        setEnquiriesError(
+          reason instanceof Error
+            ? reason.message
+            : "The enquiry directory could not be loaded.",
+        );
+      setEnquiriesLoaded(true);
     } finally {
       setEnquiriesLoading(false);
+      setEnquiriesSyncing(false);
     }
   };
   const loadWorkspace = async () => {
@@ -11560,6 +11582,9 @@ export default function Home() {
       authenticatedIdentity = sessionResult.identity as LiveIdentity;
       setIdentity(authenticatedIdentity);
       landOn(authenticatedIdentity.role);
+      // Authentication is enough to open the CRM shell. Large operational
+      // datasets continue loading without holding the user on a splash page.
+      setSessionReady(true);
 
       const response = await fetch("/api/crm/workspace", { cache: "no-store" });
       const result = await response.json();
@@ -11595,6 +11620,7 @@ export default function Home() {
       setTruncated(Array.isArray(result.truncated) ? result.truncated : []);
       setStorageConnected(result.capabilities?.documentStorage === true);
       setBranches((result.branches || []) as BranchRecord[]);
+      setEnquiriesLoaded(false);
       landOn(result.identity.role as AppRole);
       void loadAlerts(result.identity.role as AppRole);
       if (result.identity.role !== "client") {
@@ -11610,8 +11636,6 @@ export default function Home() {
             : "Your workspace data could not be loaded.",
         );
     } finally {
-      if (authenticatedIdentity && authenticatedIdentity.role !== "client")
-        await loadEnquiryDirectory();
       setSessionReady(true);
     }
   };
@@ -11621,6 +11645,19 @@ export default function Home() {
     const timer = window.setTimeout(() => void loadWorkspaceRef.current(), 0);
     return () => window.clearTimeout(timer);
   }, []);
+  const loadEnquiryDirectoryRef = useRef(loadEnquiryDirectory);
+  loadEnquiryDirectoryRef.current = loadEnquiryDirectory;
+  useEffect(() => {
+    if (
+      !sessionReady ||
+      !signedIn ||
+      role === "client" ||
+      active !== "enquiries" ||
+      enquiriesLoaded ||
+      enquiriesSyncing
+    ) return;
+    void loadEnquiryDirectoryRef.current();
+  }, [active, enquiriesLoaded, enquiriesSyncing, role, sessionReady, signedIn]);
   useEffect(() => {
     const receiveWorkspaceUpdate = (event: StorageEvent) => {
       if (event.key === "maximus.workspaceRefresh") void loadWorkspace();
@@ -12266,6 +12303,11 @@ export default function Home() {
     setAudits([]);
     setStaff([]);
     setBranches([]);
+    setEnquiriesLoading(false);
+    setEnquiriesSyncing(false);
+    setEnquiriesLoaded(false);
+    setEnquiriesTotal(0);
+    setEnquiriesError("");
     setSchemaWarning("");
     setAlerts([]);
     setStorageConnected(false);
@@ -12706,6 +12748,8 @@ export default function Home() {
         }
         query={query}
         loading={active === "enquiries" && enquiriesLoading}
+        syncing={active === "enquiries" && enquiriesSyncing}
+        totalRecords={active === "enquiries" ? enquiriesTotal : undefined}
         error={active === "enquiries" ? enquiriesError : ""}
         onRetry={() => void loadEnquiryDirectory()}
         openModal={open}

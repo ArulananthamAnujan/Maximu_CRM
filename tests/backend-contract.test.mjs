@@ -40,6 +40,11 @@ test("large enquiry directories load independently and never fail as an empty li
   assert.match(route, /restByIds\("documents", "case_id,state"/);
   assert.match(page, /\/api\/crm\/enquiries\?offset=\$\{offset\}&limit=\$\{pageSize\}/);
   assert.match(page, /while \(offset < total/);
+  assert.match(page, /Authentication is enough to open the CRM shell/);
+  assert.doesNotMatch(page, /await loadEnquiryDirectory\(\)/);
+  assert.match(page, /finish the remaining pages quietly/);
+  assert.match(page, /enquiriesSyncing/);
+  assert.match(page, /Loaded \{cases\.length\.toLocaleString\(\)\} of/);
   assert.match(page, /Enquiries could not be loaded/);
   assert.match(page, /onRetry/);
   assert.match(page, /const pageSize = 50/);
