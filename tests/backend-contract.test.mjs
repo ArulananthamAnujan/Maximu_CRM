@@ -42,6 +42,7 @@ test("large enquiry directories load independently and never fail as an empty li
   assert.match(page, /query=\{query\}/);
   assert.match(page, /directorySearchActive/);
   assert.match(page, /Page \{safePage\} of \{pageCount\}/);
+  assert.match(page, /role === "super_admin"[\s\S]*lifecycleStage === "enquiry"/);
 });
 
 test("bulk actions are server-authorised and bounded", async () => {

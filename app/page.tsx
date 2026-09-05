@@ -12487,9 +12487,16 @@ export default function Home() {
       (c.serviceType === "direct_visa") === direct;
     const atStage = (stage: LifecycleStage) =>
       cases.filter((c) => c.lifecycleStage === stage && inStream(c));
+    // Super Admin owns the organisation-wide enquiry directory. Enquiries can
+    // arrive through either service stream, so the mode switch must not hide
+    // part of the imported directory for this role. Branch-scoped roles keep
+    // the current stream boundary supplied by atStage.
+    const enquiryList = role === "super_admin"
+      ? cases.filter((c) => c.lifecycleStage === "enquiry")
+      : atStage("enquiry");
     const list =
       active === "enquiries"
-        ? atStage("enquiry")
+        ? enquiryList
         : active === "students"
           ? // Students is the enduring Study Abroad directory, not a
             // temporary pipeline bucket. A converted student must remain
