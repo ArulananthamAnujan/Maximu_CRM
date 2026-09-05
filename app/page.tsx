@@ -142,6 +142,19 @@ type CaseRecord = {
   latestNoteAt: string;
   latestNoteAuthor: string;
 };
+type GlobalSearchResult = {
+  type: "client" | "case";
+  id: string;
+  clientId?: string | null;
+  caseId?: string | null;
+  reference?: string | null;
+  title: string;
+  subtitle?: string | null;
+  service?: string | null;
+  stage?: string | null;
+  target?: string | null;
+  branchId?: string | null;
+};
 // One student can hold several offers at once, so an application is a record in
 // its own right rather than something inferred from the case it belongs to.
 type ApplicationRow = {
@@ -11428,9 +11441,14 @@ function RecordModal({
 
 export default function Home() {
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const searchWrapRef = useRef<HTMLDivElement | null>(null);
   const [active, setActive] = useState<ModuleKey>("dashboard"),
     [menuOpen, setMenuOpen] = useState(false),
     [query, setQuery] = useState(""),
+    [globalSearchOpen, setGlobalSearchOpen] = useState(false),
+    [globalSearchLoading, setGlobalSearchLoading] = useState(false),
+    [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResult[]>([]),
+    [globalSearchIndex, setGlobalSearchIndex] = useState(0),
     [modal, setModal] = useState<ModalType>(null),
     [presetCaseId, setPresetCaseId] = useState(""),
     [selected, setSelected] = useState<CaseRecord | null>(null),
@@ -11753,15 +11771,58 @@ export default function Home() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         searchRef.current?.focus();
+        setGlobalSearchOpen(true);
       }
       if (event.key === "Escape" && query) {
         setQuery("");
+        setGlobalSearchOpen(false);
         searchRef.current?.blur();
       }
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [query]);
+  useEffect(() => {
+    const closeSearch = (event: PointerEvent) => {
+      if (!searchWrapRef.current?.contains(event.target as Node)) setGlobalSearchOpen(false);
+    };
+    window.addEventListener("pointerdown", closeSearch);
+    return () => window.removeEventListener("pointerdown", closeSearch);
+  }, []);
+  useEffect(() => {
+    const value = query.trim();
+    if (!signedIn || role === "client" || value.length < 2) {
+      setGlobalSearchResults([]);
+      setGlobalSearchLoading(false);
+      setGlobalSearchIndex(0);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setGlobalSearchLoading(true);
+      void (async () => {
+        try {
+          const response = await fetch(`/api/crm/search?q=${encodeURIComponent(value)}`, {
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "Search is unavailable.");
+          setGlobalSearchResults((result.results ?? []) as GlobalSearchResult[]);
+          setGlobalSearchIndex(0);
+          setGlobalSearchOpen(true);
+        } catch (reason) {
+          if ((reason as { name?: string }).name !== "AbortError") setGlobalSearchResults([]);
+        } finally {
+          if (!controller.signal.aborted) setGlobalSearchLoading(false);
+        }
+      })();
+    }, 180);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, role, signedIn]);
   useEffect(() => {
     const timer = window.setTimeout(
       () => setCaseWindowId(new URL(window.location.href).searchParams.get("case") ?? ""),
@@ -11787,24 +11848,19 @@ export default function Home() {
     target.searchParams.set("case", record.dbId);
     window.open(target.toString(), `maximus-case-${record.dbId}`, "noopener,noreferrer");
   }, []);
-  const searched = useMemo(
-    () =>
-      cases.filter((c) =>
-        (c.name + c.id + c.email + c.type + c.target)
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-      ),
-    [cases, query],
-  );
-  const directorySearchActive = ([
-    "enquiries",
-    "students",
-    "applications",
-    "visas",
-    "direct_visas",
-    "defer",
-    "case_complete",
-  ] as ModuleKey[]).includes(active);
+  const openGlobalSearchResult = useCallback((result: GlobalSearchResult) => {
+    setGlobalSearchOpen(false);
+    setQuery("");
+    if (result.caseId) {
+      const target = new URL(window.location.href);
+      target.search = "";
+      target.searchParams.set("case", result.caseId);
+      window.open(target.toString(), `maximus-case-${result.caseId}`, "noopener,noreferrer");
+      return;
+    }
+    setActive(result.stage === "enquiry" ? "enquiries" : "students");
+    setQuery(result.title);
+  }, []);
   const open = (x: ModalType) => {
     setEditing(null);
     setFormError("");
@@ -12912,45 +12968,107 @@ export default function Home() {
               <Menu size={21} />
             </button>
             {role !== "client" ? (
-              <div className="searchWrap">
+              <div className={`searchWrap globalSearch ${globalSearchOpen ? "open" : ""}`} ref={searchWrapRef}>
                 <Search size={18} />
                 <input
                   ref={searchRef}
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={active === "enquiries" ? "Search client name, reference, office or country…" : `Search ${serviceMode === "study" ? "students and applications" : "clients and visa matters"}…`}
+                  onFocus={() => setGlobalSearchOpen(true)}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setGlobalSearchOpen(true);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowDown" && globalSearchResults.length) {
+                      event.preventDefault();
+                      setGlobalSearchIndex((index) => Math.min(index + 1, globalSearchResults.length - 1));
+                    } else if (event.key === "ArrowUp" && globalSearchResults.length) {
+                      event.preventDefault();
+                      setGlobalSearchIndex((index) => Math.max(index - 1, 0));
+                    } else if (event.key === "Enter" && query.trim().length >= 2 && globalSearchResults[globalSearchIndex]) {
+                      event.preventDefault();
+                      openGlobalSearchResult(globalSearchResults[globalSearchIndex]);
+                    } else if (event.key === "Escape") {
+                      setGlobalSearchOpen(false);
+                    }
+                  }}
+                  placeholder="Search clients, references, email or mobile…"
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={globalSearchOpen}
+                  aria-controls="global-crm-search-results"
                 />
                 <kbd>
                   <Command size={12} />K
                 </kbd>
-                {query.length > 1 && !directorySearchActive && (
-                  <div className="searchResults">
-                    {searched.length ? (
-                      searched.slice(0, 7).map((c) => (
+                {globalSearchOpen ? (
+                  <div className="globalSearchPanel" id="global-crm-search-results" role="listbox">
+                    {query.trim().length < 2 ? (
+                      <>
+                        <div className="globalSearchHeading"><span>Quick access</span><small>Search starts after 2 characters</small></div>
+                        <div className="globalSearchShortcuts">
+                          <button type="button" onClick={() => { setActive("enquiries"); setGlobalSearchOpen(false); }}><Users size={17} /><span><b>Enquiries</b><small>Find and manage new clients</small></span></button>
+                          <button type="button" onClick={() => { setActive("students"); setGlobalSearchOpen(false); }}><GraduationCap size={17} /><span><b>Students</b><small>Open the student directory</small></span></button>
+                          <button type="button" onClick={() => { setActive("applications"); setGlobalSearchOpen(false); }}><BookOpen size={17} /><span><b>Applications</b><small>Review application progress</small></span></button>
+                          <button type="button" onClick={() => { setActive("communications"); setGlobalSearchOpen(false); }}><Mail size={17} /><span><b>Messages</b><small>Open shared communications</small></span></button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="globalSearchHeading"><span>Matching clients and cases</span><small>{globalSearchLoading ? "Searching securely…" : `${globalSearchResults.length} found`}</small></div>
+                        <div className="globalSearchList">
+                          {globalSearchLoading && !globalSearchResults.length ? (
+                            <div className="globalSearchLoading" aria-live="polite"><RefreshCw size={17} /> Searching permitted records…</div>
+                          ) : globalSearchResults.length ? (
+                            globalSearchResults.map((result, index) => {
+                              const office = branches.find((branch) => branch.id === result.branchId)?.name || "Permitted office";
+                              return (
+                                <button
+                                  type="button"
+                                  role="option"
+                                  aria-selected={index === globalSearchIndex}
+                                  className={index === globalSearchIndex ? "active" : ""}
+                                  key={`${result.type}-${result.id}`}
+                                  onMouseEnter={() => setGlobalSearchIndex(index)}
+                                  onClick={() => openGlobalSearchResult(result)}
+                                >
+                                  <div className="globalSearchAvatar">{result.title.slice(0, 2).toUpperCase()}</div>
+                                  <span className="globalSearchIdentity">
+                                    <b>{result.title}</b>
+                                    <small>{[result.reference, result.subtitle].filter(Boolean).join(" · ") || "Client profile"}</small>
+                                  </span>
+                                  <span className="globalSearchContext">
+                                    <b><Building2 size={13} /> {office}</b>
+                                    <small>{[result.stage && humanise(result.stage), result.target].filter(Boolean).join(" · ") || humanise(result.service || "Open case")}</small>
+                                  </span>
+                                  <ArrowRight size={16} />
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="globalSearchEmpty">
+                              <Search size={20} />
+                              <b>No matching client found</b>
+                              <small>Try a full name, CRM reference, email address or mobile number.</small>
+                            </div>
+                          )}
+                        </div>
                         <button
-                          key={c.id}
+                          type="button"
+                          className="globalSearchAll"
                           onClick={() => {
-                            openCaseWorkspace(c);
-                            setQuery("");
+                            setActive("enquiries");
+                            setGlobalSearchOpen(false);
                           }}
                         >
-                          <div className="avatar small">
-                            {c.name.slice(0, 2).toUpperCase()}
-                          </div>
-                          <span>
-                            <b>{c.name}</b>
-                            <small>
-                              {c.id} · {c.type}
-                            </small>
-                          </span>
+                          <span><Search size={15} /> Search the full enquiry directory for “{query.trim()}”</span>
                           <ArrowRight size={15} />
                         </button>
-                      ))
-                    ) : (
-                      <div className="searchEmpty">No matching records</div>
+                        <div className="globalSearchFooter"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Open</span><span><kbd>Esc</kbd> Close</span></div>
+                      </>
                     )}
                   </div>
-                )}
+                ) : null}
               </div>
             ) : (
               <div className="clientTopLabel">

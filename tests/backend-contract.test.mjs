@@ -49,7 +49,7 @@ test("large enquiry directories load independently and never fail as an empty li
   assert.match(page, /onRetry/);
   assert.match(page, /const pageSize = 50/);
   assert.match(page, /query=\{query\}/);
-  assert.match(page, /directorySearchActive/);
+  assert.match(page, /globalSearchOpen/);
   assert.match(page, /Page \{safePage\} of \{pageCount\}/);
   assert.match(page, /role === "super_admin"[\s\S]*lifecycleStage === "enquiry"/);
   assert.match(page, /enquiryFullMode/);
@@ -74,6 +74,22 @@ test("the executive dashboard stays bounded and uses the exact enquiry total", a
   assert.match(styles, /\.dashboardMode > \.mainArea/);
   assert.match(styles, /\.dashboardMode \.dashboardGrid/);
   assert.match(styles, /\.dashboardMode \.dashboardFilters[\s\S]*display: none/);
+});
+
+test("global CRM search provides live, permitted client suggestions", async () => {
+  const page = await read("app/page.tsx");
+  const route = await read("app/api/crm/search/route.ts");
+  const styles = await read("app/globals.css");
+  assert.match(page, /fetch\(`\/api\/crm\/search\?q=/);
+  assert.match(page, /role="combobox"/);
+  assert.match(page, /Matching clients and cases/);
+  assert.match(page, /Search the full enquiry directory/);
+  assert.match(page, /openGlobalSearchResult/);
+  assert.match(route, /casesForClients/);
+  assert.match(route, /relatedClients/);
+  assert.match(route, /caseId:/);
+  assert.match(styles, /\.globalSearchPanel/);
+  assert.match(styles, /\.globalSearchList > button\.active/);
 });
 
 test("bulk actions are server-authorised and bounded", async () => {

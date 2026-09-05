@@ -10962,3 +10962,216 @@ body { font-size: 14px; }
   .dashboardMode .caseRow > span:nth-child(3),
   .dashboardMode .caseRow > span:nth-child(4) { display: none; }
 }
+
+/* Premium CRM command search: live people and case suggestions from every permitted office. */
+.globalSearch {
+  min-height: 46px;
+  padding: 0 10px 0 13px;
+  border: 1px solid #d5e2e9;
+  border-radius: 13px;
+  background: #f8fbfc;
+  transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.globalSearch:focus-within,
+.globalSearch.open {
+  border-color: #6eb4d3;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(43, 145, 188, .11), 0 9px 28px rgba(15, 54, 79, .08);
+}
+.globalSearch > svg { flex: 0 0 auto; color: #51788d; }
+.globalSearch input { min-width: 0; padding-block: 12px; font-size: 14px; }
+.globalSearch > kbd { right: 10px; }
+.globalSearchPanel {
+  position: absolute;
+  top: calc(100% + 11px);
+  left: -1px;
+  z-index: 80;
+  width: min(720px, calc(100vw - 310px));
+  overflow: hidden;
+  border: 1px solid #cfdee6;
+  border-radius: 16px;
+  background: #fff;
+  color: #17374d;
+  box-shadow: 0 24px 70px rgba(9, 43, 64, .2), 0 3px 10px rgba(9, 43, 64, .08);
+}
+.globalSearchHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 16px;
+  border-bottom: 1px solid #e4edf2;
+  background: linear-gradient(110deg, #f4fafc, #fffaf3);
+}
+.globalSearchHeading span {
+  color: #244a61;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.globalSearchHeading small { color: #728795; font-size: 12px; }
+.globalSearchList {
+  max-height: min(460px, calc(100vh - 210px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 7px;
+}
+.globalSearchList > button {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1.15fr) minmax(180px, .9fr) 18px;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.globalSearchList > button:hover,
+.globalSearchList > button.active {
+  background: #edf7fb;
+  box-shadow: inset 3px 0 0 #258cb9;
+}
+.globalSearchAvatar {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #258fbd, #176e9b);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: .03em;
+  box-shadow: 0 6px 14px rgba(23, 110, 155, .2);
+}
+.globalSearchIdentity,
+.globalSearchContext { min-width: 0; }
+.globalSearchIdentity b,
+.globalSearchIdentity small,
+.globalSearchContext b,
+.globalSearchContext small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.globalSearchIdentity b { color: #102f45; font-size: 14px; }
+.globalSearchIdentity small,
+.globalSearchContext small { margin-top: 4px; color: #6b8291; font-size: 12px; }
+.globalSearchContext b {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #3e6277;
+  font-size: 12px;
+  font-weight: 750;
+}
+.globalSearchContext b svg { flex: 0 0 auto; color: #d8781e; }
+.globalSearchList > button > svg { color: #678191; }
+.globalSearchLoading,
+.globalSearchEmpty {
+  min-height: 124px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: #607b8c;
+  font-size: 14px;
+}
+.globalSearchLoading svg { animation: searchSpin .8s linear infinite; }
+.globalSearchEmpty { flex-direction: column; text-align: center; }
+.globalSearchEmpty b { color: #21475e; font-size: 15px; }
+.globalSearchEmpty small { max-width: 360px; color: #718694; font-size: 12px; }
+@keyframes searchSpin { to { transform: rotate(360deg); } }
+.globalSearchAll {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 0;
+  border-top: 1px solid #e2ebf0;
+  background: #f7fafb;
+  color: #176f9f;
+  font-size: 13px;
+  font-weight: 780;
+  text-align: left;
+  cursor: pointer;
+}
+.globalSearchAll:hover { background: #edf6fa; }
+.globalSearchAll span { min-width: 0; display: flex; align-items: center; gap: 8px; }
+.globalSearchFooter {
+  display: flex;
+  align-items: center;
+  gap: 17px;
+  padding: 8px 16px;
+  border-top: 1px solid #e7eef2;
+  color: #758996;
+  font-size: 11px;
+}
+.globalSearchFooter span { display: flex; align-items: center; gap: 4px; }
+.globalSearch .globalSearchFooter kbd {
+  position: static;
+  min-width: 22px;
+  display: inline-grid;
+  place-items: center;
+  padding: 2px 5px;
+  border: 1px solid #d8e3e9;
+  border-radius: 5px;
+  background: #fff;
+  color: #506b7c;
+  font-size: 10px;
+  box-shadow: 0 1px 2px rgba(18, 52, 73, .08);
+}
+.globalSearchShortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 9px;
+}
+.globalSearchShortcuts button {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px;
+  border: 1px solid #e0eaf0;
+  border-radius: 11px;
+  background: #fff;
+  color: #2583ad;
+  text-align: left;
+  cursor: pointer;
+}
+.globalSearchShortcuts button:hover { border-color: #93c5dc; background: #f2f9fc; }
+.globalSearchShortcuts button > svg { margin-inline: auto; }
+.globalSearchShortcuts span,
+.globalSearchShortcuts b,
+.globalSearchShortcuts small { min-width: 0; display: block; }
+.globalSearchShortcuts b { color: #17394f; font-size: 13px; }
+.globalSearchShortcuts small { margin-top: 3px; color: #748895; font-size: 11px; }
+
+@media (max-width: 1000px) {
+  .globalSearchPanel { width: min(650px, calc(100vw - 290px)); }
+  .globalSearchList > button { grid-template-columns: 42px minmax(0, 1fr) 18px; }
+  .globalSearchContext { display: none; }
+}
+
+@media (max-width: 900px) {
+  .globalSearchPanel { width: min(680px, calc(100vw - 32px)); }
+}
+
+@media (max-width: 640px) {
+  .globalSearchPanel { position: fixed; top: 66px; left: 10px; width: calc(100vw - 20px); }
+  .globalSearchShortcuts { grid-template-columns: 1fr; }
+  .globalSearchFooter { display: none; }
+}
