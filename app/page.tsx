@@ -2054,6 +2054,9 @@ function CaseWorkspace({
   title,
   module,
   cases,
+  loading = false,
+  error = "",
+  onRetry,
   openModal,
   onSelect,
   onAddNote,
@@ -2062,6 +2065,9 @@ function CaseWorkspace({
   title: string;
   module: string;
   cases: CaseRecord[];
+  loading?: boolean;
+  error?: string;
+  onRetry?: () => void;
   openModal: (x: ModalType) => void;
   onSelect: (x: CaseRecord) => void;
   onAddNote: (record: CaseRecord, note: string) => Promise<void>;
@@ -2142,7 +2148,21 @@ function CaseWorkspace({
         </div>
         <span className="journeyRecordCount"><strong>{cases.length}</strong> records</span>
       </div>
-      {cases.length === 0 ? (
+      {loading ? (
+        <EmptyState
+          icon={RefreshCw}
+          title="Loading enquiries…"
+          copy="Retrieving the complete branch enquiry directory."
+        />
+      ) : error ? (
+        <EmptyState
+          icon={AlertTriangle}
+          title="Enquiries could not be loaded"
+          copy={error}
+          action="Retry"
+          onAction={onRetry}
+        />
+      ) : cases.length === 0 ? (
         <EmptyState
           icon={Users}
           title={`No ${title.toLowerCase()} found`}
@@ -11186,6 +11206,8 @@ export default function Home() {
       }[]
     >([]);
   const [cases, setCases] = useState<CaseRecord[]>([]),
+    [enquiriesLoading, setEnquiriesLoading] = useState(true),
+    [enquiriesError, setEnquiriesError] = useState(""),
     [tasks, setTasks] = useState<TaskRecord[]>([]),
     [appointments, setAppointments] = useState<AppointmentRecord[]>([]),
     [documents, setDocuments] = useState<DocumentRecord[]>([]),
@@ -11314,6 +11336,31 @@ export default function Home() {
       // showing nothing rather than the workspace itself failing to load.
     }
   };
+  const loadEnquiryDirectory = async () => {
+    setEnquiriesLoading(true);
+    setEnquiriesError("");
+    try {
+      const response = await fetch("/api/crm/enquiries", { cache: "no-store" });
+      const result = await response.json();
+      if (!response.ok)
+        throw new Error(
+          result.error || "The enquiry directory could not be loaded.",
+        );
+      const enquiryCases = (result.records || []) as CaseRecord[];
+      setCases((current) => [
+        ...current.filter((record) => record.lifecycleStage !== "enquiry"),
+        ...enquiryCases,
+      ]);
+    } catch (reason) {
+      setEnquiriesError(
+        reason instanceof Error
+          ? reason.message
+          : "The enquiry directory could not be loaded.",
+      );
+    } finally {
+      setEnquiriesLoading(false);
+    }
+  };
   const loadWorkspace = async () => {
     let authenticatedIdentity: LiveIdentity | null = null;
     try {
@@ -11376,6 +11423,8 @@ export default function Home() {
             : "Your workspace data could not be loaded.",
         );
     } finally {
+      if (authenticatedIdentity && authenticatedIdentity.role !== "client")
+        await loadEnquiryDirectory();
       setSessionReady(true);
     }
   };
@@ -12445,6 +12494,9 @@ export default function Home() {
         }
         module={active}
         cases={list}
+        loading={active === "enquiries" && enquiriesLoading}
+        error={active === "enquiries" ? enquiriesError : ""}
+        onRetry={() => void loadEnquiryDirectory()}
         openModal={open}
         onSelect={openCaseWorkspace}
         onAddNote={async (record, note) => {

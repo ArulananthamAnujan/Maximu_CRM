@@ -24,8 +24,20 @@ test("all live CRM routes authenticate through Supabase sessions", async () => {
     "app/api/crm/admin/route.ts",
     "app/api/crm/operations/route.ts",
     "app/api/crm/search/route.ts",
+    "app/api/crm/enquiries/route.ts",
     "app/api/crm/workspace/route.ts",
   ]) assert.match(await read(route), /liveSession\(request\)/, route);
+});
+
+test("large enquiry directories load independently and never fail as an empty list", async () => {
+  const page = await read("app/page.tsx");
+  const route = await read("app/api/crm/enquiries/route.ts");
+  assert.match(route, /lifecycle_stage=eq\.enquiry/);
+  assert.match(route, /const PAGE_SIZE = 500/);
+  assert.match(route, /for \(let offset = 0/);
+  assert.match(page, /fetch\("\/api\/crm\/enquiries"/);
+  assert.match(page, /Enquiries could not be loaded/);
+  assert.match(page, /onRetry/);
 });
 
 test("bulk actions are server-authorised and bounded", async () => {
