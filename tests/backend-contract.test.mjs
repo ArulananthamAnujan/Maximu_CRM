@@ -85,6 +85,21 @@ test("the executive dashboard stays bounded and uses the exact enquiry total", a
   assert.doesNotMatch(dashboardShell, /width:\s*calc\(100%\s*-\s*248px\)/);
 });
 
+test("every CRM module reserves the fixed sidebar exactly once", async () => {
+  const styles = await read("app/figma-system.css");
+  const contractStart = styles.indexOf("/* Stable CRM shell contract.");
+  const contract = styles.slice(contractStart);
+  assert.ok(contractStart >= 0);
+  assert.match(contract, /\.appShell\s*\{[\s\S]*display:\s*block/);
+  assert.match(contract, /\.appShell > \.mainArea\s*\{[\s\S]*width:\s*auto/);
+  assert.match(contract, /margin-left:\s*232px/);
+  assert.match(contract, /max-width:\s*1080px[\s\S]*margin-left:\s*220px/);
+  assert.match(contract, /max-width:\s*900px[\s\S]*margin-left:\s*0/);
+  assert.match(contract, /\.appShell\.enquiryFullMode > \.mainArea/);
+  assert.match(contract, /\.appShell\.gmailMode > \.mainArea/);
+  assert.doesNotMatch(contract, /width:\s*calc\(/);
+});
+
 test("global CRM search provides live, permitted client suggestions", async () => {
   const page = await read("app/page.tsx");
   const route = await read("app/api/crm/search/route.ts");

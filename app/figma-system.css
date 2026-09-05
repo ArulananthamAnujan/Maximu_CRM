@@ -955,3 +955,42 @@ body {
   .priorityCaseTable .caseRow > span:nth-child(2),
   .priorityCaseTable .caseRow > span:nth-child(4) { display: none; }
 }
+
+/* Stable CRM shell contract.
+   The navigation is fixed, so the workspace must reserve its width once only. */
+.appShell {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow-x: clip;
+}
+.appShell > .mainArea {
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  margin-left: 232px;
+  overflow-x: clip;
+}
+.appShell > .mainArea > .content,
+.appShell > .mainArea > .content > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.appShell.enquiryFullMode > .mainArea,
+.appShell.gmailMode > .mainArea {
+  width: 100%;
+  margin-left: 0;
+}
+
+@media (max-width: 1080px) {
+  .appShell > .mainArea { margin-left: 220px; }
+  .appShell.enquiryFullMode > .mainArea,
+  .appShell.gmailMode > .mainArea { margin-left: 0; }
+}
+
+@media (max-width: 900px) {
+  .appShell > .mainArea {
+    width: 100%;
+    margin-left: 0;
+  }
+}
