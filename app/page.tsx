@@ -2099,6 +2099,9 @@ function CaseWorkspace({
   scopeLabel = "",
   query = "",
   onQueryChange,
+  searchResults = [],
+  searchLoading = false,
+  onOpenSearchResult,
   loading = false,
   syncing = false,
   totalRecords,
@@ -2115,6 +2118,9 @@ function CaseWorkspace({
   scopeLabel?: string;
   query?: string;
   onQueryChange?: (query: string) => void;
+  searchResults?: GlobalSearchResult[];
+  searchLoading?: boolean;
+  onOpenSearchResult?: (result: GlobalSearchResult) => void;
   loading?: boolean;
   syncing?: boolean;
   totalRecords?: number;
@@ -2128,6 +2134,8 @@ function CaseWorkspace({
   const [rowActionId, setRowActionId] = useState("");
   const [page, setPage] = useState(1);
   const [searchDraft, setSearchDraft] = useState(query);
+  const [directorySearchIndex, setDirectorySearchIndex] = useState(-1);
+  const [directorySearchOpen, setDirectorySearchOpen] = useState(false);
   const [officeFilter, setOfficeFilter] = useState("");
   const [destinationFilter, setDestinationFilter] = useState("");
   const [serviceFilter, setServiceFilter] = useState("");
@@ -2194,11 +2202,46 @@ function CaseWorkspace({
   const firstRecord = filteredCases.length ? (safePage - 1) * pageSize + 1 : 0;
   const lastRecord = Math.min(safePage * pageSize, filteredCases.length);
   const visibleCases = filteredCases.slice(firstRecord ? firstRecord - 1 : 0, lastRecord);
+  const enquirySearchResults = useMemo(() => {
+    const localResults: GlobalSearchResult[] = searchDraft.trim().length < 2
+      ? []
+      : cases
+          .filter((record) => matchesSearch(searchDraft, [record.name, record.id, record.email, record.phone]))
+          .slice(0, 8)
+          .map((record) => ({
+            type: "case",
+            id: record.dbId || record.id,
+            clientId: record.clientId,
+            caseId: record.dbId,
+            reference: record.id,
+            title: record.name,
+            subtitle: record.email || record.phone,
+            service: record.serviceType,
+            stage: record.lifecycleStage,
+            target: record.target || record.destinationCountry,
+            branchId: record.branchId,
+          }));
+    const remoteResults = searchResults.filter(
+      (result) =>
+        (!result.stage || result.stage === "enquiry") &&
+        matchesSearch(searchDraft, [result.title, result.reference, result.subtitle, result.target]),
+    );
+    const seen = new Set<string>();
+    return [...localResults, ...remoteResults]
+      .filter((result) => {
+        const key = result.caseId || `${result.type}-${result.id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 8);
+  }, [cases, searchDraft, searchResults]);
   useEffect(() => {
     const timer = window.setTimeout(() => setPage(1), 0);
     return () => window.clearTimeout(timer);
   }, [module, query, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter]);
   useEffect(() => setSearchDraft(query), [query]);
+  useEffect(() => setDirectorySearchIndex(-1), [query, searchResults]);
   const headings = module === "enquiries"
     ? ["Client & reference", "Office & service", "Contact & source", "Destination", "Follow-up", "Actions"]
     : module === "students"
@@ -2282,38 +2325,98 @@ function CaseWorkspace({
       ) : null}
       {module === "enquiries" ? (
         <div className="enquiryDirectoryTools" aria-label="Search and filter enquiries">
-          <form
-            className="enquiryDirectorySearch"
-            role="search"
-            onSubmit={(event) => {
-              event.preventDefault();
-              onQueryChange?.(searchDraft.trim());
+          <div
+            className="enquiryDirectorySearchShell"
+            onFocus={() => setDirectorySearchOpen(true)}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                setDirectorySearchOpen(false);
             }}
           >
-            <Search size={18} aria-hidden="true" />
-            <input
-              value={searchDraft}
-              onChange={(event) => setSearchDraft(event.target.value)}
-              placeholder="Search this directory by client, reference, email, phone, office or country"
-              aria-label="Search enquiries"
-            />
-            {searchDraft ? (
-              <button
-                type="button"
-                className="enquirySearchReset"
-                aria-label="Clear enquiry search"
-                onClick={() => {
-                  setSearchDraft("");
-                  onQueryChange?.("");
+            <form
+              className="enquiryDirectorySearch"
+              role="search"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setDirectorySearchOpen(false);
+                onQueryChange?.(searchDraft.trim());
+              }}
+            >
+              <Search size={18} aria-hidden="true" />
+              <input
+                value={searchDraft}
+                onChange={(event) => {
+                  setSearchDraft(event.target.value);
+                  onQueryChange?.(event.target.value);
+                  setDirectorySearchOpen(true);
                 }}
-              >
-                <X size={15} />
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown" && enquirySearchResults.length) {
+                    event.preventDefault();
+                    setDirectorySearchIndex((index) => Math.min(index + 1, enquirySearchResults.length - 1));
+                  } else if (event.key === "ArrowUp" && enquirySearchResults.length) {
+                    event.preventDefault();
+                    setDirectorySearchIndex((index) => Math.max(index - 1, 0));
+                  } else if (event.key === "Enter" && directorySearchIndex >= 0 && enquirySearchResults[directorySearchIndex]) {
+                    event.preventDefault();
+                    setDirectorySearchOpen(false);
+                    onOpenSearchResult?.(enquirySearchResults[directorySearchIndex]);
+                  }
+                }}
+                placeholder="Search client name, reference, email, phone, office or country"
+                aria-label="Search enquiries"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={directorySearchOpen && searchDraft.trim().length >= 2}
+                aria-controls="enquiry-search-suggestions"
+              />
+              {searchDraft ? (
+                <button
+                  type="button"
+                  className="enquirySearchReset"
+                  aria-label="Clear enquiry search"
+                  onClick={() => {
+                    setSearchDraft("");
+                    onQueryChange?.("");
+                    setDirectorySearchOpen(false);
+                  }}
+                >
+                  <X size={15} />
+                </button>
+              ) : null}
+              <button type="submit" className="enquirySearchButton">
+                <Search size={15} /> <span>Search</span>
               </button>
+            </form>
+            {directorySearchOpen && searchDraft.trim().length >= 2 ? (
+              <div className="enquirySearchSuggestions" id="enquiry-search-suggestions" role="listbox">
+                {searchLoading && !enquirySearchResults.length ? (
+                  <div className="enquirySearchSuggestionState"><RefreshCw size={16} /> Searching permitted enquiries…</div>
+                ) : enquirySearchResults.length ? (
+                  enquirySearchResults.map((result, index) => (
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={index === directorySearchIndex}
+                      className={index === directorySearchIndex ? "active" : ""}
+                      key={`${result.type}-${result.id}`}
+                      onMouseEnter={() => setDirectorySearchIndex(index)}
+                      onClick={() => {
+                        setDirectorySearchOpen(false);
+                        onOpenSearchResult?.(result);
+                      }}
+                    >
+                      <span className="enquirySearchAvatar">{result.title.slice(0, 2).toUpperCase()}</span>
+                      <span><strong>{result.title}</strong><small>{[result.reference, result.subtitle].filter(Boolean).join(" · ") || "Enquiry record"}</small></span>
+                      <ArrowRight size={15} />
+                    </button>
+                  ))
+                ) : (
+                  <div className="enquirySearchSuggestionState"><Search size={16} /> No permitted enquiry matches this search.</div>
+                )}
+              </div>
             ) : null}
-            <button type="submit" className="enquirySearchButton">
-              <Search size={15} /> <span>Search</span>
-            </button>
-          </form>
+          </div>
           <div className="enquiryScopeLabel">
             <Building2 size={17} />
             <span><small>Access</small><strong>{scopeLabel || "Your permitted offices"}</strong></span>
@@ -11537,6 +11640,9 @@ export default function Home() {
     // redistribution remain management functions.
     canManageBranch = role === "super_admin" || role === "admin",
     canManageCaseFinance = role !== "client";
+  const workspaceRefreshRef = useRef<Promise<void> | null>(null);
+  const enquiriesLoadedRef = useRef(enquiriesLoaded);
+  enquiriesLoadedRef.current = enquiriesLoaded;
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 2600);
@@ -11636,12 +11742,17 @@ export default function Home() {
     setEnquiriesError("");
     const enquiryCases: CaseRecord[] = [];
     try {
+      const initialPageSize = 50;
       const pageSize = 500;
       let offset = 0;
       let total = Number.POSITIVE_INFINITY;
       while (offset < total && offset < 20_000) {
+        const requestLimit = offset === 0 ? initialPageSize : pageSize;
+        const directoryUrl = offset === 0
+          ? `/api/crm/enquiries?offset=${offset}&limit=${requestLimit}`
+          : `/api/crm/enquiries?offset=${offset}&limit=${pageSize}`;
         const response = await fetch(
-          `/api/crm/enquiries?offset=${offset}&limit=${pageSize}`,
+          directoryUrl,
           { cache: "no-store" },
         );
         const result = await response.json();
@@ -11660,10 +11771,10 @@ export default function Home() {
           ...current.filter((record) => record.lifecycleStage !== "enquiry"),
           ...enquiryCases,
         ]);
-        // The first 500 records are already ten visible table pages. Release
-        // the screen immediately and finish the remaining pages quietly.
+        // The first visible table page is enough to release the interface and
+        // finish the remaining pages quietly in 500-row background batches.
         if (offset === next.length) setEnquiriesLoading(false);
-        if (next.length < pageSize) break;
+        if (next.length < requestLimit) break;
       }
       setEnquiriesLoaded(true);
     } catch (reason) {
@@ -11679,22 +11790,9 @@ export default function Home() {
       setEnquiriesSyncing(false);
     }
   };
-  const loadWorkspace = async () => {
-    let authenticatedIdentity: LiveIdentity | null = null;
-    try {
-      const sessionResponse = await fetch("/api/auth/session", {
-        cache: "no-store",
-      });
-      const sessionResult = await sessionResponse.json();
-      if (!sessionResponse.ok || !sessionResult.authenticated)
-        throw new Error(sessionResult.error || "Sign in is required.");
-      authenticatedIdentity = sessionResult.identity as LiveIdentity;
-      setIdentity(authenticatedIdentity);
-      landOn(authenticatedIdentity.role);
-      // Authentication is enough to open the CRM shell. Large operational
-      // datasets continue loading without holding the user on a splash page.
-      setSessionReady(true);
-
+  const refreshWorkspace = async () => {
+    if (workspaceRefreshRef.current) return workspaceRefreshRef.current;
+    const request = (async () => {
       const response = await fetch("/api/crm/workspace", { cache: "no-store" });
       const result = await response.json();
       if (!response.ok)
@@ -11702,7 +11800,14 @@ export default function Home() {
           result.error || "Your workspace data could not be loaded.",
         );
       setIdentity(result.identity);
-      setCases(result.cases || []);
+      setCases((current) => {
+        const incoming = (result.cases || []) as CaseRecord[];
+        if (!enquiriesLoadedRef.current) return incoming;
+        return [
+          ...incoming.filter((record) => record.lifecycleStage !== "enquiry"),
+          ...current.filter((record) => record.lifecycleStage === "enquiry"),
+        ];
+      });
       setTasks(result.tasks || []);
       setAppointments(result.appointments || []);
       setDocuments(result.documents || []);
@@ -11728,23 +11833,51 @@ export default function Home() {
       );
       setStorageConnected(result.capabilities?.documentStorage === true);
       setBranches((result.branches || []) as BranchRecord[]);
-      setEnquiriesLoaded(false);
       landOn(result.identity.role as AppRole);
-      void loadAlerts(result.identity.role as AppRole);
       if (result.identity.role !== "client") {
-        void loadEnquirySummary();
         void loadChecklistTemplates();
         void loadEmailTemplates();
       }
-    } catch (reason) {
-      if (!authenticatedIdentity) setIdentity(null);
-      else
+    })();
+    workspaceRefreshRef.current = request;
+    try {
+      await request;
+    } finally {
+      if (workspaceRefreshRef.current === request) workspaceRefreshRef.current = null;
+    }
+  };
+  const queueWorkspaceRefresh = (invalidateEnquiries = false) => {
+    if (invalidateEnquiries) setEnquiriesLoaded(false);
+    window.setTimeout(() => {
+      void refreshWorkspace().catch((reason) =>
         say(
           reason instanceof Error
             ? reason.message
-            : "Your workspace data could not be loaded.",
-        );
-    } finally {
+            : "Your workspace data could not be refreshed.",
+        ),
+      );
+    }, 0);
+  };
+  const loadWorkspace = async () => {
+    let authenticatedIdentity: LiveIdentity | null = null;
+    try {
+      const sessionResponse = await fetch("/api/auth/session", {
+        cache: "no-store",
+      });
+      const sessionResult = await sessionResponse.json();
+      if (!sessionResponse.ok || !sessionResult.authenticated)
+        throw new Error(sessionResult.error || "Sign in is required.");
+      authenticatedIdentity = sessionResult.identity as LiveIdentity;
+      setIdentity(authenticatedIdentity);
+      landOn(authenticatedIdentity.role);
+      // Authentication is enough to open the CRM shell. The complete
+      // workspace refresh is deliberately detached from the opening screen.
+      setSessionReady(true);
+      void loadAlerts(authenticatedIdentity.role);
+      if (authenticatedIdentity.role !== "client") void loadEnquirySummary();
+      queueWorkspaceRefresh();
+    } catch {
+      if (!authenticatedIdentity) setIdentity(null);
       setSessionReady(true);
     }
   };
@@ -11778,8 +11911,12 @@ export default function Home() {
     const handleShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        searchRef.current?.focus();
-        setGlobalSearchOpen(true);
+        if (active === "enquiries")
+          document.querySelector<HTMLInputElement>(".enquiryDirectorySearch input")?.focus();
+        else {
+          searchRef.current?.focus();
+          setGlobalSearchOpen(true);
+        }
       }
       if (event.key === "Escape" && query) {
         setQuery("");
@@ -11789,7 +11926,7 @@ export default function Home() {
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [query]);
+  }, [active, query]);
   useEffect(() => {
     const closeSearch = (event: PointerEvent) => {
       if (!searchWrapRef.current?.contains(event.target as Node)) setGlobalSearchOpen(false);
@@ -11818,7 +11955,7 @@ export default function Home() {
           if (!response.ok) throw new Error(result.error || "Search is unavailable.");
           setGlobalSearchResults((result.results ?? []) as GlobalSearchResult[]);
           setGlobalSearchIndex(0);
-          setGlobalSearchOpen(true);
+          if (active !== "enquiries") setGlobalSearchOpen(true);
         } catch (reason) {
           if ((reason as { name?: string }).name !== "AbortError") setGlobalSearchResults([]);
         } finally {
@@ -11830,7 +11967,7 @@ export default function Home() {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [query, role, signedIn]);
+  }, [active, query, role, signedIn]);
   useEffect(() => {
     const timer = window.setTimeout(
       () => setCaseWindowId(new URL(window.location.href).searchParams.get("case") ?? ""),
@@ -11925,7 +12062,7 @@ export default function Home() {
         if (!sent.ok) {
           setModal(null);
           setPresetCaseId("");
-          await loadWorkspace();
+          queueWorkspaceRefresh();
           throw new Error(sentResult.error || "The message was saved but Gmail could not send it.");
         }
       }
@@ -11934,7 +12071,7 @@ export default function Home() {
         if (!result.documentId) {
           setModal(null);
           setPresetCaseId("");
-          await loadWorkspace();
+          queueWorkspaceRefresh();
           throw new Error("The invoice was created but its PDF storage record is unavailable.");
         }
         const upload = new FormData();
@@ -11945,7 +12082,7 @@ export default function Home() {
         if (!stored.ok) {
           setModal(null);
           setPresetCaseId("");
-          await loadWorkspace();
+          queueWorkspaceRefresh();
           throw new Error(storedResult.error || "The invoice was created but its PDF could not be stored.");
         }
       }
@@ -11955,7 +12092,6 @@ export default function Home() {
       setDuplicates(null);
       setPendingIntake(null);
       setPresetCaseId("");
-      await loadWorkspace();
       say(
         role === "client" && kind === "appointment"
           ? "Appointment request sent to your case team"
@@ -11969,6 +12105,7 @@ export default function Home() {
                   : "Invoice created with a Drive PDF slot ready"
                 : `${kind[0].toUpperCase() + kind.slice(1)} saved`,
       );
+      queueWorkspaceRefresh(kind === "enquiry");
       return true;
     } catch (reason) {
       const message =
@@ -12206,8 +12343,19 @@ export default function Home() {
       if (!response.ok)
         throw new Error(result.error || "The case could not be moved.");
       setSelected(null);
-      await loadWorkspace();
       const movedDirect = record.serviceType === "direct_visa";
+      setCases((current) =>
+        current.map((item) =>
+          item.dbId === record.dbId
+            ? {
+                ...item,
+                lifecycleStage: stage,
+                stage: stageLabelFor(stage, movedDirect),
+                status: stage === "completed" ? "completed" : stage === "deferred" ? "waiting" : "active",
+              }
+            : item,
+        ),
+      );
       // Direct Visa's nav has no screen of its own for the student or
       // application stages: "Clients" is where the student stage lives, and
       // "Visa Applications" covers both the application and visa stages, so a
@@ -12233,6 +12381,7 @@ export default function Home() {
                 ? `${record.name} resumed in ${stageLabelFor(stage, movedDirect).toLowerCase()}`
                 : `${record.name} moved to ${stageLabelFor(stage, movedDirect).toLowerCase()}`,
       );
+      queueWorkspaceRefresh();
     } catch (reason_) {
       say(
         reason_ instanceof Error
@@ -12262,7 +12411,8 @@ export default function Home() {
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error || "The update was rejected.");
-      await loadWorkspace();
+      if (resource === "case" && operation === "archive")
+        setCases((current) => current.filter((record) => record.dbId !== id));
       // Some actions are a request rather than the thing itself, and the
       // person needs to know which happened.
       say(
@@ -12270,8 +12420,9 @@ export default function Home() {
           ? result.message
           : "Live record updated",
       );
+      queueWorkspaceRefresh();
     } catch (reason) {
-      await loadWorkspace();
+      queueWorkspaceRefresh();
       say(
         reason instanceof Error
           ? reason.message
@@ -12301,7 +12452,10 @@ export default function Home() {
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error || "The bulk update was rejected.");
-      await loadWorkspace();
+      if (resource === "case" && operation === "archive") {
+        const removed = new Set(ids);
+        setCases((current) => current.filter((record) => !record.dbId || !removed.has(record.dbId)));
+      }
       const succeeded = Number(result.succeeded ?? ids.length);
       const failed = Number(result.failed ?? 0);
       const requested = Number(result.requested ?? 0);
@@ -12311,8 +12465,9 @@ export default function Home() {
           : `${succeeded} record${succeeded === 1 ? "" : "s"} updated`) +
           (failed ? `; ${failed} could not be changed.` : "."),
       );
+      queueWorkspaceRefresh();
     } catch (reason) {
-      await loadWorkspace();
+      queueWorkspaceRefresh();
       say(reason instanceof Error ? reason.message : "The bulk update could not be saved.");
     }
   }
@@ -12330,12 +12485,25 @@ export default function Home() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "The cases could not be moved.");
-      await loadWorkspace();
+      const moved = new Set(ids);
+      setCases((current) =>
+        current.map((record) =>
+          record.dbId && moved.has(record.dbId)
+            ? {
+                ...record,
+                lifecycleStage: stage,
+                stage: stageLabelFor(stage, record.serviceType === "direct_visa"),
+                status: stage === "completed" ? "completed" : stage === "deferred" ? "waiting" : "active",
+              }
+            : record,
+        ),
+      );
       const succeeded = Number(result.succeeded ?? ids.length);
       const failed = Number(result.failed ?? 0);
       say(`${succeeded} case${succeeded === 1 ? "" : "s"} moved to ${stageLabels[stage].toLowerCase()}` + (failed ? `; ${failed} could not be moved.` : "."));
+      queueWorkspaceRefresh();
     } catch (reason) {
-      await loadWorkspace();
+      queueWorkspaceRefresh();
       say(reason instanceof Error ? reason.message : "The cases could not be moved.");
     }
   };
@@ -12356,10 +12524,10 @@ export default function Home() {
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error || "The update was rejected.");
-      await loadWorkspace();
       say("Live record updated");
+      queueWorkspaceRefresh();
     } catch (reason) {
-      await loadWorkspace();
+      queueWorkspaceRefresh();
       say(
         reason instanceof Error
           ? reason.message
@@ -12896,6 +13064,9 @@ export default function Home() {
         }
         query={query}
         onQueryChange={setQuery}
+        searchResults={globalSearchResults}
+        searchLoading={globalSearchLoading}
+        onOpenSearchResult={openGlobalSearchResult}
         loading={active === "enquiries" && enquiriesLoading}
         syncing={active === "enquiries" && enquiriesSyncing}
         totalRecords={active === "enquiries" ? enquiriesTotal : undefined}
@@ -12965,7 +13136,7 @@ export default function Home() {
             >
               <Menu size={21} />
             </button>
-            {role !== "client" ? (
+            {role !== "client" && active !== "enquiries" ? (
               <div className={`searchWrap globalSearch ${globalSearchOpen ? "open" : ""}`} ref={searchWrapRef}>
                 <Search size={18} />
                 <input
@@ -13068,12 +13239,12 @@ export default function Home() {
                   </div>
                 ) : null}
               </div>
-            ) : (
+            ) : role === "client" ? (
               <div className="clientTopLabel">
                 <ShieldCheck size={17} />
                 <span>Private client account</span>
               </div>
-            )}
+            ) : null}
             {role !== "client" ? (
               <div className="serviceAndFinder">
                 <ProfileServiceSwitch

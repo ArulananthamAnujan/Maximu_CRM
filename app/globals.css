@@ -9626,6 +9626,86 @@ body { overflow-x: hidden; }
   font-weight: 600;
 }
 .enquiryDirectorySearch input::placeholder { color: #8196a5; font-weight: 500; }
+.enquiryDirectorySearchShell {
+  position: relative;
+  min-width: 0;
+}
+.enquiryDirectorySearch { width: 100%; }
+.enquirySearchSuggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 90;
+  width: 100%;
+  max-height: min(420px, calc(100vh - 230px));
+  overflow-y: auto;
+  padding: 7px;
+  border: 1px solid #c9dce7;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 22px 60px rgba(9, 43, 64, .2), 0 3px 10px rgba(9, 43, 64, .08);
+}
+.enquirySearchSuggestions > button {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 11px;
+  min-height: 58px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #17374d;
+  text-align: left;
+  cursor: pointer;
+}
+.enquirySearchSuggestions > button:hover,
+.enquirySearchSuggestions > button.active {
+  background: #edf7fb;
+  box-shadow: inset 3px 0 0 #258cb9;
+}
+.enquirySearchSuggestions > button > span:nth-child(2),
+.enquirySearchSuggestions strong,
+.enquirySearchSuggestions small { min-width: 0; display: block; }
+.enquirySearchSuggestions strong {
+  overflow: hidden;
+  color: #102f45;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.enquirySearchSuggestions small {
+  margin-top: 3px;
+  overflow: hidden;
+  color: #708796;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.enquirySearchAvatar {
+  width: 36px;
+  height: 36px;
+  display: grid !important;
+  place-items: center;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #258fbd, #176e9b);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 850;
+}
+.enquirySearchSuggestionState {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  color: #688191;
+  font-size: 13px;
+}
+.enquirySearchSuggestionState .lucide-refresh-cw { animation: searchSpin .8s linear infinite; }
 .enquirySearchReset {
   display: inline-grid;
   width: 30px;
