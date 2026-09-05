@@ -48,10 +48,10 @@ export function allowedLifecycleMoves(from: LifecycleStage): LifecycleStage[] {
   return moves;
 }
 
-// Core client/case rows are deliberately allowed a wider window than the
-// supporting datasets. Their selects stay narrow so a branch such as Demo
-// Head Office can receive its complete imported enquiry list without restoring
-// the oversized legacy payload that previously collapsed the board to zero.
+// Enquiry-stage records have their own 50-row server-paged directory. The
+// shared workspace contains only converted Student/Client/Application/Visa
+// cases, so opening the CRM or saving an action never downloads thousands of
+// enquiry rows a second time.
 const CLIENT_CASE_LIMIT = 2000;
 const RECORD_LIMIT = 800;
 
@@ -94,19 +94,19 @@ export async function GET(request: Request) {
       caseNotes,
     ] = await Promise.all([
       safeRestPaged(
-        "clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle&archived_at=is.null&order=updated_at.desc",
+        "clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle&archived_at=is.null&current_lifecycle=neq.enquiry&order=updated_at.desc",
         token,
         CLIENT_CASE_LIMIT,
         degraded,
       ),
       safeRestPaged(
-        "cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at&order=opened_at.desc",
+        "cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at&lifecycle_stage=neq.enquiry&order=opened_at.desc",
         token,
         CLIENT_CASE_LIMIT,
         degraded,
       ),
       safeRestPaged(
-        "enquiries?select=id,case_id,client_id,branch_id,assigned_to,source,campaign,priority,status,score,next_follow_up_at,lost_reason,created_at,converted_at&order=created_at.desc",
+        "enquiries?select=id,case_id,client_id,branch_id,assigned_to,source,campaign,priority,status,score,next_follow_up_at,lost_reason,created_at,converted_at&converted_at=not.is.null&order=created_at.desc",
         token,
         CLIENT_CASE_LIMIT,
         degraded,
@@ -215,7 +215,7 @@ export async function GET(request: Request) {
         degraded,
       ),
       safeRest(
-        "case_notes?select=case_id,author_id,body,created_at&order=created_at.desc&limit=5000",
+        "case_notes?select=case_id,author_id,body,created_at,cases!inner(lifecycle_stage)&cases.lifecycle_stage=neq.enquiry&order=created_at.desc&limit=5000",
         token,
         degraded,
       ),

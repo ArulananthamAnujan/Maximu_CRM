@@ -9753,7 +9753,8 @@ body { overflow-x: hidden; }
   font-size: 13px;
   font-weight: 750;
 }
-.enquiryDirectoryFilters select {
+.enquiryDirectoryFilters select,
+.enquiryDirectoryFilters input {
   width: 100%;
   min-width: 0;
   height: 41px;
@@ -9764,6 +9765,33 @@ body { overflow-x: hidden; }
   color: #173c54;
   font-size: 14px;
   font-weight: 650;
+}
+.enquiryAdvancedFilters {
+  grid-column: 1 / -2;
+  min-width: 0;
+  border: 1px solid #d8e5ec;
+  border-radius: 10px;
+  background: #f8fbfc;
+}
+.enquiryAdvancedFilters summary {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: #2a5d79;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+.enquiryAdvancedFilters summary::-webkit-details-marker { display: none; }
+.enquiryAdvancedFilters[open] summary { border-bottom: 1px solid #e2ebf0; }
+.enquiryAdvancedFilters > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 10px;
+  padding: 12px;
 }
 .enquiryScopeLabel {
   display: flex;
@@ -10025,6 +10053,8 @@ body { overflow-x: hidden; }
 @media (max-width: 1180px) {
   .enquiryDirectoryTools { grid-template-columns: minmax(300px, 1fr) minmax(210px, .65fr) minmax(110px, .35fr); }
   .enquiryDirectoryFilters { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
+  .enquiryAdvancedFilters { grid-column: 1 / -1; }
+  .enquiryAdvancedFilters > div { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
   .journeyDataHeader,
   .journeyDataRow { grid-template-columns: minmax(160px, 1fr) minmax(170px, 1fr) minmax(160px, .9fr) minmax(190px, 1.2fr); }
   .journeyDataHeader span:last-child { display: none; }
@@ -10038,6 +10068,8 @@ body { overflow-x: hidden; }
 @media (max-width: 760px) {
   .enquiryDirectoryTools { grid-template-columns: 1fr; padding: 14px 17px; }
   .enquiryDirectoryFilters { grid-template-columns: 1fr; }
+  .enquiryAdvancedFilters { grid-column: 1; }
+  .enquiryAdvancedFilters > div { grid-template-columns: 1fr; }
   .enquiryDirectorySearch { grid-column: 1; }
   .enquiryDirectorySummary { justify-items: start; }
   .enquirySearchButton { width: 38px; padding: 0; }

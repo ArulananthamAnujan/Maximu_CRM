@@ -29,29 +29,36 @@ test("all live CRM routes authenticate through Supabase sessions", async () => {
   ]) assert.match(await read(route), /liveSession\(request\)/, route);
 });
 
-test("large enquiry directories load independently and never fail as an empty list", async () => {
+test("large enquiry directories are server-paged, cached and permission scoped", async () => {
   const page = await read("app/page.tsx");
   const route = await read("app/api/crm/enquiries/route.ts");
+  const workspace = await read("app/api/crm/workspace/route.ts");
   assert.match(route, /lifecycle_stage=eq\.enquiry/);
-  assert.match(route, /const PAGE_SIZE = 500/);
+  assert.match(route, /const PAGE_SIZE = 50/);
+  assert.match(route, /const MAX_PAGE_SIZE = 100/);
   assert.match(route, /supabasePageRequest/);
-  assert.match(route, /limit=\$\{limit\}&offset=\$\{offset\}/);
+  assert.match(route, /limit=\$\{input\.limit\}&offset=\$\{input\.offset\}/);
   assert.match(route, /restByIds\("case_notes", "case_id,author_id,body,created_at"/);
   assert.match(route, /restByIds\("documents", "case_id,state"/);
-  assert.match(page, /\/api\/crm\/enquiries\?offset=\$\{offset\}&limit=\$\{pageSize\}/);
-  assert.match(page, /while \(offset < total/);
+  assert.match(route, /private, max-age=15, stale-while-revalidate=45/);
+  assert.match(route, /const needsIndex = Boolean\([\s\S]{0,80}query \|\| documentFilter/);
+  assert.match(page, /offset: String\(\(page - 1\) \* 50\)/);
+  assert.match(page, /enquiryPageCacheRef/);
+  assert.match(page, /prefetchEnquiryPage\(page \+ 1/);
+  assert.match(page, /caseId=\$\{encodeURIComponent\(caseWindowId\)\}&limit=1/);
+  assert.doesNotMatch(page, /while \(offset < total/);
   assert.match(page, /Authentication is enough to open the CRM shell/);
   assert.doesNotMatch(page, /await loadEnquiryDirectory\(\)/);
-  assert.match(page, /finish the remaining pages quietly/);
   assert.match(page, /enquiriesSyncing/);
-  assert.match(page, /Loaded \{cases\.length\.toLocaleString\(\)\} of/);
+  assert.match(page, /Refreshing this page/);
   assert.match(page, /Enquiries could not be loaded/);
   assert.match(page, /onRetry/);
   assert.match(page, /const pageSize = 50/);
+  assert.match(page, /serverPaged=\{active === "enquiries"\}/);
   assert.match(page, /query=\{query\}/);
   assert.match(page, /globalSearchOpen/);
   assert.match(page, /Page \{safePage\} of \{pageCount\}/);
-  assert.match(page, /role === "super_admin"[\s\S]*lifecycleStage === "enquiry"/);
+  assert.match(page, /const enquiryList = enquiryPageRecords/);
   assert.match(page, /enquiryFullMode/);
   assert.match(page, /All offices and countries/);
   assert.match(page, /All permitted offices/);
@@ -65,6 +72,9 @@ test("large enquiry directories load independently and never fail as an empty li
   assert.match(page, /onQueryChange\?\.\(searchDraft\.trim\(\)\)/);
   assert.match(page, /\.split\("\|"\)/);
   assert.match(page, /enquiryDestinationLabel\(record\)/);
+  assert.match(page, /Both Study Abroad and Direct Visa enquiries stay visible/);
+  assert.match(workspace, /lifecycle_stage=neq\.enquiry/);
+  assert.match(workspace, /converted_at=not\.is\.null/);
 });
 
 test("the executive dashboard stays bounded and uses the exact enquiry total", async () => {

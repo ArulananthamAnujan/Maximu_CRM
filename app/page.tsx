@@ -41,6 +41,7 @@ import {
   School,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Trash2,
   UserCog,
   Users,
@@ -141,6 +142,15 @@ type CaseRecord = {
   latestNote: string;
   latestNoteAt: string;
   latestNoteAuthor: string;
+  enquiryStatus?: string;
+  detailedStatus?: string;
+  nextFollowUpAt?: string;
+  updatedAt?: string;
+  alternatePhone?: string;
+  highestQualification?: string;
+  yearPassed?: string;
+  testGiven?: string;
+  spouseIncluded?: string;
 };
 type GlobalSearchResult = {
   type: "client" | "case";
@@ -154,6 +164,25 @@ type GlobalSearchResult = {
   stage?: string | null;
   target?: string | null;
   branchId?: string | null;
+};
+type EnquiryDirectoryFilters = {
+  branchId: string;
+  destination: string;
+  service: string;
+  priority: string;
+  documents: string;
+  followUp: string;
+  ownerId: string;
+  status: string;
+  source: string;
+  intake: string;
+  qualification: string;
+  testGiven: string;
+  spouse: string;
+  createdFrom: string;
+  createdTo: string;
+  updatedFrom: string;
+  updatedTo: string;
 };
 // One student can hold several offers at once, so an application is a record in
 // its own right rather than something inferred from the case it belongs to.
@@ -2102,6 +2131,12 @@ function CaseWorkspace({
   searchResults = [],
   searchLoading = false,
   onOpenSearchResult,
+  serverPaged = false,
+  serverPage = 1,
+  onServerPageChange,
+  filterBranches = [],
+  filterStaff = [],
+  onDirectoryFiltersChange,
   loading = false,
   syncing = false,
   totalRecords,
@@ -2121,6 +2156,12 @@ function CaseWorkspace({
   searchResults?: GlobalSearchResult[];
   searchLoading?: boolean;
   onOpenSearchResult?: (result: GlobalSearchResult) => void;
+  serverPaged?: boolean;
+  serverPage?: number;
+  onServerPageChange?: (page: number) => void;
+  filterBranches?: BranchRecord[];
+  filterStaff?: StaffRecord[];
+  onDirectoryFiltersChange?: (filters: EnquiryDirectoryFilters) => void;
   loading?: boolean;
   syncing?: boolean;
   totalRecords?: number;
@@ -2142,17 +2183,36 @@ function CaseWorkspace({
   const [priorityFilter, setPriorityFilter] = useState("");
   const [documentFilter, setDocumentFilter] = useState("");
   const [followUpFilter, setFollowUpFilter] = useState("");
+  const [assignedStaffFilter, setAssignedStaffFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [intakeFilter, setIntakeFilter] = useState("");
+  const [qualificationFilter, setQualificationFilter] = useState("");
+  const [testFilter, setTestFilter] = useState("");
+  const [spouseFilter, setSpouseFilter] = useState("");
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
+  const [updatedFrom, setUpdatedFrom] = useState("");
+  const [updatedTo, setUpdatedTo] = useState("");
   const pageSize = 50;
   const officeOptions = useMemo(
-    () => Array.from(new Set(cases.map((record) => record.branch).filter(Boolean))).sort(),
-    [cases],
+    () => filterBranches.length
+      ? filterBranches.map((branch) => ({ value: branch.id, label: branch.name }))
+      : Array.from(new Set(cases.map((record) => record.branch).filter(Boolean)))
+          .sort()
+          .map((office) => ({ value: office, label: office })),
+    [cases, filterBranches],
   );
   const destinationOptions = useMemo(
-    () => Array.from(new Set(cases.flatMap(enquiryDestinations))).sort(),
-    [cases],
+    () => module === "enquiries" && serverPaged
+      ? DESTINATION_COUNTRIES
+      : Array.from(new Set(cases.flatMap(enquiryDestinations))).sort(),
+    [cases, module, serverPaged],
   );
   const filteredCases = useMemo(
-    () =>
+    () => serverPaged && module === "enquiries"
+      ? cases
+      :
       cases.filter((record) => {
         const destinations = enquiryDestinations(record);
         const matchesFollowUp =
@@ -2187,21 +2247,30 @@ function CaseWorkspace({
           matchesDocuments &&
           matchesFollowUp;
       }),
-    [cases, query, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter],
+    [cases, query, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter, module, serverPaged],
   );
   const hasDirectoryFilters = Boolean(
-    officeFilter || destinationFilter || serviceFilter || priorityFilter || documentFilter || followUpFilter,
+    officeFilter || destinationFilter || serviceFilter || priorityFilter || documentFilter || followUpFilter ||
+      assignedStaffFilter || statusFilter || sourceFilter || intakeFilter || qualificationFilter || testFilter || spouseFilter ||
+      createdFrom || createdTo || updatedFrom || updatedTo,
   );
   const hasDirectoryControls = hasDirectoryFilters || Boolean(query.trim()) || Boolean(searchDraft.trim());
+  const isServerDirectory = module === "enquiries" && serverPaged;
   const isUnfilteredDirectory = module === "enquiries" && !query.trim() && !hasDirectoryFilters;
-  const recordCount = isUnfilteredDirectory && typeof totalRecords === "number" && totalRecords > 0
+  const recordCount = isServerDirectory && typeof totalRecords === "number"
+    ? totalRecords
+    : isUnfilteredDirectory && typeof totalRecords === "number" && totalRecords > 0
     ? totalRecords
     : filteredCases.length;
-  const pageCount = Math.max(1, Math.ceil(filteredCases.length / pageSize));
-  const safePage = Math.min(page, pageCount);
+  const pageCount = Math.max(1, Math.ceil(recordCount / pageSize));
+  const safePage = Math.min(isServerDirectory ? serverPage : page, pageCount);
   const firstRecord = filteredCases.length ? (safePage - 1) * pageSize + 1 : 0;
-  const lastRecord = Math.min(safePage * pageSize, filteredCases.length);
-  const visibleCases = filteredCases.slice(firstRecord ? firstRecord - 1 : 0, lastRecord);
+  const lastRecord = isServerDirectory
+    ? Math.min(firstRecord + filteredCases.length - 1, recordCount)
+    : Math.min(safePage * pageSize, filteredCases.length);
+  const visibleCases = isServerDirectory
+    ? filteredCases
+    : filteredCases.slice(firstRecord ? firstRecord - 1 : 0, lastRecord);
   const enquirySearchResults = useMemo(() => {
     const localResults: GlobalSearchResult[] = searchDraft.trim().length < 2
       ? []
@@ -2237,9 +2306,34 @@ function CaseWorkspace({
       .slice(0, 8);
   }, [cases, searchDraft, searchResults]);
   useEffect(() => {
-    const timer = window.setTimeout(() => setPage(1), 0);
+    const timer = window.setTimeout(() => {
+      if (isServerDirectory) onServerPageChange?.(1);
+      else setPage(1);
+    }, 0);
     return () => window.clearTimeout(timer);
-  }, [module, query, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter]);
+  }, [module, query, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter, assignedStaffFilter, statusFilter, sourceFilter, intakeFilter, qualificationFilter, testFilter, spouseFilter, createdFrom, createdTo, updatedFrom, updatedTo, isServerDirectory, onServerPageChange]);
+  useEffect(() => {
+    if (!isServerDirectory) return;
+    onDirectoryFiltersChange?.({
+      branchId: officeFilter,
+      destination: destinationFilter,
+      service: serviceFilter,
+      priority: priorityFilter,
+      documents: documentFilter,
+      followUp: followUpFilter,
+      ownerId: assignedStaffFilter,
+      status: statusFilter,
+      source: sourceFilter,
+      intake: intakeFilter,
+      qualification: qualificationFilter,
+      testGiven: testFilter,
+      spouse: spouseFilter,
+      createdFrom,
+      createdTo,
+      updatedFrom,
+      updatedTo,
+    });
+  }, [isServerDirectory, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter, assignedStaffFilter, statusFilter, sourceFilter, intakeFilter, qualificationFilter, testFilter, spouseFilter, createdFrom, createdTo, updatedFrom, updatedTo, onDirectoryFiltersChange]);
   useEffect(() => setSearchDraft(query), [query]);
   useEffect(() => setDirectorySearchIndex(-1), [query, searchResults]);
   const headings = module === "enquiries"
@@ -2257,8 +2351,8 @@ function CaseWorkspace({
   const contextFor = (record: CaseRecord) => {
     if (module === "enquiries") return {
       primary: record.email || "No email recorded",
-      secondary: [record.phone, record.source, record.campaign].filter(Boolean).join(" · ") || "No source recorded",
-      tertiary: `${humanise(record.priority)} priority · ${record.documentSummary}`,
+      secondary: [record.phone, record.alternatePhone, record.source, record.campaign].filter(Boolean).join(" · ") || "No source recorded",
+      tertiary: [record.enquiryStatus && humanise(record.enquiryStatus), `${humanise(record.priority)} priority`, record.documentSummary].filter(Boolean).join(" · "),
     };
     if (module === "students") return {
       primary: record.target || record.type || "Study plan not recorded",
@@ -2290,7 +2384,11 @@ function CaseWorkspace({
   const journeyFor = (record: CaseRecord) => {
     if (module === "enquiries") return {
       primary: enquiryDestinationLabel(record),
-      secondary: record.intake ? `Intake ${record.intake}` : `${record.progress}% profile complete`,
+      secondary: record.intake
+        ? `Intake ${record.intake}`
+        : record.highestQualification
+          ? `${record.highestQualification}${record.yearPassed ? ` · ${record.yearPassed}` : ""}`
+          : `${record.progress}% profile complete`,
     };
     if (module === "defer") return {
       primary: record.due ? `Review ${orgDate(record.due)}` : "Review date not set",
@@ -2424,7 +2522,7 @@ function CaseWorkspace({
           <div className="enquiryDirectorySummary" aria-live="polite">
             <strong>{recordCount.toLocaleString()}</strong>
             {syncing ? (
-              <span>Loaded {cases.length.toLocaleString()} of {totalRecords ? totalRecords.toLocaleString() : "all"}</span>
+              <span>Refreshing this page…</span>
             ) : !loading && !error && filteredCases.length > 0 ? (
               <span>{firstRecord.toLocaleString()}–{lastRecord.toLocaleString()} visible</span>
             ) : (
@@ -2436,7 +2534,7 @@ function CaseWorkspace({
               <span>Office</span>
               <select value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
                 <option value="">All permitted offices</option>
-                {officeOptions.map((office) => <option key={office} value={office}>{office}</option>)}
+                {officeOptions.map((office) => <option key={office.value} value={office.value}>{office.label}</option>)}
               </select>
             </label>
             <label>
@@ -2481,6 +2579,34 @@ function CaseWorkspace({
                 <option value="needed">Needs follow-up</option>
               </select>
             </label>
+            <details className="enquiryAdvancedFilters">
+              <summary><SlidersHorizontal size={14} /> More legacy filters</summary>
+              <div>
+                <label>
+                  <span>Assigned staff</span>
+                  <select value={assignedStaffFilter} onChange={(event) => setAssignedStaffFilter(event.target.value)}>
+                    <option value="">All permitted staff</option>
+                    {filterStaff.map((person) => <option value={person.id} key={person.id}>{person.display_name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Enquiry status</span>
+                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                    <option value="">All statuses</option>
+                    {Array.from(new Set([...ENQUIRY_MAIN_STATUSES, ...ENQUIRY_DETAIL_STATUSES])).map((status) => <option key={status}>{status}</option>)}
+                  </select>
+                </label>
+                <label><span>Source / reference</span><input value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} placeholder="Facebook, walk-in, partner…" /></label>
+                <label><span>Intake</span><input value={intakeFilter} onChange={(event) => setIntakeFilter(event.target.value)} placeholder="February 2027" /></label>
+                <label><span>Highest qualification</span><input value={qualificationFilter} onChange={(event) => setQualificationFilter(event.target.value)} placeholder="Bachelor, Diploma…" /></label>
+                <label><span>English test</span><select value={testFilter} onChange={(event) => setTestFilter(event.target.value)}><option value="">Any test state</option><option value="yes">Test recorded</option><option value="no">No test recorded</option></select></label>
+                <label><span>Spouse / dependant</span><select value={spouseFilter} onChange={(event) => setSpouseFilter(event.target.value)}><option value="">Any family state</option><option value="yes">Recorded</option><option value="no">Not recorded</option></select></label>
+                <label><span>Created from</span><input type="date" value={createdFrom} onChange={(event) => setCreatedFrom(event.target.value)} /></label>
+                <label><span>Created to</span><input type="date" value={createdTo} onChange={(event) => setCreatedTo(event.target.value)} /></label>
+                <label><span>Updated from</span><input type="date" value={updatedFrom} onChange={(event) => setUpdatedFrom(event.target.value)} /></label>
+                <label><span>Updated to</span><input type="date" value={updatedTo} onChange={(event) => setUpdatedTo(event.target.value)} /></label>
+              </div>
+            </details>
             <button
               type="button"
               className="enquiryClearFilters"
@@ -2494,6 +2620,17 @@ function CaseWorkspace({
                 setPriorityFilter("");
                 setDocumentFilter("");
                 setFollowUpFilter("");
+                setAssignedStaffFilter("");
+                setStatusFilter("");
+                setSourceFilter("");
+                setIntakeFilter("");
+                setQualificationFilter("");
+                setTestFilter("");
+                setSpouseFilter("");
+                setCreatedFrom("");
+                setCreatedTo("");
+                setUpdatedFrom("");
+                setUpdatedTo("");
               }}
             >
               <X size={14} /> Clear all
@@ -2505,7 +2642,7 @@ function CaseWorkspace({
         <EmptyState
           icon={RefreshCw}
           title="Loading enquiries…"
-          copy="Retrieving the complete branch enquiry directory."
+          copy="Retrieving the first 50 permitted records."
         />
       ) : error ? (
         <EmptyState
@@ -2615,13 +2752,13 @@ function CaseWorkspace({
           </div>
           {pageCount > 1 ? (
             <nav className="journeyPagination" aria-label={`${title} pages`}>
-              <span>{firstRecord}–{lastRecord} of {filteredCases.length}</span>
+              <span>{firstRecord}–{lastRecord} of {recordCount}</span>
               <div>
-                <button type="button" className="ghostButton" disabled={safePage === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                <button type="button" className="ghostButton" disabled={safePage === 1 || loading} onClick={() => isServerDirectory ? onServerPageChange?.(Math.max(1, safePage - 1)) : setPage((value) => Math.max(1, value - 1))}>
                   <ChevronLeft size={15} /> Previous
                 </button>
                 <strong>Page {safePage} of {pageCount}</strong>
-                <button type="button" className="ghostButton" disabled={safePage === pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
+                <button type="button" className="ghostButton" disabled={safePage === pageCount || loading} onClick={() => isServerDirectory ? onServerPageChange?.(Math.min(pageCount, safePage + 1)) : setPage((value) => Math.min(pageCount, value + 1))}>
                   Next <ArrowRight size={15} />
                 </button>
               </div>
@@ -11589,6 +11726,27 @@ export default function Home() {
       }[]
     >([]);
   const [cases, setCases] = useState<CaseRecord[]>([]),
+    [enquiryPageRecords, setEnquiryPageRecords] = useState<CaseRecord[]>([]),
+    [enquiryPage, setEnquiryPage] = useState(1),
+    [enquiryFilters, setEnquiryFilters] = useState<EnquiryDirectoryFilters>({
+      branchId: "",
+      destination: "",
+      service: "",
+      priority: "",
+      documents: "",
+      followUp: "",
+      ownerId: "",
+      status: "",
+      source: "",
+      intake: "",
+      qualification: "",
+      testGiven: "",
+      spouse: "",
+      createdFrom: "",
+      createdTo: "",
+      updatedFrom: "",
+      updatedTo: "",
+    }),
     [enquiriesLoading, setEnquiriesLoading] = useState(false),
     [enquiriesSyncing, setEnquiriesSyncing] = useState(false),
     [enquiriesLoaded, setEnquiriesLoaded] = useState(false),
@@ -11641,8 +11799,9 @@ export default function Home() {
     canManageBranch = role === "super_admin" || role === "admin",
     canManageCaseFinance = role !== "client";
   const workspaceRefreshRef = useRef<Promise<void> | null>(null);
-  const enquiriesLoadedRef = useRef(enquiriesLoaded);
-  enquiriesLoadedRef.current = enquiriesLoaded;
+  const enquiryPageCacheRef = useRef(new Map<string, { records: CaseRecord[]; count: number | null; storedAt: number }>());
+  const enquiryRequestRef = useRef<AbortController | null>(null);
+  const enquiryRequestSequenceRef = useRef(0);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 2600);
@@ -11736,58 +11895,108 @@ export default function Home() {
       // Dashboard counts enhance the workspace but must never delay entry.
     }
   };
-  const loadEnquiryDirectory = async () => {
-    setEnquiriesLoading(true);
-    setEnquiriesSyncing(true);
-    setEnquiriesError("");
-    const enquiryCases: CaseRecord[] = [];
-    try {
-      const initialPageSize = 50;
-      const pageSize = 500;
-      let offset = 0;
-      let total = Number.POSITIVE_INFINITY;
-      while (offset < total && offset < 20_000) {
-        const requestLimit = offset === 0 ? initialPageSize : pageSize;
-        const directoryUrl = offset === 0
-          ? `/api/crm/enquiries?offset=${offset}&limit=${requestLimit}`
-          : `/api/crm/enquiries?offset=${offset}&limit=${pageSize}`;
-        const response = await fetch(
-          directoryUrl,
-          { cache: "no-store" },
-        );
-        const result = await response.json();
-        if (!response.ok)
-          throw new Error(
-            result.error || "The enquiry directory could not be loaded.",
-          );
-        const next = (result.records || []) as CaseRecord[];
-        enquiryCases.push(...next);
-        total = result.count !== null && Number.isFinite(Number(result.count))
-          ? Number(result.count)
-          : total;
-        if (Number.isFinite(total)) setEnquiriesTotal(total);
-        offset += next.length;
-        setCases((current) => [
-          ...current.filter((record) => record.lifecycleStage !== "enquiry"),
-          ...enquiryCases,
-        ]);
-        // The first visible table page is enough to release the interface and
-        // finish the remaining pages quietly in 500-row background batches.
-        if (offset === next.length) setEnquiriesLoading(false);
-        if (next.length < requestLimit) break;
-      }
+  const enquiryUrl = (
+    page: number,
+    filters: EnquiryDirectoryFilters,
+    search: string,
+  ) => {
+    const params = new URLSearchParams({
+      offset: String((page - 1) * 50),
+      limit: "50",
+    });
+    if (search.trim()) params.set("q", search.trim());
+    for (const [key, value] of Object.entries(filters))
+      if (value) params.set(key, value);
+    return `/api/crm/enquiries?${params.toString()}`;
+  };
+  const enquiryCacheKey = (
+    page: number,
+    filters: EnquiryDirectoryFilters,
+    search: string,
+  ) => JSON.stringify([identity?.profileId ?? "", page, search.trim().toLowerCase(), filters]);
+  const fetchEnquiryPage = async (
+    page: number,
+    filters: EnquiryDirectoryFilters,
+    search: string,
+    signal?: AbortSignal,
+  ) => {
+    const response = await fetch(enquiryUrl(page, filters, search), { signal });
+    const result = await response.json();
+    if (!response.ok)
+      throw new Error(result.error || "The enquiry directory could not be loaded.");
+    const pageResult = {
+      records: (result.records || []) as CaseRecord[],
+      count: result.count !== null && Number.isFinite(Number(result.count))
+        ? Number(result.count)
+        : null,
+      storedAt: Date.now(),
+    };
+    enquiryPageCacheRef.current.set(enquiryCacheKey(page, filters, search), pageResult);
+    return pageResult;
+  };
+  const prefetchEnquiryPage = (
+    page: number,
+    filters: EnquiryDirectoryFilters,
+    search: string,
+  ) => {
+    if (page < 1 || (enquiriesTotal && (page - 1) * 50 >= enquiriesTotal)) return;
+    const key = enquiryCacheKey(page, filters, search);
+    const cached = enquiryPageCacheRef.current.get(key);
+    if (cached && Date.now() - cached.storedAt < 120_000) return;
+    void fetchEnquiryPage(page, filters, search).catch(() => undefined);
+  };
+  const loadEnquiryDirectory = async (force = false) => {
+    const page = enquiryPage;
+    const filters = enquiryFilters;
+    const search = query;
+    const key = enquiryCacheKey(page, filters, search);
+    const cached = enquiryPageCacheRef.current.get(key);
+    const fresh = cached && Date.now() - cached.storedAt < 120_000;
+    const requestSequence = ++enquiryRequestSequenceRef.current;
+    enquiryRequestRef.current?.abort();
+    const controller = new AbortController();
+    enquiryRequestRef.current = controller;
+
+    if (cached) {
+      setEnquiryPageRecords(cached.records);
+      if (cached.count !== null) setEnquiriesTotal(cached.count);
+      setEnquiriesLoading(false);
+      setEnquiriesError("");
       setEnquiriesLoaded(true);
+      if (fresh && !force) {
+        setEnquiriesSyncing(false);
+        prefetchEnquiryPage(page + 1, filters, search);
+        return;
+      }
+    } else {
+      setEnquiriesLoading(true);
+    }
+    setEnquiriesSyncing(Boolean(cached));
+    setEnquiriesError("");
+    try {
+      const result = await fetchEnquiryPage(page, filters, search, controller.signal);
+      if (requestSequence !== enquiryRequestSequenceRef.current) return;
+      setEnquiryPageRecords(result.records);
+      if (result.count !== null) setEnquiriesTotal(result.count);
+      setEnquiriesLoaded(true);
+      prefetchEnquiryPage(page + 1, filters, search);
+      prefetchEnquiryPage(page - 1, filters, search);
     } catch (reason) {
-      if (!enquiryCases.length)
+      if ((reason as { name?: string }).name === "AbortError") return;
+      if (!cached) {
+        setEnquiryPageRecords([]);
         setEnquiriesError(
           reason instanceof Error
             ? reason.message
             : "The enquiry directory could not be loaded.",
         );
+      }
       setEnquiriesLoaded(true);
     } finally {
-      setEnquiriesLoading(false);
-      setEnquiriesSyncing(false);
+      if (requestSequence === enquiryRequestSequenceRef.current) {
+        setEnquiriesLoading(false);
+        setEnquiriesSyncing(false);
+      }
     }
   };
   const refreshWorkspace = async () => {
@@ -11800,14 +12009,7 @@ export default function Home() {
           result.error || "Your workspace data could not be loaded.",
         );
       setIdentity(result.identity);
-      setCases((current) => {
-        const incoming = (result.cases || []) as CaseRecord[];
-        if (!enquiriesLoadedRef.current) return incoming;
-        return [
-          ...incoming.filter((record) => record.lifecycleStage !== "enquiry"),
-          ...current.filter((record) => record.lifecycleStage === "enquiry"),
-        ];
-      });
+      setCases((result.cases || []) as CaseRecord[]);
       setTasks(result.tasks || []);
       setAppointments(result.appointments || []);
       setDocuments(result.documents || []);
@@ -11847,7 +12049,10 @@ export default function Home() {
     }
   };
   const queueWorkspaceRefresh = (invalidateEnquiries = false) => {
-    if (invalidateEnquiries) setEnquiriesLoaded(false);
+    if (invalidateEnquiries) {
+      enquiryPageCacheRef.current.clear();
+      setEnquiriesLoaded(false);
+    }
     window.setTimeout(() => {
       void refreshWorkspace().catch((reason) =>
         say(
@@ -11895,11 +12100,28 @@ export default function Home() {
       !signedIn ||
       role === "client" ||
       active !== "enquiries" ||
-      enquiriesLoaded ||
-      enquiriesSyncing
+      enquiriesLoaded
     ) return;
-    void loadEnquiryDirectoryRef.current();
-  }, [active, enquiriesLoaded, enquiriesSyncing, role, sessionReady, signedIn]);
+    const timer = window.setTimeout(
+      () => void loadEnquiryDirectoryRef.current(),
+      query.trim() ? 220 : 0,
+    );
+    return () => window.clearTimeout(timer);
+  }, [active, enquiriesLoaded, enquiryFilters, enquiryPage, query, role, sessionReady, signedIn]);
+  const changeEnquiryPage = useCallback((page: number) => {
+    setEnquiryPage(Math.max(1, page));
+    setEnquiriesLoaded(false);
+  }, []);
+  const changeEnquiryFilters = useCallback((filters: EnquiryDirectoryFilters) => {
+    setEnquiryFilters(filters);
+    setEnquiryPage(1);
+    setEnquiriesLoaded(false);
+  }, []);
+  const changeEnquiryQuery = useCallback((value: string) => {
+    setQuery(value);
+    setEnquiryPage(1);
+    setEnquiriesLoaded(false);
+  }, []);
   useEffect(() => {
     const receiveWorkspaceUpdate = (event: StorageEvent) => {
       if (event.key === "maximus.workspaceRefresh") void loadWorkspace();
@@ -11977,15 +12199,46 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (!caseWindowId) return;
-    const record = cases.find((entry) => entry.dbId === caseWindowId);
+    const record = [...cases, ...enquiryPageRecords].find(
+      (entry) => entry.dbId === caseWindowId,
+    );
     // Keeps a case window showing the freshest record rather than only ever
     // selecting once: without this, a stage move (which clears the selection
     // so the drawer can rebuild against reloaded data) never picks the new
     // record back up, and the pipeline is left showing the stage it just left.
-    if (!record || record === selected) return;
-    const timer = window.setTimeout(() => setSelected(record), 0);
-    return () => window.clearTimeout(timer);
-  }, [caseWindowId, cases, selected]);
+    if (record) {
+      if (record === selected) return;
+      const timer = window.setTimeout(() => setSelected(record), 0);
+      return () => window.clearTimeout(timer);
+    }
+    // A search result can open any permitted enquiry, not only one of the 50
+    // rows currently displayed. Fetch that one record directly rather than
+    // restoring the old multi-thousand-row workspace download.
+    if (selected?.dbId === caseWindowId) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(
+          `/api/crm/enquiries?caseId=${encodeURIComponent(caseWindowId)}&limit=1`,
+          { signal: controller.signal },
+        );
+        const result = await response.json();
+        if (!response.ok)
+          throw new Error(result.error || "This enquiry could not be opened.");
+        const exact = (result.records?.[0] ?? null) as CaseRecord | null;
+        if (!controller.signal.aborted && exact) setSelected(exact);
+      } catch (reason) {
+        if ((reason as { name?: string }).name !== "AbortError") {
+          say(
+            reason instanceof Error
+              ? reason.message
+              : "This enquiry could not be opened.",
+          );
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [caseWindowId, cases, enquiryPageRecords, selected]);
   const openCaseWorkspace = useCallback((record: CaseRecord) => {
     if (!record.dbId) return;
     const target = new URL(window.location.href);
@@ -12623,6 +12876,10 @@ export default function Home() {
     setAudits([]);
     setStaff([]);
     setBranches([]);
+    enquiryRequestRef.current?.abort();
+    enquiryPageCacheRef.current.clear();
+    setEnquiryPageRecords([]);
+    setEnquiryPage(1);
     setEnquiriesLoading(false);
     setEnquiriesSyncing(false);
     setEnquiriesLoaded(false);
@@ -12984,13 +13241,12 @@ export default function Home() {
       (c.serviceType === "direct_visa") === direct;
     const atStage = (stage: LifecycleStage) =>
       cases.filter((c) => c.lifecycleStage === stage && inStream(c));
-    // Super Admin owns the organisation-wide enquiry directory. Enquiries can
-    // arrive through either service stream, so the mode switch must not hide
-    // part of the imported directory for this role. Branch-scoped roles keep
-    // the current stream boundary supplied by atStage.
-    const enquiryList = role === "super_admin"
-      ? cases.filter((c) => c.lifecycleStage === "enquiry")
-      : atStage("enquiry");
+    // The enquiry directory is server-paged independently from the large
+    // workspace payload. RLS supplies the office boundary: Super Admin gets
+    // every office, while branch roles receive only their permitted office.
+    // Both Study Abroad and Direct Visa enquiries stay visible unless the
+    // person deliberately chooses a service filter.
+    const enquiryList = enquiryPageRecords;
     const list =
       active === "enquiries"
         ? enquiryList
@@ -13068,15 +13324,21 @@ export default function Home() {
             : ""
         }
         query={query}
-        onQueryChange={setQuery}
+        onQueryChange={active === "enquiries" ? changeEnquiryQuery : setQuery}
         searchResults={globalSearchResults}
         searchLoading={globalSearchLoading}
         onOpenSearchResult={openGlobalSearchResult}
+        serverPaged={active === "enquiries"}
+        serverPage={enquiryPage}
+        onServerPageChange={changeEnquiryPage}
+        filterBranches={active === "enquiries" ? branches : []}
+        filterStaff={active === "enquiries" ? staff : []}
+        onDirectoryFiltersChange={active === "enquiries" ? changeEnquiryFilters : undefined}
         loading={active === "enquiries" && enquiriesLoading}
         syncing={active === "enquiries" && enquiriesSyncing}
         totalRecords={active === "enquiries" ? enquiriesTotal : undefined}
         error={active === "enquiries" ? enquiriesError : ""}
-        onRetry={() => void loadEnquiryDirectory()}
+        onRetry={() => void loadEnquiryDirectory(true)}
         openModal={open}
         onSelect={openCaseWorkspace}
         onAddNote={async (record, note) => {

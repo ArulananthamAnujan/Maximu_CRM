@@ -60,3 +60,34 @@ test("document and appointment registers retain notes and dates in their list vi
   assert.match(page, /Recorded \$\{orgDateTime\(d\.createdAt\)\}/);
   assert.match(page, /a\.responseNote \? <small>/);
 });
+
+test("the audited legacy replacement keeps every non-zero register and enquiry filter visible", async () => {
+  const page = await read("app/page.tsx");
+  const route = await read("app/api/crm/enquiries/route.ts");
+  const audit = await read("LEGACY_CRM_PARITY.md");
+  for (const count of ["5,292", "320", "54", "91", "24", "56"])
+    assert.match(audit, new RegExp(count.replace(",", ",")));
+  for (const label of [
+    "More legacy filters",
+    "Assigned staff",
+    "Enquiry status",
+    "Source / reference",
+    "Highest qualification",
+    "English test",
+    "Spouse / dependant",
+    "Created from",
+    "Updated to",
+  ]) assert.match(page, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  for (const parameter of [
+    "ownerId",
+    "statusFilter",
+    "sourceFilter",
+    "intake",
+    "qualification",
+    "testGiven",
+    "spouse",
+    "createdFrom",
+    "updatedTo",
+  ]) assert.match(route, new RegExp(parameter));
+  assert.match(audit, /do not manufacture placeholder clients/i);
+});
