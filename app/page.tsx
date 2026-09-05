@@ -12087,6 +12087,11 @@ export default function Home() {
         }
       }
 
+      // New clients enter the CRM as enquiry-stage cases. Editing an existing
+      // enquiry also changes the dedicated directory, while saving records in
+      // later lifecycle stages does not need to reload all enquiry pages.
+      const invalidatesEnquiries =
+        kind === "case" && (!editing || editing.lifecycleStage === "enquiry");
       setModal(null);
       setEditing(null);
       setDuplicates(null);
@@ -12105,7 +12110,7 @@ export default function Home() {
                   : "Invoice created with a Drive PDF slot ready"
                 : `${kind[0].toUpperCase() + kind.slice(1)} saved`,
       );
-      queueWorkspaceRefresh(kind === "enquiry");
+      queueWorkspaceRefresh(invalidatesEnquiries);
       return true;
     } catch (reason) {
       const message =
