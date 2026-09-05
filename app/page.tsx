@@ -2265,21 +2265,21 @@ function CaseWorkspace({
 
   return (
     <article className={`panel journeyListPanel journeyList-${module}`}>
-      <div className="journeyListIntro">
-        <div>
-          <span className="kicker">FULL {title.toUpperCase()} VIEW</span>
-          <h2>{title}</h2>
-          <p>{module === "enquiries" ? "Find every client, review the essentials and take the next action." : "Everything the branch needs for the next action, without opening each case."}</p>
+      {module !== "enquiries" ? (
+        <div className="journeyListIntro">
+          <div>
+            <span className="kicker">FULL {title.toUpperCase()} VIEW</span>
+            <h2>{title}</h2>
+            <p>Everything the branch needs for the next action, without opening each case.</p>
+          </div>
+          <div className="journeyRecordSummary">
+            <span className="journeyRecordCount"><strong>{recordCount.toLocaleString()}</strong> records</span>
+            {!loading && !error && filteredCases.length > 0 ? (
+              <small>Showing {firstRecord.toLocaleString()}–{lastRecord.toLocaleString()}</small>
+            ) : null}
+          </div>
         </div>
-        <div className="journeyRecordSummary">
-          <span className="journeyRecordCount"><strong>{recordCount.toLocaleString()}</strong> records</span>
-          {syncing ? (
-            <small>Loaded {cases.length.toLocaleString()} of {totalRecords ? totalRecords.toLocaleString() : "all"}</small>
-          ) : !loading && !error && filteredCases.length > 0 ? (
-            <small>Showing {firstRecord.toLocaleString()}–{lastRecord.toLocaleString()}</small>
-          ) : null}
-        </div>
-      </div>
+      ) : null}
       {module === "enquiries" ? (
         <div className="enquiryDirectoryTools" aria-label="Search and filter enquiries">
           <form
@@ -2294,7 +2294,7 @@ function CaseWorkspace({
             <input
               value={searchDraft}
               onChange={(event) => setSearchDraft(event.target.value)}
-              placeholder="Search client name, reference, email, phone, office or country"
+              placeholder="Search this directory by client, reference, email, phone, office or country"
               aria-label="Search enquiries"
             />
             {searchDraft ? (
@@ -2317,6 +2317,16 @@ function CaseWorkspace({
           <div className="enquiryScopeLabel">
             <Building2 size={17} />
             <span><small>Access</small><strong>{scopeLabel || "Your permitted offices"}</strong></span>
+          </div>
+          <div className="enquiryDirectorySummary" aria-live="polite">
+            <strong>{recordCount.toLocaleString()}</strong>
+            {syncing ? (
+              <span>Loaded {cases.length.toLocaleString()} of {totalRecords ? totalRecords.toLocaleString() : "all"}</span>
+            ) : !loading && !error && filteredCases.length > 0 ? (
+              <span>{firstRecord.toLocaleString()}–{lastRecord.toLocaleString()} visible</span>
+            ) : (
+              <span>Total enquiries</span>
+            )}
           </div>
           <div className="enquiryDirectoryFilters">
             <label>
@@ -11503,7 +11513,6 @@ export default function Home() {
     [staff, setStaff] = useState<StaffRecord[]>([]),
     [branches, setBranches] = useState<BranchRecord[]>([]),
     [schemaWarning, setSchemaWarning] = useState<string>(""),
-    [truncated, setTruncated] = useState<string[]>([]),
     [storageConnected, setStorageConnected] = useState(false);
   // The module a role lands on is chosen once per sign-in. The workspace loads
   // in two steps -- the session first, then the records -- and the navigation is
@@ -11717,7 +11726,6 @@ export default function Home() {
       setSchemaWarning(
         typeof result.schemaWarning === "string" ? result.schemaWarning : "",
       );
-      setTruncated(Array.isArray(result.truncated) ? result.truncated : []);
       setStorageConnected(result.capabilities?.documentStorage === true);
       setBranches((result.branches || []) as BranchRecord[]);
       setEnquiriesLoaded(false);
@@ -12935,16 +12943,6 @@ export default function Home() {
           <span>{schemaWarning}</span>
         </div>
       )}
-      {active !== "enquiries" && truncated.length > 0 && (
-        <div className="truncationBanner" role="status">
-          <AlertTriangle size={15} />
-          <span>
-            Showing only the most recent records for {truncated.join(", ")} --
-            there may be more. Narrow a filter or ask an administrator if you
-            need to see further back.
-          </span>
-        </div>
-      )}
       <Sidebar
         active={active}
         setActive={setActive}
@@ -13251,10 +13249,10 @@ export default function Home() {
               </h1>
               <p>{active === "dashboard" ? "Here is the work that needs your attention today." : screenMeta[2]}</p>
             </div>
-            {role !== "client" && (["dashboard", "enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete", "reports", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) ? (
+            {role !== "client" && (["enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete", "reports", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) ? (
               <div className="titleActions">
                 {(["reports", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) && <button className="ghostButton" onClick={exportData}><Download size={16} />Export</button>}
-                {(["dashboard", "enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete"] as ModuleKey[]).includes(active) && <button className="primaryButton" onClick={() => open("case")}><Plus size={16} />{serviceMode === "study" ? "New enquiry" : "New client"}</button>}
+                {(["enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete"] as ModuleKey[]).includes(active) && <button className="primaryButton" onClick={() => open("case")}><Plus size={16} />{serviceMode === "study" ? "New enquiry" : "New client"}</button>}
               </div>
             ) : null}
           </div>

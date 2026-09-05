@@ -8244,8 +8244,7 @@ body {
 }
 .caseWindow > .sidebar,
 .caseWindow > .mainArea,
-.caseWindow > .schemaBanner,
-.caseWindow > .truncationBanner {
+.caseWindow > .schemaBanner {
   display: none;
 }
 .caseWindow .drawerBackdrop {
@@ -9059,23 +9058,6 @@ body {
   .visaChecklist { max-height: 55vh; }
 }
 
-/* A dataset fetched right up to its cap: told rather than silently short. */
-.truncationBanner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 9px 14px;
-  background: #7c2d12;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  text-align: center;
-}
-.truncationBanner svg {
-  flex: 0 0 auto;
-}
-
 /* Client search picker used by the duplicate-merge tool. */
 .pickedRecord {
   display: flex;
@@ -9610,7 +9592,7 @@ body { overflow-x: hidden; }
 }
 .enquiryDirectoryTools {
   display: grid;
-  grid-template-columns: minmax(360px, 1.7fr) minmax(230px, .8fr);
+  grid-template-columns: minmax(360px, 1.65fr) minmax(230px, .72fr) minmax(120px, .36fr);
   gap: 12px 16px;
   padding: 16px 20px;
   border-bottom: 1px solid #dfe9ef;
@@ -9720,6 +9702,32 @@ body { overflow-x: hidden; }
 .enquiryScopeLabel strong { display: block; min-width: 0; }
 .enquiryScopeLabel small { color: #6f8797; font-size: 11px; line-height: 1; text-transform: uppercase; letter-spacing: .06em; }
 .enquiryScopeLabel strong { margin-top: 4px; overflow: hidden; color: #173c54; font-size: 14px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+.enquiryDirectorySummary {
+  display: grid;
+  min-width: 0;
+  height: 44px;
+  align-content: center;
+  justify-items: end;
+  padding: 0 12px;
+  border: 1px solid #d5e3eb;
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgba(17, 66, 94, .045);
+}
+.enquiryDirectorySummary strong {
+  color: #153b53;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.enquiryDirectorySummary span {
+  margin-top: 4px;
+  color: #738998;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
+}
 .enquiryClearFilters {
   display: inline-flex;
   height: 41px;
@@ -9740,7 +9748,6 @@ body { overflow-x: hidden; }
 .journeyList-enquiries .journeyDataRow {
   grid-template-columns: minmax(0, 1.18fr) minmax(0, .92fr) minmax(0, 1.14fr) minmax(0, 1.08fr) minmax(0, 1.06fr) 142px;
 }
-.journeyList-enquiries .journeyListIntro p { font-size: 13px; }
 .enquiryPriority {
   display: inline-flex;
   width: max-content;
@@ -9936,7 +9943,7 @@ body { overflow-x: hidden; }
 .taskDueBlock.overdueFact strong { color: #c94b3f; }
 
 @media (max-width: 1180px) {
-  .enquiryDirectoryTools { grid-template-columns: minmax(300px, 1fr) minmax(210px, .65fr); }
+  .enquiryDirectoryTools { grid-template-columns: minmax(300px, 1fr) minmax(210px, .65fr) minmax(110px, .35fr); }
   .enquiryDirectoryFilters { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
   .journeyDataHeader,
   .journeyDataRow { grid-template-columns: minmax(160px, 1fr) minmax(170px, 1fr) minmax(160px, .9fr) minmax(190px, 1.2fr); }
@@ -9952,6 +9959,7 @@ body { overflow-x: hidden; }
   .enquiryDirectoryTools { grid-template-columns: 1fr; padding: 14px 17px; }
   .enquiryDirectoryFilters { grid-template-columns: 1fr; }
   .enquiryDirectorySearch { grid-column: 1; }
+  .enquiryDirectorySummary { justify-items: start; }
   .enquirySearchButton { width: 38px; padding: 0; }
   .enquirySearchButton span { display: none; }
   .journeyListIntro,
