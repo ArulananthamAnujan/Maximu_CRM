@@ -259,6 +259,18 @@ test("both deployment targets send the same security headers", async () => {
   }
 });
 
+test("the CRM entry document revalidates after every production release", async () => {
+  const next = await read("next.config.ts");
+  const netlify = await read("netlify.toml");
+  const worker = await read("worker/index.ts");
+  for (const source of [next, netlify, worker]) {
+    assert.match(source, /no-cache, max-age=0, must-revalidate/);
+  }
+  assert.match(next, /X-Maximus-Build/);
+  assert.match(next, /COMMIT_REF/);
+  assert.match(netlify, /Netlify-CDN-Cache-Control/);
+});
+
 test("the migration printer emits SQL, never its own source", async () => {
   // A previous instruction led to the bash script being pasted into the SQL
   // editor, which fails with: syntax error at or near "#!/".

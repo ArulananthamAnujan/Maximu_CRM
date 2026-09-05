@@ -23,3 +23,12 @@
   for = "/api/*"
   [headers.values]
     Cache-Control = "no-store, max-age=0"
+
+# The authenticated CRM is a long-lived client application. Revalidate its
+# entry document after each deploy so an open staff browser cannot keep loading
+# an earlier dashboard bundle; hashed JS and CSS retain their normal fast cache.
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache, max-age=0, must-revalidate"
+    Netlify-CDN-Cache-Control = "no-cache, max-age=0, must-revalidate"

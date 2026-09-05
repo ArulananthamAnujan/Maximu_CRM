@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const buildRef = (process.env.COMMIT_REF || process.env.BUILD_ID || "development").slice(0, 12);
+
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -18,6 +20,14 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
+      {
+        source: "/",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, max-age=0, must-revalidate" },
+          { key: "Netlify-CDN-Cache-Control", value: "no-cache, max-age=0, must-revalidate" },
+          { key: "X-Maximus-Build", value: buildRef },
+        ],
+      },
       { source: "/api/:path*", headers: [{ key: "Cache-Control", value: "no-store, max-age=0" }] },
     ];
   },

@@ -190,6 +190,9 @@ const worker = {
     headers.set("Cross-Origin-Opener-Policy", "same-origin");
     headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
     headers.set("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    if (url.pathname === "/") {
+      headers.set("Cache-Control", "no-cache, max-age=0, must-revalidate");
+    }
     if (url.pathname.startsWith("/api/")) {
       headers.set("Cache-Control", "no-store, max-age=0");
       headers.set("X-Request-Id", request.headers.get("cf-ray") || crypto.randomUUID());
