@@ -120,7 +120,7 @@ The repeated main-branch failures stopped at ESLint (React effect-state errors
 and unused bindings); Netlify builds alone did not establish a passing CI run.
 The repair removes redundant search state, cancels stale Gmail requests, and
 preserves the unused campaign component separately instead of discarding it.
-Local lint has zero warnings, 135 unit tests pass, and both build paths pass.
+Local lint has zero warnings, 137 unit tests pass, and both build paths pass.
 
 The case view now uses one client header and horizontal section navigation,
 compact overview columns, visible notes and applications, and a disclosure for
@@ -135,4 +135,14 @@ been corrected while preserving portal/cross-branch denial tests. The branch
 work tests additionally found that move_case_lifecycle still used a client
 ownership guard, contradicting migration 0035's case boundary; migration 0039
 aligns that guard with can_modify_case, retaining SECURITY INVOKER and stage
-validation. Production application of 0039 and final CI acceptance are pending.
+validation. Migration 0039 was applied successfully in production after the real PostgreSQL
+security suite passed. CI run 34107483986 passed all 487 feature-audit checks;
+run 34108202202 passed the build and database/feature jobs again. Browser
+acceptance and the application release remain pending.
+
+
+The smaller workspace feed also hid enquiry-stage parents referenced by
+applications, visa matters, documents and invoices, producing blank client
+names. It now resolves only the missing referenced parents in bounded batches.
+Portal reads include the linked client's enquiry-stage journey. Two worker
+regression tests cover these cases without reinstating the full enquiry load.

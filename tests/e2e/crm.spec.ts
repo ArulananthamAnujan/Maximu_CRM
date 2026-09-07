@@ -27,6 +27,16 @@ async function signIn(page: Page, email: string) {
   await expect(page.locator(".appShell")).toBeVisible({ timeout: 25_000 });
 }
 
+async function navigateTo(page: Page, name: string) {
+  const button = page.locator(".sidebar").getByRole("button", { name, exact: true });
+  const inViewport = await button.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return rect.right > 0 && rect.left >= 0 && rect.top < innerHeight;
+  });
+  if (!inViewport) await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
+  await button.click();
+}
+
 /** Opens the Enquiries list and waits for it to be the screen on show. */
 async function openEnquiries(page: Page) {
   if (await page.locator(".journeyList-enquiries").isVisible()) return;
@@ -395,6 +405,10 @@ test("Defer is on the case pipeline and a case can be parked there", async ({
     { timeout: 25_000 },
   );
 
+  // The refreshed case keeps stage actions behind the compact disclosure.
+  if (!(await drawer.locator(".caseStageControls").evaluate((el) => (el as HTMLDetailsElement).open))) {
+    await drawer.locator(".caseStageControls summary").click();
+  }
   // And it resumes into whichever stage the work restarts at.
   await expect(
     drawer.getByRole("button", { name: /resume in student/i }),
@@ -535,7 +549,7 @@ test("integration status is read from the server, not asserted", async ({
   await expect(
     page.locator(".integrationState.not_configured").first(),
   ).toBeVisible();
-  await expect(page.getByText(/gmail sending/i)).toBeVisible();
+  await expect(page.getByText(/gmail inbox and sending/i)).toBeVisible();
 });
 
 /** Buttons a person can see but a screen reader would announce as nothing. */
@@ -569,7 +583,7 @@ const NAMED_SCREENS = [
 test("every button a person can press has a name", async ({ page }) => {
   await signIn(page, OWNER);
   for (const screen of NAMED_SCREENS) {
-    await page.getByRole("button", { name: screen, exact: true }).click();
+    await navigateTo(page, screen);
     expect(await unnamedButtons(page), `unnamed buttons on ${screen}`).toEqual(
       [],
     );
@@ -583,7 +597,7 @@ test("every button still has a name on a phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const screen of NAMED_SCREENS) {
     await page.getByRole("button", { name: "Open case navigation" }).click();
-    await page.getByRole("button", { name: screen, exact: true }).click();
+    await navigateTo(page, screen);
     expect(
       await unnamedButtons(page),
       `unnamed buttons on ${screen} at 390px`,
@@ -637,7 +651,7 @@ test("the staff screen shows the team rather than role artwork", async ({
   await expect(table).toContainText("officer@maximus.test");
 });
 
-test("an owner creates a staff account and is given the password to hand over", async ({
+test("an owner creates a staff account with secure setup instructions", async ({
   page,
 }) => {
   await signIn(page, OWNER);
@@ -655,7 +669,7 @@ test("an owner creates a staff account and is given the password to hand over", 
 
   const handover = page.locator(".handoverPanel");
   await expect(handover).toBeVisible({ timeout: 25_000 });
-  await expect(handover.locator("code")).not.toBeEmpty();
+  await expect(handover).toContainText(/secure account setup email|secure setup link/i);
   await expect(page.locator(".boardTable").first()).toContainText(
     "browser.officer@maximus.test",
   );
@@ -739,7 +753,7 @@ test("the client portal never uses internal finance language", async ({
 }) => {
   await signIn(page, CLIENT);
   for (const screen of ["Invoices", "Messages", "Documents", "Journey"]) {
-    await page.getByRole("button", { name: screen, exact: true }).click();
+    await navigateTo(page, screen);
     const body = (await page.locator("body").innerText()).toLowerCase();
     for (const forbidden of [
       "commission",

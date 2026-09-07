@@ -140,3 +140,27 @@
 @media (prefers-reduced-motion: reduce) {
   .appShell *, .appShell *::before, .appShell *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* Detailed application and visa records share the same compact rhythm. */
+.appShell .detailedRecordsHead { padding: 16px; gap: 14px; }
+.appShell .detailedRecordsHead h2 { font-size: 1.25rem; margin: 3px 0; }
+.appShell .detailedRecordsHead p { display: none; }
+.appShell .detailedRecordList { gap: 10px; padding: 0 16px 16px; }
+.appShell .detailedRecordCard { min-width: 0; padding: 14px; gap: 16px; border: 1px solid #dce4e9; border-radius: 8px; box-shadow: none; grid-template-columns: minmax(150px,190px) minmax(0,1fr) auto; }
+.appShell .detailedRecordIdentity { min-width: 0; }
+.appShell .detailedRecordIdentity h3 { font-size: 1rem; line-height: 1.4; }
+.appShell .detailedRecordIdentity :is(p,small) { font-size: .875rem; overflow-wrap: anywhere; }
+.appShell .detailedRecordFacts { min-width: 0; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px 14px; }
+.appShell .detailedRecordFacts > span { min-width: 0; padding: 0; }
+.appShell .detailedRecordFacts :is(small,strong) { font-size: .875rem; line-height: 1.45; overflow-wrap: anywhere; }
+.appShell .detailedRecordFacts small { color: #647582; font-weight: 400; }
+.appShell .recordOpenButton { align-self: start; min-height: 36px; font-size: .875rem; }
+@media (max-width: 1100px) {
+  .appShell .detailedRecordCard { grid-template-columns: minmax(0,1fr); }
+  .appShell .detailedRecordFacts { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 600px) {
+  .appShell .detailedRecordList { padding-inline: 10px; }
+  .appShell .detailedRecordFacts { grid-template-columns: minmax(0,1fr); }
+  .appShell .recordOpenButton { min-height: 44px; }
+}
