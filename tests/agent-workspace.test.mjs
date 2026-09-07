@@ -22,6 +22,12 @@ async function fixture(run, options = {}) {
     if (url.pathname === '/auth/v1/user') return send(200, { id: PROFILE, email: 'staff@example.test' });
     const table = url.pathname.split('/').pop();
     if (table === 'profiles') return send(200, [{ id: PROFILE, organisation_id: ORG, branch_id: BRANCH, level: 'staff', active: true, display_name: 'Test officer' }]);
+    if (table === 'invoice_ledger_action') {
+      const message = options.invoiceState === 'void' ? 'This invoice is voided or refunded.'
+        : body.p_currency && body.p_currency !== 'AUD' ? 'Transaction currency must match the invoice currency.'
+        : body.p_amount > 100 ? 'Amount exceeds the outstanding balance after credit notes.' : null;
+      return message ? send(400, { code: '22023', message }) : send(200, { ok: true, paymentId: id(31), paid: body.p_amount });
+    }
     if (req.method !== 'GET') {
       if (table === 'clients') { if (options.denyClientWrite) return send(200, []); Object.assign(client, body); return send(200, [client]); }
       if (table === 'client_education_history' && req.method === 'PATCH') return send(200, [{ id: id(20), ...body }]);
@@ -166,17 +172,17 @@ test('history corrections cannot target another client’s row', async () => fix
 
 test('finance rejects overpayments before creating payment or receipt records', async () => fixture(async ({ call, requests }) => {
   assert.equal((await call('/api/crm/operations', { action: 'record_payment', invoiceId: id(30), amount: 101 })).status, 400);
-  assert.equal(requests.filter(r => r.method !== 'GET').length, 0);
+  assert.equal(requests.filter(r => r.method !== 'GET' && !r.url.pathname.includes('/rpc/')).length, 0);
 }));
 
 test('finance rejects a mismatched currency rather than silently mixing totals', async () => fixture(async ({ call, requests }) => {
   assert.equal((await call('/api/crm/operations', { action: 'record_payment', invoiceId: id(30), amount: 10, currency: 'USD' })).status, 400);
-  assert.equal(requests.filter(r => r.method !== 'GET').length, 0);
+  assert.equal(requests.filter(r => r.method !== 'GET' && !r.url.pathname.includes('/rpc/')).length, 0);
 }));
 
 test('voided invoices cannot receive new payments', async () => fixture(async ({ call, requests }) => {
   assert.equal((await call('/api/crm/operations', { action: 'record_payment', invoiceId: id(30), amount: 10 })).status, 400);
-  assert.equal(requests.filter(r => r.method !== 'GET').length, 0);
+  assert.equal(requests.filter(r => r.method !== 'GET' && !r.url.pathname.includes('/rpc/')).length, 0);
 }, { invoiceState: 'void' }));
 
 test('Gmail does not claim connected when its saved authorization is missing', async () => fixture(async ({ call }) => {
@@ -196,3 +202,21 @@ test('agent presentation keeps readable text and does not reintroduce sidebar of
   assert.match(page, /Retry loading case/);
   assert.match(page, /<ClientProfileEditor/);
 });
+
+
+test('history detail corrections preserve unrelated imported values', async () => fixture(async ({ call, requests }) => {
+  const response = await call('/api/crm/intake', { action: 'education', clientId: CLIENT, rowId: id(20), institution: 'Test', qualification: 'Degree', details: { yearOfPassing: 2020, backlogs: 0 } });
+  assert.equal(response.status, 200);
+  const patch = requests.find(r => r.method === 'PATCH' && r.url.pathname.endsWith('client_education_history'));
+  assert.deepEqual(patch.body.details, { legacy_data: { source: 'retained' }, yearOfPassing: 2020, backlogs: 0 });
+}));
+
+test('payment request IDs reach the atomic operation unchanged', async () => fixture(async ({ call, requests }) => {
+  const response = await call('/api/crm/operations', { action: 'record_payment', invoiceId: id(30), requestId: id(40), amount: 25, currency: 'AUD' });
+  assert.equal(response.status, 200);
+  const rpc = requests.find(r => r.url.pathname.endsWith('invoice_ledger_action'));
+  assert.equal(rpc.body.p_request, id(40));
+  assert.equal(rpc.body.p_invoice, id(30));
+  assert.equal(rpc.body.p_action, 'payment');
+  assert.equal(requests.filter(r => r.method !== 'GET' && !r.url.pathname.includes('/rpc/')).length, 0);
+}));

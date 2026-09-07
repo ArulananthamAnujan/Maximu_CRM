@@ -24,7 +24,7 @@ test("client appointment requests have a staff response lifecycle", () => {
 test("finance supports allocated payments, receipts, refunds and reconciliation", () => {
   for (const table of ["payment_receipts", "invoice_reminders", "reconciliation_runs"])
     assert.match(migration, new RegExp(`create table if not exists public\\.${table}`));
-  assert.match(operations, /Payment exceeds the outstanding balance/);
+  assert.match(read("supabase/migrations/0040_atomic_invoice_ledger.sql"), /Amount exceeds the outstanding balance after credit notes/);
   assert.match(operations, /receiptNumber/);
   assert.match(operations, /action === "record_refund"/);
   assert.match(operations, /action === "reconcile_payments"/);

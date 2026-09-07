@@ -37,6 +37,13 @@ export async function POST(request: Request) {
     const linked = await ownClientId(session.identity.profileId, token);
     const clientId = uuid(body.clientId || linked, "Client");
     if (session.identity.role === "client" && clientId !== linked) throw new LiveAccessError(403, "You can only update your own intake.");
+    if (isObject(body.details)) {
+      for (const [key, min, max] of [["backlogs", 0, 999], ["yearOfPassing", 1900, 2200]] as const) {
+        const value = body.details[key];
+        if (value !== undefined && value !== "" && (!Number.isInteger(Number(value)) || Number(value) < min || Number(value) > max))
+          throw new InputError(`${key === "backlogs" ? "Backlogs" : "Year of passing"} must be a whole number between ${min} and ${max}.`);
+      }
+    }
 
     const saveHistory = async (table: string, value: Json, accessToken: string) => {
       if (!body.rowId) return insert(table, value, accessToken);
@@ -71,7 +78,9 @@ export async function POST(request: Request) {
         const custom = isObject(current.custom_fields) ? { ...current.custom_fields } : {};
         if ("alternatePhone" in body) custom.alternatePhone = optional(body.alternatePhone);
         if ("passportIssueDate" in body) custom.passportIssueDate = validDate(body.passportIssueDate);
-        if ("alternatePhone" in body || "passportIssueDate" in body) changes.custom_fields = custom;
+        const customKeys = ["visitedOtherCountry", "travelCountry", "travelDate", "travelPurpose", "hasVisaRefusal", "refusalDetails", "gapFrom", "gapTo", "gapReason"];
+        for (const key of customKeys) if (key in body) custom[key] = ["travelDate", "gapFrom", "gapTo"].includes(key) ? validDate(body[key]) : optional(body[key]);
+        if (["alternatePhone", "passportIssueDate", ...customKeys].some(key => key in body)) changes.custom_fields = custom;
         const passport = optional(body.passportNumber);
         if (passport) { changes.passport_number_encrypted = await protect(passport); changes.passport_masked = mask(passport); }
       }

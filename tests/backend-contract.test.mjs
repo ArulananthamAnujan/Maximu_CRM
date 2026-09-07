@@ -554,8 +554,10 @@ test("invoice PDFs use the protected Drive document pipeline", async () => {
   const workspace = await read("app/api/crm/workspace/route.ts");
   const documents = await read("app/api/crm/documents/route.ts");
   const page = await read("app/page.tsx");
-  assert.match(workspace, /source: "invoice_pdf"/);
-  assert.match(workspace, /10 Accounts and Receipts/);
+  assert.match(workspace, /create_case_invoice/);
+  const ledger = await read("supabase/migrations/0040_atomic_invoice_ledger.sql");
+  assert.match(ledger, /'source','invoice_pdf'/);
+  assert.match(ledger, /10 Accounts and Receipts/);
   assert.match(documents, /\.\.\.\(\(document\.metadata/);
   assert.match(page, /name="invoicePdf"/);
   assert.match(page, /invoice_pdf_prepare/);

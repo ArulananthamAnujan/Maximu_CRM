@@ -221,7 +221,7 @@ const task = ws6.json?.tasks?.[0];
 const appointment = ws6.json?.appointments?.[0];
 const document = ws6.json?.documents?.[0];
 const message = ws6.json?.messages?.[0];
-const invoice = ws6.json?.invoices?.[0];
+const invoice = ws6.json?.invoices?.find(row => row.id === inv.json?.invoiceId);
 const template = ws6.json?.templates?.[0];
 const mutate = (resource, operation, id, extra = {}, cookie = officer.cookie) =>
   call("/api/crm/workspace", { method: "POST", cookie,
@@ -1774,6 +1774,42 @@ expect("the merged-away case now belongs to the surviving client",
   mergedCase?.name === "Merge Keep", JSON.stringify(mergedCase));
 
 // ---------------------------------------------------------------------------
+section("Atomic invoice ledger and retries");
+const atomicInvoiceRequest = { action: "invoice", requestId: crypto.randomUUID(), caseId: "e0000000-0000-4000-8000-000000000001", amount: "100", initialPaid: "20", currency: "AUD" };
+const atomicCreated = await mk(atomicInvoiceRequest, owner.cookie);
+expect("invoice and initial payment commit together", atomicCreated.status === 200, JSON.stringify(atomicCreated.json));
+const atomicReplay = await mk(atomicInvoiceRequest, owner.cookie);
+expect("invoice retry returns the same invoice", atomicReplay.status === 200 && atomicReplay.json?.invoiceId === atomicCreated.json?.invoiceId && atomicReplay.json?.replayed === true, JSON.stringify(atomicReplay.json));
+const atomicId = atomicCreated.json?.invoiceId;
+const paymentRequest = { action: "record_payment", invoiceId: atomicId, requestId: crypto.randomUUID(), amount: 30, currency: "AUD" };
+const concurrentSame = await Promise.all([opsPost(paymentRequest, owner.cookie), opsPost(paymentRequest, owner.cookie)]);
+expect("simultaneous retries create one payment and one receipt", concurrentSame.every(r => r.status === 200) && concurrentSame[0].json?.paymentId === concurrentSame[1].json?.paymentId && concurrentSame[0].json?.receiptId === concurrentSame[1].json?.receiptId && concurrentSame.every(r => r.json?.paid === 50), JSON.stringify(concurrentSame));
+const alteredRetry = await opsPost({ ...paymentRequest, amount: 31 }, owner.cookie);
+expect("a request ID cannot be reused with a different amount", alteredRetry.status >= 400, JSON.stringify(alteredRetry.json));
+const competing = await Promise.all([1,2].map(() => opsPost({ action: "record_payment", invoiceId: atomicId, requestId: crypto.randomUUID(), amount: 40, currency: "AUD" }, owner.cookie)));
+expect("concurrent payments cannot exceed the invoice balance", competing.filter(r => r.status === 200).length === 1 && competing.filter(r => r.status >= 400).length === 1, JSON.stringify(competing));
+const creditRequest = { amount: 10, requestId: crypto.randomUUID(), reason: "Controlled test credit" };
+const creditA = await mutate("invoice", "credit", atomicId, creditRequest, owner.cookie);
+const creditB = await mutate("invoice", "credit", atomicId, creditRequest, owner.cookie);
+expect("credit-note retry returns the same ledger entry", creditA.status === 200 && creditB.status === 200 && creditA.json?.creditId === creditB.json?.creditId, JSON.stringify([creditA.json,creditB.json]));
+expect("credit notes prevent later overpayment", (await opsPost({ action: "record_payment", invoiceId: atomicId, amount: 1 }, owner.cookie)).status >= 400);
+expect("paid invoices cannot be voided without a refund", (await mutate("invoice", "delete", atomicId, {}, owner.cookie)).status >= 400);
+const reconciliationA = await opsPost({ action: "start_reconciliation", source: "Controlled test", statementTotal: 30, currency: "AUD" }, owner.cookie);
+const paymentToReconcile = concurrentSame[0].json?.paymentId;
+const reconciliationBody = { action: "reconcile_payments", reconciliationId: reconciliationA.json?.reconciliationId, paymentIds: [paymentToReconcile] };
+const missingPayment = await opsPost({ ...reconciliationBody, paymentIds: [paymentToReconcile, crypto.randomUUID()] }, owner.cookie);
+expect("reconciliation rejects a missing payment without partial matching", missingPayment.status >= 400, JSON.stringify(missingPayment.json));
+const matchedA = await opsPost(reconciliationBody, owner.cookie);
+const matchedB = await opsPost(reconciliationBody, owner.cookie);
+expect("reconciliation retries retain one matched total", matchedA.status === 200 && matchedB.status === 200 && matchedA.json?.balanced && matchedB.json?.matchedTotal === 30, JSON.stringify([matchedA.json,matchedB.json]));
+const reconciliationB = await opsPost({ action: "start_reconciliation", source: "Second controlled statement", statementTotal: 30, currency: "AUD" }, owner.cookie);
+expect("a payment cannot be assigned to two statements", (await opsPost({ ...reconciliationBody, reconciliationId: reconciliationB.json?.reconciliationId }, owner.cookie)).status >= 400);
+const refundRequest = { action: "record_refund", invoiceId: atomicId, requestId: crypto.randomUUID(), amount: 90, currency: "AUD" };
+const refundA = await opsPost(refundRequest, owner.cookie);
+const refundB = await opsPost(refundRequest, owner.cookie);
+expect("refund retries return the same reversal and zero balance", refundA.status === 200 && refundB.status === 200 && refundA.json?.refundId === refundB.json?.refundId && refundB.json?.paid === 0, JSON.stringify([refundA.json,refundB.json]));
+expect("another branch cannot post an invoice transaction", (await opsPost({ action: "record_payment", invoiceId: atomicId, amount: 1 }, colombo.cookie)).status >= 400);
+
 section("Credit notes reduce a balance without a refund");
 const creditCase = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
   body: { action: "case", name: "Credit Note Client", phone: "+61400000780",

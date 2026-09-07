@@ -9,6 +9,7 @@ const groups: { title: string; fields: Field[] }[] = [
   { title: "Personal details", fields: [["gender", "Gender"], ["marital_status", "Marital status"], ["country_of_birth", "Country of birth"], ["current_country", "Current country"], ["preferred_language", "Preferred language"]] },
   { title: "Passport", fields: [["passport_country", "Passport country"], ["passportNumber", "New or corrected passport number"], ["passportIssueDate", "Passport issue date", "date"], ["passportExpiry", "Passport expiry date", "date"]] },
   { title: "Address", fields: [["line1", "Street address"], ["city", "City"], ["state", "State / province"], ["postcode", "Postcode"]] },
+  { title: "Travel, refusals and history gaps", fields: [["visitedOtherCountry", "Visited another country"], ["travelCountry", "Travel country"], ["travelDate", "Travel date", "date"], ["travelPurpose", "Travel purpose"], ["hasVisaRefusal", "Visa refusal"], ["refusalDetails", "Refusal details"], ["gapFrom", "Gap from", "date"], ["gapTo", "Gap to", "date"], ["gapReason", "Gap reason"]] },
 ];
 const object = (v: unknown): Row => v && typeof v === "object" && !Array.isArray(v) ? v as Row : {};
 const value = (v: unknown) => typeof v === "string" ? v : "";
@@ -22,6 +23,7 @@ export function ClientProfileEditor({ client, canModify, onSave }: {
   const address = object(client.address);
   const initial: Record<string, string> = {
     ...Object.fromEntries(Object.entries(client).map(([k, v]) => [k, value(v)])),
+    ...Object.fromEntries(["visitedOtherCountry", "travelCountry", "travelDate", "travelPurpose", "hasVisaRefusal", "refusalDetails", "gapFrom", "gapTo", "gapReason"].map(k => [k, value(custom[k])])),
     ...Object.fromEntries(["line1", "city", "state", "postcode"].map(k => [k, value(address[k])])),
     firstName: value(client.first_name), lastName: value(client.last_name), preferredName: value(client.preferred_name),
     dateOfBirth: value(client.date_of_birth), passportExpiry: value(client.passport_expiry),

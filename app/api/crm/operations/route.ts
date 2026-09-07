@@ -1,3 +1,4 @@
+import { recordInvoiceAction, financeRpc, FinanceInputError } from "@/server/finance";
 import { appendRefreshCookies, LiveAccessError, liveSession } from "@/server/supabase-session";
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
 import { EmailProviderError, sendEmail } from "@/server/email";
@@ -95,37 +96,10 @@ export async function POST(request: Request) {
           p_note: optional(body.note),
         }),
       }, token);
-    } else if (action === "record_payment") {
-      const amount = positiveNumber(body.amount, "Amount");
-      const invoiceId = uuid(body.invoiceId, "Invoice");
-      const [invoice] = await rest<Json[]>(`invoices?select=id,total,paid,currency,state,client_id,case_id&id=eq.${invoiceId}&limit=1`, token);
-      if (!invoice) throw new InputError("Invoice was not found.");
-      if (["void", "voided", "cancelled", "refunded"].includes(String(invoice.state))) throw new InputError("Payments cannot be recorded against a voided, cancelled or refunded invoice.");
-      const paymentCurrency = (optional(body.currency) || String(invoice.currency || "AUD")).toUpperCase();
-      if (paymentCurrency !== String(invoice.currency || "AUD").toUpperCase()) throw new InputError("Payment currency must match the invoice currency. Record a converted amount separately.");
-      const outstanding = Math.max(0, Number(invoice.total ?? 0) - Number(invoice.paid ?? 0));
-      if (amount > outstanding + 0.001) throw new InputError(`Payment exceeds the outstanding balance of ${outstanding.toFixed(2)}.`);
-      const paymentId = crypto.randomUUID();
-      const receiptId = crypto.randomUUID();
-      const receiptNumber = `RCT-${new Date().getUTCFullYear()}-${receiptId.slice(0, 8).toUpperCase()}`;
-      await insert("payments", { id: paymentId, organisation_id: org, invoice_id: invoiceId, amount, currency: paymentCurrency, method: optional(body.method), reference: optional(body.reference), external_reference: optional(body.externalReference), transaction_type: "payment", recorded_by: actor }, token);
-      await insert("payment_receipts", { id: receiptId, organisation_id: org, payment_id: paymentId, receipt_number: receiptNumber, issued_by: actor }, token);
-      const paid = Math.round((Number(invoice.paid ?? 0) + amount) * 100) / 100;
-      await patch("invoices", invoiceId, { paid, state: paid + 0.001 >= Number(invoice.total ?? 0) ? "paid" : "part_paid" }, token);
-      await insert("audit_events", { organisation_id: org, actor_id: actor, action: "payment.recorded", resource_type: "payment", resource_id: paymentId, case_id: invoice.case_id ?? null, summary: `Recorded payment and issued ${receiptNumber}`, after_data: { invoice_id: invoiceId, amount, receipt_number: receiptNumber } }, token);
-      return appendRefreshCookies(Response.json({ ok: true, paymentId, receiptId, receiptNumber, paid }), session.refreshed, request);
-    } else if (action === "record_refund") {
-      const amount = positiveNumber(body.amount, "Refund amount");
-      const invoiceId = uuid(body.invoiceId, "Invoice");
-      const [invoice] = await rest<Json[]>(`invoices?select=id,total,paid,currency,case_id&id=eq.${invoiceId}&limit=1`, token);
-      if (!invoice) throw new InputError("Invoice was not found.");
-      if (amount > Number(invoice.paid ?? 0) + 0.001) throw new InputError("Refund cannot exceed payments received.");
-      const paymentId = crypto.randomUUID();
-      await insert("payments", { id: paymentId, organisation_id: org, invoice_id: invoiceId, amount: -amount, currency: optional(body.currency) || invoice.currency || "AUD", method: optional(body.method), reference: optional(body.reason) || "Refund", external_reference: optional(body.externalReference), transaction_type: "refund", recorded_by: actor }, token);
-      const paid = Math.max(0, Math.round((Number(invoice.paid ?? 0) - amount) * 100) / 100);
-      await patch("invoices", invoiceId, { paid, state: paid <= 0 ? "refunded" : "part_paid" }, token);
-      await insert("audit_events", { organisation_id: org, actor_id: actor, action: "refund.recorded", resource_type: "payment", resource_id: paymentId, case_id: invoice.case_id ?? null, summary: `Recorded refund of ${amount.toFixed(2)}`, after_data: { invoice_id: invoiceId, amount, reason: optional(body.reason) } }, token);
-      return appendRefreshCookies(Response.json({ ok: true, refundId: paymentId, paid }), session.refreshed, request);
+    } else if (action === "record_payment" || action === "record_refund") {
+      positiveNumber(body.amount, "Amount");
+      const result = await recordInvoiceAction(body, action === "record_payment" ? "payment" : "refund", uuid(body.invoiceId, "Invoice"), token);
+      return appendRefreshCookies(Response.json(result), session.refreshed, request);
     } else if (action === "start_reconciliation") {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can reconcile payments.");
       const id = crypto.randomUUID();
@@ -136,13 +110,8 @@ export async function POST(request: Request) {
       const reconciliationId = uuid(body.reconciliationId, "Reconciliation");
       const paymentIds = Array.isArray(body.paymentIds) ? body.paymentIds.map((id) => uuid(id, "Payment")) : [];
       if (!paymentIds.length || paymentIds.length > 500) throw new InputError("Select between 1 and 500 payments.");
-      const payments = await rest<Json[]>(`payments?select=id,amount&organisation_id=eq.${org}&id=in.(${paymentIds.join(",")})`, token);
-      const matched = Math.round(payments.reduce((sum, row) => sum + Number(row.amount ?? 0), 0) * 100) / 100;
-      for (const payment of payments) await patch("payments", String(payment.id), { reconciliation_id: reconciliationId, reconciled_at: new Date().toISOString() }, token);
-      const [run] = await rest<Json[]>(`reconciliation_runs?select=statement_total&id=eq.${reconciliationId}&limit=1`, token);
-      const balanced = Math.abs(Number(run?.statement_total ?? 0) - matched) < 0.01;
-      await patch("reconciliation_runs", reconciliationId, { matched_total: matched, status: balanced ? "balanced" : "exception", completed_at: new Date().toISOString() }, token);
-      return appendRefreshCookies(Response.json({ ok: true, matchedTotal: matched, balanced }), session.refreshed, request);
+      const result = await financeRpc("reconcile_invoice_payments", { p_run: reconciliationId, p_payments: paymentIds }, token);
+      return appendRefreshCookies(Response.json(result), session.refreshed, request);
     } else if (action === "queue_overdue_reminder") {
       await insert("invoice_reminders", { id: crypto.randomUUID(), organisation_id: org, invoice_id: uuid(body.invoiceId, "Invoice"), reminder_type: optional(body.reminderType) || "manual", delivery_channel: "email", status: "queued", sent_by: actor }, token);
     } else if (action === "create_commission_claim") {
@@ -266,7 +235,7 @@ function isObject(value: unknown): value is Json { return typeof value === "obje
 function escapeHtml(value: string) { return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] || character); }
 class InputError extends Error {}
 function apiError(error: unknown): Response {
-  if (error instanceof InputError) return Response.json({ ok: false, error: error.message }, { status: 400 });
+  if (error instanceof InputError || error instanceof FinanceInputError) return Response.json({ ok: false, error: error.message }, { status: 400 });
   if (error instanceof EmailProviderError) return Response.json({ ok: false, error: error.message }, { status: error.status });
   if (error instanceof LiveAccessError) return Response.json({ ok: false, error: error.message }, { status: error.status });
   if (error instanceof SupabaseError) return Response.json({ ok: false, error: "The database rejected this operation." }, { status: error.status >= 400 && error.status < 500 ? error.status : 503 });

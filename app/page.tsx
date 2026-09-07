@@ -3586,7 +3586,7 @@ function MessagesView({
           <button disabled={gmailLoading} aria-label="Search Gmail">Search</button>
         </form>
         <div className="gmailAccount">
-          <span><strong>{mailbox?.email || "Maximus Gmail"}</strong><small>{mailbox?.connected ? "Connected to CRM" : "Not connected"}</small></span>
+          <span><strong>{mailbox?.email || "Maximus Gmail"}</strong><small>{!mailbox ? "Checking connection…" : mailbox.connected ? "Connected to CRM" : "Not connected"}</small></span>
           <div>{(mailbox?.email || "MG").slice(0, 2).toUpperCase()}</div>
         </div>
       </header>
@@ -3603,7 +3603,13 @@ function MessagesView({
           {mailbox?.connected ? <button className="gmailDisconnect" onClick={() => void disconnectMailbox()}>Disconnect Gmail</button> : null}
         </aside>
         <main className="gmailMailboxPane">
-          {!mailbox?.oauthConfigured || !mailbox.connected ? (
+          {!mailbox ? (
+            <div className="gmailConnectState" role="status">
+              <Mail size={42} />
+              <h1>{mailboxError ? "Gmail status could not be loaded" : "Checking your Gmail connection…"}</h1>
+              {mailboxError ? <><p>{mailboxError}</p><button onClick={() => void loadMailbox()}>Try again</button></> : <p>Your mailbox will appear here when the connection check finishes.</p>}
+            </div>
+          ) : !mailbox.oauthConfigured || !mailbox.connected ? (
             <div className="gmailConnectState">
               <Mail size={42} />
               <h1>Connect your Gmail inbox</h1>
@@ -9016,6 +9022,8 @@ function CaseDrawerBody({
                 ["From", "started_on"],
                 ["To", "completed_on"],
                 ["Result", "result"],
+                ["Year passed", "details.yearOfPassing"],
+                ["Backlogs", "details.backlogs"],
               ]}
               fields={[
                 ["institution", "Institution", "text", true],
@@ -9025,6 +9033,8 @@ function CaseDrawerBody({
                 ["startedOn", "Started", "date", false],
                 ["completedOn", "Completed", "date", false],
                 ["result", "Result", "text", false],
+                ["details.yearOfPassing", "Year of passing", "number", false],
+                ["details.backlogs", "Backlogs / failed subjects", "number", false],
               ]}
               action="education"
               canModify={canModify}
@@ -9041,6 +9051,7 @@ function CaseDrawerBody({
                 ["From", "started_on"],
                 ["To", "ended_on"],
                 ["Hours", "hours_per_week"],
+                ["Experience", "details.totalExperience"],
               ]}
               fields={[
                 ["employer", "Employer", "text", true],
@@ -9050,6 +9061,7 @@ function CaseDrawerBody({
                 ["endedOn", "Ended", "date", false],
                 ["hoursPerWeek", "Hours per week", "number", false],
                 ["duties", "Duties", "text", false],
+                ["details.totalExperience", "Total experience", "text", false],
               ]}
               action="employment"
               canModify={canModify}
@@ -9409,9 +9421,14 @@ function HistorySection({
 }) {
   const [adding, setAdding] = useState(false);
   const [editingRow, setEditingRow] = useState<Record<string, unknown> | null>(null);
-  const historyValue = (name: string) => {
+  const rowValue = (row: Record<string, unknown> | null, name: string) => {
+    if (name.startsWith("details.")) {
+      const details = row?.details as Record<string, unknown> | undefined;
+      const field = name.slice(8);
+      return details?.[field] ?? details?.[field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)] ?? "";
+    }
     const key = name.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
-    return editingRow?.[key] ?? "";
+    return row?.[key] ?? "";
   };
   return (
     <section className="caseWorkPanel">
@@ -9433,7 +9450,7 @@ function HistorySection({
               {rows.map((row, index) => (
                 <tr key={String(row.id ?? index)}>
                   {columns.map(([label, key]) => (
-                    <td key={label}>{humanise(row[key]) || "—"}</td>
+                    <td key={label}>{humanise(rowValue(row, key)) || "—"}</td>
                   ))}
                   {canModify && <td><button className="ghostButton" disabled={working} onClick={() => { setEditingRow(row); setAdding(true); }}>Edit</button></td>}
                 </tr>
@@ -9454,7 +9471,9 @@ function HistorySection({
             for (const [name, , kind] of fields) {
               const raw = data.get(name);
               if (raw === null) continue;
-              body[name] = kind === "number" && raw !== "" ? Number(raw) : raw;
+              const value = kind === "number" && raw !== "" ? Number(raw) : raw;
+              if (name.startsWith("details.")) body.details = { ...(body.details as Record<string, unknown> ?? {}), [name.slice(8)]: value };
+              else body[name] = value;
             }
             if (await onSave(body)) { setAdding(false); setEditingRow(null); }
           }}
@@ -9468,10 +9487,14 @@ function HistorySection({
                 type={kind === "number" ? "number" : kind}
                 step={kind === "number" ? "any" : undefined}
                 required={requiredField}
-                defaultValue={String(historyValue(name))}
+                min={name === "details.backlogs" ? 0 : name === "details.yearOfPassing" ? 1900 : undefined}
+                max={name === "details.yearOfPassing" ? 2200 : undefined}
+                list={name === "testType" ? "case-proficiency-tests" : undefined}
+                defaultValue={String(rowValue(editingRow, name))}
               />
             </label>
           ))}
+          {action === "english_test" && <datalist id="case-proficiency-tests">{["IELTS", "TOEFL", "PTE", "GRE", "GMAT", "SAT", "Duolingo", "CELPIP", "TOPIK", "JLPT", "Others"].map(test => <option key={test} value={test} />)}</datalist>}
           <div className="formActions">
             <button className="primaryButton" disabled={working}>
               <Plus size={15} />
@@ -11576,6 +11599,14 @@ function RecordModal({
 }
 
 export default function Home() {
+  const financeRequests = useRef(new Map<string, { id: string; busy: boolean }>());
+  const beginFinanceRequest = (key: string) => {
+    const request = financeRequests.current.get(key) ?? { id: crypto.randomUUID(), busy: false };
+    if (request.busy) return null;
+    request.busy = true;
+    financeRequests.current.set(key, request);
+    return request;
+  };
   const searchRef = useRef<HTMLInputElement | null>(null);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
   const [active, setActive] = useState<ModuleKey>("dashboard"),
@@ -12169,16 +12200,20 @@ export default function Home() {
     payload: Record<string, unknown>,
     attachment?: File,
   ) => {
+    const financeKey = kind === "invoice" ? JSON.stringify(payload) : "";
+    const transaction = financeKey ? beginFinanceRequest(financeKey) : null;
+    if (financeKey && !transaction) return false;
     setSaving(true);
     try {
       const response = await fetch("/api/crm/workspace", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(transaction ? { ...payload, requestId: transaction.id } : payload),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok)
         throw new Error(result.error || "The record could not be saved.");
+      if (transaction) financeRequests.current.delete(financeKey);
 
       if (kind === "message" && role !== "client") {
         const sent = await fetch("/api/crm/mailbox", {
@@ -12249,6 +12284,7 @@ export default function Home() {
       say(message);
       return false;
     } finally {
+      if (transaction) transaction.busy = false;
       setSaving(false);
     }
   };
@@ -12529,6 +12565,9 @@ export default function Home() {
     id: string,
     extra: Record<string, unknown> = {},
   ) {
+    const financeKey = resource === "invoice" ? JSON.stringify({ resource, operation, id, ...extra }) : "";
+    const transaction = financeKey ? beginFinanceRequest(financeKey) : null;
+    if (financeKey && !transaction) return;
     try {
       const response = await fetch("/api/crm/workspace", {
         method: "POST",
@@ -12539,11 +12578,13 @@ export default function Home() {
           operation,
           id,
           ...extra,
+          ...(transaction ? { requestId: transaction.id } : {}),
         }),
       });
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error || "The update was rejected.");
+      if (transaction) financeRequests.current.delete(financeKey);
       if (resource === "case" && operation === "archive")
         setCases((current) => current.filter((record) => record.dbId !== id));
       // Some actions are a request rather than the thing itself, and the
@@ -12561,6 +12602,8 @@ export default function Home() {
           ? reason.message
           : "The update could not be saved.",
       );
+    } finally {
+      if (transaction) transaction.busy = false;
     }
   }
   async function bulkMutateRemote(
@@ -12608,15 +12651,19 @@ export default function Home() {
     action: string,
     extra: Record<string, unknown> = {},
   ) {
+    const financeKey = ["record_payment", "record_refund"].includes(action) ? JSON.stringify({ action, ...extra }) : "";
+    const transaction = financeKey ? beginFinanceRequest(financeKey) : null;
+    if (financeKey && !transaction) return;
     try {
       const response = await fetch("/api/crm/operations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, ...extra }),
+        body: JSON.stringify({ action, ...extra, ...(transaction ? { requestId: transaction.id } : {}) }),
       });
       const result = await response.json();
       if (!response.ok)
         throw new Error(result.error || "The update was rejected.");
+      if (transaction) financeRequests.current.delete(financeKey);
       say("Live record updated");
       queueWorkspaceRefresh();
     } catch (reason) {
@@ -12626,6 +12673,8 @@ export default function Home() {
           ? reason.message
           : "The update could not be saved.",
       );
+    } finally {
+      if (transaction) transaction.busy = false;
     }
   }
   const syncAppointments = (next: AppointmentRecord[]) => {

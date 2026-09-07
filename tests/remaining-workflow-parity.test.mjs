@@ -45,7 +45,7 @@ test("student invoice parity keeps invoice date, discount, payment and descripti
     assert.match(migration, new RegExp(field));
   assert.match(workspace, /Discount cannot exceed the invoice subtotal/);
   assert.match(workspace, /Paid amount cannot exceed the invoice total/);
-  assert.match(workspace, /payment_receipts/);
+  assert.match(await read("supabase/migrations/0040_atomic_invoice_ledger.sql"), /payment_receipts/);
   assert.match(importer, /data\.payment_mode/);
   for (const field of ["issuedOn", "discount", "initialPaid", "paymentMethod", "paymentReference", "description"])
     assert.match(page, new RegExp(`name=["']${field}["']`));

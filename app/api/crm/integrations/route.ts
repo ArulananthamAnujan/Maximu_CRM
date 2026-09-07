@@ -8,7 +8,8 @@ import { serviceRoleKey, supabaseRequest } from "@/server/supabase";
 import { aiConfigured } from "@/server/ai";
 import { emailConfigured } from "@/server/email";
 import { protectionConfigured } from "@/server/protected-fields";
-import { gmailOAuthConfigured } from "@/server/gmail";
+import { gmailOAuthConfigured, gmailRefreshAccessToken, gmailSearchMessages } from "@/server/gmail";
+import { reveal } from "@/server/protected-fields";
 import { whatsappConfigured } from "@/server/whatsapp";
 import { smsConfigured } from "@/server/sms";
 
@@ -50,6 +51,24 @@ export async function GET(request: Request) {
     ).catch(() => null);
     const googleSignInEnabled = authSettings?.external?.google === true;
     const gmailReady = gmailOAuthConfigured();
+    const mailbox = await supabaseRequest<{ email: string; active: boolean; token_reference: string | null }[]>(
+      `/rest/v1/mailbox_connections?select=email,active,token_reference&profile_id=eq.${session.identity.profileId}&provider=eq.gmail&limit=1`,
+      { method: "GET" }, session.accessToken,
+    ).catch(() => []);
+    let gmailConnected = false;
+    let gmailDetail = gmailReady
+      ? "Gmail is ready to connect. Open Messages and connect your own mailbox."
+      : "Gmail connection is not configured for this deployment.";
+    if (gmailReady && mailbox[0]?.active && mailbox[0]?.token_reference) {
+      try {
+        const fresh = await gmailRefreshAccessToken(await reveal(mailbox[0].token_reference));
+        await gmailSearchMessages({ accessToken: fresh.access_token, query: "in:inbox", maxResults: 1 });
+        gmailConnected = true;
+        gmailDetail = `Inbox access verified for ${mailbox[0].email}. Email delivery is checked separately.`;
+      } catch {
+        gmailDetail = "Gmail access could not be verified. Open Messages to check the error or reconnect your mailbox.";
+      }
+    }
     const [backups, drills, checks, incidents] = await Promise.all([
       supabaseRequest<{ status: string; completed_at: string | null; object_path: string | null }[]>("/rest/v1/backup_runs?select=status,completed_at,object_path&order=started_at.desc&limit=1", { method: "GET" }, session.accessToken).catch(() => []),
       supabaseRequest<{ status: string; completed_at: string | null }[]>("/rest/v1/restore_drills?select=status,completed_at&order=started_at.desc&limit=1", { method: "GET" }, session.accessToken).catch(() => []),
@@ -142,10 +161,8 @@ export async function GET(request: Request) {
         key: "gmail",
         name: "Gmail inbox and sending",
         purpose: "Read and search the connected personal inbox and send case-linked email from the CRM.",
-        state: gmailReady ? "connected" : "not_configured",
-        detail: gmailReady
-          ? "Each member of staff connects their own Gmail account from Messages, reads and searches their inbox, and sends case-linked drafts as themselves."
-          : "GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are not set, so nobody can connect a Gmail account yet. Drafts are still recorded against the case — send from your own mailbox and mark the draft ready until this is configured.",
+        state: gmailConnected ? "connected" : "not_configured",
+        detail: gmailDetail,
         setup: ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET"],
       },
       {

@@ -1,3 +1,4 @@
+import { financeRequestId, financeRpc, recordInvoiceAction, FinanceInputError } from "@/server/finance";
 import {
   appendRefreshCookies,
   LiveAccessError,
@@ -1719,8 +1720,6 @@ export async function POST(request: Request) {
       // modify -- invoices_staff_create enforces that boundary at the
       // database, same as every other staff write in this schema. Changing
       // or voiding an invoice once raised stays manager and above.
-      const id = crypto.randomUUID();
-      const documentId = crypto.randomUUID();
       const caseId = required(body.caseId, "Case");
       const [invoiceCase] = await rest<Json[]>(
         `cases?select=id,client_id&id=eq.${encodeURIComponent(caseId)}&limit=1`,
@@ -1740,105 +1739,20 @@ export async function POST(request: Request) {
         throw new InputError("Paid amount cannot exceed the invoice total.");
       const currency = invoiceCurrency(body.currency);
       const invoiceType = invoiceTypeValue(body.invoiceType);
-      const invoiceNumber = `INV-${new Date().getUTCFullYear()}-${id.slice(0, 8).toUpperCase()}`;
       const issuedOn = body.issuedOn
         ? requiredDay(body.issuedOn, "Invoice date")
         : new Date().toISOString().slice(0, 10);
       const paymentMethod = nullable(body.paymentMethod);
-      await insert(
-        "invoices",
-        {
-          id,
-          organisation_id: org,
-          client_id: clientId,
-          case_id: caseId,
-          invoice_number: invoiceNumber,
-          invoice_type: invoiceType,
-          currency,
-          subtotal,
-          discount,
-          tax,
-          total,
-          paid: initialPaid,
-          payment_method: paymentMethod,
-          description: nullable(body.description),
-          state: initialPaid >= total ? "paid" : initialPaid > 0 ? "part_paid" : "issued",
-          issued_on: issuedOn,
-          due_on: nullable(body.due),
-          created_by: actor,
-        },
-        token,
-      );
-      if (initialPaid > 0) {
-        const paymentId = crypto.randomUUID();
-        const receiptId = crypto.randomUUID();
-        await insert(
-          "payments",
-          {
-            id: paymentId,
-            organisation_id: org,
-            invoice_id: id,
-            amount: initialPaid,
-            currency,
-            method: paymentMethod,
-            reference: nullable(body.paymentReference),
-            transaction_type: "payment",
-            recorded_by: actor,
-          },
-          token,
-        );
-        await insert(
-          "payment_receipts",
-          {
-            id: receiptId,
-            organisation_id: org,
-            payment_id: paymentId,
-            receipt_number: `RCT-${new Date().getUTCFullYear()}-${receiptId.slice(0, 8).toUpperCase()}`,
-            issued_by: actor,
-          },
-          token,
-        );
-      }
-      // Every invoice gets a protected file slot, even when the PDF is added
-      // later. The normal document uploader then stores it in the client's
-      // Accounts and Receipts folder and keeps replacement/version history.
-      await insert(
-        "documents",
-        {
-          id: documentId,
-          organisation_id: org,
-          client_id: clientId,
-          case_id: caseId,
-          document_type: "10 Accounts and Receipts",
-          display_name: `${invoiceNumber}.pdf`,
-          state: "requested",
-          requested_by: actor,
-          metadata: {
-            source: "invoice_pdf",
-            invoice_id: id,
-            invoice_number: invoiceNumber,
-            // Shown through the invoice, not as a document request asking the
-            // client to upload Maximus's own invoice back to the agency.
-            client_visible: false,
-          },
-        },
-        token,
-      );
-      await auditEvent(
-        org,
-        actor,
-        "invoice.created",
-        "invoice",
-        id,
-        session.identity.branchId,
-        `Created ${invoiceNumber} for ${currency} ${total.toFixed(2)}`,
-        token,
-      );
+      const result = await financeRpc("create_case_invoice", {
+        p_request: financeRequestId(body), p_case: caseId,
+        p_values: { subtotal, discount, tax, initialPaid, currency, invoiceType, issuedOn,
+          due: nullable(body.due), paymentMethod, paymentReference: nullable(body.paymentReference), description: nullable(body.description) },
+      }, token);
       const [invoiceClient] = await rest<Json[]>(
         `clients?select=email,first_name,last_name&id=eq.${encodeURIComponent(clientId)}&limit=1`,
         token,
       );
-      if (invoiceClient) {
+      if (invoiceClient && !result.replayed) {
         const due = nullable(body.due);
         await notifyClient(org, token, "invoice_request", String(invoiceClient.email ?? ""), {
           client_name: fullClientName(invoiceClient),
@@ -1848,7 +1762,7 @@ export async function POST(request: Request) {
           sender_name: session.identity.displayName,
         });
       }
-      return Response.json({ ok: true, invoiceId: id, invoiceNumber, documentId });
+      return Response.json(result);
     }
 
     if (action === "send_portal_access") {
@@ -2414,7 +2328,7 @@ export async function POST(request: Request) {
           } else if (resource === "message" && operation === "delete") {
             await patchRow("email_messages", id, { delivery_state: "discarded" }, token);
           } else if (resource === "invoice" && operation === "delete") {
-            await patchRow("invoices", id, { state: "void" }, token);
+            await recordInvoiceAction({}, "void", id, token);
           } else if (resource === "template" && operation === "delete") {
             await deleteRow("content_templates", id, token);
           } else if (resource === "workflow" && operation === "toggle") {
@@ -2535,62 +2449,10 @@ export async function POST(request: Request) {
           { delivery_state: "discarded" },
           token,
         );
-      } else if (resource === "invoice" && operation === "toggle") {
-        await patchRow(
-          "invoices",
-          id,
-          {
-            state: body.completed ? "paid" : "issued",
-            paid: body.completed ? Number(body.amount ?? 0) : 0,
-          },
-          token,
-        );
-      } else if (resource === "invoice" && operation === "refund") {
-        // What was collected stays on the record -- a refund reverses the
-        // money, not the history of what was actually paid.
-        await patchRow("invoices", id, { state: "refunded" }, token);
-        await insert(
-          "payments",
-          {
-            id: crypto.randomUUID(),
-            organisation_id: org,
-            invoice_id: id,
-            amount: -Math.abs(Number(body.amount ?? 0)),
-            currency: nullable(body.currency) || "AUD",
-            method: nullable(body.method),
-            reference: nullable(body.reason) ?? "Refund",
-            recorded_by: actor,
-          },
-          token,
-        );
-      } else if (resource === "invoice" && operation === "credit") {
-        // Forgiving part of what is owed, not a refund of money already
-        // collected -- its own ledger entry, checked against the invoice at
-        // read time rather than folded into the payments total.
-        const amount = Math.abs(Number(body.amount ?? 0));
-        if (!Number.isFinite(amount) || amount <= 0) throw new InputError("Credit-note amount must be greater than zero.");
-        const [invoice] = await rest<Json[]>(`invoices?select=total,paid&id=eq.${encodeURIComponent(id)}&limit=1`, token);
-        if (!invoice) throw new InputError("Invoice was not found.");
-        const prior = await rest<Json[]>(`credit_notes?select=amount&invoice_id=eq.${encodeURIComponent(id)}&voided_at=is.null`, token);
-        const credited = prior.reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
-        const balance = Math.max(0, Number(invoice.total ?? 0) - Number(invoice.paid ?? 0) - credited);
-        if (amount > balance + 0.001) throw new InputError(`Credit note exceeds the outstanding balance of ${balance.toFixed(2)}.`);
-        const creditId = crypto.randomUUID();
-        await insert(
-          "credit_notes",
-          {
-            id: creditId,
-            organisation_id: org,
-            invoice_id: id,
-            amount,
-            reason: nullable(body.reason),
-            issued_by: actor,
-            credit_note_number: `CN-${new Date().getUTCFullYear()}-${creditId.slice(0, 8).toUpperCase()}`,
-          },
-          token,
-        );
-      } else if (resource === "invoice" && operation === "delete") {
-        await patchRow("invoices", id, { state: "void" }, token);
+      } else if (resource === "invoice" && ["toggle", "refund", "credit", "delete"].includes(operation)) {
+        if (operation === "toggle" && !body.completed) throw new InputError("Record a refund to reverse a payment.");
+        const result = await recordInvoiceAction(body, operation === "toggle" ? "settle" : operation === "delete" ? "void" : operation, id, token);
+        return Response.json(result);
       } else if (resource === "template" && operation === "delete") {
         await deleteRow("content_templates", id, token);
       } else if (resource === "workflow" && operation === "toggle") {
@@ -3426,7 +3288,7 @@ function databaseError(error: unknown, fallback: string): Error {
   return error instanceof Error ? error : new Error(fallback);
 }
 function apiError(error: unknown): Response {
-  if (error instanceof InputError)
+  if ((error instanceof InputError || error instanceof FinanceInputError))
     return Response.json({ ok: false, error: error.message }, { status: 400 });
   if (error instanceof LiveAccessError)
     return Response.json(

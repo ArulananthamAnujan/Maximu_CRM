@@ -354,7 +354,7 @@ test("a case officer's invoice request reaches the database rather than being re
   );
   assert.equal(result.status, 200);
   assert.equal(
-    result.requests.some((r) => r.path === "/rest/v1/invoices" && r.method === "POST"),
+    result.requests.some((r) => r.path === "/rest/v1/rpc/create_case_invoice" && r.method === "POST"),
     true,
     "the route must let row-level security decide, not refuse it itself",
   );
@@ -449,15 +449,14 @@ test("a manager may create an invoice", async () => {
     { level: "branch_admin" },
   );
   assert.equal(result.status, 200);
-  const write = result.requests.find((r) => r.path === "/rest/v1/invoices");
-  assert.equal(write.body.subtotal, 100);
-  assert.equal(write.body.tax, 10);
-  assert.equal(write.body.total, 110);
-  const pdfSlot = result.requests.find(
-    (r) => r.path === "/rest/v1/documents" && r.method === "POST",
-  );
-  assert.equal(pdfSlot.body.metadata.source, "invoice_pdf");
-  assert.equal(pdfSlot.body.document_type, "10 Accounts and Receipts");
+  const write = result.requests.find((r) => r.path === "/rest/v1/rpc/create_case_invoice");
+  assert.equal(write.body.p_values.subtotal, 100);
+  assert.equal(write.body.p_values.tax, 10);
+  assert.equal(write.body.p_values.due, "2026-12-01");
+  assert.equal(write.body.p_case, CASE_ID);
+  assert.match(write.body.p_request, /^[0-9a-f-]{36}$/);
+  assert.equal(result.requests.some(r => r.path === "/rest/v1/invoices" && r.method === "POST"), false);
+
 });
 
 test("case communication resolves the recipient from the current client profile", async () => {
