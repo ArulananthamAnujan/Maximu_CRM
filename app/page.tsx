@@ -2481,7 +2481,7 @@ function CaseWorkspace({
                   <X size={15} />
                 </button>
               ) : null}
-              <button type="submit" className="enquirySearchButton">
+              <button type="submit" className="enquirySearchButton" aria-label="Search enquiries">
                 <Search size={15} /> <span>Search</span>
               </button>
             </form>
