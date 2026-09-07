@@ -10072,6 +10072,9 @@ function ApplicationsTab({
                         })
                       }
                     >
+                      {!APPLICATION_STATUS_OPTIONS.includes(text(row.status)) && text(row.status) && (
+                        <option value={text(row.status)}>{humanise(row.status)}</option>
+                      )}
                       {APPLICATION_STATUS_OPTIONS.map((option) => (
                         <option key={option} value={option}>
                           {humanise(option)}
@@ -13767,8 +13770,13 @@ export default function Home() {
           canModify={true}
           item={selected}
           close={() => {
-            if (caseWindowId) window.close();
-            else setSelected(null);
+            if (caseWindowId) {
+              const target = new URL(window.location.href);
+              target.searchParams.delete("case");
+              window.history.replaceState(null, "", target);
+              setCaseWindowId("");
+            }
+            setSelected(null);
           }}
           edit={editCase}
           remove={removeCase}

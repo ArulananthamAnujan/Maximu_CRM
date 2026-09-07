@@ -37,6 +37,11 @@
 .appShell .caseWindowTopbar button { min-height: 40px; font-size: var(--agent-label); }
 .appShell.caseWindow .drawerHead { margin-left: 0; padding: 20px 26px; }
 .appShell.caseWindow .drawerHead h2 { font-size: clamp(1.5rem, 2vw, 2rem); overflow-wrap: anywhere; }
+.appShell.caseWindow .drawerHead p { font-size: var(--agent-label); }
+.appShell.caseWindow .drawerHead > div > span { font-size: var(--agent-meta); }
+.appShell.caseWindow .caseRailSummary > b,
+.appShell.caseWindow .caseRailSummary > small { grid-column: 1 / -1; }
+.appShell .lifecycleTrack li { font-size: var(--agent-label); }
 .appShell.caseWindow .caseLeftRail { top: 56px; margin-top: 0; min-height: 0; max-height: calc(100dvh - 70px); overflow-y: auto; border-radius: 12px; }
 .appShell.caseWindow .caseWorkspaceLayout { grid-template-columns: 224px minmax(0, 1fr); gap: 24px; padding: 0 24px 24px; align-items: start; }
 .appShell.caseWindow .caseWorkspaceContent { padding: 0; min-width: 0; }
