@@ -17,23 +17,20 @@ async function signIn(page: Page, email: string) {
   await page.goto("/");
   await page.locator('input[name="email"]').fill(email);
   await page.locator('input[name="password"]').fill("irrelevant");
-  await page.getByRole("button", { name: /sign in securely/i }).click();
+  await page.getByRole("button", { name: /^sign in$/i }).click();
   await expect(page.locator(".appShell")).toBeVisible({ timeout: 25_000 });
 }
 
 /** Opens the Enquiries list and waits for it to be the screen on show. */
 async function openEnquiries(page: Page) {
   await page.getByRole("button", { name: /^Enquiries$/ }).click();
-  await expect(page.locator(".listPanel")).toBeVisible({ timeout: 25_000 });
+  await expect(page.locator(".journeyList-enquiries")).toBeVisible({ timeout: 25_000 });
 }
 
 /** Opens the enquiry form the way someone works: from the Enquiries list. */
 async function openEnquiryForm(page: Page) {
   await openEnquiries(page);
-  await page
-    .locator(".listPanel")
-    .getByRole("button", { name: "Add new" })
-    .click();
+  await page.getByRole("button", { name: "New enquiry", exact: true }).first().click();
   await expect(page.locator(".recordModal")).toBeVisible();
 }
 
@@ -67,7 +64,7 @@ async function createEnquiry(
 
 /** The list row for a client, which is the whole clickable row, not the text. */
 function caseRow(page: Page, name: string) {
-  return page.locator(".richRow").filter({ hasText: name }).first();
+  return page.locator(".journeyPrimaryCell").filter({ hasText: name }).first();
 }
 
 /**
@@ -95,7 +92,7 @@ test("the sign-in page renders its form", async ({ page }) => {
   await expect(page.locator('input[name="email"]')).toBeVisible();
   await expect(page.locator('input[name="password"]')).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /sign in securely/i }),
+    page.getByRole("button", { name: /^sign in$/i }),
   ).toBeVisible();
 });
 
@@ -105,7 +102,7 @@ test("an unknown account is refused and stays on the sign-in page", async ({
   await page.goto("/");
   await page.locator('input[name="email"]').fill("nobody@maximus.test");
   await page.locator('input[name="password"]').fill("wrong");
-  await page.getByRole("button", { name: /sign in securely/i }).click();
+  await page.getByRole("button", { name: /^sign in$/i }).click();
   await expect(page.locator(".loginError")).toBeVisible({ timeout: 25_000 });
   await expect(page.locator(".appShell")).toHaveCount(0);
 });
