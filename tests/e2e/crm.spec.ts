@@ -31,12 +31,16 @@ async function signIn(page: Page, email: string) {
 
 async function navigateTo(page: Page, name: string) {
   const button = page.locator(".sidebar").getByRole("button", { name, exact: true });
-  const inViewport = await button.evaluate(element => {
-    const rect = element.getBoundingClientRect();
-    return element.closest(".sidebar")?.classList.contains("open") || (rect.right > 0 && rect.left >= 0);
-  });
-  if (!inViewport) await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
+  const overlayNavigation = await page.evaluate(() =>
+    innerWidth <= 900 || !!document.querySelector(".appShell.enquiryFullMode, .appShell.gmailMode"),
+  );
+  const sidebar = page.locator(".sidebar");
+  if (overlayNavigation && !(await sidebar.evaluate(element => element.classList.contains("open")))) {
+    await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
+    await expect(sidebar).toHaveClass(/\bopen\b/);
+  }
   await button.click();
+  if (overlayNavigation) await expect(sidebar).not.toHaveClass(/\bopen\b/);
 }
 
 /** Opens the Enquiries list and waits for it to be the screen on show. */
