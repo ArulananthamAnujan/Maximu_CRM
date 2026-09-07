@@ -1,9 +1,10 @@
 # Agent workspace verification — 7 September 2026
 
-This is a bounded local implementation, not a certification that Maximus can
-already replace every legacy workflow. No production data was changed in this
-pass. Attachment uploads remain paused. Publishing and live acceptance are
-separate from passing a build.
+This records the original workspace release and the subsequent CI repair. It is
+not a certification that Maximus can replace every legacy workflow. No customer
+records were changed during the CI repair; the lifecycle function migration is
+recorded below. Attachment uploads remain paused. Builds and live acceptance are
+separate checks.
 
 ## Production acceptance update
 
@@ -60,7 +61,7 @@ not proof of parity. No customer record was edited during this browser audit.
 | Gmail status | Missing saved authorization cannot be shown as connected; sync success is a separate notice | Mock connection test, not actual OAuth, receipt or delivery proof |
 | Payment safeguards | Reject overpayments, mismatched currencies and void/cancelled/refunded invoice payments | Negative route tests with no fixture writes; not full finance certification |
 
-## Verification commands
+## Earlier verification (superseded by the CI repair below)
 
 ```sh
 node /root/.codex/plugins/cache/openai-curated-remote/sites/0.1.51/scripts/build-site.mjs

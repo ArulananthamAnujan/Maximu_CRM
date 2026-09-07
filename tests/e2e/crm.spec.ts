@@ -11,7 +11,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 test.afterEach(async ({ page }, testInfo) => {
   if (testInfo.status !== testInfo.expectedStatus) {
-    console.log("Failed browser state:", await page.locator("body").innerText().catch(() => "Page closed"));
+    for (const openPage of page.context().pages()) {
+      console.log("Failed browser state:", openPage.url(), await openPage.locator("body").innerText().catch(() => "Page closed"));
+    }
   }
 });
 
@@ -31,7 +33,7 @@ async function navigateTo(page: Page, name: string) {
   const button = page.locator(".sidebar").getByRole("button", { name, exact: true });
   const inViewport = await button.evaluate(element => {
     const rect = element.getBoundingClientRect();
-    return rect.right > 0 && rect.left >= 0 && rect.top < innerHeight;
+    return element.closest(".sidebar")?.classList.contains("open") || (rect.right > 0 && rect.left >= 0);
   });
   if (!inViewport) await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
   await button.click();
@@ -197,8 +199,8 @@ test("the pipeline control moves a case to the next stage", async ({
   page,
 }) => {
   await signIn(page, OFFICER);
-  await openEnquiries(page);
-  const { drawer } = await openCaseDrawer(page, "Priya Sharma");
+  await createEnquiry(page, "Pipeline Student", "pipeline.student@example.test");
+  const { drawer } = await openCaseDrawer(page, "Pipeline Student");
   await expect(drawer.locator(".lifecycleTrack li.current")).toHaveText(
     /enquiry/i,
   );
@@ -596,7 +598,6 @@ test("every button still has a name on a phone", async ({ page }) => {
   await signIn(page, OWNER);
   await page.setViewportSize({ width: 390, height: 844 });
   for (const screen of NAMED_SCREENS) {
-    await page.getByRole("button", { name: "Open case navigation" }).click();
     await navigateTo(page, screen);
     expect(
       await unnamedButtons(page),
@@ -611,8 +612,7 @@ test("the case drawer keeps four tabs on a phone and the rest under More", async
   await signIn(page, OFFICER);
   await createEnquiry(page, "Phone Sized", "phone.sized@example.test");
   await page.setViewportSize({ width: 390, height: 844 });
-  // On a phone the navigation is off-canvas until it is asked for.
-  await page.getByRole("button", { name: "Open case navigation" }).click();
+  // Creation already leaves the enquiry directory open.
   await openEnquiries(page);
   const { popup, drawer } = await openCaseDrawer(page, "Phone Sized");
   // The case's own window starts at a desktop size; resize it the same way.
@@ -697,7 +697,7 @@ test("a staff account can be deactivated and brought back", async ({
   // The status filter defaults to Active, which would hide this row the
   // moment it is deactivated -- widen it first so the row stays visible
   // through both halves of the test.
-  await page.getByLabel("Status").selectOption("all");
+  await page.locator(".staffFilters").getByLabel("Status").selectOption("all");
   const row = page
     .locator(".boardTable tbody tr")
     .filter({ hasText: "colombo@maximus.test" })
