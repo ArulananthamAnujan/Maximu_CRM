@@ -100,12 +100,15 @@ export async function POST(request: Request) {
       const invoiceId = uuid(body.invoiceId, "Invoice");
       const [invoice] = await rest<Json[]>(`invoices?select=id,total,paid,currency,state,client_id,case_id&id=eq.${invoiceId}&limit=1`, token);
       if (!invoice) throw new InputError("Invoice was not found.");
+      if (["void", "voided", "cancelled", "refunded"].includes(String(invoice.state))) throw new InputError("Payments cannot be recorded against a voided, cancelled or refunded invoice.");
+      const paymentCurrency = (optional(body.currency) || String(invoice.currency || "AUD")).toUpperCase();
+      if (paymentCurrency !== String(invoice.currency || "AUD").toUpperCase()) throw new InputError("Payment currency must match the invoice currency. Record a converted amount separately.");
       const outstanding = Math.max(0, Number(invoice.total ?? 0) - Number(invoice.paid ?? 0));
       if (amount > outstanding + 0.001) throw new InputError(`Payment exceeds the outstanding balance of ${outstanding.toFixed(2)}.`);
       const paymentId = crypto.randomUUID();
       const receiptId = crypto.randomUUID();
       const receiptNumber = `RCT-${new Date().getUTCFullYear()}-${receiptId.slice(0, 8).toUpperCase()}`;
-      await insert("payments", { id: paymentId, organisation_id: org, invoice_id: invoiceId, amount, currency: optional(body.currency) || invoice.currency || "AUD", method: optional(body.method), reference: optional(body.reference), external_reference: optional(body.externalReference), transaction_type: "payment", recorded_by: actor }, token);
+      await insert("payments", { id: paymentId, organisation_id: org, invoice_id: invoiceId, amount, currency: paymentCurrency, method: optional(body.method), reference: optional(body.reference), external_reference: optional(body.externalReference), transaction_type: "payment", recorded_by: actor }, token);
       await insert("payment_receipts", { id: receiptId, organisation_id: org, payment_id: paymentId, receipt_number: receiptNumber, issued_by: actor }, token);
       const paid = Math.round((Number(invoice.paid ?? 0) + amount) * 100) / 100;
       await patch("invoices", invoiceId, { paid, state: paid + 0.001 >= Number(invoice.total ?? 0) ? "paid" : "part_paid" }, token);

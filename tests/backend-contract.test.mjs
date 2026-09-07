@@ -40,8 +40,9 @@ test("large enquiry directories are server-paged, cached and permission scoped",
   assert.match(route, /limit=\$\{input\.limit\}&offset=\$\{input\.offset\}/);
   assert.match(route, /restByIds\("case_notes", "case_id,author_id,body,created_at"/);
   assert.match(route, /restByIds\("documents", "case_id,state"/);
-  assert.match(route, /private, max-age=15, stale-while-revalidate=45/);
-  assert.match(route, /const needsIndex = Boolean\([\s\S]{0,80}query \|\| documentFilter/);
+  assert.match(route, /private, no-store/);
+  assert.match(route, /matchedCaseIds\.length > 200/);
+  assert.match(route, /const needsIndex = Boolean\([\s\S]{0,140}documentFilter/);
   assert.match(page, /offset: String\(\(page - 1\) \* 50\)/);
   assert.match(page, /enquiryPageCacheRef/);
   assert.match(page, /prefetchEnquiryPage\(page \+ 1/);

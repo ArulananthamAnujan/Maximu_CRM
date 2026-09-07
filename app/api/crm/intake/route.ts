@@ -1,5 +1,6 @@
 import { appendRefreshCookies, LiveAccessError, liveSession } from "@/server/supabase-session";
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
+import { mask, protect } from "@/server/protected-fields";
 
 export const dynamic = "force-dynamic";
 type Json = Record<string, unknown>;
@@ -37,30 +38,64 @@ export async function POST(request: Request) {
     const clientId = uuid(body.clientId || linked, "Client");
     if (session.identity.role === "client" && clientId !== linked) throw new LiveAccessError(403, "You can only update your own intake.");
 
+    const saveHistory = async (table: string, value: Json, accessToken: string) => {
+      if (!body.rowId) return insert(table, value, accessToken);
+      const rowId = uuid(body.rowId, "History record");
+      const current = asRows(await get(`${table}?select=*&id=eq.${rowId}&client_id=eq.${clientId}&limit=1`, accessToken))[0];
+      if (!current) throw new LiveAccessError(403, "This history record is not available for this client.");
+      // Only edited form fields may change. Imported details and fields not
+      // represented by this editor must survive an ordinary correction.
+      const mapping: Record<string, string> = { country_code: "countryCode", field_of_study: "fieldOfStudy", started_on: "startedOn", completed_on: "completedOn", currently_studying: "currentlyStudying", job_title: "jobTitle", ended_on: "endedOn", currently_employed: "currentlyEmployed", hours_per_week: "hoursPerWeek", test_type: "testType", test_date: "testDate", reference_number: "referenceNumber", expires_on: "expiresOn", visa_type: "visaType", applied_on: "appliedOn", granted_on: "grantedOn", refusal_reason: "refusalReason" };
+      const changes: Json = {};
+      for (const [key, field] of Object.entries(value)) {
+        if (["id", "organisation_id", "client_id", "details"].includes(key)) continue;
+        if (Object.hasOwn(body, mapping[key] ?? key)) changes[key] = field;
+      }
+      if (isObject(body.details)) changes.details = { ...(isObject(current.details) ? current.details : {}), ...cleanObject(body.details) };
+      const updated = await supabaseRequest<Json[]>(`/rest/v1/${table}?id=eq.${rowId}&client_id=eq.${clientId}`, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify(changes) }, accessToken);
+      if (!updated?.length) throw new LiveAccessError(403, "You do not have permission to update this history record.");
+      await insert("audit_events", { organisation_id: org, actor_id: session.identity.profileId, action: "client.history_updated", resource_type: table, resource_id: rowId, summary: "Corrected client history", after_data: { fields: Object.keys(changes) } }, accessToken);
+    };
+
     if (action === "personal") {
+      const current = asRows(await get(`clients?select=id,address,custom_fields&id=eq.${clientId}&limit=1`, token))[0];
+      if (!current) throw new LiveAccessError(403, "This client is not available to you.");
       const allowed = ["title","gender","marital_status","country_of_birth","current_country","passport_country","preferred_language"];
       const changes: Json = {};
       for (const key of allowed) if (key in body) changes[key] = optional(body[key]);
+      if (session.identity.role !== "client") {
+        if ("firstName" in body) changes.first_name = required(body.firstName, "First name");
+        if ("lastName" in body) changes.last_name = optional(body.lastName) ?? "";
+        if ("preferredName" in body) changes.preferred_name = optional(body.preferredName);
+        if ("nationality" in body) changes.nationality = optional(body.nationality);
+        const custom = isObject(current.custom_fields) ? { ...current.custom_fields } : {};
+        if ("alternatePhone" in body) custom.alternatePhone = optional(body.alternatePhone);
+        if ("passportIssueDate" in body) custom.passportIssueDate = validDate(body.passportIssueDate);
+        if ("alternatePhone" in body || "passportIssueDate" in body) changes.custom_fields = custom;
+        const passport = optional(body.passportNumber);
+        if (passport) { changes.passport_number_encrypted = await protect(passport); changes.passport_masked = mask(passport); }
+      }
       if ("email" in body) changes.email = validEmail(body.email);
       if ("mobile" in body) changes.mobile = optional(body.mobile);
       if ("dateOfBirth" in body) changes.date_of_birth = validDate(body.dateOfBirth);
       if ("passportExpiry" in body) changes.passport_expiry = validDate(body.passportExpiry);
-      if (isObject(body.address)) changes.address = cleanObject(body.address);
+      if (isObject(body.address)) changes.address = { ...(isObject(current.address) ? current.address : {}), ...cleanObject(body.address) };
       if (isObject(body.emergencyContact)) changes.emergency_contact = cleanObject(body.emergencyContact);
       if (typeof body.marketingConsent === "boolean") changes.marketing_consent = body.marketingConsent;
       if (body.privacyConsent === true) changes.privacy_consent_at = new Date().toISOString();
       changes.updated_at = new Date().toISOString();
       await patch("clients", clientId, changes, token);
+      await insert("audit_events", { organisation_id: org, actor_id: session.identity.profileId, action: "client.profile_updated", resource_type: "client", resource_id: clientId, summary: "Updated client profile", after_data: { fields: Object.keys(changes).filter(key => key !== "updated_at") } }, token);
     } else if (action === "education") {
-      await insert("client_education_history", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, country_code: optional(body.countryCode), institution: required(body.institution,"Institution"), qualification: required(body.qualification,"Qualification"), field_of_study: optional(body.fieldOfStudy), started_on: validDate(body.startedOn), completed_on: validDate(body.completedOn), result: optional(body.result), currently_studying: body.currentlyStudying === true, details: isObject(body.details) ? cleanObject(body.details) : {} }, token);
+      await saveHistory("client_education_history", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, country_code: optional(body.countryCode), institution: required(body.institution,"Institution"), qualification: required(body.qualification,"Qualification"), field_of_study: optional(body.fieldOfStudy), started_on: validDate(body.startedOn), completed_on: validDate(body.completedOn), result: optional(body.result), currently_studying: body.currentlyStudying === true, details: isObject(body.details) ? cleanObject(body.details) : {} }, token);
     } else if (action === "employment") {
-      await insert("client_employment_history", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, employer: required(body.employer,"Employer"), job_title: required(body.jobTitle,"Job title"), country_code: optional(body.countryCode), started_on: validDate(body.startedOn), ended_on: validDate(body.endedOn), currently_employed: body.currentlyEmployed === true, hours_per_week: optionalNumber(body.hoursPerWeek), duties: optional(body.duties), details: isObject(body.details) ? cleanObject(body.details) : {} }, token);
+      await saveHistory("client_employment_history", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, employer: required(body.employer,"Employer"), job_title: required(body.jobTitle,"Job title"), country_code: optional(body.countryCode), started_on: validDate(body.startedOn), ended_on: validDate(body.endedOn), currently_employed: body.currentlyEmployed === true, hours_per_week: optionalNumber(body.hoursPerWeek), duties: optional(body.duties), details: isObject(body.details) ? cleanObject(body.details) : {} }, token);
     } else if (action === "english_test") {
-      await insert("english_tests", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, test_type: required(body.testType,"Test type"), test_date: validDate(body.testDate), overall: optionalNumber(body.overall), listening: optionalNumber(body.listening), reading: optionalNumber(body.reading), writing: optionalNumber(body.writing), speaking: optionalNumber(body.speaking), reference_number: optional(body.referenceNumber), expires_on: validDate(body.expiresOn), details: isObject(body.details) ? cleanObject(body.details) : {} }, token);
+      await saveHistory("english_tests", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, test_type: required(body.testType,"Test type"), test_date: validDate(body.testDate), overall: optionalNumber(body.overall), listening: optionalNumber(body.listening), reading: optionalNumber(body.reading), writing: optionalNumber(body.writing), speaking: optionalNumber(body.speaking), reference_number: optional(body.referenceNumber), expires_on: validDate(body.expiresOn), details: isObject(body.details) ? cleanObject(body.details) : {} }, token);
     } else if (action === "study_preferences") {
       await insert("study_preferences", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, destination_countries: stringList(body.destinationCountries), study_levels: stringList(body.studyLevels), fields_of_study: stringList(body.fieldsOfStudy), preferred_institutions: stringList(body.preferredInstitutions), preferred_cities: stringList(body.preferredCities), target_intakes: stringList(body.targetIntakes), annual_budget: optionalNumber(body.annualBudget), budget_currency: optional(body.budgetCurrency) || "AUD", funding_source: optional(body.fundingSource), accommodation_required: optionalBoolean(body.accommodationRequired), scholarship_required: optionalBoolean(body.scholarshipRequired), notes: optional(body.notes), updated_at: new Date().toISOString() }, token, "resolution=merge-duplicates,return=minimal");
     } else if (action === "visa_history") {
-      await insert("visa_history", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, country_code: required(body.countryCode,"Country"), visa_type: required(body.visaType,"Visa type"), status: required(body.status,"Status"), applied_on: validDate(body.appliedOn), granted_on: validDate(body.grantedOn), expires_on: validDate(body.expiresOn), refusal_reason: optional(body.refusalReason), reference_number: optional(body.referenceNumber), details: isObject(body.details) ? cleanObject(body.details) : {} }, token);
+      await saveHistory("visa_history", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, country_code: required(body.countryCode,"Country"), visa_type: required(body.visaType,"Visa type"), status: required(body.status,"Status"), applied_on: validDate(body.appliedOn), granted_on: validDate(body.grantedOn), expires_on: validDate(body.expiresOn), refusal_reason: optional(body.refusalReason), reference_number: optional(body.referenceNumber), details: isObject(body.details) ? cleanObject(body.details) : {} }, token);
     } else if (action === "declaration") {
       await insert("client_declarations", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, declaration_type: slug(body.declarationType,"Declaration"), response: optionalBoolean(body.response), details: optional(body.details), declared_by: session.identity.profileId, declared_at: new Date().toISOString() }, token, "resolution=merge-duplicates,return=minimal");
     } else if (action === "agreement") {
@@ -76,14 +111,14 @@ async function ownClientId(profileId: string, token: string) { const rows = awai
 async function get(query: string, token: string) { return supabaseRequest(`/rest/v1/${query}`, { method:"GET" }, token); }
 async function rpc(name: string, body: Json, token: string) { return supabaseRequest(`/rest/v1/rpc/${name}`, { method:"POST", body:JSON.stringify(body) }, token); }
 async function insert(table: string, value: Json, token: string, prefer="return=minimal") { await supabaseRequest(`/rest/v1/${table}`, { method:"POST", headers:{Prefer:prefer}, body:JSON.stringify(value) }, token); }
-async function patch(table: string, id: string, value: Json, token: string) { await supabaseRequest(`/rest/v1/${table}?id=eq.${id}`, { method:"PATCH", headers:{Prefer:"return=minimal"}, body:JSON.stringify(value) }, token); }
+async function patch(table: string, id: string, value: Json, token: string) { const updated = await supabaseRequest<Json[]>(`/rest/v1/${table}?id=eq.${id}`, { method:"PATCH", headers:{Prefer:"return=representation"}, body:JSON.stringify(value) }, token); if (!updated?.length) throw new LiveAccessError(403, "You do not have permission to update this client."); }
 function asRows(value: unknown): Json[] { return Array.isArray(value) ? value as Json[] : []; }
 function optional(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : null; }
 function required(value: unknown,label:string) { const parsed=optional(value); if(!parsed) throw new InputError(`${label} is required.`); return parsed; }
 function uuid(value: unknown,label:string) { const parsed=required(value,label); if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed)) throw new InputError(`${label} is invalid.`); return parsed; }
 function optionalUuid(value:unknown){const parsed=optional(value);return parsed?uuid(parsed,"Identifier"):null;}
 function validEmail(value:unknown){const parsed=optional(value);if(!parsed)return null;if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed))throw new InputError("Email is invalid.");return parsed.toLowerCase();}
-function validDate(value:unknown){const parsed=optional(value);if(!parsed)return null;if(!/^\d{4}-\d{2}-\d{2}$/.test(parsed)||Number.isNaN(Date.parse(`${parsed}T00:00:00Z`)))throw new InputError("Date is invalid.");return parsed;}
+function validDate(value:unknown){const parsed=optional(value);if(!parsed)return null;const date=new Date(`${parsed}T00:00:00Z`);if(!/^\d{4}-\d{2}-\d{2}$/.test(parsed)||Number.isNaN(date.getTime())||date.toISOString().slice(0,10)!==parsed)throw new InputError("Date is invalid.");return parsed;}
 function optionalNumber(value:unknown){if(value===null||value===undefined||value==="")return null;const parsed=Number(value);if(!Number.isFinite(parsed))throw new InputError("Number is invalid.");return parsed;}
 function optionalBoolean(value:unknown){return typeof value==="boolean"?value:null;}
 function stringList(value:unknown){return Array.isArray(value)?value.map(optional).filter((item):item is string=>Boolean(item)).slice(0,50):[];}

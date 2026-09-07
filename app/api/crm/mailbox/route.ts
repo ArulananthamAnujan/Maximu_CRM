@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     const result: Json = {
         ok: true,
         oauthConfigured: gmailOAuthConfigured(),
-        connected: Boolean(connection?.active),
+        connected: Boolean(connection?.active && connection.token_reference),
         email: connection?.email ?? null,
     };
     const url = new URL(request.url);

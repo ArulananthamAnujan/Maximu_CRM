@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { orgDate, orgDateTime } from "@/lib/timezone";
+import { ClientProfileEditor } from "./client-profile-editor";
 import {
   Activity,
   AlertTriangle,
@@ -2130,6 +2131,7 @@ function CaseWorkspace({
   onQueryChange,
   searchResults = [],
   searchLoading = false,
+  searchError = "",
   onOpenSearchResult,
   serverPaged = false,
   serverPage = 1,
@@ -2155,6 +2157,7 @@ function CaseWorkspace({
   onQueryChange?: (query: string) => void;
   searchResults?: GlobalSearchResult[];
   searchLoading?: boolean;
+  searchError?: string;
   onOpenSearchResult?: (result: GlobalSearchResult) => void;
   serverPaged?: boolean;
   serverPage?: number;
@@ -2488,7 +2491,9 @@ function CaseWorkspace({
             </form>
             {directorySearchOpen && searchDraft.trim().length >= 2 ? (
               <div className="enquirySearchSuggestions" id="enquiry-search-suggestions" role="listbox">
-                {searchLoading && !enquirySearchResults.length ? (
+                {searchError ? (
+                  <div className="enquirySearchSuggestionState" role="alert"><AlertTriangle size={16} /> {searchError}</div>
+                ) : searchLoading && !enquirySearchResults.length ? (
                   <div className="enquirySearchSuggestionState"><RefreshCw size={16} /> Searching permitted enquiries…</div>
                 ) : enquirySearchResults.length ? (
                   enquirySearchResults.map((result, index) => (
@@ -7972,6 +7977,7 @@ function CaseDrawer({
 }) {
   return item ? (
     <CaseDrawerBody
+      key={item.dbId ?? item.id}
       item={item}
       close={close}
       edit={edit}
@@ -8216,6 +8222,8 @@ function CaseDrawerBody({
   const [working, setWorking] = useState(false);
   const [syncingMail, setSyncingMail] = useState(false);
   const [caseError, setCaseError] = useState("");
+  const [caseNotice, setCaseNotice] = useState("");
+  const [caseLoading, setCaseLoading] = useState(true);
   const [sendingPortalAccess, setSendingPortalAccess] = useState(false);
   const [portalAccessResult, setPortalAccessResult] = useState<{
     message: string;
@@ -8251,11 +8259,12 @@ function CaseDrawerBody({
 
   // Reads the whole case file. Kept free of state updates so the mount effect
   // can discard a response that arrives after the drawer has closed.
-  const fetchCaseFile = async (id: string) => {
+  const fetchCaseFile = async (id: string, signal?: AbortSignal) => {
     const [fileResponse, checklistResponse] = await Promise.all([
-      fetch(`/api/crm/casefile?caseId=${id}`, { cache: "no-store" }),
+      fetch(`/api/crm/casefile?caseId=${id}`, { cache: "no-store", signal: signal ?? AbortSignal.timeout(20_000) }),
       fetch(`/api/crm/operations?view=checklist&caseId=${id}`, {
         cache: "no-store",
+        signal: signal ?? AbortSignal.timeout(20_000),
       }),
     ]);
     const fileResult = await fileResponse.json();
@@ -8273,9 +8282,10 @@ function CaseDrawerBody({
   useEffect(() => {
     if (!caseId) return;
     let cancelled = false;
+    const controller = new AbortController();
     void (async () => {
       try {
-        const loaded = await fetchCaseFile(caseId);
+        const loaded = await fetchCaseFile(caseId, AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]));
         if (cancelled) return;
         setFile(loaded.file);
         setChecklist(loaded.checklist);
@@ -8287,15 +8297,19 @@ function CaseDrawerBody({
               ? reason_.message
               : "The case file could not be loaded.",
           );
+      } finally {
+        if (!cancelled) setCaseLoading(false);
       }
     })();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [caseId]);
 
   const reload = async () => {
     if (!caseId) return;
+    setCaseLoading(true);
     try {
       const loaded = await fetchCaseFile(caseId);
       setFile(loaded.file);
@@ -8305,6 +8319,8 @@ function CaseDrawerBody({
       setCaseError(
         reason_ instanceof Error ? reason_.message : "That did not reload.",
       );
+    } finally {
+      setCaseLoading(false);
     }
   };
 
@@ -8323,7 +8339,7 @@ function CaseDrawerBody({
       await reload();
       // Status, deadlines and intake changes made inside a case must also be
       // visible on the dashboard and module lists immediately.
-      await refresh();
+      void refresh().catch(() => setCaseNotice("Saved. The directory refresh failed; reopen the directory to retry."));
       window.localStorage.setItem(
         "maximus.workspaceRefresh",
         window.localStorage.getItem("maximus.workspaceRefresh") === "1" ? "0" : "1",
@@ -8356,7 +8372,7 @@ function CaseDrawerBody({
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Gmail could not be synchronised.");
-      setCaseError(result.imported ? `${result.imported} Gmail message${result.imported === 1 ? "" : "s"} added to this conversation.` : "Gmail is up to date for this person.");
+      setCaseNotice(result.imported ? `${result.imported} Gmail message${result.imported === 1 ? "" : "s"} added to this conversation.` : "Gmail is up to date for this person.");
       await reload();
     } catch (reason_) {
       setCaseError(reason_ instanceof Error ? reason_.message : "Gmail could not be synchronised.");
@@ -8599,7 +8615,11 @@ function CaseDrawerBody({
               </div>
             </header>
 
-            {caseError && <p className="caseWorkError">{caseError}</p>}
+            {caseError && <div className="caseLoadState" role="alert"><span>{caseError}</span><button className="ghostButton" disabled={caseLoading} onClick={() => void reload()}>Retry loading case</button></div>}
+            {caseNotice && <p className="caseRefreshState" role="status">{caseNotice}</p>}
+            {!file && !caseError && <div className="caseLoadState" role="status">Loading this case’s records…</div>}
+            {file && caseLoading && <p className="caseRefreshState" role="status">Updating this case… Your existing records remain visible.</p>}
+            {file && <>
 
         {tab === "overview" && (
           <div className="caseHome">
@@ -9033,6 +9053,7 @@ function CaseDrawerBody({
 
         {tab === "client" && (
           <>
+            {file?.client && <ClientProfileEditor key={String(client.id)} client={client} canModify={canModify} onSave={intake} />}
             <FactList
               title="Personal"
               rows={[
@@ -9056,7 +9077,7 @@ function CaseDrawerBody({
               rows={[
                 ["Passport country", client.passport_country],
                 ["Passport number", client.passport_masked],
-                ["Passport issue", (client.custom_fields as Record<string, unknown> | null)?.passportIssue],
+                ["Passport issue", (client.custom_fields as Record<string, unknown> | null)?.passportIssueDate ?? (client.custom_fields as Record<string, unknown> | null)?.passportIssue],
                 ["Passport expiry", day(client.passport_expiry)],
                 [
                   "Privacy consent",
@@ -9148,6 +9169,7 @@ function CaseDrawerBody({
                 ["result", "Result", "text", false],
               ]}
               action="education"
+              canModify={canModify}
               clientId={clientId}
               working={working}
               onSave={intake}
@@ -9172,6 +9194,7 @@ function CaseDrawerBody({
                 ["duties", "Duties", "text", false],
               ]}
               action="employment"
+              canModify={canModify}
               clientId={clientId}
               working={working}
               onSave={intake}
@@ -9197,6 +9220,7 @@ function CaseDrawerBody({
                 ["expiresOn", "Expires", "date", false],
               ]}
               action="english_test"
+              canModify={canModify}
               clientId={clientId}
               working={working}
               onSave={intake}
@@ -9221,6 +9245,7 @@ function CaseDrawerBody({
                 ["refusalReason", "Refusal reason", "text", false],
               ]}
               action="visa_history"
+              canModify={canModify}
               clientId={clientId}
               working={working}
               onSave={intake}
@@ -9482,6 +9507,7 @@ function CaseDrawerBody({
           </>
         )}
 
+            </>}
         <div className="drawerFooter">
           <button
             className="ghostButton"
@@ -9523,6 +9549,7 @@ function HistorySection({
   action,
   clientId,
   working,
+  canModify = true,
   onSave,
 }: {
   title: string;
@@ -9532,9 +9559,15 @@ function HistorySection({
   action: string;
   clientId: string;
   working: boolean;
+  canModify?: boolean;
   onSave: (body: Record<string, unknown>) => Promise<boolean>;
 }) {
   const [adding, setAdding] = useState(false);
+  const [editingRow, setEditingRow] = useState<Record<string, unknown> | null>(null);
+  const historyValue = (name: string) => {
+    const key = name.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+    return editingRow?.[key] ?? "";
+  };
   return (
     <section className="caseWorkPanel">
       <span className="kicker">{title.toUpperCase()}</span>
@@ -9548,6 +9581,7 @@ function HistorySection({
                 {columns.map(([label]) => (
                   <th key={label}>{label}</th>
                 ))}
+                {canModify && <th>Action</th>}
               </tr>
             </thead>
             <tbody>
@@ -9556,25 +9590,28 @@ function HistorySection({
                   {columns.map(([label, key]) => (
                     <td key={label}>{humanise(row[key]) || "—"}</td>
                   ))}
+                  {canModify && <td><button className="ghostButton" disabled={working} onClick={() => { setEditingRow(row); setAdding(true); }}>Edit</button></td>}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      {adding ? (
+      {adding && canModify ? (
         <form
+          key={String(editingRow?.id ?? "new")}
           className="stackedForm"
           onSubmit={async (event) => {
             event.preventDefault();
             const data = new FormData(event.currentTarget);
             const body: Record<string, unknown> = { action, clientId };
+            if (editingRow?.id) body.rowId = editingRow.id;
             for (const [name, , kind] of fields) {
               const raw = data.get(name);
-              if (raw === null || raw === "") continue;
-              body[name] = kind === "number" ? Number(raw) : raw;
+              if (raw === null) continue;
+              body[name] = kind === "number" && raw !== "" ? Number(raw) : raw;
             }
-            if (await onSave(body)) setAdding(false);
+            if (await onSave(body)) { setAdding(false); setEditingRow(null); }
           }}
         >
           {fields.map(([name, label, kind, requiredField]) => (
@@ -9586,29 +9623,30 @@ function HistorySection({
                 type={kind === "number" ? "number" : kind}
                 step={kind === "number" ? "any" : undefined}
                 required={requiredField}
+                defaultValue={String(historyValue(name))}
               />
             </label>
           ))}
           <div className="formActions">
             <button className="primaryButton" disabled={working}>
               <Plus size={15} />
-              Add
+              {editingRow ? "Save changes" : "Add"}
             </button>
             <button
               type="button"
               className="ghostButton"
-              onClick={() => setAdding(false)}
+              onClick={() => { setAdding(false); setEditingRow(null); }}
             >
               Cancel
             </button>
           </div>
         </form>
-      ) : (
-        <button className="ghostButton" onClick={() => setAdding(true)}>
+      ) : canModify ? (
+        <button className="ghostButton" onClick={() => { setEditingRow(null); setAdding(true); }}>
           <Plus size={15} />
           Add {title.toLowerCase().replace(/s$/, "")}
         </button>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -11697,6 +11735,7 @@ export default function Home() {
     [query, setQuery] = useState(""),
     [globalSearchOpen, setGlobalSearchOpen] = useState(false),
     [globalSearchLoading, setGlobalSearchLoading] = useState(false),
+    [globalSearchError, setGlobalSearchError] = useState(""),
     [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResult[]>([]),
     [globalSearchIndex, setGlobalSearchIndex] = useState(0),
     [modal, setModal] = useState<ModalType>(null),
@@ -12161,10 +12200,14 @@ export default function Home() {
     if (!signedIn || role === "client" || value.length < 2) {
       setGlobalSearchResults([]);
       setGlobalSearchLoading(false);
+      setGlobalSearchError("");
       setGlobalSearchIndex(0);
       return;
     }
     const controller = new AbortController();
+    setGlobalSearchResults([]);
+    setGlobalSearchError("");
+    setGlobalSearchLoading(true);
     const timer = window.setTimeout(() => {
       setGlobalSearchLoading(true);
       void (async () => {
@@ -12175,11 +12218,15 @@ export default function Home() {
           });
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || "Search is unavailable.");
+          if (controller.signal.aborted) return;
           setGlobalSearchResults((result.results ?? []) as GlobalSearchResult[]);
           setGlobalSearchIndex(0);
           if (active !== "enquiries") setGlobalSearchOpen(true);
         } catch (reason) {
-          if ((reason as { name?: string }).name !== "AbortError") setGlobalSearchResults([]);
+          if (!controller.signal.aborted) {
+            setGlobalSearchResults([]);
+            setGlobalSearchError(reason instanceof Error ? reason.message : "Search could not be completed. Please try again.");
+          }
         } finally {
           if (!controller.signal.aborted) setGlobalSearchLoading(false);
         }
@@ -13327,6 +13374,7 @@ export default function Home() {
         onQueryChange={active === "enquiries" ? changeEnquiryQuery : setQuery}
         searchResults={globalSearchResults}
         searchLoading={globalSearchLoading}
+        searchError={globalSearchError}
         onOpenSearchResult={openGlobalSearchResult}
         serverPaged={active === "enquiries"}
         serverPage={enquiryPage}
@@ -13453,7 +13501,9 @@ export default function Home() {
                       <>
                         <div className="globalSearchHeading"><span>Matching clients and cases</span><small>{globalSearchLoading ? "Searching securely…" : `${globalSearchResults.length} found`}</small></div>
                         <div className="globalSearchList">
-                          {globalSearchLoading && !globalSearchResults.length ? (
+                          {globalSearchError ? (
+                            <div className="globalSearchEmpty" role="alert"><AlertTriangle size={20} /><b>Search unavailable</b><small>{globalSearchError}</small></div>
+                          ) : globalSearchLoading && !globalSearchResults.length ? (
                             <div className="globalSearchLoading" aria-live="polite"><RefreshCw size={17} /> Searching permitted records…</div>
                           ) : globalSearchResults.length ? (
                             globalSearchResults.map((result, index) => {

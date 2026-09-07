@@ -30,6 +30,7 @@ const enquiryCaseCache = new Map<string, CachedRows>();
 const relationCache = new Map<string, CachedRows>();
 
 export async function GET(request: Request) {
+  const startedAt = performance.now();
   try {
     const session = await liveSession(request);
     if (session.identity.role === "client")
@@ -69,8 +70,9 @@ export async function GET(request: Request) {
     // Search and relation-backed filters use a short-lived, RLS-scoped narrow
     // index; the large client/note/document payload is still fetched only for
     // the 50 records the person can currently see.
+    const matchedCaseIds = query ? await matchingCaseIds(query, token) : undefined;
     const needsIndex = Boolean(
-      query || documentFilter || followUp === "noted" || followUp === "needed" ||
+      (matchedCaseIds && matchedCaseIds.length > 200) || documentFilter || followUp === "noted" || followUp === "needed" ||
       statusFilter || sourceFilter || intake || qualification || testGiven || spouse || updatedFrom || updatedTo,
     );
     const page = needsIndex
@@ -98,8 +100,9 @@ export async function GET(request: Request) {
           createdTo,
           updatedFrom,
           updatedTo,
+          matchedCaseIds,
         })
-      : await directPage({ token, offset, limit, caseId, branchId, destination, service, priority, followUp, ownerId, createdFrom, createdTo, updatedFrom, updatedTo });
+      : await directPage({ token, offset, limit, caseId, branchId, destination, service, priority, followUp, ownerId, createdFrom, createdTo, updatedFrom, updatedTo, matchedCaseIds });
     const cases = page.data;
     const caseIds = uniqueIds(cases, "id");
     const clientIds = uniqueIds(cases, "client_id");
@@ -181,7 +184,7 @@ export async function GET(request: Request) {
         serviceType: row.service_type ?? "study_abroad",
         matterType: row.matter_type ?? "",
         target: row.target ?? "",
-        stage: "Enquiry",
+        stage: ({ enquiry: "Enquiry", student: "Student", application: "Application", visa: "Visa", deferred: "Deferred", completed: "Completed" } as Record<string, string>)[String(row.lifecycle_stage)] || "Enquiry",
         owner: profileById.get(String(row.owner_id))?.display_name ?? "",
         ownerId: row.owner_id ?? "",
         collaboratorIds: [],
@@ -190,7 +193,7 @@ export async function GET(request: Request) {
         health: row.health === "critical" ? "critical" : "healthy",
         progress: Number(row.progress ?? 0),
         status: "active",
-        lifecycleStage: "enquiry",
+        lifecycleStage: row.lifecycle_stage || "enquiry",
         visaExpiry: plainDate(row.visa_expiry_on),
         deferredApplications: 0,
         completedAt: "",
@@ -235,7 +238,8 @@ export async function GET(request: Request) {
         },
         {
           headers: {
-            "Cache-Control": "private, max-age=15, stale-while-revalidate=45",
+            "Cache-Control": "private, no-store",
+            "Server-Timing": `enquiries;dur=${(performance.now() - startedAt).toFixed(1)}`,
             Vary: "Cookie",
           },
         },
@@ -277,8 +281,11 @@ async function directPage(input: {
   createdTo: string;
   updatedFrom: string;
   updatedTo: string;
+  matchedCaseIds?: string[];
 }) {
+  if (input.matchedCaseIds?.length === 0) return { data: [], count: 0 };
   const filters = caseFilters(input);
+  if (input.matchedCaseIds) filters.push(`id=in.(${input.matchedCaseIds.join(",")})`);
   const path = `/rest/v1/cases?select=${CASE_SELECT}&${filters.join("&")}&order=opened_at.desc.nullslast,id.asc&limit=${input.limit}&offset=${input.offset}`;
   return input.offset === 0
     ? supabasePageRequest<Json[]>(path, { method: "GET" }, input.token)
@@ -289,6 +296,7 @@ async function directPage(input: {
 }
 
 async function indexedPage(input: {
+  matchedCaseIds?: string[];
   accessKey: string;
   token: string;
   offset: number;
@@ -322,7 +330,7 @@ async function indexedPage(input: {
         input.token,
       ),
     ),
-    input.query ? matchingCaseIds(input.query, input.token) : Promise.resolve(null),
+    Promise.resolve(input.matchedCaseIds ?? null),
     input.documents
       ? cachedRows(relationCache, `${input.accessKey}:documents`, () =>
           allRows("documents", "case_id,state&state=neq.archived", input.token),
@@ -416,7 +424,8 @@ function caseFilters(input: {
   updatedFrom: string;
   updatedTo: string;
 }) {
-  const filters = ["lifecycle_stage=eq.enquiry"];
+  // Opening a known case in its own window is not an enquiry-list request.
+  const filters = input.caseId ? [] : ["lifecycle_stage=eq.enquiry"];
   if (input.caseId) filters.push(`id=eq.${input.caseId}`);
   if (input.branchId) filters.push(`branch_id=eq.${input.branchId}`);
   if (input.destination) filters.push(`target=ilike.*${escapeFilter(input.destination)}*`);
@@ -430,16 +439,21 @@ function caseFilters(input: {
 }
 
 async function matchingCaseIds(query: string, token: string): Promise<string[]> {
-  const needle = escapeFilter(query);
+  const pattern = (text: string) => `"*${text.replace(/[\\"%_*]/g, character => `\\${character}`)}*"`;
+  const needle = pattern(query);
   const clientFilter = ["first_name", "last_name", "preferred_name", "email", "mobile", "crm_id", "nationality"]
-    .map((field) => `${field}.ilike.*${needle}*`).join(",");
+    .map((field) => `${field}.ilike.${needle}`).join(",");
+  const nameParts = query.trim().split(/\s+/).filter(Boolean).slice(0, 6);
+  const fullNameFilter = nameParts.length > 1
+    ? `,and(${nameParts.map(part => `or(first_name.ilike.${pattern(part)},last_name.ilike.${pattern(part)},preferred_name.ilike.${pattern(part)})`).join(",")})`
+    : "";
   const enquiryFilter = ["source", "campaign", "status"]
-    .map((field) => `${field}.ilike.*${needle}*`).join(",");
+    .map((field) => `${field}.ilike.${needle}`).join(",");
   const [clients, directCases, enquiries, branches] = await Promise.all([
-    allRows("clients", `id&archived_at=is.null&or=(${clientFilter})`, token),
-    allRows("cases", `id&lifecycle_stage=eq.enquiry&or=(case_number.ilike.*${needle}*,target.ilike.*${needle}*,matter_type.ilike.*${needle}*)`, token),
-    allRows("enquiries", `case_id&or=(${enquiryFilter})`, token),
-    allRows("branches", `id&name=ilike.*${needle}*`, token),
+    allRows("clients", `id&archived_at=is.null&or=${encodeURIComponent(`(${clientFilter}${fullNameFilter})`)}`, token),
+    allRows("cases", `id&lifecycle_stage=eq.enquiry&or=${encodeURIComponent(`(case_number.ilike.${needle},target.ilike.${needle},matter_type.ilike.${needle})`)}`, token),
+    allRows("enquiries", `case_id&or=${encodeURIComponent(`(${enquiryFilter})`)}`, token),
+    allRows("branches", `id&name=${encodeURIComponent(`ilike.${needle}`)}`, token),
   ]);
   const clientIds = clients.map((row) => String(row.id ?? "")).filter(Boolean);
   const branchIds = branches.map((row) => String(row.id ?? "")).filter(Boolean);
@@ -461,9 +475,10 @@ async function matchingCaseIds(query: string, token: string): Promise<string[]> 
 
 async function allRows(table: string, selectAndFilters: string, token: string): Promise<Json[]> {
   const rows: Json[] = [];
+  const order = selectAndFilters.includes("&order=") ? "" : "&order=id.asc";
   for (let offset = 0; offset < 20_000; offset += BULK_PAGE_SIZE) {
     const page = await supabaseRequest<Json[]>(
-      `/rest/v1/${table}?select=${selectAndFilters}&limit=${BULK_PAGE_SIZE}&offset=${offset}`,
+      `/rest/v1/${table}?select=${selectAndFilters}${order}&limit=${BULK_PAGE_SIZE}&offset=${offset}`,
       { method: "GET" },
       token,
     );
@@ -481,6 +496,8 @@ async function cachedRows(
   const existing = cache.get(key);
   if (existing && existing.expiresAt > Date.now()) return existing.rows;
   const rows = await load();
+  for (const [entryKey, entry] of cache) if (entry.expiresAt <= Date.now()) cache.delete(entryKey);
+  if (cache.size >= 16) cache.delete(cache.keys().next().value!);
   cache.set(key, { expiresAt: Date.now() + FILTER_CACHE_MS, rows });
   return rows;
 }

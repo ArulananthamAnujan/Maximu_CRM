@@ -1,0 +1,76 @@
+/* Agent working surface. Keep shell geometry in figma-system.css: this layer
+   owns readable content, not a second sidebar-width calculation. */
+:root { --agent-body: 1rem; --agent-label: .875rem; --agent-meta: .8125rem; }
+.appShell { font-size: var(--agent-body); line-height: 1.5; }
+.appShell :is(input, select, textarea) { font-size: var(--agent-body); min-width: 0; }
+.appShell :is(input:not([type=checkbox]):not([type=radio]):not([type=file]), select) { min-height: 44px; }
+.appShell :is(button, a, input, select, textarea, summary):focus-visible { outline: 3px solid #197aa8; outline-offset: 3px; }
+.appShell :is(.primaryButton, .ghostButton, .navGroup button, .caseTabs button) { min-height: 42px; font-size: var(--agent-label); line-height: 1.4; }
+.appShell :is(.stackedForm, .formGrid, .staffFilters, .enquiryDirectoryFilters) label { font-size: var(--agent-label); line-height: 1.5; }
+.appShell :is(.pageTitle p, .coverageIntro, .schemaNotice, .caseWorkEmpty, .caseWorkError) { font-size: var(--agent-label); line-height: 1.6; }
+.appShell :is(.panelHead h2, .caseWorkPanel h3) { font-size: 1.125rem; line-height: 1.4; }
+.appShell :is(.kicker, .sidebarContext span, .navGroup p, .caseNavGroup > span) { font-size: .75rem; letter-spacing: .06em; line-height: 1.5; }
+.appShell :is(.signal span, .caseTableHeader, .recordTable th, .recordTable td) { font-size: var(--agent-label); }
+.appShell :is(.signal small, .globalSearchIdentity small, .globalSearchContext small, .enquiryScopeLabel small) { font-size: var(--agent-meta); line-height: 1.5; }
+.appShell .recordTable { width: 100%; table-layout: fixed; }
+.appShell .recordTable :is(th, td) { padding: 12px; white-space: normal; overflow-wrap: anywhere; vertical-align: top; }
+.appShell :is(.recordTableWrap, .caseWorkPanel, .panel) { min-width: 0; }
+.appShell .globalSearchPanel { max-width: calc(100vw - 32px); }
+.appShell :is(.globalSearchEmpty small, .enquirySearchSuggestionState) { font-size: var(--agent-label); }
+.appShell :is(.caseSectionHead, .caseQuickActions, .formActions) { flex-wrap: wrap; }
+.appShell .caseSectionHead h2 { display: block; margin: 2px 0 4px; font-family: inherit; font-size: 1.5rem; letter-spacing: -.02em; }
+.appShell .caseSectionHead p { display: block; max-width: 65ch; font-size: var(--agent-label); }
+.appShell .caseSectionHead { padding: 18px 0; }
+.appShell .casePriorityBar { flex-wrap: wrap; }
+.appShell .casePriorityBar h3 { font-size: 1.125rem !important; line-height: 1.5; }
+.appShell .casePriorityBar p { font-size: var(--agent-label); }
+.appShell :is(.caseAtGlance small, .caseTaskSummary small, .caseAuditList small, .caseLastNote small, .caseRailSummary small, .caseRailBranch small, .agentMessagePreview small, .agentFinanceFacts small) { font-size: var(--agent-meta); line-height: 1.5; }
+.appShell :is(.caseAtGlance strong, .caseTaskSummary span, .caseAuditList strong, .caseLastNote p, .agentSummaryRows strong, .agentMessagePreview strong, .agentClientPanel dd, .agentClientPanel dt, .agentAlert strong, .agentAlert small, .agentDocumentChips span) { font-size: var(--agent-label); line-height: 1.5; }
+.appShell :is(.agentSummaryRows small, .agentSummaryRows b, .agentMessagePreview p, .agentMessagePreview > b, .caseRailSummary strong, .caseRailBranch strong) { font-size: var(--agent-label); line-height: 1.5; }
+.appShell .agentSummaryRows > button { gap: 12px; padding: 14px 0; }
+.appShell .agentMessagePreview p { white-space: normal; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.appShell .agentFinanceFacts strong { font-size: 1.25rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.appShell .agentClientPanel dl > div { display: grid; grid-template-columns: minmax(90px, .8fr) minmax(0, 1.2fr); }
+.appShell .agentClientPanel dd { text-align: left; }
+.appShell :is(.caseRailBranch span, .caseRailSummary > b, .caseTabs button b, .caseWindowTopbar > span, .caseWindowTopbar > b) { font-size: .75rem; line-height: 1.5; }
+.appShell .caseWindowTopbar { min-height: 56px; padding-block: 6px; }
+.appShell .caseWindowTopbar button { min-height: 40px; font-size: var(--agent-label); }
+.appShell.caseWindow .drawerHead { margin-left: 0; padding: 20px 26px; }
+.appShell.caseWindow .drawerHead h2 { font-size: clamp(1.5rem, 2vw, 2rem); overflow-wrap: anywhere; }
+.appShell.caseWindow .caseLeftRail { top: 56px; margin-top: 0; min-height: 0; max-height: calc(100dvh - 70px); overflow-y: auto; border-radius: 12px; }
+.appShell.caseWindow .caseWorkspaceLayout { grid-template-columns: 224px minmax(0, 1fr); gap: 24px; padding: 0 24px 24px; align-items: start; }
+.appShell.caseWindow .caseWorkspaceContent { padding: 0; min-width: 0; }
+.appShell.caseWindow .caseHome { grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 20px; }
+.appShell .caseWorkPanel { padding: 20px; border-radius: 12px; }
+.caseLoadState, .caseRefreshState { padding: 16px; border: 1px solid #c9e1eb; border-radius: 10px; background: #f0f8fb; color: #214c64; }
+.caseLoadState { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.caseRefreshState { margin-bottom: 16px; font-size: var(--agent-label); }
+.caseProfileEditor { margin-bottom: 20px; }
+.caseProfileEditor summary { cursor: pointer; padding: 16px 20px; color: #12658c; font-weight: 650; font-size: 1rem; }
+.caseProfileEditor form { padding: 0 20px 20px; }
+.caseProfileEditor fieldset { border: 0; margin: 16px 0; padding: 0; min-width: 0; }
+.caseProfileEditor legend { padding: 0 0 12px; font-weight: 650; font-size: 1rem; }
+.caseProfileFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.caseProfileFields label { display: grid; gap: 6px; font-size: var(--agent-label); }
+.caseProfileFields :is(input, select) { width: 100%; padding: 10px 12px; border: 1px solid #c8d7df; border-radius: 8px; background: #fff; }
+.caseProfileFields .full { grid-column: 1 / -1; }
+.caseProfileEditor .formActions { display: flex; align-items: center; gap: 12px; margin-top: 20px; }
+.caseProfileEditor [role=status] { color: #17664b; font-size: var(--agent-label); }
+@media (max-width: 1200px) {
+  .appShell.caseWindow .caseHome { grid-template-columns: 1fr; grid-template-areas: "priority" "health" "workflow" "admissions" "documents" "communication" "audit" "client" "bottom"; }
+  .appShell .caseAtGlance { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 800px) {
+  .appShell.caseWindow .caseWorkspaceLayout { grid-template-columns: minmax(0, 1fr); gap: 12px; padding: 0 16px 20px; }
+  .appShell.caseWindow .caseLeftRail { position: static; max-height: none; }
+  .appShell.caseWindow .caseTabs { display: flex; flex-direction: row; flex-wrap: wrap; }
+  .appShell .caseNavGroup { flex: 1 1 160px; }
+  .appShell .caseAtGlance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .appShell .agentBottomSummary, .caseProfileFields { grid-template-columns: minmax(0, 1fr); }
+  .appShell .caseQuickActions { justify-content: flex-start; }
+  .appShell .caseWindowTopbar { grid-template-columns: minmax(0, 1fr) auto; }
+  .appShell .caseWindowTopbar > span { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .appShell *, .appShell *::before, .appShell *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
