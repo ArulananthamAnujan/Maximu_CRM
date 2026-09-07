@@ -9,6 +9,14 @@ import { expect, test, type Page } from "@playwright/test";
  * are the parts a person actually depends on.
  */
 
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status !== testInfo.expectedStatus) {
+    for (const openPage of page.context().pages()) {
+      console.log("Failed browser state:", openPage.url(), await openPage.locator("body").innerText().catch(() => "Page closed"));
+    }
+  }
+});
+
 const OWNER = "owner@maximus.test";
 const OFFICER = "officer@maximus.test";
 const CLIENT = "student@maximus.test";
@@ -17,23 +25,37 @@ async function signIn(page: Page, email: string) {
   await page.goto("/");
   await page.locator('input[name="email"]').fill(email);
   await page.locator('input[name="password"]').fill("irrelevant");
-  await page.getByRole("button", { name: /sign in securely/i }).click();
+  await page.getByRole("button", { name: /^sign in$/i }).click();
   await expect(page.locator(".appShell")).toBeVisible({ timeout: 25_000 });
+}
+
+async function navigateTo(page: Page, name: string) {
+  const button = page.locator(".sidebar").getByRole("button", { name, exact: true });
+  const overlayNavigation = await page.evaluate(() =>
+    innerWidth <= 900 || !!document.querySelector(".appShell.enquiryFullMode, .appShell.gmailMode"),
+  );
+  const sidebar = page.locator(".sidebar");
+  if (overlayNavigation && !(await sidebar.evaluate(element => element.classList.contains("open")))) {
+    await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
+    await expect(sidebar).toHaveClass(/\bopen\b/);
+  }
+  await button.click();
+  if (overlayNavigation) await expect(sidebar).not.toHaveClass(/\bopen\b/);
 }
 
 /** Opens the Enquiries list and waits for it to be the screen on show. */
 async function openEnquiries(page: Page) {
+  if (await page.locator(".journeyList-enquiries").isVisible()) return;
+  if (!await page.locator(".sidebar").getByRole("button", { name: /^Enquiries$/ }).isVisible())
+    await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
   await page.getByRole("button", { name: /^Enquiries$/ }).click();
-  await expect(page.locator(".listPanel")).toBeVisible({ timeout: 25_000 });
+  await expect(page.locator(".journeyList-enquiries")).toBeVisible({ timeout: 25_000 });
 }
 
 /** Opens the enquiry form the way someone works: from the Enquiries list. */
 async function openEnquiryForm(page: Page) {
   await openEnquiries(page);
-  await page
-    .locator(".listPanel")
-    .getByRole("button", { name: "Add new" })
-    .click();
+  await page.getByRole("button", { name: "New enquiry", exact: true }).first().click();
   await expect(page.locator(".recordModal")).toBeVisible();
 }
 
@@ -67,7 +89,7 @@ async function createEnquiry(
 
 /** The list row for a client, which is the whole clickable row, not the text. */
 function caseRow(page: Page, name: string) {
-  return page.locator(".richRow").filter({ hasText: name }).first();
+  return page.locator(".journeyPrimaryCell").filter({ hasText: name }).first();
 }
 
 /**
@@ -85,6 +107,7 @@ async function openCaseDrawer(page: Page, name: string) {
   await popup.waitForLoadState();
   const drawer = popup.locator(".caseDrawer");
   await expect(drawer).toBeVisible({ timeout: 25_000 });
+  await drawer.getByText("Update stage or visa expiry", { exact: true }).click();
   return { popup, drawer };
 }
 
@@ -94,7 +117,7 @@ test("the sign-in page renders its form", async ({ page }) => {
   await expect(page.locator('input[name="email"]')).toBeVisible();
   await expect(page.locator('input[name="password"]')).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /sign in securely/i }),
+    page.getByRole("button", { name: /^sign in$/i }),
   ).toBeVisible();
 });
 
@@ -104,7 +127,7 @@ test("an unknown account is refused and stays on the sign-in page", async ({
   await page.goto("/");
   await page.locator('input[name="email"]').fill("nobody@maximus.test");
   await page.locator('input[name="password"]').fill("wrong");
-  await page.getByRole("button", { name: /sign in securely/i }).click();
+  await page.getByRole("button", { name: /^sign in$/i }).click();
   await expect(page.locator(".loginError")).toBeVisible({ timeout: 25_000 });
   await expect(page.locator(".appShell")).toHaveCount(0);
 });
@@ -180,8 +203,8 @@ test("the pipeline control moves a case to the next stage", async ({
   page,
 }) => {
   await signIn(page, OFFICER);
-  await openEnquiries(page);
-  const { drawer } = await openCaseDrawer(page, "Priya Sharma");
+  await createEnquiry(page, "Pipeline Student", "pipeline.student@example.test");
+  const { drawer } = await openCaseDrawer(page, "Pipeline Student");
   await expect(drawer.locator(".lifecycleTrack li.current")).toHaveText(
     /enquiry/i,
   );
@@ -236,7 +259,7 @@ test("the portal shows a client their own view and no staff tools", async ({
 }) => {
   await signIn(page, CLIENT);
   await expect(
-    page.getByRole("button", { name: /staff & masters/i }),
+    page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }),
   ).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^Reports$/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /quick create/i })).toHaveCount(
@@ -328,21 +351,21 @@ test("a branch manager gets the operations tools but not the organisation", asyn
   await expect(page.getByRole("button", { name: /^Accounts$/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Reports$/ })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /staff & masters/i }),
+    page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }),
   ).toBeVisible();
   // Integrations is the organisation-wide screen, and belongs to the owner.
   await expect(
-    page.getByRole("button", { name: /^Integrations$/ }),
+    page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }),
   ).toHaveCount(0);
 });
 
 test("an owner gets the organisation screens as well", async ({ page }) => {
   await signIn(page, OWNER);
   await expect(
-    page.getByRole("button", { name: /^Integrations$/ }),
+    page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /staff & masters/i }),
+    page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }),
   ).toBeVisible();
 });
 
@@ -388,6 +411,10 @@ test("Defer is on the case pipeline and a case can be parked there", async ({
     { timeout: 25_000 },
   );
 
+  // The refreshed case keeps stage actions behind the compact disclosure.
+  if (!(await drawer.locator(".caseStageControls").evaluate((el) => (el as HTMLDetailsElement).open))) {
+    await drawer.locator(".caseStageControls summary").click();
+  }
   // And it resumes into whichever stage the work restarts at.
   await expect(
     drawer.getByRole("button", { name: /resume in student/i }),
@@ -424,51 +451,27 @@ test("the visa expiry is asked for beside the move that needs it", async ({
  * Applications and visa matters as records.
  * ------------------------------------------------------------------ */
 
-test("the Applications screen lists applications, not just cases", async ({
-  page,
-}) => {
+test("the Applications screen preserves institution, intake, status and deadlines", async ({ page }) => {
   await signIn(page, OFFICER);
   await page.getByRole("button", { name: /^Applications$/ }).click();
-  const board = page.locator(".boardTable").first();
-  await expect(board).toBeVisible({ timeout: 25_000 });
-  for (const column of [
-    "Institution",
-    "Course",
-    "Intake",
-    "Status",
-    "Deadline",
-  ])
-    await expect(
-      board.getByRole("columnheader", { name: column, exact: true }),
-    ).toBeVisible();
-  await expect(board.locator("tbody tr").first()).toBeVisible();
-  // The cases at that stage are still reachable underneath.
-  await expect(page.getByText(/cases at the application stage/i)).toBeVisible();
+  const board = page.locator(".detailedRecordsPanel");
+  await expect(board.getByRole("heading", { name: "Institution applications" })).toBeVisible();
+  const application = board.locator(".detailedRecordCard").first();
+  await expect(application).toBeVisible({ timeout: 25_000 });
+  for (const label of ["Course", "Campus & intake", "Application reference", "Submitted", "Offer / CoE", "Deadline", "Documents"])
+    await expect(application.getByText(label, { exact: true })).toBeVisible();
+  await expect(application.locator(".recordStatusPill")).toBeVisible();
+  await expect(application.getByRole("button", { name: "Open case" })).toBeVisible();
 });
 
-test("the Visa screen carries the columns an agent works from", async ({
-  page,
-}) => {
+test("the Visa screen carries the details an agent works from", async ({ page }) => {
   await signIn(page, OFFICER);
   await page.getByRole("button", { name: /^Visa$/ }).click();
-  const board = page.locator(".boardTable").first();
-  await expect(board).toBeVisible({ timeout: 25_000 });
-  for (const column of [
-    "Subclass",
-    "Destination",
-    "Current visa",
-    "Expiry",
-    "Lodged",
-    "TRN",
-    "Agent",
-    "MARN",
-    "Status",
-    "s56 due",
-    "Outcome",
-  ])
-    await expect(
-      board.getByRole("columnheader", { name: column, exact: true }),
-    ).toBeVisible();
+  const matter = page.locator(".detailedRecordCard").first();
+  await expect(matter).toBeVisible({ timeout: 25_000 });
+  for (const label of ["Destination", "Current visa & expiry", "Lodged / TRN", "Agent / MARN", "Information request", "Decision / outcome", "Documents"])
+    await expect(matter.getByText(label, { exact: true })).toBeVisible();
+  await expect(matter.locator(".recordStatusPill")).toBeVisible();
 });
 
 /* ------------------------------------------------------------------ *
@@ -524,6 +527,8 @@ test("entering somebody already on file is stopped and offers a choice", async (
 test("no screen shows Invalid Date", async ({ page }) => {
   await signIn(page, OWNER);
   for (const screen of ["Messages", "File Manager", "Accounts", "Calendar"]) {
+    await page.goto("/");
+    await expect(page.locator(".appShell")).toBeVisible();
     await page
       .getByRole("button", { name: screen, exact: true })
       .first()
@@ -536,7 +541,7 @@ test("integration status is read from the server, not asserted", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /^Integrations$/ }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }).click();
   await expect(page.getByText(/integration status/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -548,9 +553,9 @@ test("integration status is read from the server, not asserted", async ({
   );
   // And what is absent is named as absent rather than as unconfigured.
   await expect(
-    page.locator(".integrationState.not_built").first(),
+    page.locator(".integrationState.not_configured").first(),
   ).toBeVisible();
-  await expect(page.getByText(/gmail sending/i)).toBeVisible();
+  await expect(page.getByText(/gmail inbox and sending/i)).toBeVisible();
 });
 
 /** Buttons a person can see but a screen reader would announce as nothing. */
@@ -584,7 +589,7 @@ const NAMED_SCREENS = [
 test("every button a person can press has a name", async ({ page }) => {
   await signIn(page, OWNER);
   for (const screen of NAMED_SCREENS) {
-    await page.getByRole("button", { name: screen, exact: true }).click();
+    await navigateTo(page, screen);
     expect(await unnamedButtons(page), `unnamed buttons on ${screen}`).toEqual(
       [],
     );
@@ -597,8 +602,7 @@ test("every button still has a name on a phone", async ({ page }) => {
   await signIn(page, OWNER);
   await page.setViewportSize({ width: 390, height: 844 });
   for (const screen of NAMED_SCREENS) {
-    await page.getByRole("button", { name: "Open case navigation" }).click();
-    await page.getByRole("button", { name: screen, exact: true }).click();
+    await navigateTo(page, screen);
     expect(
       await unnamedButtons(page),
       `unnamed buttons on ${screen} at 390px`,
@@ -612,8 +616,7 @@ test("the case drawer keeps four tabs on a phone and the rest under More", async
   await signIn(page, OFFICER);
   await createEnquiry(page, "Phone Sized", "phone.sized@example.test");
   await page.setViewportSize({ width: 390, height: 844 });
-  // On a phone the navigation is off-canvas until it is asked for.
-  await page.getByRole("button", { name: "Open case navigation" }).click();
+  // Creation already leaves the enquiry directory open.
   await openEnquiries(page);
   const { popup, drawer } = await openCaseDrawer(page, "Phone Sized");
   // The case's own window starts at a desktop size; resize it the same way.
@@ -637,7 +640,7 @@ test("the staff screen shows the team rather than role artwork", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   await expect(page.getByText(/staff accounts/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -652,11 +655,11 @@ test("the staff screen shows the team rather than role artwork", async ({
   await expect(table).toContainText("officer@maximus.test");
 });
 
-test("an owner creates a staff account and is given the password to hand over", async ({
+test("an owner creates a staff account with secure setup instructions", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   await page.getByRole("button", { name: /add staff member/i }).click();
 
   const form = page.locator(".stackedForm");
@@ -670,7 +673,7 @@ test("an owner creates a staff account and is given the password to hand over", 
 
   const handover = page.locator(".handoverPanel");
   await expect(handover).toBeVisible({ timeout: 25_000 });
-  await expect(handover.locator("code")).not.toBeEmpty();
+  await expect(handover).toContainText(/secure account setup email|secure setup link/i);
   await expect(page.locator(".boardTable").first()).toContainText(
     "browser.officer@maximus.test",
   );
@@ -680,7 +683,7 @@ test("a branch manager is not offered administrator levels", async ({
   page,
 }) => {
   await signIn(page, MANAGER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   await page.getByRole("button", { name: /add staff member/i }).click();
   const levels = await page
     .locator('.stackedForm select[name="level"] option')
@@ -694,11 +697,11 @@ test("a staff account can be deactivated and brought back", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   // The status filter defaults to Active, which would hide this row the
   // moment it is deactivated -- widen it first so the row stays visible
   // through both halves of the test.
-  await page.getByLabel("Status").selectOption("all");
+  await page.locator(".staffFilters").getByLabel("Status").selectOption("all");
   const row = page
     .locator(".boardTable tbody tr")
     .filter({ hasText: "colombo@maximus.test" })
@@ -712,7 +715,7 @@ test("a staff account can be deactivated and brought back", async ({
 
 test("a branch can be added from the masters screen", async ({ page }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   await page.getByRole("button", { name: /add branch/i }).click();
   const form = page.locator(".stackedForm");
   await form.locator('input[name="name"]').fill("Kandy");
@@ -728,31 +731,15 @@ test("a branch can be added from the masters screen", async ({ page }) => {
 
 const COLLEAGUE = "second.officer@maximus.test";
 
-test("a case officer sees a colleague's case but cannot change it", async ({
-  page,
-}) => {
+test("a case officer can work a colleague's branch case", async ({ page }) => {
   await signIn(page, COLLEAGUE);
   await openEnquiries(page);
-  // Visible, because cover and handover depend on it.
   const { drawer } = await openCaseDrawer(page, "Priya Sharma");
-  // The database would refuse a write here regardless, but the controls
-  // themselves say so up front rather than letting somebody click into a
-  // rejection: disabled, with the same explanation the database would give.
-  const moveButton = drawer.getByRole("button", { name: /move to student/i });
-  await expect(moveButton).toBeDisabled();
-  await expect(moveButton).toHaveAttribute(
-    "title",
-    /assigned to somebody else/i,
-  );
-  const editButton = drawer.getByRole("button", { name: /^edit$/i });
-  await expect(editButton).toBeDisabled();
-  // Finance is not merely empty on a case that isn't theirs -- the tab itself
-  // is not offered.
-  await expect(drawer.getByRole("tab", { name: /finance/i })).toHaveCount(0);
-  // Archiving is still offered, but as the request it actually is.
-  await expect(
-    drawer.getByRole("button", { name: /request archive/i }),
-  ).toBeVisible();
+  await expect(drawer.getByRole("button", { name: /move to student/i })).toBeEnabled();
+  await expect(drawer.getByRole("button", { name: /^edit case$/i })).toBeEnabled();
+  await expect(drawer.getByRole("tab", { name: /finance/i })).toBeVisible();
+  // Branch work does not grant management authority to archive a case.
+  await expect(drawer.getByRole("button", { name: /request archive/i })).toBeVisible();
 });
 
 test("a case officer's ledger holds no commission invoices", async ({
@@ -770,7 +757,7 @@ test("the client portal never uses internal finance language", async ({
 }) => {
   await signIn(page, CLIENT);
   for (const screen of ["Invoices", "Messages", "Documents", "Journey"]) {
-    await page.getByRole("button", { name: screen, exact: true }).click();
+    await navigateTo(page, screen);
     const body = (await page.locator("body").innerText()).toLowerCase();
     for (const forbidden of [
       "commission",
@@ -800,7 +787,7 @@ test("an administrator can connect a portal login to a client file", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   await expect(page.getByText(/portal logins/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -814,10 +801,31 @@ test("integration status names the production settings still to do", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /^Integrations$/ }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }).click();
   await expect(page.getByText(/passport encryption/i)).toBeVisible({
     timeout: 25_000,
   });
   await expect(page.getByText(/record retention/i)).toBeVisible();
   await expect(page.getByText(/creating staff logins/i)).toBeVisible();
+});
+
+test("the case workspace stays bounded at desktop and phone widths", async ({ page }) => {
+  await signIn(page, OFFICER);
+  await openEnquiries(page);
+  const { popup, drawer } = await openCaseDrawer(page, "Priya Sharma");
+  for (const width of [1363, 1024, 390]) {
+    await popup.setViewportSize({ width, height: 900 });
+    const dimensions = await popup.evaluate(() => ({
+      viewport: window.innerWidth,
+      page: document.documentElement.scrollWidth,
+    }));
+    expect(dimensions.page).toBeLessThanOrEqual(dimensions.viewport + 1);
+    await expect(drawer.getByRole("button", { name: /^edit case$/i })).toBeVisible();
+    const visibleTabs = drawer.getByRole("tab");
+    for (let index = 0; index < await visibleTabs.count(); index += 1) {
+      await visibleTabs.nth(index).click();
+      expect(await popup.evaluate(() => document.documentElement.scrollWidth))
+        .toBeLessThanOrEqual(width + 1);
+    }
+  }
 });

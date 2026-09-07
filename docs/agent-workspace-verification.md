@@ -1,9 +1,10 @@
 # Agent workspace verification — 7 September 2026
 
-This is a bounded local implementation, not a certification that Maximus can
-already replace every legacy workflow. No production data was changed in this
-pass. Attachment uploads remain paused. Publishing and live acceptance are
-separate from passing a build.
+This records the original workspace release and the subsequent CI repair. It is
+not a certification that Maximus can replace every legacy workflow. No customer
+records were changed during the CI repair; the lifecycle function migration is
+recorded below. Attachment uploads remain paused. Builds and live acceptance are
+separate checks.
 
 ## Production acceptance update
 
@@ -60,7 +61,7 @@ not proof of parity. No customer record was edited during this browser audit.
 | Gmail status | Missing saved authorization cannot be shown as connected; sync success is a separate notice | Mock connection test, not actual OAuth, receipt or delivery proof |
 | Payment safeguards | Reject overpayments, mismatched currencies and void/cancelled/refunded invoice payments | Negative route tests with no fixture writes; not full finance certification |
 
-## Verification commands
+## Earlier verification (superseded by the CI repair below)
 
 ```sh
 node /root/.codex/plugins/cache/openai-curated-remote/sites/0.1.51/scripts/build-site.mjs
@@ -112,3 +113,55 @@ is accepted as part of this change. Lint is therefore not a passing release gate
 
 Do not retire the legacy CRM until these acceptance checks pass and outstanding
 data/file reconciliation is signed off.
+
+
+## CI and compact workspace repair
+
+The repeated main-branch failures stopped at ESLint (React effect-state errors
+and unused bindings); Netlify builds alone did not establish a passing CI run.
+The repair removes redundant search state, cancels stale Gmail requests, and
+preserves the unused campaign component separately instead of discarding it.
+Local lint has zero warnings, 137 unit tests pass, and both build paths pass.
+
+The case view now uses one client header and horizontal section navigation,
+compact overview columns, visible notes and applications, and a disclosure for
+stage/expiry controls. Shared panels and controls use consistent spacing and
+readable text. A synthetic record rendered without horizontal overflow at a
+1,363px viewport. That preview is not evidence for all production viewports.
+
+CI revealed test infrastructure drift: the Supabase bootstrap lacked
+service_role, the PostgREST stand-in lacked paging/count/filter semantics, and
+browser tests referenced obsolete sign-in and directory controls. These have
+been corrected while preserving portal/cross-branch denial tests. The branch
+work tests additionally found that move_case_lifecycle still used a client
+ownership guard, contradicting migration 0035's case boundary; migration 0039
+aligns that guard with can_modify_case, retaining SECURITY INVOKER and stage
+validation. Migration 0039 was applied successfully in production after the real PostgreSQL
+security suite passed. CI run 34107483986 passed all 487 feature-audit checks;
+run 34108202202 passed the build and database/feature jobs again. Browser
+acceptance and the application release remain pending.
+
+
+The smaller workspace feed also hid enquiry-stage parents referenced by
+applications, visa matters, documents and invoices, producing blank client
+names. It now resolves only the missing referenced parents in bounded batches.
+Portal reads include the linked client's enquiry-stage journey. Two worker
+regression tests cover these cases without reinstating the full enquiry load.
+
+## Completed release gate
+
+Candidate 12bfa598295d2808af3369c6e7affc95b022c420 passed all three jobs in
+GitHub Actions run 34111701016 on 7 September 2026: lint, TypeScript, build and
+137 unit/contract tests; real PostgreSQL row-level security and 487 feature
+checks; all 39 browser scenarios. No test or workflow was disabled.
+
+The browser suite covers enquiry creation, case transitions and deferral,
+visa-expiry validation, applications and visa fields, staff management, portal
+boundaries, named controls across desktop and phone screens, and case geometry
+at 1363px, 1024px and 390px. The final fixes name the phone enquiry search icon
+and Gmail folder controls. Test navigation waits for the menu state, and stage
+transitions use their own fixture instead of mutating another test's client.
+
+This release gate supersedes the earlier pending CI notes above. Live Netlify
+publication and authenticated visual inspection follow this exact application
+source; the broader legacy/provider acceptance items remain separate.

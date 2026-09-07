@@ -31,11 +31,16 @@ const columnExprAliased = (alias, v) => {
 // commas only, so a nested embed's own comma-separated columns stay together.
 function splitTopLevel(str) {
   const parts = [];
-  let depth = 0, current = "";
+  let depth = 0, current = "", quoted = false, escaped = false;
   for (const ch of str) {
-    if (ch === "(") depth++;
-    if (ch === ")") depth--;
-    if (ch === "," && depth === 0) { parts.push(current); current = ""; continue; }
+    if (escaped) { current += ch; escaped = false; continue; }
+    if (ch === "\\" && quoted) { current += ch; escaped = true; continue; }
+    if (ch === '"') quoted = !quoted;
+    if (!quoted) {
+      if (ch === "(") depth++;
+      if (ch === ")") depth--;
+      if (ch === "," && depth === 0) { parts.push(current); current = ""; continue; }
+    }
     current += ch;
   }
   if (current) parts.push(current);
@@ -153,12 +158,14 @@ function toSql(value, type) {
 // PostgREST filter -> SQL predicate. Supports the operators this app sends.
 function predicateOn(target, spec) {
   const [op, ...rest] = spec.split(".");
-  const value = rest.join(".");
+  const rawValue = rest.join(".");
+  const value = rawValue.startsWith('"') && rawValue.endsWith('"') ? JSON.parse(rawValue) : rawValue;
+  if (op === "not") return `not (${predicateOn(target, value)})`;
   if (op === "eq") return `${target} = ${lit(value)}`;
   if (op === "neq") return `${target} <> ${lit(value)}`;
   if (op === "is") return `${target} is ${value === "null" ? "null" : value}`;
   if (op === "ilike") return `${target}::text ilike ${lit(value.replace(/\*/g, "%"))}`;
-  if (op === "in") return `${target}::text = any(${lit(value.replace(/[()]/g, "").split(",").join("|"))}::text)`;
+  if (op === "in") return `${target}::text = any(array[${splitTopLevel(value.replace(/^\(/, "").replace(/\)$/, "")).map((v) => lit(v.replace(/^"|"$/g, ""))).join(",")} ]::text[])`;
   if (op === "gte") return `${target} >= ${lit(value)}`;
   if (op === "lte") return `${target} <= ${lit(value)}`;
   throw new Error(`unsupported filter operator: ${op}`);
@@ -168,19 +175,21 @@ function predicate(column, spec) {
 }
 
 // `or=(a.ilike.*x*,b.ilike.*x*)` -> (a ilike '%x%' or b ilike '%x%')
-function orPredicate(raw) {
+function logicPredicate(raw, join = "or") {
   const inner = raw.replace(/^\(/, "").replace(/\)$/, "");
   return `(${splitTopLevel(inner).map((p) => {
+    const nested = /^(and|or)\((.*)\)$/.exec(p);
+    if (nested) return logicPredicate(nested[2], nested[1]);
     const idx = p.indexOf(".");
     return predicate(p.slice(0, idx), p.slice(idx + 1));
-  }).join(" or ")})`;
+  }).join(` ${join} `)})`;
 }
 
 function buildWhere(params) {
   const clauses = [];
   for (const [key, value] of params) {
     if (["select", "order", "limit", "offset"].includes(key)) continue;
-    if (key === "or") { clauses.push(orPredicate(value)); continue; }
+    if (key === "or" || key === "and") { clauses.push(logicPredicate(value, key)); continue; }
     clauses.push(predicate(key, value));
   }
   return clauses.length ? ` where ${clauses.join(" and ")}` : "";
@@ -207,7 +216,7 @@ function buildWhereQualified(params, embedAliasByTable) {
   const clauses = [];
   for (const [key, value] of params) {
     if (["select", "order", "limit", "offset"].includes(key)) continue;
-    if (key === "or") { clauses.push(orPredicate(value)); continue; }
+    if (key === "or" || key === "and") { clauses.push(logicPredicate(value, key)); continue; }
     const dot = key.indexOf(".");
     if (dot !== -1) {
       const tbl = key.slice(0, dot);
@@ -249,8 +258,8 @@ const server = http.createServer((req, res) => {
     const isServiceRole =
       Boolean(process.env.SHIM_SERVICE_ROLE_KEY) &&
       req.headers.apikey === process.env.SHIM_SERVICE_ROLE_KEY;
-    const send = (status, body) => {
-      res.writeHead(status, { "Content-Type": "application/json" });
+    const send = (status, body, headers = {}) => {
+      res.writeHead(status, { "Content-Type": "application/json", ...headers });
       res.end(body === undefined ? "" : JSON.stringify(body));
     };
     try {
@@ -347,6 +356,7 @@ const server = http.createServer((req, res) => {
       if (req.method === "GET") {
         const select = url.searchParams.get("select") || "*";
         const limit = url.searchParams.get("limit");
+        const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
         const items = select === "*" ? null : splitTopLevel(select).map(parseSelectItem);
         const embeds = items ? items.filter((i) => i.kind === "embed") : [];
 
@@ -354,9 +364,12 @@ const server = http.createServer((req, res) => {
           const cols = select === "*" ? "*" : items.map((c) => ident(c.name)).join(", ");
           const out = await sql(
             `select coalesce(json_agg(t)::text,'[]') from (select ${cols} from public.${ident(table)}${where}` +
-            `${buildOrder(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""}) t`,
+            `${buildOrder(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""} offset ${offset}) t`,
             uid, !isServiceRole);
-          return send(200, JSON.parse(out || "[]"));
+          const rows = JSON.parse(out || "[]");
+          const count = /count=exact/.test(String(req.headers.prefer || ""))
+            ? Number(await sql(`select count(*) from public.${ident(table)}${where}`, uid, !isServiceRole)) : "*";
+          return send(200, rows, { "Content-Range": `${rows.length ? `${offset}-${offset + rows.length - 1}` : "*"}/${count}` });
         }
 
         // An embedded-resource select (`profiles!fkey(...)`, `x!inner(...)`):
@@ -384,7 +397,7 @@ const server = http.createServer((req, res) => {
           `select coalesce(json_agg(row_obj)::text,'[]') from (` +
           `select json_build_object(${pairs.join(", ")}) as row_obj` +
           ` from public.${ident(table)} t ${joins.join(" ")}${qualifiedWhere}` +
-          `${buildOrderQualified(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""}) x`,
+          `${buildOrderQualified(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""} offset ${offset}) x`,
           uid, !isServiceRole);
         return send(200, JSON.parse(out || "[]"));
       }

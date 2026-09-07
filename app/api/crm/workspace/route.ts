@@ -59,6 +59,7 @@ export async function GET(request: Request) {
   try {
     const session = await liveSession(request);
     const token = session.accessToken;
+    const portalWorkspace = session.identity.role === "client";
     // Datasets are read independently so one unavailable table cannot fail the
     // whole load; the names of any that failed are reported to the client.
     const degraded: string[] = [];
@@ -94,13 +95,13 @@ export async function GET(request: Request) {
       caseNotes,
     ] = await Promise.all([
       safeRestPaged(
-        "clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle&archived_at=is.null&current_lifecycle=neq.enquiry&order=updated_at.desc",
+        `clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle&archived_at=is.null${portalWorkspace ? "" : "&current_lifecycle=neq.enquiry"}&order=updated_at.desc`,
         token,
         CLIENT_CASE_LIMIT,
         degraded,
       ),
       safeRestPaged(
-        "cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at&lifecycle_stage=neq.enquiry&order=opened_at.desc",
+        `cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at${portalWorkspace ? "" : "&lifecycle_stage=neq.enquiry"}&order=opened_at.desc`,
         token,
         CLIENT_CASE_LIMIT,
         degraded,
@@ -245,6 +246,24 @@ export async function GET(request: Request) {
       if (row.archived_at || row.status !== "deferred") continue;
       const key = String(row.case_id);
       deferredByCase.set(key, (deferredByCase.get(key) ?? 0) + 1);
+    }
+
+    // Converted boards and invoices may reference an enquiry-stage file.
+    // Resolve only parents of records already loaded, rather than downloading
+    // the complete enquiry directory. Every lookup uses the caller's RLS token.
+    const knownCases = new Set(cases.map(row => String(row.id)));
+    const parentCaseIds = [...new Set([...applications, ...visaMatters, ...invoices, ...documents, ...threads]
+      .map(row => String(row.case_id ?? "")).filter(id => id && !knownCases.has(id)))];
+    for (let offset = 0; offset < parentCaseIds.length; offset += 120) {
+      const ids = parentCaseIds.slice(offset, offset + 120).map(encodeURIComponent).join(",");
+      cases.push(...await safeRest(`cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at&id=in.(${ids})`, token, degraded));
+    }
+    const knownClients = new Set(clients.map(row => String(row.id)));
+    const parentClientIds = [...new Set([...cases, ...invoices, ...documents, ...enquiries, ...appointments]
+      .map(row => String(row.client_id ?? "")).filter(id => id && !knownClients.has(id)))];
+    for (let offset = 0; offset < parentClientIds.length; offset += 120) {
+      const ids = parentClientIds.slice(offset, offset + 120).map(encodeURIComponent).join(",");
+      clients.push(...await safeRest(`clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle&id=in.(${ids})`, token, degraded));
     }
 
     const clientById = new Map(clients.map((row) => [String(row.id), row]));
