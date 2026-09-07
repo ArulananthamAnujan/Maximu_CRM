@@ -176,7 +176,9 @@ function predicate(column, spec) {
 
 // `or=(a.ilike.*x*,b.ilike.*x*)` -> (a ilike '%x%' or b ilike '%x%')
 function logicPredicate(raw, join = "or") {
-  const inner = raw.replace(/^\(/, "").replace(/\)$/, "");
+  // Nested and/or bodies are already unwrapped. Removing their final ')'
+  // would truncate the last child expression in a multi-word name search.
+  const inner = raw.startsWith("(") && raw.endsWith(")") ? raw.slice(1, -1) : raw;
   return `(${splitTopLevel(inner).map((p) => {
     const nested = /^(and|or)\((.*)\)$/.exec(p);
     if (nested) return logicPredicate(nested[2], nested[1]);

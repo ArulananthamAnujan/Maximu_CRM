@@ -465,7 +465,7 @@ test("the Applications screen preserves institution, intake, status and deadline
   await expect(application).toBeVisible({ timeout: 25_000 });
   await application.getByText("All application details", { exact: true }).click();
   for (const label of ["Course", "Campus & intake", "Application reference", "Submitted", "Offer / CoE", "Deadline", "Documents"])
-    await expect(application.getByText(label, { exact: true })).toBeVisible();
+    await expect(application.locator(".registerAllDetails").getByText(label, { exact: true })).toBeVisible();
   await expect(application.locator(".recordStatusPill")).toBeVisible();
   await expect(application.getByRole("button", { name: "Open case" })).toBeVisible();
 });
