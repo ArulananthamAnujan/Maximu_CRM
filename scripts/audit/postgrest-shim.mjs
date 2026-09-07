@@ -154,11 +154,12 @@ function toSql(value, type) {
 function predicateOn(target, spec) {
   const [op, ...rest] = spec.split(".");
   const value = rest.join(".");
+  if (op === "not") return `not (${predicateOn(target, value)})`;
   if (op === "eq") return `${target} = ${lit(value)}`;
   if (op === "neq") return `${target} <> ${lit(value)}`;
   if (op === "is") return `${target} is ${value === "null" ? "null" : value}`;
   if (op === "ilike") return `${target}::text ilike ${lit(value.replace(/\*/g, "%"))}`;
-  if (op === "in") return `${target}::text = any(${lit(value.replace(/[()]/g, "").split(",").join("|"))}::text)`;
+  if (op === "in") return `${target}::text = any(array[${splitTopLevel(value.replace(/^\(/, "").replace(/\)$/, "")).map((v) => lit(v.replace(/^"|"$/g, ""))).join(",")} ]::text[])`;
   if (op === "gte") return `${target} >= ${lit(value)}`;
   if (op === "lte") return `${target} <= ${lit(value)}`;
   throw new Error(`unsupported filter operator: ${op}`);
@@ -249,8 +250,8 @@ const server = http.createServer((req, res) => {
     const isServiceRole =
       Boolean(process.env.SHIM_SERVICE_ROLE_KEY) &&
       req.headers.apikey === process.env.SHIM_SERVICE_ROLE_KEY;
-    const send = (status, body) => {
-      res.writeHead(status, { "Content-Type": "application/json" });
+    const send = (status, body, headers = {}) => {
+      res.writeHead(status, { "Content-Type": "application/json", ...headers });
       res.end(body === undefined ? "" : JSON.stringify(body));
     };
     try {
@@ -347,6 +348,7 @@ const server = http.createServer((req, res) => {
       if (req.method === "GET") {
         const select = url.searchParams.get("select") || "*";
         const limit = url.searchParams.get("limit");
+        const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0);
         const items = select === "*" ? null : splitTopLevel(select).map(parseSelectItem);
         const embeds = items ? items.filter((i) => i.kind === "embed") : [];
 
@@ -354,9 +356,12 @@ const server = http.createServer((req, res) => {
           const cols = select === "*" ? "*" : items.map((c) => ident(c.name)).join(", ");
           const out = await sql(
             `select coalesce(json_agg(t)::text,'[]') from (select ${cols} from public.${ident(table)}${where}` +
-            `${buildOrder(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""}) t`,
+            `${buildOrder(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""} offset ${offset}) t`,
             uid, !isServiceRole);
-          return send(200, JSON.parse(out || "[]"));
+          const rows = JSON.parse(out || "[]");
+          const count = /count=exact/.test(String(req.headers.prefer || ""))
+            ? Number(await sql(`select count(*) from public.${ident(table)}${where}`, uid, !isServiceRole)) : "*";
+          return send(200, rows, { "Content-Range": `${rows.length ? `${offset}-${offset + rows.length - 1}` : "*"}/${count}` });
         }
 
         // An embedded-resource select (`profiles!fkey(...)`, `x!inner(...)`):
@@ -384,7 +389,7 @@ const server = http.createServer((req, res) => {
           `select coalesce(json_agg(row_obj)::text,'[]') from (` +
           `select json_build_object(${pairs.join(", ")}) as row_obj` +
           ` from public.${ident(table)} t ${joins.join(" ")}${qualifiedWhere}` +
-          `${buildOrderQualified(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""}) x`,
+          `${buildOrderQualified(url.searchParams.get("order"))}${limit ? ` limit ${Number(limit)}` : ""} offset ${offset}) x`,
           uid, !isServiceRole);
         return send(200, JSON.parse(out || "[]"));
       }

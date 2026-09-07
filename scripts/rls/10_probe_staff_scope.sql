@@ -10,15 +10,15 @@ set test.uid = '00000000-0000-4000-8000-000000000009';   -- same branch, owns no
 select 'visible=' || count(*) from public.cases
   where id = '00000000-0000-4000-8000-00000000dddd';
 
-\echo '--- 2. but it cannot be edited ---'
-update public.cases set target = 'Hijacked'
+\echo '--- 2. branch case work can be edited ---'
+update public.cases set target = 'Branch cover update'
   where id = '00000000-0000-4000-8000-00000000dddd';
 select 'edited=' || count(*) from public.cases
-  where id = '00000000-0000-4000-8000-00000000dddd' and target = 'Hijacked';
+  where id = '00000000-0000-4000-8000-00000000dddd' and target = 'Branch cover update';
 
-\echo '--- 3. and it cannot be moved through the pipeline ---'
-select lifecycle_stage from public.move_case_lifecycle(
-  '00000000-0000-4000-8000-00000000dddd','student','Not mine to move');
+\echo '--- 3. branch case work can move through the pipeline ---'
+select 'colleague_stage=' || lifecycle_stage from public.move_case_lifecycle(
+  '00000000-0000-4000-8000-00000000dddd','student','Branch cover handover');
 
 \echo '--- 4. nor can its client record be changed ---'
 update public.clients set last_name = 'Hijacked'
@@ -26,11 +26,11 @@ update public.clients set last_name = 'Hijacked'
 select 'client_edited=' || count(*) from public.clients
   where id = '00000000-0000-4000-8000-00000000cccc' and last_name = 'Hijacked';
 
-\echo '--- 5. nor its applications ---'
+\echo '--- 5. branch applications can be added ---'
 insert into public.education_applications (organisation_id,case_id,institution,course)
-  values ('00000000-0000-4000-8000-00000000aaaa','00000000-0000-4000-8000-00000000dddd','Sneaky University','Sneaky Course');
+  values ('00000000-0000-4000-8000-00000000aaaa','00000000-0000-4000-8000-00000000dddd','Branch University','Branch Course');
 select 'application_added=' || count(*) from public.education_applications
-  where case_id = '00000000-0000-4000-8000-00000000dddd' and institution = 'Sneaky University';
+  where case_id = '00000000-0000-4000-8000-00000000dddd' and institution = 'Branch University';
 
 \echo '--- 5b. nor what its client has been billed, before the case is theirs ---'
 select 'invoice_visible_before_reassignment=' || count(*) from public.invoices
@@ -91,3 +91,13 @@ select 'portal_writes=' || count(*) from public.ai_interactions
 set test.uid = '00000000-0000-4000-8000-000000000009';
 select 'invoice_visible_to_owner=' || count(*) from public.invoices
   where id = '00000000-0000-4000-8000-00000000fee1';
+
+\echo '--- 14. another branch cannot read or modify this branch case ---'
+set test.uid = '00000000-0000-4000-8000-000000000010';
+select 'other_branch_reads=' || count(*) from public.cases
+  where id = '00000000-0000-4000-8000-00000000dddd';
+with changed as (
+  update public.cases set target = 'Cross-branch denied'
+    where id = '00000000-0000-4000-8000-00000000dddd' returning id
+) select 'other_branch_edits=' || count(*) from changed;
+select 'other_branch_can_modify=' || public.can_modify_case('00000000-0000-4000-8000-00000000dddd');

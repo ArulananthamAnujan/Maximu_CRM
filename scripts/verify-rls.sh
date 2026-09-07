@@ -79,16 +79,16 @@ expect_in "a deferral is not recorded in the history" "application => deferred :
 expect_in "resuming from a deferral is not recorded" "deferred => application :: Enrolled for July"
 
 echo
-echo "== A case officer may work only the cases assigned to them =="
+echo "== A case officer may work cases in their branch; client-only records retain their boundary =="
 pg_run "${work}/sql/09_seed_third_staff.sql"
 scope="$(probe 10_probe_staff_scope.sql 2>&1 | grep -v '^SET$\|Output format\|^UPDATE\|^INSERT')"
 echo "${scope}"
 expect_scope() { grep -qF "$2" <<< "${scope}" || fail "$1"; }
-expect_scope "a colleague's case is hidden instead of read-only" "visible=1"
-expect_scope "a case officer can edit a case that is not theirs" "edited=0"
-expect_scope "a case officer can move a case that is not theirs" "This case is assigned to somebody else"
+expect_scope "a colleague's branch case is hidden" "visible=1"
+expect_scope "a case officer cannot edit a branch case" "edited=1"
+expect_scope "a case officer cannot move a branch case" "colleague_stage=student"
 expect_scope "a case officer can edit another officer's client" "client_edited=0"
-expect_scope "a case officer can add an application to another officer's case" "application_added=0"
+expect_scope "a case officer cannot add an application to a branch case" "application_added=1"
 expect_scope "reassignment does not grant access" "after_reassignment=1"
 expect_scope "an administrator lost access" "admin_edited=1"
 expect_scope "an archive request is not recorded" "archive_requests=1"
@@ -99,6 +99,9 @@ expect_scope "a portal account can read an internal AI interaction" "portal_read
 expect_scope "a portal account wrote an AI interaction against a case it cannot access" "portal_writes=0"
 expect_scope "a colleague who does not yet own the case can see what its client has been billed" "invoice_visible_before_reassignment=0"
 expect_scope "the case owner cannot see what their own client has been billed" "invoice_visible_to_owner=1"
+expect_scope "another branch can read the case" "other_branch_reads=0"
+expect_scope "another branch can edit the case" "other_branch_edits=0"
+expect_scope "another branch has case write permission" "other_branch_can_modify=false"
 
 echo
 echo "== Duplicate clients are found before a second record is made =="

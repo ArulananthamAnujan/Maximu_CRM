@@ -21,3 +21,11 @@ insert into public.invoices
   (id,organisation_id,client_id,invoice_number,invoice_type,total)
   values ('00000000-0000-4000-8000-00000000fee1','00000000-0000-4000-8000-00000000aaaa',
           '00000000-0000-4000-8000-00000000cccc','INV-2026-0099','tuition',2500);
+
+-- A different-branch officer must still have no access after branch sharing.
+insert into public.branches (id, organisation_id, name, code, country_code) values
+  ('00000000-0000-4000-8000-00000000bbb2','00000000-0000-4000-8000-00000000aaaa','Dhaka','DHK','BD');
+insert into auth.users (id,email) values
+  ('00000000-0000-4000-8000-000000000010','dhaka.officer@maximus.test');
+insert into public.profiles (id,organisation_id,branch_id,display_name,email,level) values
+  ('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-00000000aaaa','00000000-0000-4000-8000-00000000bbb2','Dhaka Officer','dhaka.officer@maximus.test','staff');

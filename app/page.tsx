@@ -7834,6 +7834,7 @@ function CaseDrawer({
   moveStage,
   refresh,
   canModify,
+  canArchive,
   lifecycleReady,
   schemaWarning,
   storageConnected,
@@ -7850,6 +7851,7 @@ function CaseDrawer({
   ) => Promise<void>;
   refresh: () => Promise<void>;
   canModify: boolean;
+  canArchive: boolean;
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
@@ -7865,6 +7867,7 @@ function CaseDrawer({
       moveStage={moveStage}
       refresh={refresh}
       canModify={canModify}
+      canArchive={canArchive}
       lifecycleReady={lifecycleReady}
       schemaWarning={schemaWarning}
       storageConnected={storageConnected}
@@ -8056,6 +8059,7 @@ function CaseDrawerBody({
   moveStage,
   refresh,
   canModify,
+  canArchive,
   lifecycleReady,
   schemaWarning,
   storageConnected,
@@ -8072,6 +8076,7 @@ function CaseDrawerBody({
   ) => Promise<void>;
   refresh: () => Promise<void>;
   canModify: boolean;
+  canArchive: boolean;
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
@@ -9367,7 +9372,7 @@ function CaseDrawerBody({
             onClick={() => remove(item.id)}
           >
             <Trash2 size={15} />
-            {canModify ? "Archive" : "Request archive"}
+            {canArchive ? "Archive" : "Request archive"}
           </button>
         </div>
           </main>
@@ -13532,6 +13537,7 @@ export default function Home() {
           schemaWarning={schemaWarning}
           storageConnected={storageConnected}
           canModify={true}
+          canArchive={role !== "staff"}
           item={selected}
           close={() => {
             if (caseWindowId) {

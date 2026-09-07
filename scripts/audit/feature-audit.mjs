@@ -1255,14 +1255,14 @@ expect("their existing login now reaches the connected profile",
   JSON.stringify(strangerWorkspace.json?.identity ?? strangerWorkspace.json)?.slice(0, 240));
 
 // ---------------------------------------------------------------------------
-section("A case officer works only their own cases");
+section("A case officer works branch cases while client-only permissions remain scoped");
 const colleague = await login("second.officer@maximus.test");
 expect("a second officer in the same branch signs in", colleague.ok,
   JSON.stringify(colleague.body));
-const colleagueWorkspace = await call("/api/crm/workspace", { cookie: colleague.cookie });
-const priya = (colleagueWorkspace.json?.cases ?? []).find((c) => c.name === "Priya Sharma");
+const colleagueWorkspace = await call("/api/crm/enquiries", { cookie: colleague.cookie });
+const priya = (colleagueWorkspace.json?.records ?? []).find((c) => c.name === "Priya Sharma");
 expect("a colleague's case is still visible, for cover and handover",
-  priya !== undefined, JSON.stringify((colleagueWorkspace.json?.cases ?? []).map((c) => c.name)));
+  priya !== undefined, JSON.stringify((colleagueWorkspace.json?.records ?? []).map((c) => c.name)));
 const colleagueEdit = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
   body: { action: "update_case", caseId: priya?.dbId, clientId: priya?.clientId,
           name: "Hijacked Name", email: "hijack@example.test", visaExpiry: "2030-01-01" } });
@@ -1270,24 +1270,23 @@ expect("but a colleague cannot edit it",
   colleagueEdit.status >= 400, `${colleagueEdit.status} ${JSON.stringify(colleagueEdit.json)?.slice(0, 200)}`);
 const colleagueMove = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
   body: { action: "lifecycle", caseId: priya?.dbId, stage: "student" } });
-expect("nor move it through the pipeline",
-  colleagueMove.status >= 400 &&
-    /assigned to somebody else/i.test(JSON.stringify(colleagueMove.json ?? "")),
+expect("a colleague can move a branch case through the pipeline",
+  colleagueMove.status === 200,
   `${colleagueMove.status} ${JSON.stringify(colleagueMove.json)?.slice(0, 240)}`);
 const colleagueApp = await call("/api/crm/casefile", { method: "POST", cookie: colleague.cookie,
   body: { action: "application_create", caseId: priya?.dbId,
-          institution: "Sneaky University", course: "Sneaky Course" } });
-expect("nor add anything to its case file", colleagueApp.status >= 400,
+          institution: "Branch University", course: "Branch Course" } });
+expect("a colleague can add an application to a branch case", colleagueApp.status === 200,
   `${colleagueApp.status} ${JSON.stringify(colleagueApp.json)?.slice(0, 200)}`);
 const stillIntact = await call(`/api/crm/casefile?caseId=${priya?.dbId}`, { cookie: officer.cookie });
-expect("and the case is untouched",
-  !(stillIntact.json?.applications ?? []).some((a) => a.institution === "Sneaky University"));
+expect("the new branch application is preserved",
+  (stillIntact.json?.applications ?? []).some((a) => a.institution === "Branch University"));
 const colleagueInvoice = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
   body: { action: "invoice", clientId: priya?.clientId, caseId: priya?.dbId, amount: "999" } });
 expect("nor raise an invoice against it", colleagueInvoice.status >= 400,
   `${colleagueInvoice.status} ${JSON.stringify(colleagueInvoice.json)?.slice(0, 200)}`);
 
-// Reassignment is what grants access, and it works.
+// Reassignment still transfers responsibility and permits subsequent work.
 expect("an administrator reassigns the case to the colleague",
   (await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
     body: { action: "assign", caseId: priya?.dbId,
