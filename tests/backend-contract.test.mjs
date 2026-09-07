@@ -459,7 +459,8 @@ test("case work is branch-wide while the interface attributes every action", asy
   assert.doesNotMatch(drawer, /CASE OWNER|Reassign this case|Add a colleague|Accountable owner/);
   assert.doesNotMatch(caseList, /Assign selected cases|All owners|ownerFilter/);
   assert.match(page, /shared with all staff in/);
-  assert.match(page, /Every action records the staff member/);
+  assert.match(page, /Notes & activity/);
+  assert.match(page, /entry.actorName/);
   assert.match(page, /View complete audit trail/);
   assert.match(caseFile, /profiles\?select=id,display_name,email/);
   assert.match(caseFile, /actorName/);

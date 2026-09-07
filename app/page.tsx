@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { orgDate, orgDateTime } from "@/lib/timezone";
 import { ClientProfileEditor } from "./client-profile-editor";
@@ -26,7 +27,6 @@ import {
   Download,
   FileCheck2,
   FileText,
-  Filter,
   FolderOpen,
   GraduationCap,
   Inbox,
@@ -381,11 +381,6 @@ type ClientDeclaration = {
   type: string;
   response: boolean | null;
   declaredAt: string | null;
-};
-type SavedView = {
-  id: string;
-  name: string;
-  filters: Record<string, unknown>;
 };
 type TemplateRecord = {
   id: string;
@@ -1802,8 +1797,6 @@ function WorkspaceDashboard({
       );
     }),
     attention = workspaceCases.filter((c) => c.health !== "healthy").length,
-    waiting = workspaceCases.filter((c) => c.status === "waiting").length,
-    completed = workspaceCases.filter((c) => c.status === "completed").length,
     today = new Date().toISOString().slice(0, 10),
     openTasks = tasks.filter((task) => !task.completed),
     dueToday = openTasks.filter((task) => task.due === today),
@@ -2177,8 +2170,15 @@ function CaseWorkspace({
 }) {
   const [rowActionId, setRowActionId] = useState("");
   const [page, setPage] = useState(1);
-  const [searchDraft, setSearchDraft] = useState(query);
-  const [directorySearchIndex, setDirectorySearchIndex] = useState(-1);
+  const searchDraft = query;
+  const [searchSelection, setSearchSelection] = useState({ query, results: searchResults, index: -1 });
+  const directorySearchIndex = searchSelection.query === query && searchSelection.results === searchResults ? searchSelection.index : -1;
+  const setDirectorySearchIndex = (update: number | ((index: number) => number)) => {
+    setSearchSelection(previous => {
+      const index = previous.query === query && previous.results === searchResults ? previous.index : -1;
+      return { query, results: searchResults, index: typeof update === "function" ? update(index) : update };
+    });
+  };
   const [directorySearchOpen, setDirectorySearchOpen] = useState(false);
   const [officeFilter, setOfficeFilter] = useState("");
   const [destinationFilter, setDestinationFilter] = useState("");
@@ -2337,8 +2337,6 @@ function CaseWorkspace({
       updatedTo,
     });
   }, [isServerDirectory, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter, assignedStaffFilter, statusFilter, sourceFilter, intakeFilter, qualificationFilter, testFilter, spouseFilter, createdFrom, createdTo, updatedFrom, updatedTo, onDirectoryFiltersChange]);
-  useEffect(() => setSearchDraft(query), [query]);
-  useEffect(() => setDirectorySearchIndex(-1), [query, searchResults]);
   const headings = module === "enquiries"
     ? ["Client & reference", "Office & service", "Contact & source", "Destination", "Follow-up", "Actions"]
     : module === "students"
@@ -2447,7 +2445,6 @@ function CaseWorkspace({
               <input
                 value={searchDraft}
                 onChange={(event) => {
-                  setSearchDraft(event.target.value);
                   onQueryChange?.(event.target.value);
                   setDirectorySearchOpen(true);
                 }}
@@ -2477,7 +2474,6 @@ function CaseWorkspace({
                   className="enquirySearchReset"
                   aria-label="Clear enquiry search"
                   onClick={() => {
-                    setSearchDraft("");
                     onQueryChange?.("");
                     setDirectorySearchOpen(false);
                   }}
@@ -2617,7 +2613,6 @@ function CaseWorkspace({
               className="enquiryClearFilters"
               disabled={!hasDirectoryControls}
               onClick={() => {
-                setSearchDraft("");
                 onQueryChange?.("");
                 setOfficeFilter("");
                 setDestinationFilter("");
@@ -3446,13 +3441,9 @@ type MailboxStatus = {
 
 function MessagesView({
   items,
-  campaigns,
   cases,
   openModal,
-  setItems,
   canSend,
-  onBulkAction,
-  onCampaignChange,
   onClose,
 }: {
   items: MessageRecord[];
@@ -3467,14 +3458,7 @@ function MessagesView({
   onCampaignChange: () => Promise<void>;
   onClose: () => void;
 }) {
-  // A discarded draft is kept for the record but is not part of the outbox.
-  const [showDiscarded, setShowDiscarded] = useState(false);
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [channelFilter, setChannelFilter] = useState("");
   const [mailbox, setMailbox] = useState<MailboxStatus | null>(null);
-  const [whatsappConfigured, setWhatsappConfigured] = useState(false);
-  const [smsConfigured, setSmsConfigured] = useState(false);
   const [mailboxError, setMailboxError] = useState("");
   const [gmailMessages, setGmailMessages] = useState<Array<{
     id: string; threadId: string; from: string; to: string; subject: string;
@@ -3485,12 +3469,6 @@ function MessagesView({
   const [openGmailId, setOpenGmailId] = useState<string | null>(null);
   const [mailFolder, setMailFolder] = useState<"inbox" | "starred" | "sent" | "drafts">("inbox");
   const [localStars, setLocalStars] = useState<Set<string>>(new Set());
-  const [sendingId, setSendingId] = useState<string | null>(null);
-  // Sent locally, ahead of the next full refresh -- kept separate from the
-  // shared items/setItems wiring so a send can never collide with the
-  // draft/ready toggle that setItems already carries.
-  const [sentIds, setSentIds] = useState<Set<string>>(new Set());
-
   const loadMailbox = async () => {
     try {
       const response = await fetch("/api/crm/mailbox", { cache: "no-store" });
@@ -3517,22 +3495,6 @@ function MessagesView({
     return () => {
       cancelled = true;
     };
-  }, [canSend]);
-
-  useEffect(() => {
-    if (!canSend) return;
-    void fetch("/api/crm/sms", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((result) => setSmsConfigured(Boolean(result.configured)))
-      .catch(() => setSmsConfigured(false));
-  }, [canSend]);
-
-  useEffect(() => {
-    if (!canSend) return;
-    void fetch("/api/crm/whatsapp", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((result) => setWhatsappConfigured(Boolean(result.configured)))
-      .catch(() => setWhatsappConfigured(false));
   }, [canSend]);
 
   const disconnectMailbox = async () => {
@@ -3582,46 +3544,23 @@ function MessagesView({
   };
 
   useEffect(() => {
-    if (canSend && mailbox?.connected && gmailMessages.length === 0)
-      void loadGmailInbox("", "inbox");
+    if (!canSend || !mailbox?.connected) return;
+    const controller = new AbortController();
+    void fetch("/api/crm/mailbox?view=inbox&q=in%3Ainbox", { cache: "no-store", signal: controller.signal })
+      .then(async response => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Gmail could not be loaded.");
+        if (!controller.signal.aborted) setGmailMessages(result.messages ?? []);
+      })
+      .catch(reason => {
+        if (!controller.signal.aborted) setMailboxError(reason instanceof Error ? reason.message : "Gmail could not be loaded.");
+      });
+    return () => controller.abort();
   }, [canSend, mailbox?.connected]);
 
-  const sendNow = async (message: MessageRecord) => {
-    setSendingId(message.id);
-    setMailboxError("");
-    try {
-      const response = await fetch(message.channel === "whatsapp" ? "/api/crm/whatsapp" : message.channel === "sms" ? "/api/crm/sms" : "/api/crm/mailbox", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "send_message", messageId: message.id }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok)
-        throw new Error(result.error || "The message could not be sent.");
-      setSentIds((prev) => new Set(prev).add(message.id));
-    } catch (reason) {
-      setMailboxError(
-        reason instanceof Error ? reason.message : "The message could not be sent.",
-      );
-    } finally {
-      setSendingId(null);
-    }
-  };
-
-  const discarded = (message: MessageRecord) =>
-    message.status.toLowerCase() === "discarded";
-  const discardedCount = items.filter(discarded).length;
-  const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
-  const shown = (showDiscarded ? items : items.filter((m) => !discarded(m)))
-    .filter((item) => !channelFilter || item.channel === channelFilter)
-    .filter((item) => !statusFilter || item.status === statusFilter)
-    .filter((item) => matchesSearch(query, [item.subject, item.body, item.status, messageWhen(item), cases.find((entry) => (entry.dbId || entry.id) === item.caseId)?.name]));
-  const selectable = shown.filter((message) =>
-    message.channel === "email" && !sentIds.has(message.id) && message.status.toLowerCase() !== "sent",
-  );
-  const selection = useBulkSelection(selectable);
+  const discarded = (message: MessageRecord) => message.status.toLowerCase() === "discarded";
   const draftMessages = items.filter((message) =>
-    message.channel === "email" && !discarded(message) && !sentIds.has(message.id) && message.status.toLowerCase() !== "sent",
+    message.channel === "email" && !discarded(message) && message.status.toLowerCase() !== "sent",
   );
   const openedGmail = gmailMessages.find((message) => message.id === openGmailId) ?? null;
   const openFolder = (folder: "inbox" | "starred" | "sent" | "drafts") => {
@@ -3638,7 +3577,7 @@ function MessagesView({
       <header className="gmailWorkspaceHeader">
         <button className="gmailBackToCrm" onClick={onClose} title="Back to CRM dashboard">
           <ChevronLeft size={20} />
-          <img src="/maximus-logo-dark.svg" alt="Maximus Education and Migration" />
+          <Image src="/maximus-logo-dark.svg" alt="Maximus Education and Migration" width={150} height={40} unoptimized />
         </button>
         <div className="gmailBrand"><Mail size={25} /><strong>Gmail</strong></div>
         <form className="gmailSearchBar" onSubmit={(event) => { event.preventDefault(); void loadGmailInbox(gmailSearch, mailFolder); }}>
@@ -3736,65 +3675,6 @@ function MessagesView({
   );
 }
 
-function CampaignsPanel({ items, cases, onChange }: {
-  items: CampaignRecord[];
-  cases: CaseRecord[];
-  onChange: () => Promise<void>;
-}) {
-  const [creating, setCreating] = useState(false);
-  const [working, setWorking] = useState("");
-  const [error, setError] = useState("");
-  const send = async (payload: Record<string, unknown>) => {
-    setWorking(String(payload.campaignId || "create"));
-    setError("");
-    try {
-      const response = await fetch("/api/crm/campaigns", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "The campaign action failed.");
-      await onChange();
-      setCreating(false);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The campaign action failed.");
-    } finally {
-      setWorking("");
-    }
-  };
-  return (
-    <article className="panel listPanel">
-      <div className="panelHead">
-        <div><span className="kicker">CAMPAIGNS</span><h2>Email, SMS and WhatsApp campaigns</h2></div>
-        <button className="primaryButton" onClick={() => setCreating(!creating)}><Plus size={16} /> {creating ? "Close" : "New campaign"}</button>
-      </div>
-      <p className="coverageIntro">Build a reviewed recipient list from cases you can access. Each delivery is recorded against the campaign; free-form address uploads are not accepted.</p>
-      {creating && (
-        <form className="stackedForm" onSubmit={(event) => {
-          event.preventDefault();
-          const data = new FormData(event.currentTarget);
-          void send({ action: "create", name: data.get("name"), channel: data.get("channel"), subject: data.get("subject"), body: data.get("body"), caseIds: data.getAll("caseIds") });
-        }}>
-          <label>Campaign name *<input name="name" required /></label>
-          <label>Channel *<select name="channel" defaultValue="email"><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></select></label>
-          <label>Subject (required for email)<input name="subject" /></label>
-          <label>Recipients *<select name="caseIds" multiple required size={Math.min(8, Math.max(3, cases.length))}>{cases.map((item) => <option key={item.dbId || item.id} value={item.dbId || item.id}>{item.name} · {item.id}</option>)}</select><small className="fieldHint">Use Ctrl/Cmd to select multiple cases.</small></label>
-          <label className="wide">Message *<textarea name="body" required placeholder="Use {{client_name}} and {{case_number}} where needed." /></label>
-          <button className="primaryButton" disabled={Boolean(working)}><Check size={15} /> Save draft campaign</button>
-        </form>
-      )}
-      {error && <p className="caseWorkError">{error}</p>}
-      {items.length === 0 ? <p className="caseWorkEmpty">No campaigns have been created yet.</p> : items.map((item) => (
-        <div className="functionalRow" key={item.id}>
-          <div><strong>{item.name}</strong><span>{humanise(item.channel)} · {item.recipientCount} recipients · {item.sentCount} sent{item.failedCount ? ` · ${item.failedCount} failed` : ""}</span></div>
-          <Status value={item.status} />
-          {["draft", "failed"].includes(item.status.toLowerCase()) ? <button className="primaryButton" disabled={working === item.id} onClick={() => {
-            if (confirm(`Send “${item.name}” to ${item.recipientCount} selected case${item.recipientCount === 1 ? "" : "s"}?`)) void send({ action: "launch", campaignId: item.id });
-          }}><Send size={14} /> {working === item.id ? "Sending…" : "Review & send"}</button> : null}
-        </div>
-      ))}
-    </article>
-  );
-}
 function FinanceView({
   items,
   openModal,
@@ -8486,25 +8366,23 @@ function CaseDrawerBody({
     <div className="drawerBackdrop" onClick={close}>
       <aside className="caseDrawer wide" onClick={(e) => e.stopPropagation()}>
         <div className="caseWindowTopbar">
-          <img src="/maximus-logo.svg" alt="Maximus Education and Migration" />
+          <Image src="/maximus-logo.svg" alt="Maximus Education and Migration" width={126} height={36} unoptimized />
           <span>
-            {direct ? "DIRECT VISA" : "STUDY ABROAD"} / ACTIVE CASE WORKSPACE
+            {direct ? "Migration" : "Study abroad"}
           </span>
           <button type="button" onClick={close}>
             <ArrowLeft size={13} /> Back to CRM
           </button>
-          <b>{item.latestNoteAuthor || "Branch staff"}</b>
+          <b>{item.branch}</b>
         </div>
         <div className="drawerHead">
           <div>
             <span>{item.id}</span>
             <h2>{item.name}</h2>
-            <p>
-              {item.matterType || item.type} ·{" "}
-              {item.serviceType === "direct_visa"
-                ? "Migration"
-                : "Study abroad"}
-              {item.target ? ` · ${item.target}` : ""}
+            <p className="caseIdentityMeta">
+              <span className="caseStageBadge">{stageLabelFor(stage, direct)}</span>
+              <span title={`shared with all staff in ${item.branch}`}>{item.branch}</span>
+              {item.target && <span title={item.target}>{enquiryDestinationLabel({ destinationCountry: "", target: item.target })}</span>}
             </p>
           </div>
           <button
@@ -8519,15 +8397,6 @@ function CaseDrawerBody({
 
         <div className="caseWorkspaceLayout">
           <aside className="caseLeftRail">
-            <div className="caseRailSummary">
-              <span>{item.name.slice(0, 2).toUpperCase()}</span>
-              <div>
-                <strong>{item.name}</strong>
-                <small>{item.id}</small>
-              </div>
-              <b>{stageLabelFor(stage, direct)}</b>
-              <small>{direct ? "Direct visa" : "Study abroad"}</small>
-            </div>
           <nav className="caseTabs" role="tablist" aria-label="Case sections">
             {compact ? (
               <>
@@ -8588,27 +8457,15 @@ function CaseDrawerBody({
               })
             )}
           </nav>
-          <div className="caseRailBranch">
-            <span>BRANCH WORKSPACE</span>
-            <strong>{item.branch || "Current branch"}</strong>
-            <small>All branch staff have access</small>
-          </div>
           </aside>
 
           <main className="caseWorkspaceContent">
             <header className="caseSectionHead">
               <div>
-                <span className="kicker">CASE WORKSPACE</span>
                 <h2>{activeTabLabel}</h2>
-                <p>{caseTabDescriptions[tab]}</p>
+                <p className="caseSectionDescription">{caseTabDescriptions[tab]}</p>
               </div>
               <div className="caseQuickActions">
-                <button className="ghostButton" onClick={() => setTab("communication")}>
-                  <Mail size={14} /> Message
-                </button>
-                <button className="ghostButton" onClick={() => setTab("documents")}>
-                  <FileCheck2 size={14} /> Documents
-                </button>
                 <button className="ghostButton" onClick={() => edit(item)} disabled={!canModify}>
                   <Pencil size={14} /> Edit case
                 </button>
@@ -8622,14 +8479,13 @@ function CaseDrawerBody({
             {file && <>
 
         {tab === "overview" && (
-          <div className="caseHome">
+          <div className={`caseHome${direct ? " directCase" : ""}`}>
             <section className="casePriorityBar">
               <div>
-                <span className="kicker">NEXT PRIORITY</span>
+                <span className="kicker">Next action</span>
                 <h3>{nextWork}</h3>
                 <p>
-                  {stageLabelFor(stage, direct)} · shared with all staff in {item.branch || "this branch"}
-                  {item.due ? ` · due ${item.due}` : " · no deadline set"}
+                  {item.due ? `Due ${item.due}` : "No deadline set"}
                 </p>
               </div>
               <button
@@ -8695,14 +8551,10 @@ function CaseDrawerBody({
             <section className="caseWorkPanel caseAuditPanel">
               <div className="caseWorkPanelHead">
                 <div>
-                  <span className="kicker">ACTIVITY &amp; AUDIT</span>
-                  <h3>Every action records the staff member</h3>
+                  <span className="kicker">Shared with your branch</span>
+                  <h3>Notes & activity</h3>
                 </div>
               </div>
-              <p className="caseWorkEmpty">
-                Everyone in {item.branch || "the branch"} can work on this case.
-                Each change is time-stamped against the staff member who made it.
-              </p>
               <form
                 className="caseQuickNote"
                 onSubmit={async (event) => {
@@ -8721,7 +8573,7 @@ function CaseDrawerBody({
                 <input
                   value={newNote}
                   onChange={(event) => setNewNote(event.target.value)}
-                  placeholder="Add a note for everyone in this branch"
+                  placeholder="Write a case note…"
                   aria-label="Add a shared case note"
                 />
                 <button className="primaryButton" disabled={working || !newNote.trim()}>
@@ -8787,6 +8639,8 @@ function CaseDrawerBody({
                   </li>
                 ))}
               </ol>
+              <details className="caseStageControls">
+                <summary>Update stage or visa expiry <ChevronDown size={16} /></summary>
               {!lifecycleReady && (
                 <p className="schemaNotice">
                   <AlertTriangle size={14} />
@@ -8797,9 +8651,7 @@ function CaseDrawerBody({
                 <div className="lifecycleBlocker">
                   <p>
                     <AlertTriangle size={14} />
-                    The visa stage is worked against the client&apos;s current
-                    visa expiry, so it has to be recorded before this case can
-                    move to visa or be completed.
+                    Record the current visa expiry before moving to Visa or Completed.
                   </p>
                   <div className="lifecycleBlockerRow">
                     <label htmlFor="lifecycleVisaExpiry">
@@ -8942,6 +8794,7 @@ function CaseDrawerBody({
                   )}
                 </div>
               )}
+              </details>
             </section>
             {!direct && (
               <section className="caseWorkPanel agentApplicationsPanel">
@@ -9019,7 +8872,7 @@ function CaseDrawerBody({
             <div className="agentBottomSummary">
               <section className="caseWorkPanel">
                 <span className="kicker">VISA &amp; COMPLIANCE</span>
-                <h3>Current visa details required</h3>
+                <h3>Visa details</h3>
                 <div className={`agentAlert ${item.visaExpiry ? "ready" : ""}`}>
                   <strong>{item.visaExpiry ? `Visa expiry ${item.visaExpiry}` : "Visa type and expiry are not recorded."}</strong>
                   <small>{item.visaExpiry ? "The case can progress to the visa stage." : "This blocks movement to the visa stage."}</small>
@@ -9038,7 +8891,7 @@ function CaseDrawerBody({
             </div>
             <section className="caseWorkPanel agentClientPanel">
               <span className="kicker">CLIENT PROFILE</span>
-              <h3>Essential student details</h3>
+              <h3>Client details</h3>
               <dl>
                 <div><dt>Email</dt><dd>{text(client.email) || item.email || "Not recorded"}</dd></div>
                 <div><dt>Mobile</dt><dd>{text(client.mobile) || item.phone || "Not recorded"}</dd></div>
@@ -9509,19 +9362,6 @@ function CaseDrawerBody({
 
             </>}
         <div className="drawerFooter">
-          <button
-            className="ghostButton"
-            onClick={() => edit(item)}
-            disabled={!canModify}
-            title={
-              canModify
-                ? undefined
-                : "You do not have access to modify this branch record."
-            }
-          >
-            <Pencil size={15} />
-            Edit
-          </button>
           <button
             className="ghostButton dangerButton"
             onClick={() => remove(item.id)}
@@ -11737,9 +11577,7 @@ export default function Home() {
     [menuOpen, setMenuOpen] = useState(false),
     [query, setQuery] = useState(""),
     [globalSearchOpen, setGlobalSearchOpen] = useState(false),
-    [globalSearchLoading, setGlobalSearchLoading] = useState(false),
-    [globalSearchError, setGlobalSearchError] = useState(""),
-    [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResult[]>([]),
+    [globalSearchState, setGlobalSearchState] = useState<{ key: string; results: GlobalSearchResult[]; error: string }>({ key: "", results: [], error: "" }),
     [globalSearchIndex, setGlobalSearchIndex] = useState(0),
     [modal, setModal] = useState<ModalType>(null),
     [presetCaseId, setPresetCaseId] = useState(""),
@@ -12198,48 +12036,30 @@ export default function Home() {
     window.addEventListener("pointerdown", closeSearch);
     return () => window.removeEventListener("pointerdown", closeSearch);
   }, []);
+  const searchKey = signedIn && role !== "client" && query.trim().length >= 2 ? `${role}:${active}:${query.trim()}` : "";
+  const globalSearchResults = searchKey && globalSearchState.key === searchKey ? globalSearchState.results : [];
+  const globalSearchError = searchKey && globalSearchState.key === searchKey ? globalSearchState.error : "";
+  const globalSearchLoading = Boolean(searchKey && globalSearchState.key !== searchKey);
   useEffect(() => {
-    const value = query.trim();
-    if (!signedIn || role === "client" || value.length < 2) {
-      setGlobalSearchResults([]);
-      setGlobalSearchLoading(false);
-      setGlobalSearchError("");
-      setGlobalSearchIndex(0);
-      return;
-    }
+    if (!searchKey) return;
     const controller = new AbortController();
-    setGlobalSearchResults([]);
-    setGlobalSearchError("");
-    setGlobalSearchLoading(true);
     const timer = window.setTimeout(() => {
-      setGlobalSearchLoading(true);
       void (async () => {
         try {
-          const response = await fetch(`/api/crm/search?q=${encodeURIComponent(value)}`, {
-            cache: "no-store",
-            signal: controller.signal,
-          });
+          const response = await fetch(`/api/crm/search?q=${encodeURIComponent(query.trim())}`, { cache: "no-store", signal: controller.signal });
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || "Search is unavailable.");
           if (controller.signal.aborted) return;
-          setGlobalSearchResults((result.results ?? []) as GlobalSearchResult[]);
+          setGlobalSearchState({ key: searchKey, results: result.results ?? [], error: "" });
           setGlobalSearchIndex(0);
           if (active !== "enquiries") setGlobalSearchOpen(true);
         } catch (reason) {
-          if (!controller.signal.aborted) {
-            setGlobalSearchResults([]);
-            setGlobalSearchError(reason instanceof Error ? reason.message : "Search could not be completed. Please try again.");
-          }
-        } finally {
-          if (!controller.signal.aborted) setGlobalSearchLoading(false);
+          if (!controller.signal.aborted) setGlobalSearchState({ key: searchKey, results: [], error: reason instanceof Error ? reason.message : "Search could not be completed. Please try again." });
         }
       })();
     }, 180);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [active, query, role, signedIn]);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [active, query, searchKey]);
   useEffect(() => {
     const timer = window.setTimeout(
       () => setCaseWindowId(new URL(window.location.href).searchParams.get("case") ?? ""),
@@ -12779,46 +12599,6 @@ export default function Home() {
       say(reason instanceof Error ? reason.message : "The bulk update could not be saved.");
     }
   }
-  const bulkMoveCases = async (
-    records: CaseRecord[],
-    stage: LifecycleStage,
-  ) => {
-    const ids = records.map((record) => record.dbId).filter(Boolean) as string[];
-    if (!ids.length) return say("None of the selected cases could be identified.");
-    try {
-      const response = await fetch("/api/crm/workspace", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "bulk_lifecycle", caseIds: ids, stage }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "The cases could not be moved.");
-      const moved = new Set(ids);
-      setCases((current) =>
-        current.map((record) =>
-          record.dbId && moved.has(record.dbId)
-            ? {
-                ...record,
-                lifecycleStage: stage,
-                stage: stageLabelFor(stage, record.serviceType === "direct_visa"),
-                status: stage === "completed" ? "completed" : stage === "deferred" ? "waiting" : "active",
-              }
-            : record,
-        ),
-      );
-      const succeeded = Number(result.succeeded ?? ids.length);
-      const failed = Number(result.failed ?? 0);
-      say(`${succeeded} case${succeeded === 1 ? "" : "s"} moved to ${stageLabels[stage].toLowerCase()}` + (failed ? `; ${failed} could not be moved.` : "."));
-      queueWorkspaceRefresh();
-    } catch (reason) {
-      queueWorkspaceRefresh();
-      say(reason instanceof Error ? reason.message : "The cases could not be moved.");
-    }
-  };
-  const bulkArchiveCases = async (records: CaseRecord[]) => {
-    const ids = records.map((record) => record.dbId).filter(Boolean) as string[];
-    await bulkMutateRemote("case", "archive", ids);
-  };
   async function postOperation(
     action: string,
     extra: Record<string, unknown> = {},
@@ -12843,22 +12623,6 @@ export default function Home() {
       );
     }
   }
-  const syncTasks = (next: TaskRecord[]) => {
-    const removed = tasks.find(
-      (item) => !next.some((candidate) => candidate.id === item.id),
-    );
-    const changed = next.find(
-      (item) =>
-        tasks.find((previous) => previous.id === item.id)?.completed !==
-        item.completed,
-    );
-    setTasks(next);
-    if (removed) void mutateRemote("task", "delete", removed.id);
-    else if (changed)
-      void mutateRemote("task", "toggle", changed.id, {
-        completed: changed.completed,
-      });
-  };
   const syncAppointments = (next: AppointmentRecord[]) => {
     const removed = appointments.find(
       (item) => !next.some((candidate) => candidate.id === item.id),

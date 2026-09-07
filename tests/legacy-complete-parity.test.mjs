@@ -61,7 +61,7 @@ test("WhatsApp is a case-scoped conversation with signed inbound webhooks", asyn
 test("campaigns use explicit accessible cases and retain delivery evidence", async () => {
   const route = await read("app/api/crm/campaigns/route.ts");
   const migration = await read("supabase/migrations/0033_legacy_communication_and_import_parity.sql");
-  const page = await read("app/page.tsx");
+  const page = await read("app/campaigns-panel.tsx");
   assert.match(route, /Select between 1 and 200 accessible cases/);
   assert.match(route, /campaign_recipients/);
   assert.match(route, /campaign\.launched/);

@@ -85,6 +85,7 @@ async function openCaseDrawer(page: Page, name: string) {
   await popup.waitForLoadState();
   const drawer = popup.locator(".caseDrawer");
   await expect(drawer).toBeVisible({ timeout: 25_000 });
+  await drawer.getByText("Update stage or visa expiry", { exact: true }).click();
   return { popup, drawer };
 }
 
