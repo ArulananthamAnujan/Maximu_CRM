@@ -1,17 +1,27 @@
 # CRM completion candidate — 7 September 2026
 
-## Current publication and candidate
+## Release candidate and approval
 
-Production is Netlify deployment `6a9e94f76a348100082c9e94`, built from GitHub
+The production baseline was Netlify deployment `6a9e94f76a348100082c9e94`, built from GitHub
 `8ec010af37d07cac8256b59044d947f7dde2f530`. Its source tree matches the recovered
 local release. GitHub Actions run `34112803686` passed for that existing release.
 
-Candidate application commit: `5d73aae` on local branch `crm-completion-20260907`.
-It has not been pushed or deployed. Automatic approval review rejected both
-push attempts, including the retry after retrieving the earlier deployment
-instruction. The reviewer requires explicit approval in this conversation to
-export this source commit to `ArulananthamAnujan/Maximu_CRM`. No alternative
-publication path was used.
+The user explicitly approved publishing local commits `5d73aae` and `e0aedb4`,
+applying migration 0040 after full CI, and deploying to the existing production
+site. Command-line Git lacked credentials, so the connected GitHub account
+published candidate `a3897680ba3ce65bccb506bdd78b91e88684514b` on
+`crm-completion-20260907`. Its tree `9abd2b8c783e9b7a2eca8fb39d75e885fdbb3e26`
+exactly matches the approved local source. GitHub Actions run `34124737717`
+checks this candidate before the production release.
+
+The first candidate run passed the build/unit and browser jobs. The database
+job passed all row-level security probes and 499/500 feature checks. Its only
+failure was an old expectation that OAuth configuration alone means Gmail is
+connected. Local commit `c7f1a35` corrects that assertion to require the current
+staff mailbox and checks the connection guidance. Automatic approval review
+blocked publishing this newly changed test because the approval named the
+earlier commits. Migration 0040 and the production release remain unapplied
+pending permission to publish the correction and a fully passing CI run.
 
 ## Implemented
 
@@ -63,8 +73,11 @@ source/save/reload reconciliation remains outstanding.
   contracts; they are not live financial transaction certification.
 - The database-backed feature audit now contains concurrent payment/retry,
   invoice replay, credit/refund replay, overpayment, void, branch-denial and
-  reconciliation tests. They have not run for this candidate because the local
-  environment lacks PostgreSQL and publishing the CI branch was blocked.
+  reconciliation tests. All of those checks passed against PostgreSQL 16 in
+  candidate CI run `34124737717`. The complete feature audit was 499/500, with
+  only the outdated Gmail connection assertion failing. Its local correction
+  passes JavaScript syntax validation and `git diff --check`; the full CI rerun
+  requires publishing that correction.
 - A read-only query in production independently returned 5,141 enquiries,
   93 education applications and 147 visa-matter rows. The existing dashboard's
   67 active visa matters is a different measure. Migration 0040 is not present.
@@ -74,14 +87,17 @@ source/save/reload reconciliation remains outstanding.
   Measurements include browser-control overhead, debounce, network and render;
   this is a small sample, not a sustained load test or network-only p95.
 - The authenticated case view has document width 1,363 px and scroll width
-  1,363 px at the tested desktop viewport. The existing release's CI covers
-  1,363, 1,024 and 390 px, but candidate browser acceptance still needs to run.
+  1,363 px at the tested desktop viewport. Candidate CI passed all 39 browser
+  acceptance tests, including the existing responsive checks at 1,363, 1,024
+  and 390 px.
 
 ## Required release sequence
 
-1. Approve publishing the candidate source to the existing GitHub repository.
-2. Push the candidate branch and require all three CI jobs to pass. Repair any
-   real database or browser failure before proceeding.
+1. Explicit user approval received for the existing GitHub repository,
+   migration 0040 and production deployment.
+2. Candidate branch published. Approve publishing the corrected Gmail test and
+   these release notes to the same repository, then require all three CI jobs
+   to pass before proceeding.
 3. Apply migration 0040 to the existing Maximus CRM Supabase project. It adds
    transaction functions and a request ledger; it does not rewrite old balances.
 4. Fast-forward main to the passing candidate and verify Netlify production.

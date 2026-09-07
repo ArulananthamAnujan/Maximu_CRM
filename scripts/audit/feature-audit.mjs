@@ -1137,8 +1137,9 @@ expect("passport encryption reports as configured",
   byKey.field_encryption?.state === "connected", JSON.stringify(byKey.field_encryption));
 expect("built WhatsApp integration reports that credentials are still needed",
   byKey.whatsapp?.state === "not_configured", JSON.stringify(byKey.whatsapp));
-expect("Gmail sending reports connected once the OAuth client is configured",
-  byKey.gmail?.state === "connected", JSON.stringify(byKey.gmail));
+expect("Gmail requires the current staff mailbox even when OAuth is configured",
+  byKey.gmail?.state === "not_configured" && /ready to connect.*your own mailbox/i.test(byKey.gmail?.detail ?? ""),
+  JSON.stringify(byKey.gmail));
 expect("Calendar sync reports connected once the OAuth client is configured",
   byKey.calendar?.state === "connected", JSON.stringify(byKey.calendar));
 expect("Google sign-in is read from Supabase's own settings, not assumed",
