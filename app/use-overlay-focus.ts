@@ -3,6 +3,12 @@
 import { useEffect, useRef } from "react";
 
 const overlayStack: HTMLElement[] = [];
+let focusListeners = 0;
+let lastFocused: HTMLElement | null = null;
+const rememberFocus = (event: FocusEvent) => {
+  if (event.target instanceof HTMLElement && event.target !== document.body)
+    lastFocused = event.target;
+};
 
 /** Keep keyboard navigation within the active drawer, then return to its trigger. */
 export function useOverlayFocus(
@@ -13,9 +19,21 @@ export function useOverlayFocus(
   const close = useRef(onClose);
   useEffect(() => { close.current = onClose; }, [onClose]);
   useEffect(() => {
+    // Capture the trigger before making its surrounding page inert. Browsers
+    // can otherwise move focus to body before the open-overlay effect runs.
+    if (focusListeners++ === 0) document.addEventListener("focusin", rememberFocus, true);
+    return () => {
+      if (--focusListeners === 0) {
+        document.removeEventListener("focusin", rememberFocus, true);
+        lastFocused = null;
+      }
+    };
+  }, []);
+  useEffect(() => {
     const panel = ref.current;
     if (!open || !panel) return;
-    const trigger = document.activeElement as HTMLElement | null;
+    const trigger = document.activeElement === document.body
+      ? lastFocused : document.activeElement as HTMLElement | null;
     overlayStack.push(panel);
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -48,7 +66,9 @@ export function useOverlayFocus(
       const index = overlayStack.lastIndexOf(panel);
       if (index !== -1) overlayStack.splice(index, 1);
       document.body.style.overflow = overflow;
-      if (trigger?.isConnected) trigger.focus();
+      requestAnimationFrame(() => {
+        if (trigger?.isConnected && !trigger.closest("[inert]")) trigger.focus();
+      });
     };
   }, [open, ref]);
 }

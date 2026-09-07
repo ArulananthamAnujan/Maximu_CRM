@@ -2419,7 +2419,7 @@ function CaseWorkspace({
   };
 
   return (
-    <article className={`panel journeyListPanel journeyList-${module}`}>
+    <article className={`panel journeyListPanel journeyList-${module}`} aria-busy={loading}>
       {module !== "enquiries" ? (
         <div className="journeyListIntro">
           <div>
@@ -2651,7 +2651,8 @@ function CaseWorkspace({
           </div>
         </div>
       ) : null}
-      {loading ? (
+      {loading && cases.length > 0 ? <p className="caseWorkEmpty" role="status">Updating results…</p> : null}
+      {loading && cases.length === 0 ? (
         <EmptyState
           icon={RefreshCw}
           title="Loading enquiries…"
