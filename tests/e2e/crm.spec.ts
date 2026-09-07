@@ -29,6 +29,9 @@ async function signIn(page: Page, email: string) {
 
 /** Opens the Enquiries list and waits for it to be the screen on show. */
 async function openEnquiries(page: Page) {
+  if (await page.locator(".journeyList-enquiries").isVisible()) return;
+  if (!await page.locator(".sidebar").getByRole("button", { name: /^Enquiries$/ }).isVisible())
+    await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
   await page.getByRole("button", { name: /^Enquiries$/ }).click();
   await expect(page.locator(".journeyList-enquiries")).toBeVisible({ timeout: 25_000 });
 }
@@ -240,7 +243,7 @@ test("the portal shows a client their own view and no staff tools", async ({
 }) => {
   await signIn(page, CLIENT);
   await expect(
-    page.getByRole("button", { name: /staff & masters/i }),
+    page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }),
   ).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^Reports$/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /quick create/i })).toHaveCount(
@@ -332,21 +335,21 @@ test("a branch manager gets the operations tools but not the organisation", asyn
   await expect(page.getByRole("button", { name: /^Accounts$/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Reports$/ })).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /staff & masters/i }),
+    page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }),
   ).toBeVisible();
   // Integrations is the organisation-wide screen, and belongs to the owner.
   await expect(
-    page.getByRole("button", { name: /^Integrations$/ }),
+    page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }),
   ).toHaveCount(0);
 });
 
 test("an owner gets the organisation screens as well", async ({ page }) => {
   await signIn(page, OWNER);
   await expect(
-    page.getByRole("button", { name: /^Integrations$/ }),
+    page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /staff & masters/i }),
+    page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }),
   ).toBeVisible();
 });
 
@@ -428,51 +431,27 @@ test("the visa expiry is asked for beside the move that needs it", async ({
  * Applications and visa matters as records.
  * ------------------------------------------------------------------ */
 
-test("the Applications screen lists applications, not just cases", async ({
-  page,
-}) => {
+test("the Applications screen preserves institution, intake, status and deadlines", async ({ page }) => {
   await signIn(page, OFFICER);
   await page.getByRole("button", { name: /^Applications$/ }).click();
-  const board = page.locator(".boardTable").first();
-  await expect(board).toBeVisible({ timeout: 25_000 });
-  for (const column of [
-    "Institution",
-    "Course",
-    "Intake",
-    "Status",
-    "Deadline",
-  ])
-    await expect(
-      board.getByRole("columnheader", { name: column, exact: true }),
-    ).toBeVisible();
-  await expect(board.locator("tbody tr").first()).toBeVisible();
-  // The cases at that stage are still reachable underneath.
-  await expect(page.getByText(/cases at the application stage/i)).toBeVisible();
+  const board = page.locator(".detailedRecordsPanel");
+  await expect(board.getByRole("heading", { name: "Institution applications" })).toBeVisible();
+  const application = board.locator(".detailedRecordCard").first();
+  await expect(application).toBeVisible({ timeout: 25_000 });
+  for (const label of ["Course", "Campus & intake", "Application reference", "Submitted", "Offer / CoE", "Deadline", "Documents"])
+    await expect(application.getByText(label, { exact: true })).toBeVisible();
+  await expect(application.locator(".recordStatusPill")).toBeVisible();
+  await expect(application.getByRole("button", { name: "Open case" })).toBeVisible();
 });
 
-test("the Visa screen carries the columns an agent works from", async ({
-  page,
-}) => {
+test("the Visa screen carries the details an agent works from", async ({ page }) => {
   await signIn(page, OFFICER);
   await page.getByRole("button", { name: /^Visa$/ }).click();
-  const board = page.locator(".boardTable").first();
-  await expect(board).toBeVisible({ timeout: 25_000 });
-  for (const column of [
-    "Subclass",
-    "Destination",
-    "Current visa",
-    "Expiry",
-    "Lodged",
-    "TRN",
-    "Agent",
-    "MARN",
-    "Status",
-    "s56 due",
-    "Outcome",
-  ])
-    await expect(
-      board.getByRole("columnheader", { name: column, exact: true }),
-    ).toBeVisible();
+  const matter = page.locator(".detailedRecordCard").first();
+  await expect(matter).toBeVisible({ timeout: 25_000 });
+  for (const label of ["Destination", "Current visa & expiry", "Lodged / TRN", "Agent / MARN", "Information request", "Decision / outcome", "Documents"])
+    await expect(matter.getByText(label, { exact: true })).toBeVisible();
+  await expect(matter.locator(".recordStatusPill")).toBeVisible();
 });
 
 /* ------------------------------------------------------------------ *
@@ -528,6 +507,8 @@ test("entering somebody already on file is stopped and offers a choice", async (
 test("no screen shows Invalid Date", async ({ page }) => {
   await signIn(page, OWNER);
   for (const screen of ["Messages", "File Manager", "Accounts", "Calendar"]) {
+    await page.goto("/");
+    await expect(page.locator(".appShell")).toBeVisible();
     await page
       .getByRole("button", { name: screen, exact: true })
       .first()
@@ -540,7 +521,7 @@ test("integration status is read from the server, not asserted", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /^Integrations$/ }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }).click();
   await expect(page.getByText(/integration status/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -552,7 +533,7 @@ test("integration status is read from the server, not asserted", async ({
   );
   // And what is absent is named as absent rather than as unconfigured.
   await expect(
-    page.locator(".integrationState.not_built").first(),
+    page.locator(".integrationState.not_configured").first(),
   ).toBeVisible();
   await expect(page.getByText(/gmail sending/i)).toBeVisible();
 });
@@ -641,7 +622,7 @@ test("the staff screen shows the team rather than role artwork", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   await expect(page.getByText(/staff accounts/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -660,7 +641,7 @@ test("an owner creates a staff account and is given the password to hand over", 
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   await page.getByRole("button", { name: /add staff member/i }).click();
 
   const form = page.locator(".stackedForm");
@@ -684,7 +665,7 @@ test("a branch manager is not offered administrator levels", async ({
   page,
 }) => {
   await signIn(page, MANAGER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   await page.getByRole("button", { name: /add staff member/i }).click();
   const levels = await page
     .locator('.stackedForm select[name="level"] option')
@@ -698,7 +679,7 @@ test("a staff account can be deactivated and brought back", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   // The status filter defaults to Active, which would hide this row the
   // moment it is deactivated -- widen it first so the row stays visible
   // through both halves of the test.
@@ -716,7 +697,7 @@ test("a staff account can be deactivated and brought back", async ({
 
 test("a branch can be added from the masters screen", async ({ page }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   await page.getByRole("button", { name: /add branch/i }).click();
   const form = page.locator(".stackedForm");
   await form.locator('input[name="name"]').fill("Kandy");
@@ -788,7 +769,7 @@ test("an administrator can connect a portal login to a client file", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /staff & masters/i }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
   await expect(page.getByText(/portal logins/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -802,7 +783,7 @@ test("integration status names the production settings still to do", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /^Integrations$/ }).click();
+  await page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }).click();
   await expect(page.getByText(/passport encryption/i)).toBeVisible({
     timeout: 25_000,
   });
