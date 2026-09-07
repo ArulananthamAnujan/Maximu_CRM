@@ -219,7 +219,7 @@ test("the pipeline control moves a case to the next stage", async ({
 
 test("a manager is offered invoice creation", async ({ page }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /^Accounts$/ }).click();
+  await navigateTo(page, "Accounts");
   await expect(page.getByRole("button", { name: /new invoice/i })).toBeVisible({
     timeout: 25_000,
   });
@@ -232,7 +232,7 @@ test("a screen opened straight after sign-in is not thrown away", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /^Reports$/ }).click();
+  await navigateTo(page, "Reports");
   await expect(
     page.getByRole("heading", { name: /what falls due next/i }),
   ).toBeVisible({ timeout: 25_000 });
@@ -245,7 +245,7 @@ test("a screen opened straight after sign-in is not thrown away", async ({
 
 test("reporting renders the figures an agency acts on", async ({ page }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: /^Reports$/ }).click();
+  await navigateTo(page, "Reports");
   await expect(page.getByText(/what falls due next/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -330,6 +330,7 @@ async function navEntries(page: Page) {
 
 test("a case officer is given no way into Accounts", async ({ page }) => {
   await signIn(page, OFFICER);
+  await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
   // Invoicing and reporting are manager work, so the modules are absent
   // rather than present and empty.
   for (const absent of [
@@ -457,11 +458,12 @@ test("the visa expiry is asked for beside the move that needs it", async ({
 
 test("the Applications screen preserves institution, intake, status and deadlines", async ({ page }) => {
   await signIn(page, OFFICER);
-  await page.getByRole("button", { name: /^Applications$/ }).click();
+  await navigateTo(page, "Applications");
   const board = page.locator(".detailedRecordsPanel");
   await expect(board.getByRole("heading", { name: "Institution applications" })).toBeVisible();
   const application = board.locator(".detailedRecordCard").first();
   await expect(application).toBeVisible({ timeout: 25_000 });
+  await application.getByText("All application details", { exact: true }).click();
   for (const label of ["Course", "Campus & intake", "Application reference", "Submitted", "Offer / CoE", "Deadline", "Documents"])
     await expect(application.getByText(label, { exact: true })).toBeVisible();
   await expect(application.locator(".recordStatusPill")).toBeVisible();
@@ -470,9 +472,10 @@ test("the Applications screen preserves institution, intake, status and deadline
 
 test("the Visa screen carries the details an agent works from", async ({ page }) => {
   await signIn(page, OFFICER);
-  await page.getByRole("button", { name: /^Visa$/ }).click();
+  await navigateTo(page, "Visa");
   const matter = page.locator(".detailedRecordCard").first();
   await expect(matter).toBeVisible({ timeout: 25_000 });
+  await matter.getByText("All visa details", { exact: true }).click();
   for (const label of ["Destination", "Current visa & expiry", "Lodged / TRN", "Agent / MARN", "Information request", "Decision / outcome", "Documents"])
     await expect(matter.getByText(label, { exact: true })).toBeVisible();
   await expect(matter.locator(".recordStatusPill")).toBeVisible();

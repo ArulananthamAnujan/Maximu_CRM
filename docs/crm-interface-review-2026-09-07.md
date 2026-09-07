@@ -44,9 +44,13 @@ administration parity is documented in `LEGACY_CRM_PARITY.md`.
 - Two new end-to-end scenarios cover preview note/search retention and additive
   document requests. Existing navigation/full-case tests now use the drawer and
   explicit Open case action. Full database-backed browser/RLS gates await CI.
-- Publication: automatic approval review rejected the GitHub tree upload because
-  it requires explicit authorization to disclose this modified source/tests to
-  `ArulananthamAnujan/Maximu_CRM`. No remote branch was created or deployment made.
+- The user approved the GitHub upload. Review branch `crm-contextual-workspace`
+  and pull request #1 now contain the tested source. The Netlify review preview
+  is available; production has not been updated by this change.
+- GitHub build/unit checks, row-level security and all 500 feature-audit checks
+  passed. The first browser run exposed navigation tests that still clicked the
+  old permanent sidebar. Those paths now open the drawer, and application/visa
+  field checks expand the corresponding details. The browser rerun is pending.
 
 The temporary synthetic browser harness has been removed from the source tree.
 No live messages or legacy CRM records were modified during the interface review.
@@ -59,3 +63,9 @@ communication attachments and account relationships still need reconciliation.
 Provider setup and real delivery require separate verification. Keep the old CRM
 available until those checks are complete; a successful build is not a cutover
 approval.
+
+A read-only production check on 7 September confirmed 440 imported history
+snapshots and 115 imported document records. All 115 still have no Drive file
+ID and remain requested. The Drive connection probe succeeds, so completing
+the file transfer and checking its results remain required. Do not reimport
+those document records or infer file completion from metadata alone.
