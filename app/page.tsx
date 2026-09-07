@@ -3594,10 +3594,10 @@ function MessagesView({
         <aside className="gmailFolderRail">
           <button className="gmailCompose" onClick={() => openModal("message")}><Plus size={20} />Compose</button>
           <nav>
-            <button className={mailFolder === "inbox" ? "active" : ""} onClick={() => openFolder("inbox")}><Inbox size={18} /><span>Inbox</span>{gmailMessages.filter((message) => message.unread).length > 0 ? <b>{gmailMessages.filter((message) => message.unread).length}</b> : null}</button>
-            <button className={mailFolder === "starred" ? "active" : ""} onClick={() => openFolder("starred")}><Star size={18} /><span>Starred</span></button>
-            <button className={mailFolder === "sent" ? "active" : ""} onClick={() => openFolder("sent")}><Send size={18} /><span>Sent</span></button>
-            <button className={mailFolder === "drafts" ? "active" : ""} onClick={() => openFolder("drafts")}><FileText size={18} /><span>Drafts</span>{draftMessages.length > 0 ? <b>{draftMessages.length}</b> : null}</button>
+            <button aria-label="Inbox" title="Inbox" className={mailFolder === "inbox" ? "active" : ""} onClick={() => openFolder("inbox")}><Inbox size={18} /><span>Inbox</span>{gmailMessages.filter((message) => message.unread).length > 0 ? <b>{gmailMessages.filter((message) => message.unread).length}</b> : null}</button>
+            <button aria-label="Starred" title="Starred" className={mailFolder === "starred" ? "active" : ""} onClick={() => openFolder("starred")}><Star size={18} /><span>Starred</span></button>
+            <button aria-label="Sent" title="Sent" className={mailFolder === "sent" ? "active" : ""} onClick={() => openFolder("sent")}><Send size={18} /><span>Sent</span></button>
+            <button aria-label="Drafts" title="Drafts" className={mailFolder === "drafts" ? "active" : ""} onClick={() => openFolder("drafts")}><FileText size={18} /><span>Drafts</span>{draftMessages.length > 0 ? <b>{draftMessages.length}</b> : null}</button>
           </nav>
           <div className="gmailCaseNote"><Link2 size={15} /><span>Messages sent here remain linked to the client case.</span></div>
           {mailbox?.connected ? <button className="gmailDisconnect" onClick={() => void disconnectMailbox()}>Disconnect Gmail</button> : null}
