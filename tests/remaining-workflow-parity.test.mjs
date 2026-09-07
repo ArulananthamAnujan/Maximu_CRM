@@ -68,7 +68,7 @@ test("the audited legacy replacement keeps every non-zero register and enquiry f
   for (const count of ["5,292", "320", "54", "91", "24", "56"])
     assert.match(audit, new RegExp(count.replace(",", ",")));
   for (const label of [
-    "More legacy filters",
+    "More filters",
     "Assigned staff",
     "Enquiry status",
     "Source / reference",

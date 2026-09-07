@@ -65,7 +65,7 @@ test("large enquiry directories are server-paged, cached and permission scoped",
   assert.match(page, /All permitted offices/);
   assert.match(page, /All countries/);
   assert.match(page, /All document states/);
-  assert.match(page, /Office & service/);
+  assert.match(page, /Client & office/);
   assert.match(page, /className="enquiryDirectorySearch"/);
   assert.match(page, /className="enquiryDirectorySummary"/);
   assert.match(page, /module !== "enquiries"/);

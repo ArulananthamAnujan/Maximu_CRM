@@ -30,9 +30,11 @@ async function signIn(page: Page, email: string) {
 }
 
 async function navigateTo(page: Page, name: string) {
+  const daily = page.locator(".topbarSecondary").getByRole("button", { name, exact: true });
+  if (await daily.count()) { await daily.click(); return; }
   const button = page.locator(".sidebar").getByRole("button", { name, exact: true });
   const overlayNavigation = await page.evaluate(() =>
-    innerWidth <= 900 || !!document.querySelector(".appShell.enquiryFullMode, .appShell.gmailMode"),
+    innerWidth <= 900 || !!document.querySelector(".appShell.staffFullMode, .appShell.enquiryFullMode, .appShell.gmailMode"),
   );
   const sidebar = page.locator(".sidebar");
   if (overlayNavigation && !(await sidebar.evaluate(element => element.classList.contains("open")))) {
@@ -93,16 +95,15 @@ function caseRow(page: Page, name: string) {
 }
 
 /**
- * Clicking a case row opens it in its own browser window (so an officer can
- * work several cases side by side), not inline on the board it was opened
- * from. Returns that window and its drawer.
+ * The explicit Open case action opens a separate workspace. Clicking the
+ * client name now opens the contextual preview used by the tests below.
  */
 async function openCaseDrawer(page: Page, name: string) {
   const row = caseRow(page, name);
   await expect(row).toBeVisible({ timeout: 25_000 });
   const [popup] = await Promise.all([
     page.waitForEvent("popup"),
-    row.click(),
+    row.locator("..").getByRole("button", { name: "Open case", exact: true }).click(),
   ]);
   await popup.waitForLoadState();
   const drawer = popup.locator(".caseDrawer");
@@ -134,7 +135,8 @@ test("an unknown account is refused and stays on the sign-in page", async ({
 
 test("an owner signs in and reaches the workspace", async ({ page }) => {
   await signIn(page, OWNER);
-  await expect(page.getByRole("button", { name: /^Reports$/ })).toBeVisible();
+  await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
+  await expect(page.locator(".sidebar").getByRole("button", { name: /^Reports$/ })).toBeVisible();
 });
 
 test("the enquiry form will not submit without the required fields", async ({
@@ -348,6 +350,7 @@ test("a branch manager gets the operations tools but not the organisation", asyn
   page,
 }) => {
   await signIn(page, MANAGER);
+  await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
   await expect(page.getByRole("button", { name: /^Accounts$/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Reports$/ })).toBeVisible();
   await expect(
@@ -361,6 +364,7 @@ test("a branch manager gets the operations tools but not the organisation", asyn
 
 test("an owner gets the organisation screens as well", async ({ page }) => {
   await signIn(page, OWNER);
+  await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
   await expect(
     page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }),
   ).toBeVisible();
@@ -529,10 +533,7 @@ test("no screen shows Invalid Date", async ({ page }) => {
   for (const screen of ["Messages", "File Manager", "Accounts", "Calendar"]) {
     await page.goto("/");
     await expect(page.locator(".appShell")).toBeVisible();
-    await page
-      .getByRole("button", { name: screen, exact: true })
-      .first()
-      .click();
+    await navigateTo(page, screen);
     await expect(page.locator("body")).not.toContainText("Invalid Date");
   }
 });
@@ -541,7 +542,7 @@ test("integration status is read from the server, not asserted", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }).click();
+  await navigateTo(page, "Integrations");
   await expect(page.getByText(/integration status/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -640,7 +641,7 @@ test("the staff screen shows the team rather than role artwork", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
+  await navigateTo(page, "Staff & Masters");
   await expect(page.getByText(/staff accounts/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -659,7 +660,7 @@ test("an owner creates a staff account with secure setup instructions", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
+  await navigateTo(page, "Staff & Masters");
   await page.getByRole("button", { name: /add staff member/i }).click();
 
   const form = page.locator(".stackedForm");
@@ -683,7 +684,7 @@ test("a branch manager is not offered administrator levels", async ({
   page,
 }) => {
   await signIn(page, MANAGER);
-  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
+  await navigateTo(page, "Staff & Masters");
   await page.getByRole("button", { name: /add staff member/i }).click();
   const levels = await page
     .locator('.stackedForm select[name="level"] option')
@@ -697,7 +698,7 @@ test("a staff account can be deactivated and brought back", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
+  await navigateTo(page, "Staff & Masters");
   // The status filter defaults to Active, which would hide this row the
   // moment it is deactivated -- widen it first so the row stays visible
   // through both halves of the test.
@@ -715,7 +716,7 @@ test("a staff account can be deactivated and brought back", async ({
 
 test("a branch can be added from the masters screen", async ({ page }) => {
   await signIn(page, OWNER);
-  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
+  await navigateTo(page, "Staff & Masters");
   await page.getByRole("button", { name: /add branch/i }).click();
   const form = page.locator(".stackedForm");
   await form.locator('input[name="name"]').fill("Kandy");
@@ -787,7 +788,7 @@ test("an administrator can connect a portal login to a client file", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }).click();
+  await navigateTo(page, "Staff & Masters");
   await expect(page.getByText(/portal logins/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -801,7 +802,7 @@ test("integration status names the production settings still to do", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }).click();
+  await navigateTo(page, "Integrations");
   await expect(page.getByText(/passport encryption/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -828,4 +829,48 @@ test("the case workspace stays bounded at desktop and phone widths", async ({ pa
         .toBeLessThanOrEqual(width + 1);
     }
   }
+});
+
+
+test("record preview saves notes and preserves the register search when dismissed", async ({ page }) => {
+  await signIn(page, OFFICER);
+  const name = `Preview Notes ${Date.now()}`;
+  await createEnquiry(page, name, `preview-${Date.now()}@example.test`);
+  const search = page.locator(".enquiryDirectorySearch input");
+  await search.fill(name);
+  const row = caseRow(page, name);
+  await row.click();
+  const drawer = page.locator(".recordPreview");
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole("tab", { name: "Activity & notes", exact: true }).click();
+  await drawer.getByRole("textbox", { name: "Add a file note", exact: true }).fill("Call completed; awaiting certified transcript.");
+  await drawer.getByRole("button", { name: "Record", exact: true }).click();
+  await expect(drawer.locator(".timeline")).toContainText("Call completed; awaiting certified transcript.");
+  await expect(drawer.getByRole("tab", { name: "Activity & notes", exact: true })).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  await expect(search).toHaveValue(name);
+  await expect(row).toBeFocused();
+});
+
+test("case document requests stay in the preview and retain the existing checklist", async ({ page }) => {
+  await signIn(page, OFFICER);
+  const name = `Preview Documents ${Date.now()}`;
+  await createEnquiry(page, name, `preview-docs-${Date.now()}@example.test`);
+  await caseRow(page, name).locator("..").getByRole("button", { name: "Files", exact: true }).click();
+  const drawer = page.locator(".recordPreview");
+  await expect(drawer.getByRole("tab", { name: /^Documents(?: \d+)?$/, exact: true })).toHaveAttribute("aria-selected", "true");
+  await drawer.getByText("Add a document request or checklist", { exact: true }).click();
+  await drawer.getByRole("textbox", { name: "Document title", exact: true }).fill("Certified transcript");
+  await drawer.getByRole("textbox", { name: "Folder / category", exact: true }).fill("Education");
+  await drawer.getByRole("button", { name: "Add document request", exact: true }).click();
+  await expect(drawer.locator(".documentList")).toContainText("Certified transcript");
+  await expect(drawer.getByRole("tab", { name: /^Documents(?: \d+)?$/, exact: true })).toHaveAttribute("aria-selected", "true");
+  await drawer.getByRole("button", { name: "From checklist", exact: true }).click();
+  const choice = drawer.locator('.templateRequestChoices input[type="checkbox"]').first();
+  await choice.check();
+  await drawer.getByRole("button", { name: "Add document request", exact: true }).click();
+  await expect(drawer.locator(".documentList")).toContainText("Certified transcript");
+  await expect(drawer.locator(".documentList > li")).toHaveCount(2);
+  await expect(page.locator(".recordModal")).toHaveCount(0);
 });
