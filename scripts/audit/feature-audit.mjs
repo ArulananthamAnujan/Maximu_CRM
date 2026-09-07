@@ -106,7 +106,7 @@ const badEmail = await call("/api/crm/workspace", { method: "POST", cookie: offi
 expect("a case without an email is refused", badEmail.status === 400, JSON.stringify(badEmail.json));
 const badExpiry = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
   body: { action: "case", name: "No Expiry", phone: "+61400000009", email: "x@example.test" } });
-expect("a case without a visa expiry is refused", badExpiry.status === 400, JSON.stringify(badExpiry.json));
+expect("an enquiry can start before a visa expiry is known", badExpiry.status === 200, JSON.stringify(badExpiry.json));
 const created = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
   body: { action: "case", name: "Arun Kumar", phone: "+61400000002", email: "arun@example.test",
           visaExpiry: "2027-09-30", type: "Student visa", target: "Bachelor of Nursing",
@@ -115,8 +115,8 @@ expect("a new enquiry is created", created.status === 200, JSON.stringify(create
 const newCaseId = created.json?.caseId;
 
 section("Case pipeline");
-const ws2 = await call("/api/crm/workspace", { cookie: officer.cookie });
-const arun = ws2.json?.cases?.find((c) => c.name === "Arun Kumar");
+const ws2 = await call("/api/crm/enquiries", { cookie: officer.cookie });
+const arun = ws2.json?.records?.find((c) => c.name === "Arun Kumar");
 expect("the new enquiry starts at the enquiry stage", arun?.lifecycleStage === "enquiry",
   `stage=${arun?.lifecycleStage}`);
 const move = (stage, cookie = officer.cookie, id = newCaseId, reason) =>

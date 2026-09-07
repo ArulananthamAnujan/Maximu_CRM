@@ -31,11 +31,16 @@ const columnExprAliased = (alias, v) => {
 // commas only, so a nested embed's own comma-separated columns stay together.
 function splitTopLevel(str) {
   const parts = [];
-  let depth = 0, current = "";
+  let depth = 0, current = "", quoted = false, escaped = false;
   for (const ch of str) {
-    if (ch === "(") depth++;
-    if (ch === ")") depth--;
-    if (ch === "," && depth === 0) { parts.push(current); current = ""; continue; }
+    if (escaped) { current += ch; escaped = false; continue; }
+    if (ch === "\\" && quoted) { current += ch; escaped = true; continue; }
+    if (ch === '"') quoted = !quoted;
+    if (!quoted) {
+      if (ch === "(") depth++;
+      if (ch === ")") depth--;
+      if (ch === "," && depth === 0) { parts.push(current); current = ""; continue; }
+    }
     current += ch;
   }
   if (current) parts.push(current);
@@ -153,7 +158,8 @@ function toSql(value, type) {
 // PostgREST filter -> SQL predicate. Supports the operators this app sends.
 function predicateOn(target, spec) {
   const [op, ...rest] = spec.split(".");
-  const value = rest.join(".");
+  const rawValue = rest.join(".");
+  const value = rawValue.startsWith('"') && rawValue.endsWith('"') ? JSON.parse(rawValue) : rawValue;
   if (op === "not") return `not (${predicateOn(target, value)})`;
   if (op === "eq") return `${target} = ${lit(value)}`;
   if (op === "neq") return `${target} <> ${lit(value)}`;
@@ -169,19 +175,21 @@ function predicate(column, spec) {
 }
 
 // `or=(a.ilike.*x*,b.ilike.*x*)` -> (a ilike '%x%' or b ilike '%x%')
-function orPredicate(raw) {
+function logicPredicate(raw, join = "or") {
   const inner = raw.replace(/^\(/, "").replace(/\)$/, "");
   return `(${splitTopLevel(inner).map((p) => {
+    const nested = /^(and|or)\((.*)\)$/.exec(p);
+    if (nested) return logicPredicate(nested[2], nested[1]);
     const idx = p.indexOf(".");
     return predicate(p.slice(0, idx), p.slice(idx + 1));
-  }).join(" or ")})`;
+  }).join(` ${join} `)})`;
 }
 
 function buildWhere(params) {
   const clauses = [];
   for (const [key, value] of params) {
     if (["select", "order", "limit", "offset"].includes(key)) continue;
-    if (key === "or") { clauses.push(orPredicate(value)); continue; }
+    if (key === "or" || key === "and") { clauses.push(logicPredicate(value, key)); continue; }
     clauses.push(predicate(key, value));
   }
   return clauses.length ? ` where ${clauses.join(" and ")}` : "";
@@ -208,7 +216,7 @@ function buildWhereQualified(params, embedAliasByTable) {
   const clauses = [];
   for (const [key, value] of params) {
     if (["select", "order", "limit", "offset"].includes(key)) continue;
-    if (key === "or") { clauses.push(orPredicate(value)); continue; }
+    if (key === "or" || key === "and") { clauses.push(logicPredicate(value, key)); continue; }
     const dot = key.indexOf(".");
     if (dot !== -1) {
       const tbl = key.slice(0, dot);

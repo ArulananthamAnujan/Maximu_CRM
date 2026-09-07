@@ -806,3 +806,24 @@ test("integration status names the production settings still to do", async ({
   await expect(page.getByText(/record retention/i)).toBeVisible();
   await expect(page.getByText(/creating staff logins/i)).toBeVisible();
 });
+
+test("the case workspace stays bounded at desktop and phone widths", async ({ page }) => {
+  await signIn(page, OFFICER);
+  await openEnquiries(page);
+  const { popup, drawer } = await openCaseDrawer(page, "Priya Sharma");
+  for (const width of [1363, 1024, 390]) {
+    await popup.setViewportSize({ width, height: 900 });
+    const dimensions = await popup.evaluate(() => ({
+      viewport: window.innerWidth,
+      page: document.documentElement.scrollWidth,
+    }));
+    expect(dimensions.page).toBeLessThanOrEqual(dimensions.viewport + 1);
+    await expect(drawer.getByRole("button", { name: /^edit case$/i })).toBeVisible();
+    const visibleTabs = drawer.getByRole("tab");
+    for (let index = 0; index < await visibleTabs.count(); index += 1) {
+      await visibleTabs.nth(index).click();
+      expect(await popup.evaluate(() => document.documentElement.scrollWidth))
+        .toBeLessThanOrEqual(width + 1);
+    }
+  }
+});
