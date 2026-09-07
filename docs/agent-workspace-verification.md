@@ -112,3 +112,27 @@ is accepted as part of this change. Lint is therefore not a passing release gate
 
 Do not retire the legacy CRM until these acceptance checks pass and outstanding
 data/file reconciliation is signed off.
+
+
+## CI and compact workspace repair
+
+The repeated main-branch failures stopped at ESLint (React effect-state errors
+and unused bindings); Netlify builds alone did not establish a passing CI run.
+The repair removes redundant search state, cancels stale Gmail requests, and
+preserves the unused campaign component separately instead of discarding it.
+Local lint has zero warnings, 135 unit tests pass, and both build paths pass.
+
+The case view now uses one client header and horizontal section navigation,
+compact overview columns, visible notes and applications, and a disclosure for
+stage/expiry controls. Shared panels and controls use consistent spacing and
+readable text. A synthetic record rendered without horizontal overflow at a
+1,363px viewport. That preview is not evidence for all production viewports.
+
+CI revealed test infrastructure drift: the Supabase bootstrap lacked
+service_role, the PostgREST stand-in lacked paging/count/filter semantics, and
+browser tests referenced obsolete sign-in and directory controls. These have
+been corrected while preserving portal/cross-branch denial tests. The branch
+work tests additionally found that move_case_lifecycle still used a client
+ownership guard, contradicting migration 0035's case boundary; migration 0039
+aligns that guard with can_modify_case, retaining SECURITY INVOKER and stage
+validation. Production application of 0039 and final CI acceptance are pending.

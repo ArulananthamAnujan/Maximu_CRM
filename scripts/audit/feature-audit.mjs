@@ -59,6 +59,19 @@ async function login(email) {
   };
 }
 
+// The UI combines the converted workspace and its independent enquiry page.
+// Keep both requests real so the audit also detects a failing directory route.
+async function loadWorkspace(options) {
+  const workspace = await call("/api/crm/workspace", options);
+  if (workspace.status !== 200 || workspace.json?.identity?.role === "client") return workspace;
+  const directory = await call("/api/crm/enquiries?limit=100", options);
+  expect("the permitted enquiry directory loads alongside the workspace", directory.status === 200,
+    JSON.stringify(directory.json));
+  const merged = new Map((workspace.json?.cases ?? []).map(row => [row.dbId, row]));
+  for (const row of directory.json?.records ?? []) merged.set(row.dbId, row);
+  return { ...workspace, json: { ...workspace.json, cases: [...merged.values()] } };
+}
+
 // Assert helpers -------------------------------------------------------------
 const expect = (name, condition, detail) => record(name, Boolean(condition), detail);
 
@@ -87,7 +100,7 @@ for (const [label, who, role] of [
   ["owner", owner, "super_admin"], ["manager", manager, "admin"],
   ["officer", officer, "staff"], ["portal", student, "client"],
 ]) {
-  const ws = await call("/api/crm/workspace", { cookie: who.cookie });
+  const ws = await loadWorkspace({ cookie: who.cookie });
   expect(`workspace loads for ${label}`,
     ws.status === 200 && ws.json?.identity?.role === role,
     `status ${ws.status} role ${ws.json?.identity?.role} err ${ws.json?.error}`);
@@ -131,13 +144,13 @@ expect("cannot complete from the application stage", badComplete.status === 400,
   JSON.stringify(badComplete.json));
 await move("visa");
 expect("visa -> completed", (await move("completed", officer.cookie, newCaseId, "Visa approved")).status === 200);
-const ws3 = await call("/api/crm/workspace", { cookie: officer.cookie });
+const ws3 = await loadWorkspace({ cookie: officer.cookie });
 const done = ws3.json?.cases?.find((c) => c.name === "Arun Kumar");
 expect("a completed case reports as completed",
   done?.lifecycleStage === "completed" && done?.status === "completed", JSON.stringify(done));
 expect("a completed case can be reopened",
   (await move("application", officer.cookie, newCaseId, "Course change")).status === 200);
-const ws4 = await call("/api/crm/workspace", { cookie: officer.cookie });
+const ws4 = await loadWorkspace({ cookie: officer.cookie });
 const reopened = ws4.json?.cases?.find((c) => c.name === "Arun Kumar");
 expect("a reopened case returns to an active stage",
   reopened?.lifecycleStage === "application" && reopened?.status !== "completed",
@@ -152,7 +165,7 @@ const edit = await call("/api/crm/workspace", { method: "POST", cookie: officer.
           visaExpiry: "2028-01-31", target: "Bachelor of Nursing", stage: "Follow Up",
           health: "attention" } });
 expect("a case can be edited", edit.status === 200, JSON.stringify(edit.json));
-const ws5 = await call("/api/crm/workspace", { cookie: officer.cookie });
+const ws5 = await loadWorkspace({ cookie: officer.cookie });
 const edited = ws5.json?.cases?.find((c) => c.dbId === newCaseId);
 expect("the edit did not reset pipeline progress", (edited?.progress ?? 0) > 0,
   `progress=${edited?.progress}`);
@@ -203,7 +216,7 @@ const role = await mk({ action: "role", name: "Senior Officer", scope: "assigned
 expect("an owner can create a staff role", role.status === 200, JSON.stringify(role.json));
 
 section("Record updates and removal");
-const ws6 = await call("/api/crm/workspace", { cookie: officer.cookie });
+const ws6 = await loadWorkspace({ cookie: officer.cookie });
 const task = ws6.json?.tasks?.[0];
 const appointment = ws6.json?.appointments?.[0];
 const document = ws6.json?.documents?.[0];
@@ -225,7 +238,7 @@ expect("a case officer can change an invoice on their own case", invoiceByStaff.
 const refundByStaff = await mutate("invoice", "refund", invoice?.id, { amount: 1500 });
 expect("a case officer can refund an invoice on their own case", refundByStaff.status === 200,
   `${refundByStaff.status} ${JSON.stringify(refundByStaff.json)}`);
-const ws6b = await call("/api/crm/workspace", { cookie: owner.cookie });
+const ws6b = await loadWorkspace({ cookie: owner.cookie });
 const refunded = (ws6b.json?.invoices ?? []).find((row) => row.id === invoice?.id);
 expect("the refunded invoice shows as refunded, not unpaid",
   refunded?.status === "Refunded", JSON.stringify(refunded));
@@ -251,7 +264,7 @@ expect("administration data loads for the owner", admin.status === 200, JSON.str
 // Staff & Masters must see the same branches the rest of the CRM already
 // works with -- the seeded branch is used by cases and by reporting, and has
 // to appear here too rather than showing "No branches yet".
-const workspaceForBranches = await call("/api/crm/workspace", { cookie: owner.cookie });
+const workspaceForBranches = await loadWorkspace({ cookie: owner.cookie });
 expect("Staff & Masters lists the branch the rest of the CRM already uses",
   (admin.json?.branches ?? []).length > 0 &&
     (admin.json?.branches ?? []).some((b) =>
@@ -313,7 +326,7 @@ const paymentInvoiceRaised = await mk({ action: "invoice", clientId: created.jso
   caseId: newCaseId, amount: "800", due: "2026-10-31" }, owner.cookie);
 expect("an invoice exists for the payment to be recorded against",
   paymentInvoiceRaised.status === 200, JSON.stringify(paymentInvoiceRaised.json));
-const paymentWorkspace = await call("/api/crm/workspace", { cookie: officer.cookie });
+const paymentWorkspace = await loadWorkspace({ cookie: officer.cookie });
 const paidInvoice = (paymentWorkspace.json?.invoices ?? [])
   .find((row) => row.amount === 800 && row.paid === 0);
 const payment = paidInvoice
@@ -327,12 +340,12 @@ expect("a case officer cannot raise a commission claim", claimByStaff.status ===
 const claim = await opsPost({ action: "create_commission_claim",
   partnerName: "Study Partners Pty Ltd", institution: "Monash University", expectedAmount: 2200 }, owner.cookie);
 expect("a manager can raise a commission claim", claim.status === 200, JSON.stringify(claim.json));
-const wsClaims = await call("/api/crm/workspace", { cookie: owner.cookie });
+const wsClaims = await loadWorkspace({ cookie: owner.cookie });
 const raisedClaim = (wsClaims.json?.commissionClaims ?? [])
   .find((row) => row.partnerName === "Study Partners Pty Ltd");
 expect("the raised claim is on the workspace", Boolean(raisedClaim), JSON.stringify(wsClaims.json?.commissionClaims)?.slice(0, 200));
 expect("a case officer cannot see commission claims",
-  (await call("/api/crm/workspace", { cookie: officer.cookie })).json?.commissionClaims?.length === 0);
+  (await loadWorkspace({ cookie: officer.cookie })).json?.commissionClaims?.length === 0);
 const receiveByStaff = await opsPost({ action: "record_commission_received", claimId: raisedClaim?.id, receivedAmount: 2200 });
 expect("a case officer cannot record a commission receipt", receiveByStaff.status === 403);
 const received = await opsPost({ action: "record_commission_received",
@@ -399,7 +412,7 @@ const healthStaff = await call("/api/crm/health", { cookie: officer.cookie });
 expect("a case officer cannot read the health check", healthStaff.status === 403);
 
 section("Client portal");
-const portal = await call("/api/crm/workspace", { cookie: student.cookie });
+const portal = await loadWorkspace({ cookie: student.cookie });
 expect("the portal loads for the client", portal.status === 200);
 expect("the portal shows only the linked client's cases",
   (portal.json?.cases ?? []).every((c) => c.name === "Priya Sharma"),
@@ -411,7 +424,7 @@ const portalAdmin = await call("/api/crm/admin", { cookie: student.cookie });
 expect("the portal cannot open administration", portalAdmin.status === 403);
 
 section("Workflows");
-const wsWorkflows = await call("/api/crm/workspace", { cookie: owner.cookie });
+const wsWorkflows = await loadWorkspace({ cookie: owner.cookie });
 const workflow = wsWorkflows.json?.workflows?.find((w) => w.name === "Student visa 500");
 expect("a created workflow comes back with its stages",
   workflow && Array.isArray(workflow.stages) && workflow.stages.length === 3,
@@ -420,7 +433,7 @@ expect("a manager can deactivate a workflow",
   (await mutate("workflow", "toggle", workflow?.id, { active: false }, owner.cookie)).status === 200);
 const wfStaffToggle = await mutate("workflow", "toggle", workflow?.id, { active: true });
 expect("a case officer cannot change a workflow", wfStaffToggle.status === 403);
-const wsAfter = await call("/api/crm/workspace", { cookie: owner.cookie });
+const wsAfter = await loadWorkspace({ cookie: owner.cookie });
 expect("the deactivation was saved",
   wsAfter.json?.workflows?.find((w) => w.id === workflow?.id)?.active === false,
   JSON.stringify(wsAfter.json?.workflows));
@@ -479,7 +492,7 @@ expect("the deferral keeps the application on the file with its new intake",
   deferredRow?.status === "deferred" && deferredRow?.intake === "July 2027" &&
     !deferredRow?.archived_at,
   JSON.stringify(deferredRow)?.slice(0, 220));
-const deferWs = await call("/api/crm/workspace", { cookie: officer.cookie });
+const deferWs = await loadWorkspace({ cookie: officer.cookie });
 const deferCase = deferWs.json?.cases?.find((c) => c.dbId === newCaseId);
 expect("the case is reported as deferred without matching text",
   deferCase?.deferredApplications === 1,
@@ -496,7 +509,7 @@ expect("the deferral is recorded on the timeline", Boolean(deferTimeline),
 const resumed = await casefile({ action: "application_update", id: deferTarget?.id,
   status: "submitted" });
 expect("a deferred application can be resumed", resumed.status === 200, JSON.stringify(resumed.json));
-const resumedWs = await call("/api/crm/workspace", { cookie: officer.cookie });
+const resumedWs = await loadWorkspace({ cookie: officer.cookie });
 expect("the case leaves the deferred list once resumed",
   resumedWs.json?.cases?.find((c) => c.dbId === newCaseId)?.deferredApplications === 0,
   JSON.stringify(resumedWs.json?.cases?.find((c) => c.dbId === newCaseId))?.slice(0, 200));
@@ -561,7 +574,7 @@ const streamCase = await call("/api/crm/workspace", { method: "POST", cookie: of
           email: "sunil@example.test", visaExpiry: "2027-05-31",
           workspace: "Direct Visa", matterType: "Partner visa 820/801" } });
 expect("a migration case can be created", streamCase.status === 200, JSON.stringify(streamCase.json));
-const streamWs = await call("/api/crm/workspace", { cookie: officer.cookie });
+const streamWs = await loadWorkspace({ cookie: officer.cookie });
 const sunil = streamWs.json?.cases?.find((c) => c.name === "Sunil Rathnayake");
 expect("the matter type survives and is shown, not the stream",
   sunil?.matterType === "Partner visa 820/801" && sunil?.type === "Partner visa 820/801",
@@ -574,7 +587,7 @@ const reEdit = await call("/api/crm/workspace", { method: "POST", cookie: office
           visaExpiry: "2027-05-31", workspace: "Direct Visa",
           matterType: "Partner visa 820/801" } });
 expect("editing does not reclassify the case", reEdit.status === 200, JSON.stringify(reEdit.json));
-const afterEdit = await call("/api/crm/workspace", { cookie: officer.cookie });
+const afterEdit = await loadWorkspace({ cookie: officer.cookie });
 const sunilAfter = afterEdit.json?.cases?.find((c) => c.name === "Sunil Rathnayake");
 expect("the matter type and stream are unchanged by an edit",
   sunilAfter?.matterType === "Partner visa 820/801" &&
@@ -589,7 +602,7 @@ const studyVisa = await call("/api/crm/workspace", { method: "POST", cookie: off
           workspace: "Study Abroad", matterType: "Student visa" } });
 expect("a student visa case can be created in the study stream", studyVisa.status === 200,
   JSON.stringify(studyVisa.json));
-const streamCheck = await call("/api/crm/workspace", { cookie: officer.cookie });
+const streamCheck = await loadWorkspace({ cookie: officer.cookie });
 const tashi = streamCheck.json?.cases?.find((c) => c.name === "Tashi Dorji");
 expect("a Student visa matter stays in the study abroad stream",
   tashi?.serviceType === "study_abroad" && tashi?.matterType === "Student visa",
@@ -604,7 +617,7 @@ expect("seven-year retention rules are configured",
   JSON.stringify(health2.json?.readiness));
 
 section("Document storage");
-const storageWs = await call("/api/crm/workspace", { cookie: officer.cookie });
+const storageWs = await loadWorkspace({ cookie: officer.cookie });
 expect("the CRM reports the Shared Drive as connected",
   storageWs.json?.capabilities?.documentStorage === true,
   JSON.stringify(storageWs.json?.capabilities));
@@ -698,7 +711,7 @@ expect("a portal account cannot store files", portalUpload.status === 403,
 // The negative case below proves isolation. This proves the feature actually
 // works: a client supplies a document that was requested of them, and staff
 // then see it stored.
-const ownCases = await call("/api/crm/workspace", { cookie: student.cookie });
+const ownCases = await loadWorkspace({ cookie: student.cookie });
 const ownCase = ownCases.json?.cases?.[0];
 const askedOfClient = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
   body: { action: "document", title: "Your passport bio page",
@@ -802,7 +815,7 @@ expect("a visa outcome change names the outcome", /granted/i.test(outcomeEntry?.
   JSON.stringify(outcomeEntry));
 
 section("Client portal actions");
-const portalCases = await call("/api/crm/workspace", { cookie: student.cookie });
+const portalCases = await loadWorkspace({ cookie: student.cookie });
 const portalCase = portalCases.json?.cases?.[0];
 const requested = await call("/api/crm/workspace", { method: "POST", cookie: student.cookie,
   body: { action: "appointment_request", caseId: portalCase?.dbId,
@@ -834,7 +847,7 @@ const assignedCase = await call("/api/crm/workspace", { method: "POST", cookie: 
           ownerId: "c0000000-0000-4000-8000-000000000003" } });
 expect("a case can be assigned at intake", assignedCase.status === 200,
   JSON.stringify(assignedCase.json));
-const assignedWs = await call("/api/crm/workspace", { cookie: owner.cookie });
+const assignedWs = await loadWorkspace({ cookie: owner.cookie });
 const hasini = assignedWs.json?.cases?.find((c) => c.name === "Hasini Silva");
 expect("the chosen staff member actually owns the case",
   hasini?.ownerId === "c0000000-0000-4000-8000-000000000003" &&
@@ -903,7 +916,7 @@ expect("the client portal cannot open reporting", portalReport.status === 403);
 section("Branch isolation");
 const colombo = await login("colombo@maximus.test");
 expect("the Colombo officer signs in", colombo.ok);
-const colomboWs = await call("/api/crm/workspace", { cookie: colombo.cookie });
+const colomboWs = await loadWorkspace({ cookie: colombo.cookie });
 const colomboCases = (colomboWs.json?.cases ?? []).map((c) => c.name);
 expect("the Colombo officer does not see Melbourne clients",
   !colomboCases.includes("Priya Sharma") && !colomboCases.includes("Arun Kumar"),
@@ -991,7 +1004,7 @@ expect("a row naming its branch by code is accepted",
   JSON.stringify(byCode.json)?.slice(0, 240));
 const noBranch = await call("/api/crm/import", { method: "POST", cookie: manager.cookie,
   body: { action: "validate", fileName: "x.csv",
-    rows: [{ first_name: "A", last_name: "B", branch_code: "NOPE" }] } });
+    rows: [{ crm_id: "L-4", first_name: "A", last_name: "B", branch_code: "NOPE" }] } });
 expect("an unknown branch code still falls back to the importer's branch",
   noBranch.status === 200 && noBranch.json?.valid === 1,
   JSON.stringify(noBranch.json)?.slice(0, 240));
@@ -1001,7 +1014,7 @@ section("Deferral as a pipeline stage");
 const deferMove = await move("deferred", officer.cookie, newCaseId, "Student deferred to July");
 expect("a case can be deferred from the stage it is worked at",
   deferMove.status === 200, JSON.stringify(deferMove.json)?.slice(0, 240));
-const wsDefer = await call("/api/crm/workspace", { cookie: officer.cookie });
+const wsDefer = await loadWorkspace({ cookie: officer.cookie });
 const parked = wsDefer.json?.cases?.find((c) => c.dbId === newCaseId);
 expect("a deferred case reports the deferred stage",
   parked?.lifecycleStage === "deferred", `stage=${parked?.lifecycleStage}`);
@@ -1012,7 +1025,7 @@ expect("a deferred case cannot be completed without being resumed",
   deferComplete.status === 400, JSON.stringify(deferComplete.json)?.slice(0, 240));
 expect("a deferred case resumes into an active stage",
   (await move("visa", officer.cookie, newCaseId, "Enrolled for July")).status === 200);
-const wsResumed = await call("/api/crm/workspace", { cookie: officer.cookie });
+const wsResumed = await loadWorkspace({ cookie: officer.cookie });
 expect("a resumed case is no longer deferred",
   wsResumed.json?.cases?.find((c) => c.dbId === newCaseId)?.lifecycleStage === "visa");
 
@@ -1027,7 +1040,7 @@ const clearExpiry = await call("/api/crm/workspace", { method: "POST", cookie: o
   body: { action: "set_visa_expiry", caseId: expiryCaseId, visaExpiry: "2029-06-30" } });
 expect("the visa expiry can be recorded on its own",
   clearExpiry.status === 200, JSON.stringify(clearExpiry.json)?.slice(0, 240));
-const wsExpiry = await call("/api/crm/workspace", { cookie: officer.cookie });
+const wsExpiry = await loadWorkspace({ cookie: officer.cookie });
 expect("the recorded expiry is what the case reports",
   wsExpiry.json?.cases?.find((c) => c.dbId === expiryCaseId)?.visaExpiry === "2029-06-30");
 const badExpiryWrite = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
@@ -1039,7 +1052,7 @@ expect("a portal account cannot record a visa expiry", portalExpiry.status === 4
 
 // ---------------------------------------------------------------------------
 section("Applications and visa matters as records");
-const wsBoards = await call("/api/crm/workspace", { cookie: officer.cookie });
+const wsBoards = await loadWorkspace({ cookie: officer.cookie });
 const appRows = wsBoards.json?.applications ?? [];
 expect("the workspace lists applications as records of their own",
   Array.isArray(appRows) && appRows.length > 0, `applications=${appRows.length}`);
@@ -1056,7 +1069,7 @@ expect("a visa matter row carries the columns an agent works from",
     ["subclass", "destination", "currentVisa", "trn", "marn", "informationDueOn", "outcome"]
       .every((key) => key in anyVisa),
   JSON.stringify(anyVisa)?.slice(0, 300));
-const portalBoards = await call("/api/crm/workspace", { cookie: student.cookie });
+const portalBoards = await loadWorkspace({ cookie: student.cookie });
 expect("a portal account sees only its own applications",
   (portalBoards.json?.applications ?? []).every((row) => row.client === "Priya Sharma"),
   JSON.stringify((portalBoards.json?.applications ?? []).map((r) => r.client)));
@@ -1122,8 +1135,8 @@ expect("the Shared Drive is probed rather than assumed",
   JSON.stringify(byKey.drive)?.slice(0, 300));
 expect("passport encryption reports as configured",
   byKey.field_encryption?.state === "connected", JSON.stringify(byKey.field_encryption));
-expect("what is not built says so rather than saying not configured",
-  byKey.whatsapp?.state === "not_built", JSON.stringify(byKey.whatsapp));
+expect("built WhatsApp integration reports that credentials are still needed",
+  byKey.whatsapp?.state === "not_configured", JSON.stringify(byKey.whatsapp));
 expect("Gmail sending reports connected once the OAuth client is configured",
   byKey.gmail?.state === "connected", JSON.stringify(byKey.gmail));
 expect("Calendar sync reports connected once the OAuth client is configured",
@@ -1138,7 +1151,7 @@ expect("a case officer cannot read the integration status",
 
 // ---------------------------------------------------------------------------
 section("Archived and discarded records stay identifiable");
-const wsHidden = await call("/api/crm/workspace", { cookie: officer.cookie });
+const wsHidden = await loadWorkspace({ cookie: officer.cookie });
 const discardable = wsHidden.json?.messages?.[0];
 expect("a message carries a date the interface can render",
   discardable !== undefined &&
@@ -1148,7 +1161,7 @@ expect("a message carries a date the interface can render",
 if (discardable) {
   await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
     body: { action: "mutate", resource: "message", operation: "delete", id: discardable.id } });
-  const afterDiscard = await call("/api/crm/workspace", { cookie: officer.cookie });
+  const afterDiscard = await loadWorkspace({ cookie: officer.cookie });
   const found = afterDiscard.json?.messages?.find((m) => m.id === discardable.id);
   expect("a discarded draft is marked discarded rather than deleted",
     found?.status === "discarded", JSON.stringify(found)?.slice(0, 240));
@@ -1164,9 +1177,9 @@ const newStaff = await adminPost({
 expect("an owner can create a staff account",
   newStaff.status === 200 && newStaff.json?.created === "account",
   JSON.stringify(newStaff.json)?.slice(0, 300));
-expect("a one-time password is handed back to give to them",
-  typeof newStaff.json?.temporaryPassword === "string" &&
-    newStaff.json.temporaryPassword.length >= 16);
+expect("staff receive a secure setup link without exposing a password",
+  !newStaff.json?.temporaryPassword &&
+    (newStaff.json?.emailSent === true || typeof newStaff.json?.setupLink === "string"));
 const adminAfter = await call("/api/crm/admin", { cookie: owner.cookie });
 expect("the new person is on the team",
   (adminAfter.json?.profiles ?? []).some((p) => p.email === "sanjay@maximus.test"),
@@ -1175,7 +1188,7 @@ expect("the new person is on the team",
 // The account they were given actually works, which is the whole point.
 const sanjay = await login("sanjay@maximus.test");
 expect("the new member of staff can sign in", sanjay.ok, JSON.stringify(sanjay.body));
-const sanjayWorkspace = await call("/api/crm/workspace", { cookie: sanjay.cookie });
+const sanjayWorkspace = await loadWorkspace({ cookie: sanjay.cookie });
 expect("the new member of staff reaches the workspace as staff",
   sanjayWorkspace.status === 200 && sanjayWorkspace.json?.identity?.role === "staff",
   JSON.stringify(sanjayWorkspace.json?.identity));
@@ -1208,7 +1221,7 @@ expect("a staff account can be deactivated",
   (await adminPost({ action: "update_profile",
     profileId: (adminAfter.json?.profiles ?? []).find((p) => p.email === "sanjay@maximus.test")?.id,
     active: false })).status === 200);
-const afterDeactivation = await call("/api/crm/workspace", { cookie: sanjay.cookie });
+const afterDeactivation = await loadWorkspace({ cookie: sanjay.cookie });
 expect("a deactivated account cannot use the CRM", afterDeactivation.status === 403,
   JSON.stringify(afterDeactivation.json)?.slice(0, 240));
 
@@ -1223,7 +1236,7 @@ expect("an invitation can be recorded", invited.status === 200,
 // used to be missing: the row was written and nothing ever read it.
 const invitedLogin = await login("invited@maximus.test");
 expect("an invited person signs in", invitedLogin.ok, JSON.stringify(invitedLogin.body));
-const invitedWorkspace = await call("/api/crm/workspace", { cookie: invitedLogin.cookie });
+const invitedWorkspace = await loadWorkspace({ cookie: invitedLogin.cookie });
 expect("signing in creates the invited person's profile",
   invitedWorkspace.status === 200 && invitedWorkspace.json?.identity?.role === "staff",
   JSON.stringify(invitedWorkspace.json?.identity ?? invitedWorkspace.json)?.slice(0, 300));
@@ -1235,7 +1248,7 @@ expect("the claimed invitation is marked accepted",
 // Somebody with a login but no invitation is told so plainly.
 const stranger = await login("stranger@maximus.test");
 expect("a login with no invitation gets no profile",
-  !stranger.ok || (await call("/api/crm/workspace", { cookie: stranger.cookie })).status === 403);
+  !stranger.ok || (await loadWorkspace({ cookie: stranger.cookie })).status === 403);
 
 // A client demo account is exactly this shape: a Supabase login that exists
 // with no CRM profile at all. Adding them as staff (or, as here, as a portal
@@ -1249,7 +1262,7 @@ expect("adding an existing login connects it immediately instead of failing",
   connectExisting.status === 200 && connectExisting.json?.created === "connected",
   JSON.stringify(connectExisting.json)?.slice(0, 240));
 const strangerAgain = await login("stranger@maximus.test");
-const strangerWorkspace = await call("/api/crm/workspace", { cookie: strangerAgain.cookie });
+const strangerWorkspace = await loadWorkspace({ cookie: strangerAgain.cookie });
 expect("their existing login now reaches the connected profile",
   strangerWorkspace.status === 200 && strangerWorkspace.json?.identity?.role === "client",
   JSON.stringify(strangerWorkspace.json?.identity ?? strangerWorkspace.json)?.slice(0, 240));
@@ -1283,7 +1296,7 @@ expect("the new branch application is preserved",
   (stillIntact.json?.applications ?? []).some((a) => a.institution === "Branch University"));
 const colleagueInvoice = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
   body: { action: "invoice", clientId: priya?.clientId, caseId: priya?.dbId, amount: "999" } });
-expect("nor raise an invoice against it", colleagueInvoice.status >= 400,
+expect("a colleague can raise a branch case invoice", colleagueInvoice.status === 200,
   `${colleagueInvoice.status} ${JSON.stringify(colleagueInvoice.json)?.slice(0, 200)}`);
 
 // Reassignment still transfers responsibility and permits subsequent work.
@@ -1304,7 +1317,7 @@ const officerArchive = await call("/api/crm/workspace", { method: "POST", cookie
 expect("a case officer's archive is taken as a request",
   officerArchive.status === 200 && officerArchive.json?.requested === true,
   JSON.stringify(officerArchive.json)?.slice(0, 240));
-const notStillOpen = await call("/api/crm/workspace", { cookie: officer.cookie });
+const notStillOpen = await loadWorkspace({ cookie: officer.cookie });
 expect("the case is not archived by the request",
   notStillOpen.json?.cases?.find((c) => c.dbId === priya?.dbId)?.status !== "completed");
 const managerAlerts = await call("/api/crm/operations?view=notifications", { cookie: owner.cookie });
@@ -1322,7 +1335,7 @@ const exportCall = await call("/api/crm/operations", { method: "POST", cookie: o
   body: { action: "record_export", scope: "own cases", count: 3 } });
 expect("an export writes an audit entry", exportCall.status === 200,
   JSON.stringify(exportCall.json)?.slice(0, 240));
-const exportAudit = await call("/api/crm/workspace", { cookie: owner.cookie });
+const exportAudit = await loadWorkspace({ cookie: owner.cookie });
 expect("the export is on the audit trail",
   (exportAudit.json?.audits ?? []).some((a) => /Exported \d+ case records/.test(a.text ?? "")),
   JSON.stringify((exportAudit.json?.audits ?? []).slice(0, 4).map((a) => a.text)));
@@ -1332,7 +1345,7 @@ expect("a portal account cannot record an export", portalExport.status === 403);
 
 // ---------------------------------------------------------------------------
 section("The client portal shows a client only their own money");
-const portalMoney = await call("/api/crm/workspace", { cookie: student.cookie });
+const portalMoney = await loadWorkspace({ cookie: student.cookie });
 const portalInvoices = portalMoney.json?.invoices ?? [];
 expect("the portal payload carries what a client is billed",
   portalInvoices.some((i) => i.type === "professional_fee"),
@@ -1409,7 +1422,7 @@ const draft = await call("/api/crm/workspace", { method: "POST", cookie: officer
   body: { action: "message", caseId: gmailCase.json?.caseId, to: "client@example.test",
           subject: "Your visa application", body: "Checking in on your documents." } });
 expect("a draft message is recorded against the case", draft.status === 200, JSON.stringify(draft.json));
-const draftedWorkspace = await call("/api/crm/workspace", { cookie: officer.cookie });
+const draftedWorkspace = await loadWorkspace({ cookie: officer.cookie });
 const draftedMessage = (draftedWorkspace.json?.messages ?? [])
   .find((m) => m.subject === "Your visa application");
 expect("the draft is there to send", draftedMessage !== undefined,
@@ -1472,7 +1485,7 @@ const send = await call("/api/crm/mailbox", { method: "POST", cookie: officer.co
   body: { action: "send_message", messageId: draftedMessage?.id } });
 expect("the connected officer sends the draft", send.status === 200, JSON.stringify(send.json));
 
-const sentWorkspace = await call("/api/crm/workspace", { cookie: officer.cookie });
+const sentWorkspace = await loadWorkspace({ cookie: officer.cookie });
 const sentMessage = (sentWorkspace.json?.messages ?? []).find((m) => m.id === draftedMessage?.id);
 expect("the sent message is marked sent with a timestamp",
   sentMessage?.status === "sent" && Boolean(sentMessage?.sentAt), JSON.stringify(sentMessage));
@@ -1548,7 +1561,7 @@ expect("the appointment was pushed onto the connected calendar",
     (afterCreateState.calendarEvents ?? []).at(-1)?.summary === "After calendar is connected",
   JSON.stringify(afterCreateState.calendarEvents?.at(-1)));
 
-const calendarWorkspace = await call("/api/crm/workspace", { cookie: officer.cookie });
+const calendarWorkspace = await loadWorkspace({ cookie: officer.cookie });
 const syncedRecord = (calendarWorkspace.json?.appointments ?? [])
   .find((a) => a.title === "After calendar is connected");
 expect("the synced appointment is visible to cancel", syncedRecord !== undefined);
@@ -1755,7 +1768,7 @@ const merge = await call("/api/crm/duplicates", { method: "POST", cookie: owner.
 expect("an administrator can merge two duplicate client records",
   merge.status === 200, JSON.stringify(merge.json));
 
-const mergedWorkspace = await call("/api/crm/workspace", { cookie: owner.cookie });
+const mergedWorkspace = await loadWorkspace({ cookie: owner.cookie });
 const mergedCase = (mergedWorkspace.json?.cases ?? []).find((row) => row.dbId === awayCaseId);
 expect("the merged-away case now belongs to the surviving client",
   mergedCase?.name === "Merge Keep", JSON.stringify(mergedCase));
@@ -1772,19 +1785,19 @@ const creditInvoice = await mk({ action: "invoice", clientId: creditClientId, ca
   amount: "1000", due: "2026-11-30" }, owner.cookie);
 expect("an invoice exists for the credit note", creditInvoice.status === 200,
   JSON.stringify(creditInvoice.json));
-const beforeCreditWorkspace = await call("/api/crm/workspace", { cookie: owner.cookie });
+const beforeCreditWorkspace = await loadWorkspace({ cookie: owner.cookie });
 const creditInvoiceRow = (beforeCreditWorkspace.json?.invoices ?? [])
   .find((row) => row.client === "Credit Note Client");
 expect("the invoice's balance starts at the full amount",
   creditInvoiceRow?.balance === 1000, JSON.stringify(creditInvoiceRow));
 
-const staffCredit = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
+const staffCredit = await call("/api/crm/workspace", { method: "POST", cookie: colombo.cookie,
   body: { action: "mutate", resource: "invoice", operation: "credit", id: creditInvoiceRow?.id,
           amount: 200, reason: "Goodwill" } });
 // Rejected as "not found" rather than "forbidden": an invoice on a case the
 // officer has no relationship to is invisible to them (invoices_scoped_select),
 // not merely off-limits to write.
-expect("a case officer cannot issue a credit note", staffCredit.status >= 400,
+expect("another branch cannot issue a credit note for this invoice", staffCredit.status >= 400,
   `${staffCredit.status} ${JSON.stringify(staffCredit.json)}`);
 
 const credit = await call("/api/crm/workspace", { method: "POST", cookie: owner.cookie,
@@ -1792,7 +1805,7 @@ const credit = await call("/api/crm/workspace", { method: "POST", cookie: owner.
           amount: 200, reason: "Goodwill" } });
 expect("a manager can issue a credit note", credit.status === 200, JSON.stringify(credit.json));
 
-const afterCreditWorkspace = await call("/api/crm/workspace", { cookie: owner.cookie });
+const afterCreditWorkspace = await loadWorkspace({ cookie: owner.cookie });
 const afterCreditRow = (afterCreditWorkspace.json?.invoices ?? [])
   .find((row) => row.id === creditInvoiceRow?.id);
 expect("the credited amount reduces the balance without counting as paid",
@@ -1822,7 +1835,7 @@ const bulkAssign = await call("/api/crm/workspace", { method: "POST", cookie: ow
   body: { action: "bulk_assign", caseIds: bulkCaseIds, ownerId: secondOfficerId } });
 expect("an administrator can bulk-reassign cases", bulkAssign.status === 200 && bulkAssign.json?.succeeded === 2,
   JSON.stringify(bulkAssign.json));
-const afterBulkWorkspace = await call("/api/crm/workspace", { cookie: owner.cookie });
+const afterBulkWorkspace = await loadWorkspace({ cookie: owner.cookie });
 const bulkOwners = bulkCaseIds.map(
   (id) => (afterBulkWorkspace.json?.cases ?? []).find((row) => row.dbId === id)?.owner);
 expect("both cases now show the new owner",
@@ -1872,7 +1885,7 @@ const updateContact = await call("/api/crm/workspace", { method: "POST", cookie:
   body: { action: "update_own_contact", email: "updated.contact@example.test", mobile: "+61400099999" } });
 expect("a client can update their own contact details", updateContact.status === 200,
   JSON.stringify(updateContact.json));
-const afterContactUpdate = await call("/api/crm/workspace", { cookie: owner.cookie });
+const afterContactUpdate = await loadWorkspace({ cookie: owner.cookie });
 const updatedClientCase = (afterContactUpdate.json?.cases ?? []).find(
   (row) => row.clientId === portalClientId);
 expect("the updated contact details are reflected on the case",
@@ -1889,7 +1902,7 @@ const acknowledge = await call("/api/crm/workspace", { method: "POST", cookie: s
   body: { action: "acknowledge_consent", declarationType: "privacy_policy", response: true } });
 expect("a client can acknowledge a consent declaration", acknowledge.status === 200,
   JSON.stringify(acknowledge.json));
-const afterConsentWorkspace = await call("/api/crm/workspace", { cookie: selfServiceLogin.cookie });
+const afterConsentWorkspace = await loadWorkspace({ cookie: selfServiceLogin.cookie });
 const ownDeclaration = (afterConsentWorkspace.json?.declarations ?? []).find(
   (row) => row.clientId === portalClientId && row.type === "privacy_policy");
 expect("the acknowledgement is recorded and visible to the client",
@@ -1935,7 +1948,7 @@ const checklistCase = await call("/api/crm/workspace", { method: "POST", cookie:
           email: "nadia.checklist@example.test", visaExpiry: "2028-01-31",
           workspace: "Direct Visa", matterType: "Partner visa 820/801" } });
 expect("a visa case exists for the checklist request", checklistCase.status === 200, JSON.stringify(checklistCase.json));
-const checklistCaseWs = await call("/api/crm/workspace", { cookie: officer.cookie });
+const checklistCaseWs = await loadWorkspace({ cookie: officer.cookie });
 const checklistApplicant = checklistCaseWs.json?.cases?.find((c) => c.name === "Nadia Checklist Case");
 const passportItem = (checklistRead.json?.templates ?? []).find((t) => t.title === "Passport bio page");
 const requestChecklist = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
@@ -1943,7 +1956,7 @@ const requestChecklist = await call("/api/crm/workspace", { method: "POST", cook
 expect("a document can be requested from the live checklist",
   requestChecklist.status === 200 && requestChecklist.json?.requested === 1,
   JSON.stringify(requestChecklist.json));
-const afterChecklistRequest = await call("/api/crm/workspace", { cookie: officer.cookie });
+const afterChecklistRequest = await loadWorkspace({ cookie: officer.cookie });
 const requestedDoc = (afterChecklistRequest.json?.documents ?? []).find(
   (d) => d.caseId === checklistApplicant?.dbId && d.checklistKey === passportItem?.id);
 expect("the requested document is recorded against the case and client-visible",
@@ -2031,7 +2044,7 @@ expect("the portal welcome email went to the client, not a password in plain tex
 const portalLogin = await login("email.notice@example.test");
 expect("the client can sign in through the login portal access just created",
   portalLogin.ok, JSON.stringify(portalLogin.body));
-const portalLoginWorkspace = await call("/api/crm/workspace", { cookie: portalLogin.cookie });
+const portalLoginWorkspace = await loadWorkspace({ cookie: portalLogin.cookie });
 expect("and lands in the client portal, not a staff view",
   portalLoginWorkspace.json?.identity?.role === "client",
   JSON.stringify(portalLoginWorkspace.json?.identity));
@@ -2053,7 +2066,7 @@ const portalInvoiceRequest = await call("/api/crm/workspace", { method: "POST", 
 expect("an invoice is raised on the client's own case",
   portalInvoiceRequest.status === 200, JSON.stringify(portalInvoiceRequest.json));
 
-const portalWorkspace = await call("/api/crm/workspace", { cookie: selfServiceLogin.cookie });
+const portalWorkspace = await loadWorkspace({ cookie: selfServiceLogin.cookie });
 const ownDocument = (portalWorkspace.json?.documents ?? []).find((d) => d.title === "Proof of enrolment");
 const ownInvoice = (portalWorkspace.json?.invoices ?? []).find((i) => i.amount === 250);
 expect("the client can see the document requested of them",

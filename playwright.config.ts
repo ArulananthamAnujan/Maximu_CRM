@@ -12,6 +12,8 @@ export default defineConfig({
   timeout: 45_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
+  // Stop cascading failures quickly; a green run still executes every test.
+  maxFailures: process.env.CI ? 3 : 0,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : [["list"]],

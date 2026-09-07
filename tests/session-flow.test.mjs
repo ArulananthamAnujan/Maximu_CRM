@@ -18,9 +18,11 @@ const PROFILE = {
 };
 
 /** Minimal Supabase stand-in: auth succeeds, every table reads empty. */
-async function startStubSupabase({ failTable = "" } = {}) {
+async function startStubSupabase({ failTable = "", referencedEnquiry = false, portal = false } = {}) {
+  const requests = [];
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, "http://stub");
+    requests.push(url.pathname + url.search);
     const send = (status, body) => {
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(body));
@@ -34,14 +36,23 @@ async function startStubSupabase({ failTable = "" } = {}) {
         user: USER,
       });
     if (url.pathname === "/auth/v1/user") return send(200, USER);
-    if (url.pathname === "/rest/v1/profiles") return send(200, [PROFILE]);
+    if (url.pathname === "/rest/v1/profiles") return send(200, [{ ...PROFILE, level: portal ? "student" : PROFILE.level }]);
     const table = url.pathname.replace("/rest/v1/", "");
+    if (referencedEnquiry) {
+      const clientId = "33333333-3333-4333-8333-333333333333";
+      const caseId = "44444444-4444-4444-8444-444444444444";
+      if (table === "clients") return send(200,
+        url.searchParams.has("current_lifecycle") ? [] : [{ id: clientId, first_name: "Nadia", last_name: "Rahman", email: "nadia@example.test", current_lifecycle: "enquiry" }]);
+      if (table === "cases") return send(200,
+        url.searchParams.has("lifecycle_stage") ? [] : [{ id: caseId, client_id: clientId, case_number: "CASE-TEST-1", service_type: "study_abroad", lifecycle_stage: "enquiry", opened_at: "2026-09-01T00:00:00Z" }]);
+      if (table === "invoices") return send(200, [{ id: "55555555-5555-4555-8555-555555555555", client_id: clientId, case_id: caseId, invoice_number: "INV-TEST", invoice_type: "tuition", total: 100, currency: "AUD" }]);
+    }
     if (failTable && table === failTable)
       return send(404, { message: `relation "public.${table}" does not exist` });
     return send(200, []);
   });
   await new Promise((resolve) => server.listen(0, resolve));
-  return { server, url: `http://127.0.0.1:${server.address().port}` };
+  return { server, requests, url: `http://127.0.0.1:${server.address().port}` };
 }
 
 async function loadWorker() {
@@ -73,6 +84,7 @@ async function signInAndLoadWorkspace(origin, options = {}) {
       headers: { cookie: cookies.map((c) => c.split(";")[0]).join("; ") },
     });
     return {
+      requests: stub.requests,
       loginStatus: login.status,
       cookies,
       workspaceStatus: workspace.status,
@@ -136,4 +148,22 @@ test("an unauthenticated workspace request is rejected", async () => {
   } finally {
     stub.server.close();
   }
+});
+
+
+test("an invoice retains its enquiry-stage client without loading the whole directory", async () => {
+  const result = await signInAndLoadWorkspace("https://crm.example", { referencedEnquiry: true });
+  assert.equal(result.workspaceStatus, 200);
+  assert.equal(result.workspaceBody.invoices[0].client, "Nadia Rahman");
+  assert.equal(result.workspaceBody.cases[0].name, "Nadia Rahman");
+  const caseReads = result.requests.filter(path => path.startsWith("/rest/v1/cases?"));
+  assert.ok(caseReads.some(path => path.includes("id=in.") || new URL(path, "http://stub").searchParams.get("limit") === "1"));
+  assert.ok(caseReads.every(path => path.includes("lifecycle_stage=neq.enquiry") || path.includes("id=in.") || new URL(path, "http://stub").searchParams.get("limit") === "1"));
+});
+
+test("a client portal can display its own enquiry-stage journey", async () => {
+  const result = await signInAndLoadWorkspace("https://crm.example", { referencedEnquiry: true, portal: true });
+  assert.equal(result.workspaceBody.identity.role, "client");
+  assert.equal(result.workspaceBody.cases[0].lifecycleStage, "enquiry");
+  assert.equal(result.workspaceBody.cases[0].name, "Nadia Rahman");
 });

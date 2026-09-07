@@ -9,6 +9,12 @@ import { expect, test, type Page } from "@playwright/test";
  * are the parts a person actually depends on.
  */
 
+test.afterEach(async ({ page }, testInfo) => {
+  if (testInfo.status !== testInfo.expectedStatus) {
+    console.log("Failed browser state:", await page.locator("body").innerText().catch(() => "Page closed"));
+  }
+});
+
 const OWNER = "owner@maximus.test";
 const OFFICER = "officer@maximus.test";
 const CLIENT = "student@maximus.test";
