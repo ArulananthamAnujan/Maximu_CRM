@@ -87,7 +87,7 @@ expect_scope() { grep -qF "$2" <<< "${scope}" || fail "$1"; }
 expect_scope "a colleague's branch case is hidden" "visible=1"
 expect_scope "a case officer cannot edit a branch case" "edited=1"
 expect_scope "a case officer cannot move a branch case" "colleague_stage=student"
-expect_scope "a case officer can edit another officer's client" "client_edited=0"
+expect_scope "a case officer cannot edit a branch client" "client_edited=1"
 expect_scope "a case officer cannot add an application to a branch case" "application_added=1"
 expect_scope "reassignment does not grant access" "after_reassignment=1"
 expect_scope "an administrator lost access" "admin_edited=1"
@@ -97,13 +97,15 @@ expect_scope "the case owner cannot read the assistant's own interaction" "owner
 expect_scope "a case that changed owner does not carry its history with it" "new_owner_reads=1"
 expect_scope "a portal account can read an internal AI interaction" "portal_reads=0"
 expect_scope "a portal account wrote an AI interaction against a case it cannot access" "portal_writes=0"
-expect_scope "a colleague who does not yet own the case can see what its client has been billed" "invoice_visible_before_reassignment=0"
+expect_scope "a branch colleague cannot read the client invoice" "invoice_visible_before_reassignment=1"
 expect_scope "the case owner cannot see what their own client has been billed" "invoice_visible_to_owner=1"
 expect_scope "another branch can read the case" "other_branch_reads=0"
 expect_scope "another branch can edit the case" "other_branch_edits=0"
 expect_scope "another branch has case write permission" "other_branch_can_modify=false"
 
 echo
+probe 11_probe_branch_work.sql
+
 echo "== Duplicate clients are found before a second record is made =="
 duplicates="$(probe 08_probe_duplicates.sql 2>&1 | grep -v '^SET$\|Output format\|^UPDATE')"
 echo "${duplicates}"

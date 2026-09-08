@@ -10,7 +10,7 @@ import {
   supabaseAdminRequest,
   supabaseRequest,
 } from "@/server/supabase";
-import { emailConfigured, sendEmail } from "@/server/email";
+import { findAccountByEmail, sendAccountSetup } from "@/server/account-access";
 
 export const dynamic = "force-dynamic";
 type Json = Record<string, unknown>;
@@ -42,12 +42,36 @@ export async function POST(request: Request) {
     const token = session.accessToken;
     const org = session.identity.organisationId;
 
+    const deliverAccess = async (address: string, name: string, resourceId: string, invitation = false) => {
+      const delivery = await sendAccountSetup({ email: address, name, origin: new URL(request.url).origin, invitation });
+      await insert("audit_events", {
+        organisation_id: org, actor_id: session.identity.profileId,
+        action: delivery.emailSent ? "account.setup_email_requested" : "account.setup_email_failed",
+        resource_type: invitation ? "staff_invitation" : "profile", resource_id: resourceId,
+        summary: delivery.emailSent ? `Account setup email submitted for ${name}` : `Account setup email failed for ${name}`,
+        after_data: { delivery_status: delivery.deliveryStatus, branch_id: session.identity.branchId },
+      }, token);
+      return { ...delivery, email: address, message: delivery.emailSent
+        ? `Account setup email submitted to ${address}. They can choose their password using the link in that email.`
+        : `The account is ready, but the email was not sent. ${delivery.deliveryError}` };
+    };
+
+    if (action === "resend_account_email") {
+      const target = uuid(body.profileId, "Account");
+      const [person] = await get(`profiles?select=id,email,display_name,branch_id,level,active&organisation_id=eq.${org}&id=eq.${target}&limit=1`, token) as Json[];
+      if (!person) throw new LiveAccessError(403, "That account is not available to you.");
+      assertManagedBranch(session.identity, person.branch_id as string | null, "send account emails");
+      staffLevel(person.level, session.identity.role);
+      if (!person.active) throw new InputError("Reactivate this account before sending access.");
+      return appendRefreshCookies(Response.json({ ok: true, ...await deliverAccess(email(person.email), String(person.display_name || person.email), target) }), session.refreshed, request);
+    }
+
     // Adding a member of staff. A profile's id has to be the id of that
     // person's Supabase login, which does not exist yet, so there are two
     // routes and the deployment decides which is available:
     //
     //   * with a service-role key, the login and the profile are created here
-    //     and a one-time password is handed back to give to them;
+    //     and a secure password-setup email is sent directly to them;
     //   * without one, the invitation is recorded and the profile is created
     //     by public.claim_staff_invitation the first time they sign in.
     if (action === "create_staff") {
@@ -56,6 +80,11 @@ export async function POST(request: Request) {
       const level = staffLevel(body.level, session.identity.role);
       const branchId = optionalUuid(body.branchId) ?? session.identity.branchId;
       assertManagedBranch(session.identity, branchId, "create staff");
+      if (level !== "super_admin" && !branchId) throw new InputError("Choose the branch this account belongs to.");
+      if (branchId) {
+        const branches = await get(`branches?select=id&organisation_id=eq.${org}&id=eq.${branchId}&limit=1`, token) as Json[];
+        if (!branches.length) throw new InputError("Choose a branch in your organisation.");
+      }
       const department = optional(body.department);
       const roleId = optionalUuid(body.roleId) ?? (await defaultRoleId(level, org, token));
 
@@ -73,8 +102,9 @@ export async function POST(request: Request) {
       // claim_staff_invitation does not care which came first; it only needs
       // a pending invitation addressed to the email the caller signs in with.
       const recordInvitation = async () => {
+        const invitationId = crypto.randomUUID();
         await insert("staff_invitations", {
-          id: crypto.randomUUID(), organisation_id: org, email: address,
+          id: invitationId, organisation_id: org, email: address,
           role_id: roleId, branch_id: branchId, display_name: displayName,
           department, level, invited_by: session.identity.profileId,
           status: "pending",
@@ -82,8 +112,7 @@ export async function POST(request: Request) {
         return appendRefreshCookies(Response.json({
           ok: true,
           created: "invitation",
-          email: address,
-          message: `${displayName} is invited. Their CRM account is set up the first time they sign in with ${address}.`,
+          ...await deliverAccess(address, displayName, invitationId, true),
         }), session.refreshed, request);
       };
 
@@ -108,7 +137,7 @@ export async function POST(request: Request) {
         // waiting for that login to sign itself in, which never happens if
         // nobody holds its password -- exactly the dead end this replaces.
         if (!(error instanceof SupabaseError) || error.status !== 422) throw error;
-        const existingId = await findAuthUserByEmail(address);
+        const existingId = (await findAccountByEmail(address))?.id;
         if (!existingId) return await recordInvitation();
         created = { id: existingId };
         connectedExisting = true;
@@ -137,38 +166,10 @@ export async function POST(request: Request) {
           profile_id: created.id, role_id: roleId, branch_id: branchId,
         }, token, "resolution=merge-duplicates,return=minimal").catch(() => undefined);
 
-      const generated = await supabaseAdminRequest<{
-        action_link?: string;
-        properties?: { action_link?: string };
-      }>("/auth/v1/admin/generate_link", {
-        method: "POST",
-        body: JSON.stringify({
-          type: "recovery",
-          email: address,
-          options: { redirect_to: `${new URL(request.url).origin}/auth/google-callback` },
-        }),
-      });
-      const setupLink = generated.action_link || generated.properties?.action_link || "";
-      let emailSent = false;
-      if (setupLink && emailConfigured()) {
-        await sendEmail({
-          to: address,
-          subject: "Set up your Maximus CRM account",
-          text: `Hello ${displayName},\n\nYour Maximus CRM username is ${address}. Set your password using this secure one-time link:\n${setupLink}\n\nAfter signing in, you can change your password from your account menu.`,
-          html: `<p>Hello ${displayName},</p><p>Your Maximus CRM username is <strong>${address}</strong>.</p><p><a href="${setupLink}">Set your password securely</a></p><p>After signing in, you can change your password from your account menu.</p>`,
-        });
-        emailSent = true;
-      }
-
+      const delivery = await deliverAccess(address, displayName, created.id);
       return appendRefreshCookies(Response.json({
-        ok: true,
-        created: connectedExisting ? "connected" : "account",
-        email: address,
-        emailSent,
-        setupLink: emailSent ? undefined : setupLink,
-        message: emailSent
-          ? `${displayName}'s secure account setup email was sent to ${address}.`
-          : `${displayName}'s account was created, but automatic email delivery is not configured. Use the secure setup link shown below.`,
+        ok: true, created: connectedExisting ? "connected" : "account",
+        profileId: created.id, ...delivery,
       }), session.refreshed, request);
     }
 
@@ -187,13 +188,24 @@ export async function POST(request: Request) {
         status: "pending",
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       }, token);
+      const [invitation] = await get(`staff_invitations?select=email,display_name&id=eq.${invitationId}&limit=1`, token) as Json[];
+      if (!invitation) throw new InputError("That invitation no longer exists.");
+      return appendRefreshCookies(Response.json({ ok: true, ...await deliverAccess(email(invitation.email), String(invitation.display_name || invitation.email), invitationId, true) }), session.refreshed, request);
     } else if (action === "create_invitation") {
       const roleId = uuid(body.roleId, "Role");
       // Defaults to the inviter's own branch, so an invited person lands
       // somewhere rather than in no branch at all.
       const branchId = optionalUuid(body.branchId) ?? session.identity.branchId;
       assertManagedBranch(session.identity, branchId, "create invitations");
-      await insert("staff_invitations", { id: crypto.randomUUID(), organisation_id: org, email: email(body.email), role_id: roleId, branch_id: branchId, display_name: optional(body.displayName), department: optional(body.department), level: optional(body.level), invited_by: session.identity.profileId, status: "pending" }, token);
+      const invitationId = crypto.randomUUID();
+      const address = email(body.email);
+      const [role] = await get(`roles?select=id,level&organisation_id=eq.${org}&id=eq.${roleId}&limit=1`, token) as Json[];
+      if (!role) throw new InputError("Choose a role in your organisation.");
+      const level = staffLevel(body.level || role.level, session.identity.role);
+      if (role.level !== level) throw new InputError("Choose a role matching the account level.");
+      if (!branchId && level !== "super_admin") throw new InputError("Choose the account's branch.");
+      await insert("staff_invitations", { id: invitationId, organisation_id: org, email: address, role_id: roleId, branch_id: branchId, display_name: optional(body.displayName), department: optional(body.department), level, invited_by: session.identity.profileId, status: "pending" }, token);
+      return appendRefreshCookies(Response.json({ ok: true, ...await deliverAccess(address, optional(body.displayName) || address, invitationId, true) }), session.refreshed, request);
     } else if (action === "bulk_update_profiles") {
       const targets = uuidList(body.profileIds, "Staff accounts");
       const changes: Json = {};
@@ -415,24 +427,7 @@ async function defaultRoleId(level: string, org: string, token: string) {
   return rows[0]?.id ?? null;
 }
 
-/** An existing Supabase Auth login's id, found by email, or null if there is
- * none -- used to connect a pre-existing account (a client demo login, most
- * often) to a CRM profile directly, without it having to sign in first. */
-async function findAuthUserByEmail(address: string): Promise<string | null> {
-  try {
-    const result = await supabaseAdminRequest<{ users?: { id: string; email?: string }[] }>(
-      `/auth/v1/admin/users?email=${encodeURIComponent(address)}`,
-    );
-    const match = (result.users ?? []).find(
-      (row) => (row.email ?? "").toLowerCase() === address.toLowerCase(),
-    );
-    return match?.id ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/** A one-time password: long, random, and shown to the administrator once. */
+/** An undisclosed random initial password; the recipient chooses their own. */
 function temporary() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
   const bytes = crypto.getRandomValues(new Uint8Array(20));

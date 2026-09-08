@@ -11301,3 +11301,17 @@ body { font-size: 14px; }
   .globalSearchShortcuts { grid-template-columns: 1fr; }
   .globalSearchFooter { display: none; }
 }
+
+/* Register filters stay readable and wrap without widening the record view. */
+.operationalFilters { margin: 0 20px 18px; padding: 16px; border: 1px solid var(--line, #dce3ed); border-radius: 12px; background: #f7f9fc; }
+.operationalFilterHead { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.operationalFilterHead strong { display: flex; align-items: center; gap: 8px; font-size: .95rem; }
+.operationalFilterGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 12px; }
+.operationalFilterGrid label { display: grid; gap: 6px; min-width: 0; font-size: .875rem; }
+.operationalFilterGrid input, .operationalFilterGrid select { width: 100%; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid #ccd5e2; border-radius: 7px; background: #fff; color: #19283e; font: inherit; }
+.accountSetupCard { width: min(460px, calc(100vw - 32px)); margin: auto; padding: 28px; background: #fff; border: 1px solid #dce3ed; border-radius: 16px; box-shadow: 0 16px 44px #15274912; color: #19283e; }
+.accountSetupCard h1 { font-size: 1.6rem; margin: 16px 0 8px; }
+.accountSetupCard p { font-size: 1rem; line-height: 1.5; }
+.accountSetupCard label { display: grid; gap: 8px; margin: 16px 0; font-size: 1rem; }
+.accountSetupCard input { min-width: 0; width: 100%; padding: 12px; border: 1px solid #ccd5e2; border-radius: 8px; font: inherit; }
+.accountSetupCard button { width: 100%; justify-content: center; }

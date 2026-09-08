@@ -426,9 +426,12 @@ test("the service-role key is used only for bounded staff-auth operations and ne
   // Admin calls create/undo/find a login and can retire a removed staff login
   // so its real email is available for a future account.
   const uses = admin.match(/supabaseAdminRequest/g) ?? [];
-  assert.equal(uses.length, 6, "unexpected service-role calls");
+  assert.equal(uses.length, 4, "unexpected service-role calls");
   assert.match(admin, /supabaseAdminRequest<\{ id\?: string \}>\("\/auth\/v1\/admin\/users"/);
-  assert.match(admin, /supabaseAdminRequest<\{ users\?:/);
+  const access = await read("server/account-access.ts");
+  assert.match(admin, /findAccountByEmail/);
+  assert.match(access, /supabaseAdminRequest<\{ users\?:/);
+  assert.doesNotMatch(access, /\/rest\/v1\//);
   // Only a Super Admin makes another administrator.
   assert.match(admin, /Only a Super Admin can create an administrator account/);
   const readme = await read("README.md");
@@ -468,8 +471,10 @@ test("case work is branch-wide while the interface attributes every action", asy
 
 test("staff onboarding emails a secure setup link and every user can change password", async () => {
   const admin = await read("app/api/crm/admin/route.ts");
-  assert.match(admin, /type: "recovery"/);
-  assert.match(admin, /Set up your Maximus CRM account/);
+  const access = await read("server/account-access.ts");
+  assert.match(admin, /sendAccountSetup/);
+  assert.match(access, /type: "recovery"/);
+  assert.match(access, /Set up your Maximus CRM account/);
   assert.doesNotMatch(admin, /temporaryPassword,\s*message:/);
   const password = await read("app/api/auth/password/route.ts");
   assert.match(password, /\/auth\/v1\/user/);
