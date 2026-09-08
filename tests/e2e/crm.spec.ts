@@ -759,7 +759,7 @@ test("Super Admin transfers a case inline and sees the destination branch", asyn
   await expect(confirm).toBeDisabled();
   await drawer.getByLabel("Transfer reason", { exact: true }).fill("Client requested Colombo office");
   await confirm.click();
-  await expect(drawer.getByRole("status")).toContainText("Transferred to Colombo", { timeout: 25_000 });
+  await expect(drawer.getByRole("region", { name: "Branch transfer", exact: true }).getByRole("status")).toContainText("Transferred to Colombo", { timeout: 25_000 });
   await expect(drawer.locator(".caseWindowTopbar")).toContainText("Colombo");
   await drawer.getByRole("tab", { name: "Activity & notes", exact: true }).click();
   await expect(drawer).toContainText("Client requested Colombo office", { timeout: 25_000 });
