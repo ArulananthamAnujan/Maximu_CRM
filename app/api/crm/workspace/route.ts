@@ -1402,6 +1402,11 @@ export async function POST(request: Request) {
       const id = crypto.randomUUID();
       const clientId = required(body.clientId, "Client");
       const title = required(body.title, "Document title");
+      if (nullable(body.caseId)) {
+        const [linkedCase] = await rest<Json[]>(`cases?select=id,client_id&id=eq.${encodeURIComponent(String(body.caseId))}&limit=1`, token);
+        if (!linkedCase || String(linkedCase.client_id) !== clientId)
+          throw new LiveAccessError(403, "That client is not available in this case.");
+      }
       await insert(
         "documents",
         {
@@ -1418,6 +1423,7 @@ export async function POST(request: Request) {
           metadata: {
             storage: "not_connected",
             note: nullable(body.documentNote),
+            due_on: nullable(body.due),
           },
         },
         token,
@@ -1436,7 +1442,7 @@ export async function POST(request: Request) {
         `clients?select=email,first_name,last_name&id=eq.${encodeURIComponent(clientId)}&limit=1`,
         token,
       );
-      if (client)
+      if (client && body.uploading !== true)
         await notifyClient(org, token, "document_request", String(client.email ?? ""), {
           client_name: fullClientName(client),
           document_title: title,
@@ -1444,7 +1450,7 @@ export async function POST(request: Request) {
           portal_link: publicOrigin(request),
           sender_name: session.identity.displayName,
         });
-      return Response.json({ ok: true });
+      return Response.json({ ok: true, documentId: id });
     }
 
     if (action === "visaChecklist") {
@@ -1494,6 +1500,9 @@ export async function POST(request: Request) {
       for (const template of checklistTemplates) {
         const current = byKey.get(template.key);
         if (selected.has(template.key)) {
+          // Adding templates must not erase instructions or deadlines on an
+          // already-active request. The full checklist editor manages edits.
+          if (body.append === true && current && String(current.state) !== "archived") continue;
           const metadata = {
             ...((current?.metadata as Json | null) ?? {}),
             source: "visa_checklist",
@@ -1525,6 +1534,7 @@ export async function POST(request: Request) {
             newlyRequested.push(template.title);
           }
         } else if (
+          body.append !== true &&
           current &&
           ["requested", "rejected", "archived"].includes(String(current.state)) &&
           !current.drive_file_id
@@ -3135,7 +3145,10 @@ function nullable(value: unknown): string | null {
 }
 function nullableDate(value: unknown): string | null {
   const parsed = nullable(value);
-  return parsed ? new Date(`${parsed}T12:00:00Z`).toISOString() : null;
+  if (!parsed) return null;
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(parsed) ? `${parsed}T12:00:00Z` : parsed);
+  if (!Number.isFinite(date.getTime())) throw new InputError("Date or time is invalid.");
+  return date.toISOString();
 }
 function combinedDateTime(dateValue: unknown, timeValue: unknown, fallbackTime: string): string | null {
   const day = nullable(dateValue);

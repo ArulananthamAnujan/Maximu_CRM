@@ -33,7 +33,7 @@ export async function GET(request: Request) {
         ? streamParam
         : null;
 
-    const [allCases, allApplications, allVisas, tasks, allDocuments, invoices, profiles, branches, enquiries, campaigns] =
+    const [allCases, allApplications, allVisas, tasks, allDocuments, invoices, profiles, branches, enquiries, campaigns, credits] =
       await Promise.all([
         rest("cases?select=id,branch_id,owner_id,service_type,matter_type,lifecycle_stage,health,opened_at,closed_at,due_at,visa_expiry_on&limit=5000", token),
         rest("education_applications?select=id,case_id,status,submitted_at,offer_received_at,coe_received_at,deadline_at,archived_at&limit=5000", token),
@@ -45,6 +45,7 @@ export async function GET(request: Request) {
         rest("branches?select=id,name,code&limit=200", token),
         rest("enquiries?select=id,client_id,case_id,branch_id,assigned_to,source,campaign,status,score,next_follow_up_at,lost_reason,created_at,converted_at&limit=5000", token),
         rest("communication_campaigns?select=id,name,channel,status,recipient_count,sent_count,failed_count,created_at&limit=1000", token),
+        rest("credit_notes?select=id,invoice_id,amount", token),
       ]);
 
     const cases = stream
@@ -115,6 +116,14 @@ export async function GET(request: Request) {
       branches.map((row) => [String(row.id), String(row.name ?? "")]),
     );
 
+    const activeInvoices = invoices.filter(row => !["void", "refunded"].includes(String(row.state)));
+    const creditByInvoice = new Map<string, number>();
+    for (const credit of credits) creditByInvoice.set(String(credit.invoice_id), (creditByInvoice.get(String(credit.invoice_id)) ?? 0) + Number(credit.amount ?? 0));
+    const balance = (row: Row) => Math.max(0, Number(row.total ?? 0) - Number(row.paid ?? 0) - (creditByInvoice.get(String(row.id)) ?? 0));
+    const byCurrency = [...new Set(activeInvoices.map(row => String(row.currency || "Unspecified")))].sort().map(currency => {
+      const rows = activeInvoices.filter(row => String(row.currency || "Unspecified") === currency);
+      return { currency, invoiced: sum(rows, "total"), collected: sum(rows, "paid"), outstanding: Math.round(rows.reduce((total, row) => total + balance(row), 0) * 100) / 100 };
+    });
     const report = {
       pipeline: {
         total: cases.length,
@@ -200,7 +209,7 @@ export async function GET(request: Request) {
             name: displayName.get(id) ?? "",
             branch: branchLabel.get(String(row.branch_id)) ?? "",
             openCases: owned.length,
-            needingAttention: owned.filter((item) => item.health !== "healthy").length,
+            needingAttention: owned.filter((item) => overdue(item.due_at)).length,
             openTasks: tasks.filter(
               (task) => String(task.assigned_to) === id && task.status !== "completed",
             ).length,
@@ -225,17 +234,12 @@ export async function GET(request: Request) {
         };
       }),
       finance: {
-        invoiced: sum(invoices, "total"),
-        collected: sum(invoices, "paid"),
-        outstanding:
-          Math.round((sum(invoices, "total") - sum(invoices, "paid")) * 100) / 100,
-        overdueInvoices: invoices.filter(
-          (row) =>
-            row.state !== "paid" &&
-            row.state !== "void" &&
-            row.state !== "refunded" &&
-            overdue(row.due_on),
-        ).length,
+        // A total across currencies has no useful monetary meaning.
+        invoiced: byCurrency.length > 1 ? null : byCurrency[0]?.invoiced ?? 0,
+        collected: byCurrency.length > 1 ? null : byCurrency[0]?.collected ?? 0,
+        outstanding: byCurrency.length > 1 ? null : byCurrency[0]?.outstanding ?? 0,
+        byCurrency,
+        overdueInvoices: activeInvoices.filter(row => balance(row) > 0 && overdue(row.due_on)).length,
         byState: tally(invoices, "state"),
       },
       generatedAt: new Date().toISOString(),
@@ -266,13 +270,26 @@ function sum(rows: Row[], key: string): number {
   );
 }
 async function rest(query: string, token: string): Promise<Row[]> {
-  try {
-    return await supabaseRequest<Row[]>(`/rest/v1/${query}`, { method: "GET" }, token);
-  } catch (error) {
-    // One unavailable dataset should narrow the report, not remove it.
-    console.error(`Report dataset unavailable: ${query.split("?")[0]}`, error);
-    return [];
+  const [table, search = ""] = query.split("?");
+  const params = new URLSearchParams(search);
+  params.set("limit", "500");
+  params.set("order", "id.asc");
+  const rows: Row[] = [];
+  const seen = new Set<string>();
+  // PostgREST can impose a lower server row limit. Continue from the number
+  // actually returned and stop only on an empty page, never a guessed total.
+  while (rows.length < 250_000) {
+    params.set("offset", String(rows.length));
+    const page = await supabaseRequest<Row[]>(`/rest/v1/${table}?${params}`, { method: "GET" }, token);
+    if (!page.length) return rows;
+    for (const row of page) {
+      const id = String(row.id);
+      if (seen.has(id)) throw new Error(`Report pagination repeated a ${table} record.`);
+      seen.add(id);
+      rows.push(row);
+    }
   }
+  throw new Error(`Report dataset ${table} exceeded its supported size.`);
 }
 function apiError(error: unknown): Response {
   if (error instanceof LiveAccessError)

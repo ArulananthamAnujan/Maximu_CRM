@@ -38,7 +38,7 @@ The new CRM maps those capabilities as follows:
 | Legacy capability | New CRM implementation |
 | --- | --- |
 | Name, reference, contact, office, service, country, priority, status, source, intake and last remark | Server-paged Enquiries directory and 50-row operational table |
-| Created/updated, staff, status, source, intake, qualification, test and spouse filters | Enquiries **More legacy filters** panel; queries remain RLS-scoped |
+| Created/updated, staff, status, source, intake, qualification, test and spouse filters | Enquiries **More filters** panel; queries remain RLS-scoped |
 | Follow-up and notes | Due date, latest note, add-note action, Tasks and case timeline |
 | Edit and archive | Secure case file actions with audit history |
 | Convert/progress | Validated lifecycle movement from Enquiry through Student/Client, Application, Visa, Defer and Completed |
@@ -72,3 +72,34 @@ The new CRM maps those capabilities as follows:
 5. Run branch-role and Super Admin visibility checks.
 6. Measure cold first-page and cached navigation latency in production.
 7. Keep the old CRM read-only until all non-zero source registers reconcile.
+
+
+## Interface preservation audit — 7 September 2026
+
+The existing CRM is the primary workflow reference for this redesign. Its live
+Study Abroad enquiry register, client profile, notes dialog, suggested university
+screen and document screen were revisited without making changes. Earlier
+register and migration findings above remain historical snapshots, not current
+reconciled totals. The old system was still receiving new records during review.
+
+| Working area | Preservation and current implementation |
+| --- | --- |
+| Navigation | Every permitted existing module remains available in the sliding navigation; staff registers use the full width. |
+| Enquiry list | Client/reference/office, contact, destination/status/intake, latest note and actions remain in the list. All existing filters remain available. Source, priority, campaign, dates, staff, education/test/spouse values and other details are available in Client details within the preview. |
+| Contextual case | Selecting a name opens a slide-out with client contact details first. Notes, messages, documents, background, family, applications, visa and finance remain available; Open full case is an explicit separate action. |
+| Notes and follow-ups | Notes save within the preview. Follow-ups can be scheduled there with a timestamp, remarks and priority, and appear as case-linked tasks. The legacy note-reminder association and reminder delivery still require a complete data reconciliation; the new follow-up is a separate task. |
+| Applications and visa | Short overview rows retain the complete original operational fields in an expandable section. Each record offers notes, email, files and the full case. New-record entry selects a client and continues in the corresponding case section. |
+| Documents | Files/requests, direct upload, new versions, custom requests, additive template selection and manual requirements are available in the selected case. Existing requests are preserved when adding templates. |
+| Communications | The case composer retains client context; Email, WhatsApp and SMS send through their own endpoints. Draft/failed messages can be retried from the conversation. A failed send remains visible as an error and unsent state. |
+| Reports | Reports read beyond database row caps; unavailable data produces an error and retry action. Fees are shown by currency, after credit notes, excluding void/refunded invoices from active balances. |
+
+### Remaining proof required before retiring the old CRM
+
+This UI change is not evidence that every historical record or attachment has
+migrated. Reconcile the previously imported detail snapshots and all source IDs,
+including note reminders, suggested courses, uploaded files, communication
+attachments, follow-up/appointment history, invoices and partner/university
+accounts. The legacy document screen also exposes document-link sending and
+bulk email/download actions; verify their end-to-end equivalence with the new
+portal and communication tools. Confirm real provider delivery separately from
+synthetic UI testing. No live client messages were sent during this review.

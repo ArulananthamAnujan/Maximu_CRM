@@ -55,44 +55,44 @@
 .appShell .miniStats strong { font-size: 1.625rem; }
 
 /* Case identity appears once, followed by horizontal section navigation. */
-.appShell.caseWindow .caseWindowTopbar { min-height: 46px; padding: 5px 24px; background: #102f40; border-top: 0; gap: 18px; }
-.appShell.caseWindow .caseWindowTopbar img { width: 116px; height: 32px; object-fit: contain; }
-.appShell.caseWindow .caseWindowTopbar :is(button, b, span) { font-size: .8125rem; font-weight: 500; text-transform: none; letter-spacing: 0; }
-.appShell.caseWindow .caseWindowTopbar button { min-height: 32px; }
-.appShell.caseWindow .drawerHead { margin: 0; padding: 18px 24px 14px; background: #fff; border-bottom: 1px solid #e0e7eb; }
-.appShell.caseWindow .drawerHead > div { min-width: 0; }
-.appShell.caseWindow .drawerHead > div > span { font-size: .8125rem; color: #637887; font-weight: 500; }
-.appShell.caseWindow .drawerHead h2 { margin: 3px 0 7px; font-size: 1.5rem; line-height: 1.3; font-weight: 650; letter-spacing: -.025em; overflow-wrap: anywhere; }
-.appShell.caseWindow .caseIdentityMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0; font-size: .875rem; color: #536875; }
-.appShell.caseWindow .drawerHead .caseIdentityMeta > span { font-size: .875rem; line-height: 1.4; font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
+.appShell .caseWindowTopbar { min-height: 46px; padding: 5px 24px; background: #102f40; border-top: 0; gap: 18px; }
+.appShell .caseWindowTopbar img { width: 116px; height: 32px; object-fit: contain; }
+.appShell .caseWindowTopbar :is(button, b, span) { font-size: .8125rem; font-weight: 500; text-transform: none; letter-spacing: 0; }
+.appShell .caseWindowTopbar button { min-height: 32px; }
+.appShell .drawerHead { margin: 0; padding: 18px 24px 14px; background: #fff; border-bottom: 1px solid #e0e7eb; }
+.appShell .drawerHead > div { min-width: 0; }
+.appShell .drawerHead > div > span { font-size: .8125rem; color: #637887; font-weight: 500; }
+.appShell .drawerHead h2 { margin: 3px 0 7px; font-size: 1.5rem; line-height: 1.3; font-weight: 650; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.appShell .caseIdentityMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0; font-size: .875rem; color: #536875; }
+.appShell .drawerHead .caseIdentityMeta > span { font-size: .875rem; line-height: 1.4; font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
 .caseStageBadge { padding: 2px 8px; border-radius: 4px; color: #125775; background: #e9f2f7; font-weight: 600; }
-.appShell.caseWindow .caseWorkspaceLayout { display: block; padding: 0; background: #f5f7f9; }
-.appShell.caseWindow .caseLeftRail { position: sticky; top: 0; z-index: 20; min-height: 0; max-height: none; overflow: visible; margin: 0; padding: 0 24px; border: 0; border-radius: 0; background: #fff; box-shadow: 0 1px 0 #dce5ea; }
-.appShell.caseWindow .caseTabs { display: flex; flex-direction: row; flex-wrap: wrap; gap: 0 4px; padding: 0; margin: 0; }
-.appShell.caseWindow .caseNavGroup { display: contents; }
-.appShell.caseWindow .caseNavGroup > span { display: none; }
-.appShell.caseWindow .caseTabs button { display: inline-flex; flex: 0 1 auto; gap: 7px; align-items: center; width: auto; min-height: 44px; margin: 0; padding: 10px 12px; color: #536875; background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; box-shadow: none; font-size: .875rem; font-weight: 500; }
-.appShell.caseWindow .caseTabs button.active { border-bottom-color: #176582; color: #125775; background: #f3f8fb; box-shadow: none; }
-.appShell.caseWindow .caseTabs button b { background: #edf1f4; color: #526571; padding: 1px 5px; border-radius: 4px; font-size: .75rem; }
-.appShell.caseWindow .caseWorkspaceContent { max-width: 1600px; margin: 0 auto; padding: 0 24px 24px; min-width: 0; background: transparent; }
-.appShell.caseWindow .caseSectionHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 14px 0; border: 0; }
+.appShell .caseWorkspaceLayout { display: block; padding: 0; background: #f5f7f9; }
+.appShell .caseLeftRail { position: sticky; top: 0; z-index: 20; min-height: 0; max-height: none; overflow: visible; margin: 0; padding: 0 24px; border: 0; border-radius: 0; background: #fff; box-shadow: 0 1px 0 #dce5ea; }
+.appShell .caseTabs { display: flex; flex-direction: row; flex-wrap: wrap; gap: 0 4px; padding: 0; margin: 0; }
+.appShell .caseNavGroup { display: contents; }
+.appShell .caseNavGroup > span { display: none; }
+.appShell .caseTabs button { display: inline-flex; flex: 0 1 auto; gap: 7px; align-items: center; width: auto; min-height: 44px; margin: 0; padding: 10px 12px; color: #536875; background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; box-shadow: none; font-size: .875rem; font-weight: 500; }
+.appShell .caseTabs button.active { border-bottom-color: #176582; color: #125775; background: #f3f8fb; box-shadow: none; }
+.appShell .caseTabs button b { background: #edf1f4; color: #526571; padding: 1px 5px; border-radius: 4px; font-size: .75rem; }
+.appShell .caseWorkspaceContent { max-width: 1600px; margin: 0 auto; padding: 0 24px 24px; min-width: 0; background: transparent; }
+.appShell .caseSectionHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 14px 0; border: 0; }
 .appShell .caseSectionHead h2 { display: block; margin: 0; font-size: 1.125rem; font-weight: 600; }
-.appShell.caseWindow .caseSectionDescription { display: none; }
-.appShell.caseWindow .caseHome { display: grid; align-items: start; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); grid-template-areas: "priority priority" "health health" "admissions audit" "workflow audit" "documents client" "communication bottom"; gap: 14px; }
-.appShell.caseWindow .caseHome.directCase { grid-template-areas: "priority priority" "health health" "workflow audit" "documents client" "communication bottom"; }
-.appShell.caseWindow .caseWorkPanel, .appShell.caseWindow .caseHome > .lifecyclePanel { padding: 16px; margin: 0; border: 1px solid #dce4e9; border-radius: 8px; background: #fff; box-shadow: none; }
-.appShell.caseWindow .caseWorkPanel h3 { font-size: 1rem; font-weight: 600; margin: 3px 0 8px; }
-.appShell.caseWindow .caseWorkPanel .kicker { font-size: .75rem; color: #637887; font-weight: 500; letter-spacing: .04em; }
-.appShell.caseWindow .casePriorityBar { padding: 12px 16px; border-radius: 6px; border: 1px solid #d1e1ea; border-left: 3px solid #176582; background: #edf5f9; }
-.appShell.caseWindow .casePriorityBar h3 { font-size: 1rem !important; font-weight: 600; margin: 2px 0; }
-.appShell.caseWindow .casePriorityBar p { font-size: .8125rem; margin: 2px 0 0; }
-.appShell.caseWindow .caseAtGlance { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); border-radius: 6px; background: #fff; }
-.appShell.caseWindow .caseAtGlance > div { padding: 10px 14px; }
-.appShell.caseWindow .caseAtGlance small { font-size: .8125rem; }
-.appShell.caseWindow .caseAtGlance strong { font-size: .875rem; font-weight: 600; }
-.appShell.caseWindow .lifecycleTrack { gap: 6px; margin: 10px 0; flex-wrap: wrap; }
-.appShell.caseWindow .lifecycleTrack li { flex: 1 1 80px; padding: 7px 9px; border-radius: 4px; font-size: .875rem; font-weight: 500; }
-.appShell.caseWindow .lifecycleTrack li.current { background: #176582; border-color: #176582; color: #fff; }
+.appShell .caseSectionDescription { display: none; }
+.appShell .caseHome { display: grid; align-items: start; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); grid-template-areas: "client priority" "client health" "admissions audit" "workflow audit" "documents communication" "bottom bottom"; gap: 14px; }
+.appShell .caseHome.directCase { grid-template-areas: "client priority" "client health" "workflow audit" "documents communication" "bottom bottom"; }
+.appShell .caseWorkPanel, .appShell .caseHome > .lifecyclePanel { padding: 16px; margin: 0; border: 1px solid #dce4e9; border-radius: 8px; background: #fff; box-shadow: none; }
+.appShell .caseWorkPanel h3 { font-size: 1rem; font-weight: 600; margin: 3px 0 8px; }
+.appShell .caseWorkPanel .kicker { font-size: .75rem; color: #637887; font-weight: 500; letter-spacing: .04em; }
+.appShell .casePriorityBar { padding: 12px 16px; border-radius: 6px; border: 1px solid #d1e1ea; border-left: 3px solid #176582; background: #edf5f9; }
+.appShell .casePriorityBar h3 { font-size: 1rem !important; font-weight: 600; margin: 2px 0; }
+.appShell .casePriorityBar p { font-size: .8125rem; margin: 2px 0 0; }
+.appShell .caseAtGlance { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); border-radius: 6px; background: #fff; }
+.appShell .caseAtGlance > div { padding: 10px 14px; }
+.appShell .caseAtGlance small { font-size: .8125rem; }
+.appShell .caseAtGlance strong { font-size: .875rem; font-weight: 600; }
+.appShell .lifecycleTrack { gap: 6px; margin: 10px 0; flex-wrap: wrap; }
+.appShell .lifecycleTrack li { flex: 1 1 80px; padding: 7px 9px; border-radius: 4px; font-size: .875rem; font-weight: 500; }
+.appShell .lifecycleTrack li.current { background: #176582; border-color: #176582; color: #fff; }
 .caseStageControls summary { display: flex; justify-content: space-between; gap: 8px; padding: 10px 0 0; cursor: pointer; color: #176582; font-size: .875rem; font-weight: 550; list-style: none; }
 .caseStageControls[open] summary { padding-bottom: 12px; }
 .appShell .caseQuickNote { gap: 8px; margin: 12px 0; }
@@ -121,18 +121,18 @@
 .caseProfileEditor .formActions { display: flex; align-items: center; gap: 12px; margin-top: 16px; }
 .caseProfileEditor [role=status] { color: #17664b; font-size: .875rem; }
 @media (max-width: 1000px) {
-  .appShell.caseWindow .caseHome, .appShell.caseWindow .caseHome.directCase { grid-template-columns: minmax(0,1fr); grid-template-areas: "priority" "health" "admissions" "workflow" "audit" "documents" "client" "communication" "bottom"; }
-  .appShell.caseWindow .caseHome.directCase { grid-template-areas: "priority" "health" "workflow" "audit" "documents" "client" "communication" "bottom"; }
-  .appShell.caseWindow .caseAtGlance { grid-template-columns: repeat(3,minmax(0,1fr)); }
-  .appShell.caseWindow .caseTabs button { min-height: 40px; padding: 8px 10px; }
+  .appShell .caseHome, .appShell .caseHome.directCase { grid-template-columns: minmax(0,1fr); grid-template-areas: "client" "priority" "health" "admissions" "workflow" "audit" "documents" "communication" "bottom"; }
+  .appShell .caseHome.directCase { grid-template-areas: "client" "priority" "health" "workflow" "audit" "documents" "communication" "bottom"; }
+  .appShell .caseAtGlance { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .appShell .caseTabs button { min-height: 40px; padding: 8px 10px; }
 }
 @media (max-width: 600px) {
-  .appShell.caseWindow .caseWindowTopbar { padding-inline: 14px; }
-  .appShell.caseWindow .caseWindowTopbar > :is(span,b) { display: none; }
-  .appShell.caseWindow .drawerHead { padding: 14px; }
-  .appShell.caseWindow .caseLeftRail { padding: 0 8px; position: static; }
-  .appShell.caseWindow .caseWorkspaceContent { padding: 0 14px 20px; }
-  .appShell.caseWindow .caseAtGlance { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .appShell .caseWindowTopbar { padding-inline: 14px; }
+  .appShell .caseWindowTopbar > :is(span,b) { display: none; }
+  .appShell .drawerHead { padding: 14px; }
+  .appShell .caseLeftRail { padding: 0 8px; position: static; }
+  .appShell .caseWorkspaceContent { padding: 0 14px 20px; }
+  .appShell .caseAtGlance { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .caseProfileFields { grid-template-columns: minmax(0,1fr); }
   .appShell :is(.primaryButton,.ghostButton,input:not([type=checkbox]):not([type=radio]),select) { min-height: 44px; }
   .appShell .casePriorityBar { align-items: flex-start; }
@@ -165,3 +165,163 @@
   .appShell .detailedRecordFacts { grid-template-columns: minmax(0,1fr); }
   .appShell .recordOpenButton { min-height: 44px; }
 }
+
+/* Scan a register, then work in context without losing its filters or page. */
+.appShell .journeyDataHeader { font-size: .8125rem; text-transform: none; letter-spacing: 0; font-weight: 600; padding: 10px 16px; }
+.appShell .journeyDataRow { align-items: start; gap: 16px; padding: 12px 16px; }
+.appShell .journeyDataRow :is(strong, span, small) { white-space: normal; overflow-wrap: anywhere; }
+.appShell .journeyPrimaryCell strong { font-size: 1rem; color: #125775; }
+.appShell .journeyDataRow :is(small, button > span) { font-size: .8125rem; color: #607583; }
+.appShell .journeyNoteCell strong, .appShell .registerLatestNote strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.appShell .journeyNoteCell { min-width: 0; }
+.appShell .journeyActionsCell { gap: 6px; }
+.appShell .journeyActionsCell select { min-height: 30px; font-size: .8125rem; }
+.appShell .registerActions { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 4px; min-width: 142px; align-content: start; }
+.appShell .registerActions button { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 5px 6px; border: 1px solid #dce5eb; border-radius: 5px; color: #176582; background: #fff; font-size: .8125rem; text-align: left; cursor: pointer; }
+.appShell .registerActions button:hover { background: #edf5f9; border-color: #adc9d7; }
+.appShell .registerActions button svg { flex: 0 0 auto; }
+.appShell .registerActions button span { color: inherit; font-size: inherit; }
+.appShell .journeyListIntro { padding: 14px 16px; }
+.appShell .journeyListIntro h2 { font-family: inherit; font-size: 1.125rem; }
+.appShell .journeyListIntro :is(.kicker,p) { display: none; }
+.appShell .enquiryDirectoryTools { padding: 12px 16px; gap: 12px; }
+.appShell .enquiryDirectoryFilters { padding: 10px 16px; gap: 8px; }
+.appShell .enquiryDirectoryFilters label > span { font-size: .8125rem; }
+.appShell .enquiryAdvancedFilters { grid-column: 1 / -1; }
+.appShell .enquiryAdvancedFilters summary { padding: 8px 12px; min-height: 34px; }
+.appShell .detailedRecordCard { align-items: start; grid-template-columns: minmax(170px,1fr) minmax(0,2.3fr) 160px; gap: 12px 20px; }
+.appShell .detailedRecordIdentity h3 button { padding: 0; border: 0; background: transparent; color: #125775; text-align: left; font: inherit; cursor: pointer; }
+.appShell .registerSummary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+.appShell .registerSummary > * { min-width: 0; }
+.appShell .registerSummary :is(small,strong,span) { display: block; overflow-wrap: anywhere; line-height: 1.5; }
+.appShell .registerSummary small { font-size: .8125rem; color: #607583; margin-bottom: 4px; }
+.appShell .registerSummary strong { font-size: .875rem; font-weight: 600; }
+.appShell .registerSummary span { font-size: .875rem; }
+.appShell .registerLatestNote { padding: 0; border: 0; background: transparent; text-align: left; color: inherit; cursor: pointer; }
+.appShell .registerAllDetails { grid-column: 1 / -1; border-top: 1px solid #e8edf0; }
+.appShell .registerAllDetails summary { padding: 7px 0 0; color: #176582; cursor: pointer; font-size: .8125rem; }
+.appShell .registerAllDetails[open] summary { padding-bottom: 12px; }
+.appShell .recordPreviewBackdrop { z-index: 80; background: #102f4038; backdrop-filter: none; }
+.appShell .caseDrawer.recordPreview { width: min(850px,86vw); max-width: 850px; height: 100dvh; padding: 0; border-left: 1px solid #d3e0e7; border-radius: 0; background: #f5f7f9; overflow: auto; box-shadow: -14px 0 40px #102f4026; }
+.appShell .recordPreview .drawerHead { position: relative; top: auto; }
+.appShell .recordPreview .caseHome, .appShell .recordPreview .caseHome.directCase { grid-template-columns: minmax(0,1fr); grid-template-areas: "client" "priority" "health" "admissions" "workflow" "audit" "documents" "communication" "bottom"; }
+.appShell .recordPreview .caseHome.directCase { grid-template-areas: "client" "priority" "health" "workflow" "audit" "documents" "communication" "bottom"; }
+.appShell .recordPreview .caseLeftRail { position: static; }
+.appShell .recordPreview .caseAtGlance { grid-template-columns: repeat(3,minmax(0,1fr)); }
+.appShell .recordPreview .caseWindowTopbar { flex-wrap: wrap; gap: 8px 14px; }
+.appShell .recordPreview .caseWindowTopbar > :is(img,span,b) { display: none; }
+.appShell .recordPreview .caseWindowTopbar > button:last-child { margin-left: auto; }
+.appShell .caseContactLine { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 10px; align-items: center; }
+.appShell .caseContactLine :is(button,a,span) { display: inline-flex; align-items: center; gap: 6px; font-size: .875rem; overflow-wrap: anywhere; }
+.appShell .caseContactLine :is(button,a) { border: 0; padding: 0; color: #176582; background: transparent; cursor: pointer; text-decoration: none; }
+.appShell .caseContactLine span { color: #607583; }
+.appShell .caseAtGlance { grid-template-columns: repeat(2,minmax(0,1fr)); }
+.appShell .caseAtGlance > div { border-bottom: 1px solid #edf1f4; }
+.appShell .agentClientPanel { align-self: start; }
+.appShell .agentClientPanel dl { margin: 8px 0 14px; }
+.appShell .agentClientPanel dl > div { padding: 5px 0; }
+.appShell .caseDocumentRequests { margin-bottom: 16px; }
+.appShell .caseDocumentRequests .caseWorkPanelHead { flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+.appShell .documentRequestModes { display: inline-flex; border: 1px solid #cddde5; border-radius: 6px; overflow: hidden; }
+.appShell .documentRequestModes button { min-height: 36px; padding: 7px 12px; border: 0; background: #fff; color: #536875; font-size: .875rem; cursor: pointer; }
+.appShell .documentRequestModes button.active { background: #e6f1f7; color: #125775; }
+.appShell .templateRequestChoices { max-height: 300px; overflow: auto; border: 1px solid #dce5eb; padding: 12px; border-radius: 6px; }
+.appShell .templateRequestChoices fieldset { border: 0; margin: 0 0 14px; padding: 0; }
+.appShell .templateRequestChoices legend { font-weight: 600; font-size: .875rem; margin-bottom: 8px; }
+.appShell .templateRequestChoices label { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; margin: 8px 0; }
+.appShell .templateRequestChoices input { width: 17px; height: 17px; margin-top: 3px; }
+.appShell .templateRequestChoices :is(strong,small) { display: block; font-size: .875rem; }
+.appShell .templateRequestChoices small { font-size: .8125rem; font-weight: 400; color: #607583; }
+.appShell .caseDocumentRequests textarea, .appShell .inlineAdd textarea { width: 100%; min-width: 0; resize: vertical; padding: 9px 12px; border: 1px solid #c8d7df; border-radius: 6px; font-family: inherit; }
+.appShell .caseDocumentRequests .formActions { display: flex; gap: 12px; align-items: center; }
+.appShell .caseDocumentRequests .formActions span { font-size: .8125rem; color: #607583; }
+.appShell .inlineAdd { flex-wrap: wrap; align-items: start; gap: 10px; }
+.appShell .inlineAdd input[type=date] { flex: 0 1 160px; }
+.appShell .checklistRequired { display: inline-flex; align-items: center; gap: 7px; font-size: .875rem; min-height: 38px; }
+.appShell .checklistRequired input { flex: none; }
+.appShell .miniStats { grid-template-columns: repeat(4,minmax(0,1fr)); }
+.appShell .dashboardAdminTools span strong { font-size: .875rem; }
+.appShell .dashboardAdminTools span small { font-size: .8125rem; }
+@media (max-width: 1150px) {
+  .appShell .detailedRecordCard { grid-template-columns: minmax(170px,1fr) minmax(0,2fr); }
+  .appShell .detailedRecordCard > .registerActions { grid-column: 1 / -1; grid-template-columns: repeat(4,max-content); }
+  .appShell .journeyDataHeader, .appShell .journeyDataRow { column-gap: 12px; }
+  .appShell .registerSummary { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .appShell .registerSummary > :last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .appShell .caseDrawer.recordPreview { width: 100vw; max-width: none; }
+  .appShell .detailedRecordCard { grid-template-columns: minmax(0,1fr); }
+  .appShell .miniStats { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .appShell .journeyDataHeader { display: none; }
+  .appShell .journeyDataRow, .appShell .journeyList-enquiries .journeyDataRow { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .appShell .journeyDataRow > * { grid-column: auto; }
+  .appShell .journeyActionsCell { grid-column: 1 / -1; display: flex; flex-wrap: wrap; }
+  .appShell .journeyActionsCell .registerActions { grid-template-columns: repeat(4,minmax(0,1fr)); width: 100%; }
+  .appShell .registerActions button { min-height: 40px; }
+  .appShell .recordPreview .caseAtGlance { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+
+/* Density comes from the layout, while labels and case values remain readable. */
+.appShell .journeyList-enquiries :is(.journeyDataHeader,.journeyDataRow) { grid-template-columns: minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.4fr) 150px; }
+.appShell .registerActions button { justify-content: center; position: relative; }
+.appShell .registerActions button span { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; clip-path: inset(50%); overflow: hidden; white-space: nowrap; }
+.appShell .registerState { color: #176582; font-weight: 550; }
+.appShell .enquiryDirectoryFilters { grid-template-columns: repeat(6,minmax(0,1fr)); }
+.appShell .enquiryAdvancedFilters { grid-column: 1 / 6; }
+.appShell .enquiryClearFilters { grid-column: 6; align-self: start; min-height: 34px; }
+.appShell .signalGrid { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; }
+.appShell .signal { min-height: 108px; padding: 14px 16px; }
+.appShell.dashboardMode .pageTitle { min-height: 0; padding: 0; border: 0; background: transparent; margin-bottom: 18px; box-shadow: none; }
+.appShell.dashboardMode .dashboardGrid { grid-template-columns: minmax(0,2.5fr) minmax(280px,1fr); }
+.appShell.dashboardMode .caseRow span b { font-size: .875rem; font-weight: 600; }
+.appShell.dashboardMode .caseRow span small { font-size: .8125rem; line-height: 1.5; }
+.appShell.dashboardMode .caseRow > span:nth-child(4) { font-size: .8125rem; }
+.appShell .caseWindowTopbar { display: flex; }
+.appShell .caseSectionHead .caseSectionDescription { display: none; }
+.appShell .agentClientPanel dl { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px 20px; }
+.appShell .agentClientPanel dl > div { display: block; }
+.appShell .agentClientPanel dt { font-size: .8125rem; }
+.appShell .agentClientPanel dd { font-size: .875rem; margin-top: 2px; }
+.appShell .recordPreview .caseLeftRail { border-radius: 0; }
+.appShell .recordPreview .caseTabs { border-radius: 0; padding: 0; border: 0; }
+@media (max-width: 1050px) {
+  .appShell.dashboardMode .dashboardGrid { grid-template-columns: minmax(0,1fr); }
+  .appShell .enquiryDirectoryFilters { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .appShell .enquiryAdvancedFilters { grid-column: 1 / 3; }
+  .appShell .enquiryClearFilters { grid-column: 3; }
+}
+@media (max-width: 760px) {
+  .appShell .signalGrid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .appShell .journeyList-enquiries .journeyDataRow { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .appShell .enquiryDirectoryFilters { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .appShell .enquiryAdvancedFilters { grid-column: 1; }
+  .appShell .enquiryClearFilters { grid-column: 2; }
+}
+@media (max-width: 440px) {
+  .appShell .agentClientPanel dl { grid-template-columns: minmax(0,1fr); }
+}
+.appShell .caseFollowUpForm { border: 1px solid #dce5eb; border-radius: 6px; margin: 16px 0; }
+.appShell .caseFollowUpForm summary { padding: 10px 14px; font-size: .875rem; color: #176582; cursor: pointer; }
+.appShell .caseFollowUpForm form { padding: 0 14px 14px; }
+.appShell .caseFollowUpForm textarea { width: 100%; resize: vertical; border: 1px solid #c8d7df; border-radius: 6px; padding: 10px; font-family: inherit; }
+.appShell .caseFollowUpEntry { margin: 10px 0; padding: 12px; border-left: 3px solid #176582; background: #edf5f9; }
+.appShell .caseFollowUpEntry :is(strong,span) { display: block; font-size: .875rem; }
+.appShell .caseFollowUpEntry p { margin: 6px 0 0; font-size: .875rem; }
+.appShell .caseDocumentRequests > summary { font-size: .875rem; font-weight: 600; color: #176582; cursor: pointer; }
+.appShell .caseDocumentRequests[open] > summary { margin-bottom: 14px; }
+.appShell .documentCount { background: #eaf2f7; color: #176582; font-size: .8125rem; border-radius: 4px; padding: 2px 6px; }
+.appShell .documentList li { flex-wrap: wrap; gap: 10px; }
+.appShell .documentMeta { min-width: 160px; flex: 1; }
+.appShell .documentMeta p { font-size: .875rem; margin: 4px 0 0; }
+.appShell .recordPreview .caseWindowTopbar button { display: inline-flex; color: #fff; align-items: center; gap: 7px; }
+.appShell .registerLatestNote strong { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.appShell .recordStatusPill { font-size: .75rem; text-transform: none; letter-spacing: 0; font-weight: 550; }
+.appShell .dashboardFilterPanel { margin-bottom: 14px; border: 1px solid #dce5eb; border-radius: 6px; background: #fff; }
+.appShell .dashboardFilterPanel summary { padding: 9px 14px; font-size: .875rem; color: #176582; cursor: pointer; }
+.appShell .dashboardFilterPanel .dashboardFilters { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); margin: 0; border: 0; }
+.appShell .registerCreateAction { padding: 0 16px 14px; display: flex; flex-wrap: wrap; align-items: end; gap: 12px; }
+.appShell .registerCreateAction form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.appShell .registerCreateAction label { display: grid; gap: 4px; font-size: .875rem; }
+.appShell .registerCreateAction select { max-width: 100%; min-width: 230px; border: 1px solid #d2dfe6; border-radius: 6px; padding: 6px 10px; }
+@media (max-width: 760px) { .appShell .dashboardFilterPanel .dashboardFilters { grid-template-columns: repeat(2,minmax(0,1fr)); } }
