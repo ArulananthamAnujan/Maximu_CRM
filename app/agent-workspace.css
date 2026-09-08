@@ -325,3 +325,16 @@
 .appShell .registerCreateAction label { display: grid; gap: 4px; font-size: .875rem; }
 .appShell .registerCreateAction select { max-width: 100%; min-width: 230px; border: 1px solid #d2dfe6; border-radius: 6px; padding: 6px 10px; }
 @media (max-width: 760px) { .appShell .dashboardFilterPanel .dashboardFilters { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+.caseBranchTransfer { margin: 0 24px 16px; padding: 16px; border: 1px solid var(--border, #dbe4ea); border-radius: 12px; background: var(--panel, #fff); font-size: .9375rem; }
+.caseBranchTransferHead { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.caseBranchTransfer p { margin: 6px 0 0; line-height: 1.5; }
+.caseBranchTransferHead .ghostButton { flex-shrink: 0; }
+.caseBranchTransferFields { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 2fr); gap: 16px; margin-top: 16px; }
+.caseBranchTransferFields label { display: grid; gap: 8px; font-weight: 600; }
+.caseBranchTransferFields select, .caseBranchTransferFields textarea { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid #ccd8df; border-radius: 8px; background: white; color: #152e3a; font: inherit; }
+.caseBranchTransferActions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+@media (max-width: 700px) {
+  .caseBranchTransfer { margin-inline: 12px; }
+  .caseBranchTransferHead { align-items: flex-start; flex-direction: column; }
+  .caseBranchTransferFields { grid-template-columns: minmax(0, 1fr); }
+}

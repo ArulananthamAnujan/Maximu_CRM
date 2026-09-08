@@ -1055,6 +1055,35 @@ export async function POST(request: Request) {
       );
     }
 
+    if (action === "transfer_branch") {
+      if (session.identity.role !== "super_admin")
+        throw new LiveAccessError(403, "Only Super Admin can transfer cases between branches.");
+      const caseId = required(body.caseId, "Case");
+      const destinationBranchId = required(body.destinationBranchId, "Destination branch");
+      const reason = required(body.reason, "Transfer reason");
+      if (reason.length > 2000) throw new InputError("Keep the transfer reason within 2,000 characters.");
+      try {
+        const transfer = await supabaseRequest<Json>("/rest/v1/rpc/transfer_case_branch", {
+          method: "POST",
+          body: JSON.stringify({
+            p_case_id: caseId,
+            p_destination_branch_id: destinationBranchId,
+            p_expected_branch_id: nullable(body.expectedBranchId),
+            p_reason: reason,
+          }),
+        }, token);
+        return appendRefreshCookies(Response.json({ ok: true, transfer }), session.refreshed, request);
+      } catch (error) {
+        if (error instanceof SupabaseError) {
+          let detail: { code?: string; message?: string } = {};
+          try { detail = JSON.parse(error.message); } catch { /* Non-JSON upstream error. */ }
+          if (["22023", "40001", "42501"].includes(detail.code ?? ""))
+            return Response.json({ error: detail.message || "The transfer could not be completed." }, { status: detail.code === "42501" ? 403 : detail.code === "40001" ? 409 : 400 });
+        }
+        throw error;
+      }
+    }
+
     // The visa stage cannot be entered without the expiry date it is worked
     // against. Rather than sending staff to another screen to supply it, the
     // pipeline control asks for it where the requirement appears.

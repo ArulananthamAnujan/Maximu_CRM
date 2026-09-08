@@ -743,8 +743,25 @@ test("a case officer can work a colleague's branch case", async ({ page }) => {
   await expect(drawer.getByRole("button", { name: /move to student/i })).toBeEnabled();
   await expect(drawer.getByRole("button", { name: /^edit case$/i })).toBeEnabled();
   await expect(drawer.getByRole("tab", { name: /finance/i })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Transfer branch", exact: true })).toHaveCount(0);
   // Branch work does not grant management authority to archive a case.
   await expect(drawer.getByRole("button", { name: /request archive/i })).toBeVisible();
+});
+
+test("Super Admin transfers a case inline and sees the destination branch", async ({ page }) => {
+  await signIn(page, OWNER);
+  await createEnquiry(page, "Branch Transfer QA", "branch-transfer@maximus.test");
+  const { drawer } = await openCaseDrawer(page, "Branch Transfer QA");
+  await drawer.getByRole("button", { name: "Transfer branch", exact: true }).click();
+  await drawer.getByLabel("Destination branch", { exact: true }).selectOption({ label: "Colombo" });
+  const confirm = drawer.getByRole("button", { name: "Confirm branch transfer", exact: true });
+  await expect(confirm).toBeDisabled();
+  await drawer.getByLabel("Transfer reason", { exact: true }).fill("Client requested Colombo office");
+  await confirm.click();
+  await expect(drawer.getByRole("status")).toContainText("Transferred to Colombo", { timeout: 25_000 });
+  await expect(drawer.locator(".caseWindowTopbar")).toContainText("Colombo");
+  await drawer.getByRole("tab", { name: "Activity & notes", exact: true }).click();
+  await expect(drawer).toContainText("Client requested Colombo office", { timeout: 25_000 });
 });
 
 test("a case officer's ledger holds no commission invoices", async ({
