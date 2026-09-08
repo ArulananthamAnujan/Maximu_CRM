@@ -105,6 +105,7 @@ expect_scope "another branch has case write permission" "other_branch_can_modify
 
 echo
 probe 11_probe_branch_work.sql
+probe 12_probe_branch_transfer.sql
 
 echo "== Duplicate clients are found before a second record is made =="
 duplicates="$(probe 08_probe_duplicates.sql 2>&1 | grep -v '^SET$\|Output format\|^UPDATE')"

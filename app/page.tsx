@@ -7,6 +7,7 @@ import { ClientProfileEditor } from "./client-profile-editor";
 import { useOverlayFocus } from "./use-overlay-focus";
 import { CaseDocumentRequests } from "./case-document-requests";
 import { CaseFollowUpForm } from "./case-follow-up-form";
+import { CaseBranchTransfer } from "./case-branch-transfer";
 import {
   Activity,
   AlertTriangle,
@@ -7954,6 +7955,9 @@ function CaseDrawer({
   refresh,
   canModify,
   canArchive,
+  canTransferBranch,
+  branches,
+  onBranchTransferred,
   lifecycleReady,
   schemaWarning,
   storageConnected,
@@ -7983,6 +7987,9 @@ function CaseDrawer({
   refresh: () => Promise<void>;
   canModify: boolean;
   canArchive: boolean;
+  canTransferBranch: boolean;
+  branches: BranchRecord[];
+  onBranchTransferred: (transfer: { branchId: string; branch: string }) => Promise<void>;
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
@@ -8005,6 +8012,9 @@ function CaseDrawer({
       refresh={refresh}
       canModify={canModify}
       canArchive={canArchive}
+      canTransferBranch={canTransferBranch}
+      branches={branches}
+      onBranchTransferred={onBranchTransferred}
       lifecycleReady={lifecycleReady}
       schemaWarning={schemaWarning}
       storageConnected={storageConnected}
@@ -8198,6 +8208,9 @@ function CaseDrawerBody({
   refresh,
   canModify,
   canArchive,
+  canTransferBranch,
+  branches,
+  onBranchTransferred,
   lifecycleReady,
   schemaWarning,
   storageConnected,
@@ -8227,6 +8240,9 @@ function CaseDrawerBody({
   refresh: () => Promise<void>;
   canModify: boolean;
   canArchive: boolean;
+  canTransferBranch: boolean;
+  branches: BranchRecord[];
+  onBranchTransferred: (transfer: { branchId: string; branch: string }) => Promise<void>;
   lifecycleReady: boolean;
   schemaWarning: string;
   storageConnected: boolean;
@@ -8560,6 +8576,14 @@ function CaseDrawerBody({
             <X size={20} />
           </button>
         </div>
+
+        {canTransferBranch && caseId && <CaseBranchTransfer
+          caseId={caseId}
+          branchId={item.branchId ?? null}
+          branchName={item.branch}
+          branches={branches}
+          onTransferred={async transfer => { await onBranchTransferred(transfer); await reload(); }}
+        />}
 
         <div className="caseWorkspaceLayout">
           <aside className="caseLeftRail">
@@ -13800,6 +13824,17 @@ export default function Home() {
           storageConnected={storageConnected}
           canModify={true}
           canArchive={role !== "staff"}
+          canTransferBranch={role === "super_admin"}
+          branches={branches}
+          onBranchTransferred={async transfer => {
+            if (!selected) return;
+            const transferredId = selected.dbId;
+            setSelected(previous => previous && previous.dbId === transferredId ? { ...previous, ...transfer } : previous);
+            setCases(previous => previous.map(record => record.dbId === transferredId ? { ...record, ...transfer } : record));
+            enquiryPageCacheRef.current.clear();
+            setEnquiriesLoaded(false);
+            await loadWorkspace();
+          }}
           item={selected}
           close={() => {
             if (caseWindowId) {
