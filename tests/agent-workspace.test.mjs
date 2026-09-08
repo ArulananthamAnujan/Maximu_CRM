@@ -46,6 +46,9 @@ async function fixture(run, options = {}) {
       const limit = Number(url.searchParams.get('limit') || 50);
       return send(200, cases.slice(offset, offset + limit), { 'Content-Range': `${offset}-${offset + limit - 1}/5119` });
     }
+    if (table === 'legacy_external_keys') return send(200, options.noteSources || []);
+    if (table === 'legacy_activity_events') return send(200, options.legacyActivity || []);
+    if (table === 'case_notes') return options.failNotes ? send(503, { message: 'Temporary notes outage' }) : send(200, options.notes || []);
     if (table === 'branches') return send(200, [{ id: BRANCH, name: 'Test office' }]);
     if (table === 'client_education_history') return send(200, options.denyHistory ? [] : [{ id: id(20), client_id: CLIENT, institution: 'Test institution', qualification: 'Degree', currently_studying: true, details: { legacy_data: { source: 'retained' } } }]);
     if (table === 'invoices') return send(200, [{ id: id(30), total: 100, paid: 0, currency: 'AUD', state: options.invoiceState ?? 'sent', client_id: CLIENT, case_id: id(1) }]);
@@ -219,4 +222,36 @@ test('payment request IDs reach the atomic operation unchanged', async () => fix
   assert.equal(rpc.body.p_invoice, id(30));
   assert.equal(rpc.body.p_action, 'payment');
   assert.equal(requests.filter(r => r.method !== 'GET' && !r.url.pathname.includes('/rpc/')).length, 0);
+}));
+
+
+test('enquiry summaries retain saved note text and distinguish an unavailable history', async () => {
+  await fixture(async ({ call }) => {
+    const response = await call('/api/crm/enquiries?limit=50');
+    const result = await response.json();
+    assert.equal(result.records[0].latestNote, 'Existing note must remain visible');
+    assert.equal(result.records[0].notesUnavailable, false);
+  }, { notes: [{ case_id: id(1), author_id: PROFILE, body: 'Existing note must remain visible', created_at: '2024-10-17T05:23:00Z' }] });
+  await fixture(async ({ call }) => {
+    const result = await (await call('/api/crm/enquiries?limit=50')).json();
+    assert.equal(result.records[0].notesUnavailable, true);
+  }, { failNotes: true });
+});
+
+
+test('recovered notes retain their source author and date and appear once in the case history', async () => fixture(async ({ call }) => {
+  const directory = await (await call('/api/crm/enquiries')).json();
+  assert.equal(directory.records[0].latestNoteAuthor, 'Original counsellor');
+  assert.equal(directory.records[0].latestNoteDateLabel, '23/09/2024 02:05 pm');
+  const response = await call('/api/crm/casefile?caseId=' + id(1));
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  const entries = result.timeline.filter(entry => entry.detail === 'Original conversation');
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].actorName, 'Original counsellor');
+  assert.equal(entries[0].dateLabel, '23/09/2024 02:05 pm');
+}, {
+  notes: [{ id: id(40), case_id: id(1), author_id: PROFILE, body: 'Original conversation', created_at: '2024-09-23T04:05:00Z' }],
+  noteSources: [{ target_id: id(40), source_key: 'legacy:note:1', metadata: { legacy_data: { author: 'Original counsellor', source_created_at: '23/09/2024 02:05 pm' } } }],
+  legacyActivity: [{ id: id(41), source_entity_type: 'notes', source_key: 'legacy:note:1', event_type: 'note', body: 'Original conversation', occurred_at: '2024-09-23T04:05:00Z' }],
 }));

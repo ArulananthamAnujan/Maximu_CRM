@@ -38,7 +38,7 @@ test("large enquiry directories are server-paged, cached and permission scoped",
   assert.match(route, /const MAX_PAGE_SIZE = 100/);
   assert.match(route, /supabasePageRequest/);
   assert.match(route, /limit=\$\{input\.limit\}&offset=\$\{input\.offset\}/);
-  assert.match(route, /restByIds\("case_notes", "case_id,author_id,body,created_at"/);
+  assert.match(route, /restByIds\("case_notes", "id,case_id,author_id,body,created_at"/);
   assert.match(route, /restByIds\("documents", "case_id,state"/);
   assert.match(route, /private, no-store/);
   assert.match(route, /matchedCaseIds\.length > 200/);

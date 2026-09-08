@@ -145,7 +145,9 @@ type CaseRecord = {
   visaCategory: string;
   latestNote: string;
   latestNoteAt: string;
+  latestNoteDateLabel?: string;
   latestNoteAuthor: string;
+  notesUnavailable?: boolean;
   enquiryStatus?: string;
   detailedStatus?: string;
   nextFollowUpAt?: string;
@@ -217,6 +219,7 @@ type ApplicationRow = {
   latestNote: string;
   latestNoteBy: string;
   latestNoteAt: string;
+  latestNoteDateLabel?: string;
   archived: boolean;
 };
 type VisaMatterRow = {
@@ -250,6 +253,7 @@ type VisaMatterRow = {
   latestNote: string;
   latestNoteBy: string;
   latestNoteAt: string;
+  latestNoteDateLabel?: string;
 };
 // A client who already looks like the person being entered, and why they
 // matched. Shown before a second record is created for one human being.
@@ -407,6 +411,8 @@ type ChecklistItem = {
   due_at: string | null;
 };
 type CaseNote = {
+  sourceAuthorName?: string;
+  sourceDateLabel?: string;
   id: string;
   body: string;
   visibility: string;
@@ -2556,7 +2562,7 @@ function CaseWorkspace({
           <div className="enquiryDirectoryFilters">
             <label>
               <span>Office</span>
-              <select value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
+              <select aria-label="Office" value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
                 <option value="">All permitted offices</option>
                 {officeOptions.map((office) => <option key={office.value} value={office.value}>{office.label}</option>)}
               </select>
@@ -2712,8 +2718,8 @@ function CaseWorkspace({
                   </button>
                   <div className="journeyNoteCell">
                     <button type="button" onClick={() => onQuickAction(record, "timeline")}>
-                      <strong title={record.latestNote || "No notes yet"}>{record.latestNote || "No notes yet"}</strong>
-                      <span>{record.latestNoteAt ? `${record.latestNoteAuthor || "Team member"} · ${orgDate(record.latestNoteAt)}` : record.due ? `Follow up ${orgDate(record.due)}` : "No follow-up recorded"}</span>
+                      <strong title={record.latestNote || ""}>{record.notesUnavailable ? "Notes could not be loaded" : record.latestNote || "No notes yet"}</strong>
+                      <span>{record.notesUnavailable ? "Open notes to retry" : record.latestNoteAt ? `${record.latestNoteAuthor || "Team member"} · ${record.latestNoteDateLabel || orgDate(record.latestNoteAt)}` : record.due ? `Follow up ${orgDate(record.due)}` : "No follow-up recorded"}</span>
                     </button>
                   </div>
                   <div className="journeyActionsCell">
@@ -2808,8 +2814,8 @@ function OperationalFilters({ label, fields, values, onChange, onClear, active }
   return <section className="operationalFilters" aria-label={`${label} filters`}>
     <div className="operationalFilterHead"><strong><SlidersHorizontal size={16} /> Filters</strong><button type="button" className="ghostButton" disabled={!active} onClick={onClear}><X size={14} /> Clear filters</button></div>
     <div className="operationalFilterGrid">{fields.map(field => <label key={field.key}><span>{field.label}</span>{field.options
-      ? <select value={values[field.key] || ""} onChange={event => onChange(field.key, event.target.value)}><option value="">All</option>{field.options.map(option => <option key={option} value={option}>{humanise(option)}</option>)}</select>
-      : <input type={field.type || "text"} value={values[field.key] || ""} onChange={event => onChange(field.key, event.target.value)} />}</label>)}</div>
+      ? <select aria-label={field.label} value={values[field.key] || ""} onChange={event => onChange(field.key, event.target.value)}><option value="">All</option>{field.options.map(option => <option key={option} value={option}>{humanise(option)}</option>)}</select>
+      : <input aria-label={field.label} type={field.type || "text"} value={values[field.key] || ""} onChange={event => onChange(field.key, event.target.value)} />}</label>)}</div>
   </section>;
 }
 
@@ -2893,7 +2899,7 @@ function ApplicationsBoard({
               <div className="registerSummary">
                 <span><small>Course & intake</small><strong>{row.course || "Course not recorded"}</strong><span>{[row.campus, row.intake].filter(Boolean).join(" · ") || "Intake not set"}</span></span>
                 <span><small>Application reference</small><strong>{row.reference || "Not issued"}</strong><span>{row.deadlineOn ? `Due ${orgDate(row.deadlineOn)}` : row.submittedOn ? `Submitted ${orgDate(row.submittedOn)}` : "Not submitted"}</span></span>
-                <button type="button" className="registerLatestNote" onClick={() => onPreview(row.caseId, "timeline")}><small>Latest note</small><strong>{row.latestNote || row.notes || "No notes yet"}</strong><span>{row.latestNoteAt ? orgDateTime(row.latestNoteAt) : "Add a note"}</span></button>
+                <button type="button" className="registerLatestNote" onClick={() => onPreview(row.caseId, "timeline")}><small>Latest note</small><strong>{row.latestNote || row.notes || "No notes yet"}</strong><span>{row.latestNoteAt ? (row.latestNoteDateLabel || orgDateTime(row.latestNoteAt)) : "Add a note"}</span></button>
               </div>
               <RegisterActions name={row.client || "client"} onNote={() => onPreview(row.caseId, "timeline")} onEmail={() => onPreview(row.caseId, "communication")} onDocuments={() => onPreview(row.caseId, "documents")} onOpen={() => onOpen(row.caseId)} />
               <details className="registerAllDetails"><summary>All application details</summary>
@@ -2908,7 +2914,7 @@ function ApplicationsBoard({
                 <span><small>Branch &amp; passport</small><strong>{[row.branch, row.passportMasked && `Passport ${row.passportMasked}`].filter(Boolean).join(" · ") || "Not recorded"}</strong></span>
                 <span><small>Documents</small><strong>{row.documentSummary}</strong></span>
                 <span><small>Application note</small><strong>{row.notes || "No application note"}</strong></span>
-                <span><small>Latest case note</small><strong>{row.latestNote || "No case note"}{row.latestNoteAt ? ` · ${row.latestNoteBy || "Branch staff"} ${orgDateTime(row.latestNoteAt)}` : ""}</strong></span>
+                <span><small>Latest case note</small><strong>{row.latestNote || "No case note"}{row.latestNoteAt ? ` · ${row.latestNoteBy || "Branch staff"} ${(row.latestNoteDateLabel || orgDateTime(row.latestNoteAt))}` : ""}</strong></span>
               </div>
               </details>
             </article>
@@ -2985,7 +2991,7 @@ function VisaMattersBoard({
               <div className="registerSummary">
                 <span><small>Visa & destination</small><strong>{row.subclass || row.matterType || "Type not recorded"}</strong><span>{row.destination || "Destination not recorded"}</span></span>
                 <span><small>Lodgement & next date</small><strong>{row.trn || row.reference || "Reference not issued"}</strong><span className={overdue(row.informationDueOn || row.currentVisaExpiry) ? "overdueFact" : ""}>{row.informationDueOn && !row.informationProvidedOn ? `Information due ${orgDate(row.informationDueOn)}` : row.currentVisaExpiry ? `Visa expires ${orgDate(row.currentVisaExpiry)}` : "No deadline recorded"}</span></span>
-                <button type="button" className="registerLatestNote" onClick={() => onPreview(row.caseId, "timeline")}><small>Latest note</small><strong>{row.latestNote || "No notes yet"}</strong><span>{row.latestNoteAt ? orgDateTime(row.latestNoteAt) : "Add a note"}</span></button>
+                <button type="button" className="registerLatestNote" onClick={() => onPreview(row.caseId, "timeline")}><small>Latest note</small><strong>{row.latestNote || "No notes yet"}</strong><span>{row.latestNoteAt ? (row.latestNoteDateLabel || orgDateTime(row.latestNoteAt)) : "Add a note"}</span></button>
               </div>
               <RegisterActions name={row.client || "client"} onNote={() => onPreview(row.caseId, "timeline")} onEmail={() => onPreview(row.caseId, "communication")} onDocuments={() => onPreview(row.caseId, "documents")} onOpen={() => onOpen(row.caseId)} />
               <details className="registerAllDetails"><summary>All visa details</summary>
@@ -2998,7 +3004,7 @@ function VisaMattersBoard({
                 <span><small>Decision / outcome</small><strong>{[row.decisionOn && orgDate(row.decisionOn), row.outcome && humanise(row.outcome)].filter(Boolean).join(" · ") || "Pending"}</strong></span>
                 <span><small>Branch &amp; passport</small><strong>{[row.branch, row.passportMasked && `Passport ${row.passportMasked}`].filter(Boolean).join(" · ") || "Not recorded"}</strong></span>
                 <span><small>Documents</small><strong>{row.documentSummary}</strong></span>
-                <span><small>Latest case note</small><strong>{row.latestNote || "No case note"}{row.latestNoteAt ? ` · ${row.latestNoteBy || "Branch staff"} ${orgDateTime(row.latestNoteAt)}` : ""}</strong></span>
+                <span><small>Latest case note</small><strong>{row.latestNote || "No case note"}{row.latestNoteAt ? ` · ${row.latestNoteBy || "Branch staff"} ${(row.latestNoteDateLabel || orgDateTime(row.latestNoteAt))}` : ""}</strong></span>
               </div>
               </details>
             </article>
@@ -8072,6 +8078,7 @@ type CaseFile = {
     detail: string | null;
     actorId: string | null;
     actorName: string;
+    dateLabel?: string;
   }[];
 };
 
@@ -8249,6 +8256,8 @@ function CaseDrawerBody({
   const [file, setFile] = useState<CaseFile | null>(null);
   const [newItem, setNewItem] = useState("");
   const [newNote, setNewNote] = useState("");
+  const [activityFilter, setActivityFilter] = useState<"all" | "notes">("all");
+  const [noteSearch, setNoteSearch] = useState("");
   const [working, setWorking] = useState(false);
   const [syncingMail, setSyncingMail] = useState(false);
   const [caseError, setCaseError] = useState("");
@@ -8500,6 +8509,10 @@ function CaseDrawerBody({
     .filter((task) => String(task.status ?? "open") !== "completed")
     .slice(0, 3);
   const recentActivity = (file?.timeline ?? []).slice(0, 5);
+  const visibleActivity = (file?.timeline ?? []).filter(entry =>
+    (activityFilter === "all" || ["note", "private_note"].includes(entry.kind)) &&
+    (!noteSearch.trim() || `${entry.title} ${entry.detail || ""} ${entry.actorName}`.toLowerCase().includes(noteSearch.trim().toLowerCase())),
+  );
   const overviewApplications = (file?.applications ?? []).slice(0, 2);
   const completedDocuments = activeCaseDocuments.filter(settledDocument).length;
   const latestCommunication = file?.communications[0] ?? null;
@@ -8785,7 +8798,7 @@ function CaseDrawerBody({
                 <div className="caseLastNote">
                   <span>LAST NOTE</span>
                   <p>{latestNote.body}</p>
-                  <small>{orgDateTime(latestNote.created_at)} · {item.branch}</small>
+                  <small>{latestNote.sourceAuthorName} · {latestNote.sourceDateLabel || orgDateTime(latestNote.created_at)} · {item.branch}</small>
                 </div>
               )}
               {openCaseTasks.length > 0 && (
@@ -8816,7 +8829,7 @@ function CaseDrawerBody({
                     <div>
                       <strong>{humanise(entry.title)}</strong>
                       <small>
-                        {entry.actorName} · {orgDateTime(entry.at)} · {item.branch}
+                        {entry.actorName} · {entry.dateLabel || orgDateTime(entry.at)} · {item.branch}
                       </small>
                     </div>
                   </li>
@@ -9457,13 +9470,9 @@ function CaseDrawerBody({
 
         {tab === "timeline" && (
           <section className="caseWorkPanel">
-            <span className="kicker">FILE NOTE AND ACTIVITY</span>
-            <p className="caseWorkEmpty">
-              Every note, stage change and recorded action, newest first. Each
-              entry identifies the staff member who performed it.
-            </p>
+            <div className="caseNotesHeading"><div><span className="kicker">CLIENT HISTORY</span><h3>Notes & activity</h3><p>Keep the conversation, decisions and next steps together.</p></div><span className="caseNotesCount">{file?.notes.length ?? 0} notes</span></div>
             <form
-              className="inlineAdd"
+              className="caseNoteComposer"
               onSubmit={async (event) => {
                 event.preventDefault();
                 if (!newNote.trim()) return;
@@ -9485,7 +9494,7 @@ function CaseDrawerBody({
                 aria-label="Add a file note"
               />
               <button
-                className="ghostButton"
+                className="primaryButton"
                 disabled={working || !newNote.trim()}
               >
                 <Plus size={14} />
@@ -9498,17 +9507,18 @@ function CaseDrawerBody({
               <span>{orgDateTime(task.due_at) || "Date not recorded"}</span>
               {task.description ? <p>{text(task.description)}</p> : null}
             </article>)}
-            {file && file.timeline.length === 0 ? (
-              <p className="caseWorkEmpty">Nothing recorded yet.</p>
+            <div className="caseNotesTools"><div role="group" aria-label="History type"><button type="button" aria-pressed={activityFilter === "all"} onClick={() => setActivityFilter("all")}>All activity</button><button type="button" aria-pressed={activityFilter === "notes"} onClick={() => setActivityFilter("notes")}>Notes only</button></div><input aria-label="Search notes and activity" placeholder="Search history or staff name" value={noteSearch} onChange={event => setNoteSearch(event.target.value)} /></div>
+            {file && visibleActivity.length === 0 ? (
+              <p className="caseWorkEmpty">{file.timeline.length ? "No history matches these filters." : "No notes or activity recorded yet."}</p>
             ) : (
               <ol className="timeline">
-                {(file?.timeline ?? []).map((entry) => (
+                {visibleActivity.map((entry) => (
                   <li key={entry.id} className={`kind-${entry.kind}`}>
                     <div>
                       <b>{humanise(entry.title)}</b>
                       {entry.detail && <p>{entry.detail}</p>}
                       <small>
-                        {entry.actorName} · {orgDateTime(entry.at)} · {item.branch}
+                        {entry.actorName} · {entry.dateLabel ? `${entry.dateLabel} (old CRM)` : orgDateTime(entry.at)} · {item.branch}
                         {entry.kind === "private_note" ? " · private" : ""}
                       </small>
                     </div>

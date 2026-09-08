@@ -1,3 +1,4 @@
+import { noteProvenance } from "@/server/case-notes";
 import { financeRequestId, financeRpc, recordInvoiceAction, FinanceInputError } from "@/server/finance";
 import {
   appendRefreshCookies,
@@ -97,7 +98,7 @@ export async function GET(request: Request) {
       caseNotes,
     ] = await Promise.all([
       safeRestPaged(
-        `clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle,intake_profile,updated_at&archived_at=is.null${portalWorkspace ? "" : "&current_lifecycle=neq.enquiry"}&order=updated_at.desc`,
+        `clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle,custom_fields,updated_at&archived_at=is.null${portalWorkspace ? "" : "&current_lifecycle=neq.enquiry"}&order=updated_at.desc`,
         token,
         CLIENT_CASE_LIMIT,
         degraded,
@@ -218,7 +219,7 @@ export async function GET(request: Request) {
         degraded,
       ),
       safeRest(
-        "case_notes?select=case_id,author_id,body,created_at,cases!inner(lifecycle_stage)&cases.lifecycle_stage=neq.enquiry&order=created_at.desc&limit=5000",
+        "case_notes?select=id,case_id,author_id,body,created_at,cases!inner(lifecycle_stage)&cases.lifecycle_stage=neq.enquiry&order=created_at.desc&limit=5000",
         token,
         degraded,
       ),
@@ -304,6 +305,7 @@ export async function GET(request: Request) {
       const key = String(note.case_id);
       if (!latestNoteByCase.has(key)) latestNoteByCase.set(key, note);
     }
+    const noteSources = await noteProvenance([...latestNoteByCase.values()], token).catch(() => new Map<string, Json>());
     const latestJourneyByCase = new Map<string, Json>();
     for (const milestone of stageHistory)
       latestJourneyByCase.set(String(milestone.case_id), milestone);
@@ -454,7 +456,8 @@ export async function GET(request: Request) {
             "",
           latestNote: latestNote.body ?? "",
           latestNoteAt: latestNote.created_at ?? "",
-          latestNoteAuthor: latestNoteAuthor.display_name ?? "",
+          latestNoteDateLabel: noteSources.get(String(latestNote.id))?.dateLabel ?? "",
+          latestNoteAuthor: noteSources.get(String(latestNote.id))?.authorName ?? latestNoteAuthor.display_name ?? "",
         };
       }),
       tasks: tasks.map((row) => ({
@@ -692,8 +695,9 @@ export async function GET(request: Request) {
           notes: details.notes ?? "",
           documentSummary: documentSummaryByCase.get(String(row.case_id)) ?? "No documents",
           latestNote: latestNote.body ?? "",
-          latestNoteBy: latestNoteAuthor.display_name ?? "",
+          latestNoteBy: noteSources.get(String(latestNote.id))?.authorName ?? latestNoteAuthor.display_name ?? "",
           latestNoteAt: latestNote.created_at ?? "",
+          latestNoteDateLabel: noteSources.get(String(latestNote.id))?.dateLabel ?? "",
           archived: Boolean(row.archived_at),
         };
       }),
@@ -736,8 +740,9 @@ export async function GET(request: Request) {
           branch: branchById.get(String(parent.branch_id))?.name ?? "",
           documentSummary: documentSummaryByCase.get(String(row.case_id)) ?? "No documents",
           latestNote: latestNote.body ?? "",
-          latestNoteBy: latestNoteAuthor.display_name ?? "",
+          latestNoteBy: noteSources.get(String(latestNote.id))?.authorName ?? latestNoteAuthor.display_name ?? "",
           latestNoteAt: latestNote.created_at ?? "",
+          latestNoteDateLabel: noteSources.get(String(latestNote.id))?.dateLabel ?? "",
         };
       }),
     };

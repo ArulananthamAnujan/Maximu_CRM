@@ -84,5 +84,15 @@ begin
 end;
 $$;
 
+-- Original note authors/dates are available only when the caller can read
+-- the corresponding note. Import controls remain administrator-only.
+drop policy if exists legacy_note_provenance_read on public.legacy_external_keys;
+create policy legacy_note_provenance_read on public.legacy_external_keys
+for select to authenticated using (
+  organisation_id=public.current_organisation_id()
+  and entity_type='notes' and target_table='case_notes'
+  and exists(select 1 from public.case_notes n where n.id=target_id)
+);
+
 comment on function public.can_modify_client(uuid) is 'All active internal colleagues may edit client records in their branch; owners retain organisation-wide access.';
 commit;

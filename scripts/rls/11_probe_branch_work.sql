@@ -43,4 +43,16 @@ set test.uid = '00000000-0000-4000-8000-000000000001';
 do $$ begin
  if not exists(select 1 from public.cases where id='00000000-0000-4000-8000-00000000f101') then raise exception 'Super admin cannot see staff-created case'; end if;
 end $$;
+insert into public.case_notes (id,organisation_id,case_id,author_id,body)
+values ('00000000-0000-4000-8000-00000000f103','00000000-0000-4000-8000-00000000aaaa','00000000-0000-4000-8000-00000000f101','00000000-0000-4000-8000-000000000001','Original branch note');
+insert into public.legacy_external_keys (id,organisation_id,source_system,entity_type,source_key,target_table,target_id,metadata)
+values ('00000000-0000-4000-8000-00000000f104','00000000-0000-4000-8000-00000000aaaa','legacy_maximus','notes','branch-note-qa','case_notes','00000000-0000-4000-8000-00000000f103','{"legacy_data":{"author":"Original counsellor"}}');
+set test.uid = '00000000-0000-4000-8000-000000000009';
+do $$ begin
+ if not exists(select 1 from public.legacy_external_keys where id='00000000-0000-4000-8000-00000000f104') then raise exception 'Branch staff cannot read original note attribution'; end if;
+end $$;
+set test.uid = '00000000-0000-4000-8000-000000000010';
+do $$ begin
+ if exists(select 1 from public.legacy_external_keys where id='00000000-0000-4000-8000-00000000f104') then raise exception 'Cross-branch note attribution exposed'; end if;
+end $$;
 \echo 'Branch creation, editing, portal permission and audit visibility passed.'

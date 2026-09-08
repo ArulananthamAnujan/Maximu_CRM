@@ -666,20 +666,21 @@ test("an owner creates a staff account with secure setup instructions", async ({
   await navigateTo(page, "Staff & Masters");
   await page.getByRole("button", { name: /add staff member/i }).click();
 
+  const accountEmail = `browser.officer.${Date.now()}@maximus.test`;
   const form = page.locator(".stackedForm");
   await form.locator('input[name="displayName"]').fill("Browser Made Officer");
   await form
     .locator('input[name="email"]')
-    .fill("browser.officer@maximus.test");
+    .fill(accountEmail);
   await form.locator('select[name="level"]').selectOption("staff");
   await form.locator('input[name="department"]').fill("Admissions");
   await form.getByRole("button", { name: /create staff account/i }).click();
 
   const handover = page.locator(".handoverPanel");
   await expect(handover).toBeVisible({ timeout: 25_000 });
-  await expect(handover).toContainText(/secure account setup email|secure setup link/i);
+  await expect(handover).toContainText(/account setup email submitted/i);
   await expect(page.locator(".boardTable").first()).toContainText(
-    "browser.officer@maximus.test",
+    accountEmail,
   );
 });
 
@@ -836,6 +837,8 @@ test("the case workspace stays bounded at desktop and phone widths", async ({ pa
 
 
 test("record preview saves notes and preserves the register search when dismissed", async ({ page }) => {
+  const nativeDialogs: string[] = [];
+  page.on("dialog", async dialog => { nativeDialogs.push(dialog.type()); await dialog.dismiss(); });
   await signIn(page, OFFICER);
   const name = `Preview Notes ${Date.now()}`;
   await createEnquiry(page, name, `preview-${Date.now()}@example.test`);
@@ -850,10 +853,23 @@ test("record preview saves notes and preserves the register search when dismisse
   await drawer.getByRole("button", { name: "Record", exact: true }).click();
   await expect(drawer.locator(".timeline")).toContainText("Call completed; awaiting certified transcript.");
   await expect(drawer.getByRole("tab", { name: "Activity & notes", exact: true })).toHaveAttribute("aria-selected", "true");
+  await drawer.getByRole("textbox", { name: "Add a file note", exact: true }).fill("Certified transcript received; application can proceed.");
+  await drawer.getByRole("button", { name: "Record", exact: true }).click();
+  await expect(drawer.locator(".timeline")).toContainText("Certified transcript received; application can proceed.");
+  await expect(drawer.locator(".timeline")).toContainText("Call completed; awaiting certified transcript.");
+  await drawer.getByRole("button", { name: "Notes only", exact: true }).click();
+  await drawer.getByRole("textbox", { name: "Search notes and activity", exact: true }).fill("Call completed");
+  await expect(drawer.locator(".timeline")).toContainText("Call completed; awaiting certified transcript.");
+  await expect(drawer.locator(".timeline")).not.toContainText("Certified transcript received; application can proceed.");
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveCount(0);
   await expect(search).toHaveValue(name);
   await expect(row).toBeFocused();
+  await row.click();
+  await drawer.getByRole("tab", { name: "Activity & notes", exact: true }).click();
+  await expect(drawer.locator(".timeline")).toContainText("Call completed; awaiting certified transcript.");
+  await expect(drawer.locator(".timeline")).toContainText("Certified transcript received; application can proceed.");
+  expect(nativeDialogs).toEqual([]);
 });
 
 test("case document requests stay in the preview and retain the existing checklist", async ({ page }) => {
