@@ -12,8 +12,8 @@ do $$ begin
 end $$;
 update public.clients set preferred_name='Shared edit' where id='00000000-0000-4000-8000-00000000f100';
 set test.uid = '00000000-0000-4000-8000-000000000001';
-insert into public.education_applications (id,organisation_id,case_id,institution)
-values ('00000000-0000-4000-8000-00000000f102','00000000-0000-4000-8000-00000000aaaa','00000000-0000-4000-8000-00000000f101','Owner action in branch');
+insert into public.education_applications (id,organisation_id,case_id,institution,course)
+values ('00000000-0000-4000-8000-00000000f102','00000000-0000-4000-8000-00000000aaaa','00000000-0000-4000-8000-00000000f101','Owner action in branch','Branch course');
 set test.uid = '00000000-0000-4000-8000-000000000011';
 do $$ begin
  if not exists(select 1 from public.clients where id='00000000-0000-4000-8000-00000000f100' and preferred_name='Shared edit') then raise exception 'Branch admin cannot see shared work'; end if;
