@@ -35,8 +35,8 @@ test("staff removal transfers live ownership and preserves historical profile at
   assert.match(migration, /transfer_staff_ownership/);
   assert.match(migration, /Historical foreign keys continue pointing at the retired/);
   assert.match(admin, /replacementProfileId/);
-  assert.match(admin, /staff\.removed/);
-  assert.match(page, /Transfer and remove/);
+  assert.match(read("supabase/migrations/0043_staff_account_removal.sql"), /staff\.removed/);
+  assert.match(page, /Delete account/);
 });
 
 test("master configuration is a working owner-managed screen", () => {

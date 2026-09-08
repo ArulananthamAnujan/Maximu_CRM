@@ -17,7 +17,8 @@ create table if not exists storage.buckets (
 );
 create table if not exists auth.users (
   id uuid primary key,
-  email text
+  email text,
+  deleted_at timestamptz
 );
 -- auth.uid() reads the impersonated user from a session GUC.
 create or replace function auth.uid() returns uuid

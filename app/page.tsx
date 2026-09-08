@@ -8,6 +8,7 @@ import { useOverlayFocus } from "./use-overlay-focus";
 import { CaseDocumentRequests } from "./case-document-requests";
 import { CaseFollowUpForm } from "./case-follow-up-form";
 import { CaseBranchTransfer } from "./case-branch-transfer";
+import { StaffDeleteDialog } from "./staff-delete-dialog";
 import {
   Activity,
   AlertTriangle,
@@ -7174,14 +7175,14 @@ function AdminView({
     { profile_id: string; client_id: string }[]
   >([]);
   const [settings, setSettings] = useState<MasterSettings | null>(null);
-  const [replacementByProfile, setReplacementByProfile] = useState<Record<string, string>>({});
+  const [deletingStaff, setDeletingStaff] = useState<AdminProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
   const [adding, setAdding] = useState(false);
   const [addingBranch, setAddingBranch] = useState(false);
   const [staffSearch, setStaffSearch] = useState("");
-  const [staffStatus, setStaffStatus] = useState("active");
+  const [staffStatus, setStaffStatus] = useState("all");
   const [staffBranch, setStaffBranch] = useState("");
   const [handover, setHandover] = useState<{
     message: string;
@@ -7251,7 +7252,7 @@ function AdminView({
   }, []);
 
   /** Posts an administration action and refreshes the screen. */
-  const send = async (body: Record<string, unknown>) => {
+  const send = async (body: Record<string, unknown>, throwOnError = false) => {
     setWorking(true);
     try {
       // Connecting a portal login lives with the other case operations, so the
@@ -7266,7 +7267,18 @@ function AdminView({
         },
       );
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "That did not save.");
+      if (!response.ok) {
+        if (result.existingAccount?.email) {
+          setStaffStatus("all"); setStaffBranch(""); setStaffSearch(result.existingAccount.email);
+          setAdding(false);
+        }
+        throw new Error(result.error || "That did not save.");
+      }
+      if (payload.action === "remove_staff") {
+        setProfiles(current => current.filter(person => person.id !== payload.profileId));
+        setHandover({ message: result.message });
+      }
+      if ((payload.action === "update_profile" || payload.action === "bulk_update_profiles") && payload.active === false) setStaffStatus("all");
       await reload();
       setError("");
       if (result.message && ["resend_account_email", "resend_invitation", "create_invitation"].includes(String(payload.action))) setHandover({ message: result.message });
@@ -7275,6 +7287,7 @@ function AdminView({
       const message =
         reason instanceof Error ? reason.message : "That did not save.";
       setError(message);
+      if (throwOnError) throw reason;
       return null;
     } finally {
       setWorking(false);
@@ -7378,9 +7391,9 @@ function AdminView({
           <label>
             Status
             <select value={staffStatus} onChange={(event) => setStaffStatus(event.target.value)}>
+              <option value="all">All accounts</option>
               <option value="active">Active</option>
               <option value="inactive">Deactivated</option>
-              <option value="all">All</option>
             </select>
           </label>
           <label>
@@ -7620,24 +7633,7 @@ function AdminView({
                           >
                             {person.active ? "Deactivate" : "Reactivate"}
                           </button>
-                          {isOwner && !person.active && (
-                            <>
-                              <select aria-label={`Replacement owner for ${person.display_name}`} value={replacementByProfile[person.id] ?? ""} onChange={(event) => setReplacementByProfile((current) => ({ ...current, [person.id]: event.target.value }))}>
-                                <option value="">No active work to transfer</option>
-                                {profiles.filter((candidate) => candidate.active && candidate.id !== person.id && candidate.level !== "student").map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.display_name}</option>)}
-                              </select>
-                              <button
-                                className="linkButton dangerLink"
-                                disabled={working}
-                                onClick={() => {
-                                  if (confirm(`Remove ${person.display_name}'s login and transfer all open responsibilities to the selected replacement? Historical actions will remain attributed to ${person.display_name}.`))
-                                    void send({ action: "remove_staff", profileId: person.id, replacementProfileId: replacementByProfile[person.id] || null });
-                                }}
-                              >
-                                Transfer and remove
-                              </button>
-                            </>
-                          )}
+                          {isOwner && <button className="linkButton dangerLink" disabled={working} onClick={() => { setError(""); setDeletingStaff(person); }}>Delete account</button>}
                         </div>
                       )}
                     </td>
@@ -7649,12 +7645,13 @@ function AdminView({
           </>
         )}
         <p className="coverageIntro">
-          Deactivating somebody keeps their history and stops them signing in.
-          Deactivation is reversible. Remove account releases the email for a
-          future account while retaining the historical actor required by the
-          case and audit record; open cases must be transferred first.
+          Deactivate pauses access and keeps the account here for reactivation.
+          Delete account permanently removes the login and frees its email for a fresh account.
+          Past case work and author names are preserved.
         </p>
       </article>
+
+      {deletingStaff && <StaffDeleteDialog person={deletingStaff} profiles={profiles} onClose={() => setDeletingStaff(null)} onDelete={async replacement => Boolean(await send({ action: "remove_staff", profileId: deletingStaff.id, replacementProfileId: replacement }, true))} />}
 
       {actionableInvitations.length > 0 && (
         <article className="panel listPanel">
