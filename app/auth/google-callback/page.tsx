@@ -1,87 +1,72 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
-/**
- * Supabase completes the Google OAuth exchange and redirects here with the
- * session in the URL fragment, which never reaches a server on its own --
- * that is the whole point of the implicit flow. This page's only job is to
- * read it client-side and hand it to /api/auth/google/callback, which turns
- * it into the same httpOnly cookies a password sign-in sets.
- */
 export default function GoogleCallbackPage() {
+  const started = useRef(false);
   const [error, setError] = useState("");
+  const [setup, setSetup] = useState(false);
+  const [working, setWorking] = useState(false);
 
   useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     void (async () => {
       const params = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-      const oauthError = params.get("error_description") || params.get("error");
-      if (oauthError) {
-        setError(oauthError);
-        return;
-      }
+      const requestedSetup = new URLSearchParams(window.location.search).get("setup") === "1";
+      window.history.replaceState(null, "", window.location.pathname);
+      const authError = params.get("error_description") || params.get("error");
+      if (authError) { setError(authError); return; }
       const accessToken = params.get("access_token");
       const refreshToken = params.get("refresh_token");
       if (!accessToken || !refreshToken) {
-        setError("Google did not return a session. Try signing in again.");
+        setError("This sign-in link is missing or expired. Ask your Maximus team to resend your account email.");
         return;
       }
       try {
         const response = await fetch("/api/auth/google/callback", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            expires_in: Number(params.get("expires_in")) || undefined,
-            token_type: params.get("token_type") || undefined,
-          }),
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken,
+            expires_in: Number(params.get("expires_in")) || undefined, token_type: params.get("token_type") || undefined }),
         });
         const result = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          setError(result.error || "Google sign-in could not be completed.");
-          return;
-        }
-        if (params.get("type") === "recovery") {
-          const password = window.prompt("Create your password (at least 12 characters with a letter and number):");
-          if (!password) {
-            setError("Your account is verified, but you still need to create a password. Use Change password after signing in.");
-            return;
-          }
-          const confirmation = window.prompt("Enter your new password again:");
-          if (password !== confirmation) {
-            setError("The passwords did not match. Use Change password after signing in.");
-            return;
-          }
-          const changed = await fetch("/api/auth/password", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ password }),
-          });
-          if (!changed.ok) {
-            const detail = await changed.json().catch(() => ({}));
-            setError(detail.error || "Your password could not be created.");
-            return;
-          }
-        }
-        window.location.replace("/");
-      } catch {
-        setError("Google sign-in could not be completed.");
-      }
+        if (!response.ok) { setError(result.error || "Your sign-in could not be completed."); return; }
+        if (requestedSetup || ["recovery", "invite"].includes(params.get("type") || "")) setSetup(true);
+        else window.location.replace("/");
+      } catch { setError("Your sign-in could not be completed. Please try again."); }
     })();
   }, []);
 
-  return (
-    <main className="googleCallback">
-      {error ? (
-        <>
-          <p>{error}</p>
-          <Link href="/">Back to sign-in</Link>
-        </>
-      ) : (
-        <p>Signing you in with Google…</p>
-      )}
-    </main>
-  );
+  const savePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const password = String(data.get("password") || "");
+    if (password !== data.get("confirmation")) { setError("The passwords do not match."); return; }
+    if (password.length < 12 || !/[a-z]/i.test(password) || !/\d/.test(password)) {
+      setError("Use at least 12 characters including a letter and a number."); return;
+    }
+    setWorking(true); setError("");
+    try {
+      const response = await fetch("/api/auth/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Your password could not be saved.");
+      window.location.replace("/");
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Please try again."); }
+    finally { setWorking(false); }
+  };
+
+  return <main className="googleCallback"><section className="accountSetupCard">
+    <strong>Maximus CRM</strong>
+    <h1>{setup ? "Create your password" : error ? "Check your sign-in link" : "Verifying your account…"}</h1>
+    {setup && <><p>Choose a password to access your Maximus workspace.</p>
+      <form onSubmit={savePassword}>
+        <label>New password<input type="password" name="password" required minLength={12} maxLength={256} autoComplete="new-password" /></label>
+        <label>Confirm password<input type="password" name="confirmation" required minLength={12} maxLength={256} autoComplete="new-password" /></label>
+        <p>At least 12 characters, including a letter and a number.</p>
+        <button className="primaryButton" disabled={working}>{working ? "Saving…" : "Save password and continue"}</button>
+      </form></>}
+    {error && <p className="caseWorkError" role="alert">{error}</p>}
+    {error && !setup && <Link href="/">Back to sign-in</Link>}
+  </section></main>;
 }

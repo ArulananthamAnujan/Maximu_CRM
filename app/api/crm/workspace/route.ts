@@ -1,3 +1,4 @@
+import { noteProvenance } from "@/server/case-notes";
 import { financeRequestId, financeRpc, recordInvoiceAction, FinanceInputError } from "@/server/finance";
 import {
   appendRefreshCookies,
@@ -15,6 +16,7 @@ import { protectionConfigured, protect, reveal } from "@/server/protected-fields
 import { calendarRefreshAccessToken, createCalendarEvent, deleteCalendarEvent } from "@/server/google-calendar";
 import { orgDate, orgTime } from "@/lib/timezone";
 import { emailConfigured, renderTemplate, sendEmail } from "@/server/email";
+import { findAccountByEmail, sendAccountSetup } from "@/server/account-access";
 
 export const dynamic = "force-dynamic";
 
@@ -96,13 +98,13 @@ export async function GET(request: Request) {
       caseNotes,
     ] = await Promise.all([
       safeRestPaged(
-        `clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle&archived_at=is.null${portalWorkspace ? "" : "&current_lifecycle=neq.enquiry"}&order=updated_at.desc`,
+        `clients?select=id,branch_id,first_name,last_name,email,mobile,source,passport_masked,current_lifecycle,custom_fields,updated_at&archived_at=is.null${portalWorkspace ? "" : "&current_lifecycle=neq.enquiry"}&order=updated_at.desc`,
         token,
         CLIENT_CASE_LIMIT,
         degraded,
       ),
       safeRestPaged(
-        `cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at${portalWorkspace ? "" : "&lifecycle_stage=neq.enquiry"}&order=opened_at.desc`,
+        `cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at,custom_fields${portalWorkspace ? "" : "&lifecycle_stage=neq.enquiry"}&order=opened_at.desc`,
         token,
         CLIENT_CASE_LIMIT,
         degraded,
@@ -217,7 +219,7 @@ export async function GET(request: Request) {
         degraded,
       ),
       safeRest(
-        "case_notes?select=case_id,author_id,body,created_at,cases!inner(lifecycle_stage)&cases.lifecycle_stage=neq.enquiry&order=created_at.desc&limit=5000",
+        "case_notes?select=id,case_id,author_id,body,created_at,cases!inner(lifecycle_stage)&cases.lifecycle_stage=neq.enquiry&order=created_at.desc&limit=5000",
         token,
         degraded,
       ),
@@ -303,6 +305,7 @@ export async function GET(request: Request) {
       const key = String(note.case_id);
       if (!latestNoteByCase.has(key)) latestNoteByCase.set(key, note);
     }
+    const noteSources = await noteProvenance([...latestNoteByCase.values()], token).catch(() => new Map<string, Json>());
     const latestJourneyByCase = new Map<string, Json>();
     for (const milestone of stageHistory)
       latestJourneyByCase.set(String(milestone.case_id), milestone);
@@ -421,7 +424,11 @@ export async function GET(request: Request) {
           deferredApplications: deferredByCase.get(String(row.id)) ?? 0,
           completedAt: dateOnly(row.completed_at),
           reopenedAt: dateOnly(row.reopened_at),
-          createdAt: row.opened_at,
+          createdAt: row.opened_at ?? "",
+          updatedAt: client.updated_at ?? row.opened_at ?? "",
+          highestQualification: clientIntake.highestQualification ?? "",
+          testGiven: clientIntake.testGiven ?? "",
+          spouseIncluded: clientIntake.spouseIncluded ?? "",
           destinationCountry:
             visaMatter.destination_country ??
             caseIntake.destinationCountry ??
@@ -449,7 +456,8 @@ export async function GET(request: Request) {
             "",
           latestNote: latestNote.body ?? "",
           latestNoteAt: latestNote.created_at ?? "",
-          latestNoteAuthor: latestNoteAuthor.display_name ?? "",
+          latestNoteDateLabel: noteSources.get(String(latestNote.id))?.dateLabel ?? "",
+          latestNoteAuthor: noteSources.get(String(latestNote.id))?.authorName ?? latestNoteAuthor.display_name ?? "",
         };
       }),
       tasks: tasks.map((row) => ({
@@ -687,8 +695,9 @@ export async function GET(request: Request) {
           notes: details.notes ?? "",
           documentSummary: documentSummaryByCase.get(String(row.case_id)) ?? "No documents",
           latestNote: latestNote.body ?? "",
-          latestNoteBy: latestNoteAuthor.display_name ?? "",
+          latestNoteBy: noteSources.get(String(latestNote.id))?.authorName ?? latestNoteAuthor.display_name ?? "",
           latestNoteAt: latestNote.created_at ?? "",
+          latestNoteDateLabel: noteSources.get(String(latestNote.id))?.dateLabel ?? "",
           archived: Boolean(row.archived_at),
         };
       }),
@@ -731,8 +740,9 @@ export async function GET(request: Request) {
           branch: branchById.get(String(parent.branch_id))?.name ?? "",
           documentSummary: documentSummaryByCase.get(String(row.case_id)) ?? "No documents",
           latestNote: latestNote.body ?? "",
-          latestNoteBy: latestNoteAuthor.display_name ?? "",
+          latestNoteBy: noteSources.get(String(latestNote.id))?.authorName ?? latestNoteAuthor.display_name ?? "",
           latestNoteAt: latestNote.created_at ?? "",
+          latestNoteDateLabel: noteSources.get(String(latestNote.id))?.dateLabel ?? "",
         };
       }),
     };
@@ -1828,12 +1838,7 @@ export async function POST(request: Request) {
           // That address already has a Supabase login -- connect it rather
           // than fail, the same fallback staff onboarding uses.
           if (!(error instanceof SupabaseError) || error.status !== 422) throw error;
-          const found = await supabaseAdminRequest<{ users?: { id: string; email?: string }[] }>(
-            `/auth/v1/admin/users?email=${encodeURIComponent(address)}`,
-          );
-          const match = (found.users ?? []).find(
-            (row) => (row.email ?? "").toLowerCase() === address,
-          );
+          const match = await findAccountByEmail(address);
           if (!match) throw error;
           created = { id: match.id };
           connectedExisting = true;
@@ -1841,8 +1846,10 @@ export async function POST(request: Request) {
         if (!created?.id) throw new InputError("The portal login was not created.");
         profileId = created.id;
         const [existingProfile] = await supabaseAdminRequest<Json[]>(
-          `/rest/v1/profiles?select=id&id=eq.${encodeURIComponent(profileId)}&limit=1`,
+          `/rest/v1/profiles?select=id,organisation_id,level,active,email&id=eq.${encodeURIComponent(profileId)}&limit=1`,
         );
+        if (existingProfile && (existingProfile.organisation_id !== org || existingProfile.level !== "student" || !existingProfile.active))
+          throw new InputError("That email belongs to an existing account that cannot be linked as this client's portal login.");
         if (!existingProfile) {
           try {
             await supabaseAdminRequest("/rest/v1/profiles", {
@@ -1873,78 +1880,23 @@ export async function POST(request: Request) {
         });
       }
 
-      // A secure one-time link, not a password handed over in an email --
-      // the client sets their own password behind it.
-      let setupLink = "";
-      try {
-        const generated = await supabaseAdminRequest<{
-          action_link?: string;
-          properties?: { action_link?: string };
-        }>("/auth/v1/admin/generate_link", {
-          method: "POST",
-          body: JSON.stringify({
-            type: "recovery",
-            email: address,
-            options: { redirect_to: publicOrigin(request) },
-          }),
-        });
-        setupLink = generated.action_link || generated.properties?.action_link || "";
-      } catch (error) {
-        console.error("Could not generate a portal setup link", error);
-      }
-
-      let emailSent = false;
-      if (setupLink && emailConfigured()) {
-        try {
-          const template = await emailTemplateFor(org, "portal_welcome", token);
-          if (template) {
-            const values = {
-              client_name: fullClientName(client) || address,
-              email: address,
-              setup_link: setupLink,
-              sender_name: session.identity.displayName,
-            };
-            const subject = renderTemplate(template.subject, values);
-            const rendered = renderTemplate(template.body, values);
-            await sendEmail({
-              to: address,
-              subject,
-              text: rendered,
-              html: rendered.replace(/\n/g, "<br>"),
-            });
-            emailSent = true;
-          }
-        } catch (error) {
-          console.error(`Could not send portal_welcome email to ${address}`, error);
-        }
-      }
-
-      await auditEvent(
-        org,
-        actor,
-        "client.portal_access_sent",
-        "client",
-        clientId,
-        session.identity.branchId,
-        `Sent portal access to ${address}`,
-        token,
+      // Existing links must still match the exact client email and organisation.
+      const [linkedProfile] = await supabaseAdminRequest<Json[]>(
+        `/rest/v1/profiles?select=id,email,organisation_id,level,active&id=eq.${encodeURIComponent(profileId)}&limit=1`,
       );
-
-      return appendRefreshCookies(
-        Response.json({
-          ok: true,
-          email: address,
-          emailSent,
-          setupLink: emailSent ? undefined : setupLink,
-          message: emailSent
-            ? `${address} has been emailed their portal sign-in link.`
-            : setupLink
-              ? "Email is not configured on this deployment -- share this sign-in link with the client yourself."
-              : 'Portal access was created, but a sign-in link could not be generated. Ask the client to use "Forgot password" on the sign-in page.',
-        }),
-        session.refreshed,
-        request,
-      );
+      if (!linkedProfile || linkedProfile.organisation_id !== org || linkedProfile.level !== "student" || !linkedProfile.active || String(linkedProfile.email).toLowerCase() !== address)
+        throw new InputError("The client's email no longer matches their active portal login. An administrator must correct the account link before access can be sent.");
+      const delivery = await sendAccountSetup({ email: address, name: fullClientName(client) || address, origin: publicOrigin(request) });
+      await auditEvent(org, actor,
+        delivery.emailSent ? "client.portal_access_requested" : "client.portal_access_email_failed",
+        "client", clientId, String(client.branch_id || session.identity.branchId || ""),
+        delivery.emailSent ? `Portal setup email submitted for ${fullClientName(client) || address}` : `Portal setup email failed for ${fullClientName(client) || address}`, token);
+      return appendRefreshCookies(Response.json({
+        ok: true, email: address, ...delivery,
+        message: delivery.emailSent
+          ? `Portal setup email submitted to ${address}. They can choose their password using the link in that email.`
+          : `Portal access is ready, but the email was not sent. ${delivery.deliveryError}`,
+      }), session.refreshed, request);
     }
 
     if (action === "template") {

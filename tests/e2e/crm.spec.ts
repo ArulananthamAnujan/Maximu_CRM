@@ -666,20 +666,21 @@ test("an owner creates a staff account with secure setup instructions", async ({
   await navigateTo(page, "Staff & Masters");
   await page.getByRole("button", { name: /add staff member/i }).click();
 
+  const accountEmail = `browser.officer.${Date.now()}@maximus.test`;
   const form = page.locator(".stackedForm");
   await form.locator('input[name="displayName"]').fill("Browser Made Officer");
   await form
     .locator('input[name="email"]')
-    .fill("browser.officer@maximus.test");
+    .fill(accountEmail);
   await form.locator('select[name="level"]').selectOption("staff");
   await form.locator('input[name="department"]').fill("Admissions");
   await form.getByRole("button", { name: /create staff account/i }).click();
 
   const handover = page.locator(".handoverPanel");
   await expect(handover).toBeVisible({ timeout: 25_000 });
-  await expect(handover).toContainText(/secure account setup email|secure setup link/i);
+  await expect(handover).toContainText(/account setup email submitted/i);
   await expect(page.locator(".boardTable").first()).toContainText(
-    "browser.officer@maximus.test",
+    accountEmail,
   );
 });
 
@@ -836,6 +837,8 @@ test("the case workspace stays bounded at desktop and phone widths", async ({ pa
 
 
 test("record preview saves notes and preserves the register search when dismissed", async ({ page }) => {
+  const nativeDialogs: string[] = [];
+  page.on("dialog", async dialog => { nativeDialogs.push(dialog.type()); await dialog.dismiss(); });
   await signIn(page, OFFICER);
   const name = `Preview Notes ${Date.now()}`;
   await createEnquiry(page, name, `preview-${Date.now()}@example.test`);
@@ -850,10 +853,23 @@ test("record preview saves notes and preserves the register search when dismisse
   await drawer.getByRole("button", { name: "Record", exact: true }).click();
   await expect(drawer.locator(".timeline")).toContainText("Call completed; awaiting certified transcript.");
   await expect(drawer.getByRole("tab", { name: "Activity & notes", exact: true })).toHaveAttribute("aria-selected", "true");
+  await drawer.getByRole("textbox", { name: "Add a file note", exact: true }).fill("Certified transcript received; application can proceed.");
+  await drawer.getByRole("button", { name: "Record", exact: true }).click();
+  await expect(drawer.locator(".timeline")).toContainText("Certified transcript received; application can proceed.");
+  await expect(drawer.locator(".timeline")).toContainText("Call completed; awaiting certified transcript.");
+  await drawer.getByRole("button", { name: "Notes only", exact: true }).click();
+  await drawer.getByRole("textbox", { name: "Search notes and activity", exact: true }).fill("Call completed");
+  await expect(drawer.locator(".timeline")).toContainText("Call completed; awaiting certified transcript.");
+  await expect(drawer.locator(".timeline")).not.toContainText("Certified transcript received; application can proceed.");
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveCount(0);
   await expect(search).toHaveValue(name);
   await expect(row).toBeFocused();
+  await row.click();
+  await drawer.getByRole("tab", { name: "Activity & notes", exact: true }).click();
+  await expect(drawer.locator(".timeline")).toContainText("Call completed; awaiting certified transcript.");
+  await expect(drawer.locator(".timeline")).toContainText("Certified transcript received; application can proceed.");
+  expect(nativeDialogs).toEqual([]);
 });
 
 test("case document requests stay in the preview and retain the existing checklist", async ({ page }) => {
@@ -876,4 +892,51 @@ test("case document requests stay in the preview and retain the existing checkli
   await expect(drawer.locator(".documentList")).toContainText("Certified transcript");
   await expect(drawer.locator(".documentList > li")).toHaveCount(2);
   await expect(page.locator(".recordModal")).toHaveCount(0);
+});
+
+
+test("super admin filters application and visa records and clears the result", async ({ page }) => {
+  await signIn(page, OWNER);
+  await navigateTo(page, "Applications");
+  const applications = page.getByRole("region", { name: "Applications filters" });
+  await expect(applications).toBeVisible();
+  await applications.getByLabel("Institution", { exact: true }).selectOption("Monash University");
+  await expect(page.locator(".detailedRecordCard")).toHaveCount(1);
+  await expect(page.locator(".detailedRecordCard")).toContainText("Monash University");
+  await applications.getByLabel("Submitted from", { exact: true }).fill("2099-01-01");
+  await expect(page.locator(".detailedRecordCard")).toHaveCount(0);
+  await applications.getByRole("button", { name: "Clear filters", exact: true }).click();
+  await expect(page.locator(".detailedRecordCard").filter({ hasText: "RMIT University" })).toBeVisible();
+  await navigateTo(page, "Visa");
+  const visas = page.getByRole("region", { name: "Visa filters" });
+  await expect(visas).toBeVisible();
+  await visas.getByLabel("Visa category", { exact: true }).selectOption("500");
+  await expect(page.locator(".detailedRecordCard").first()).toContainText("500");
+  await visas.getByLabel("Visa expiry from", { exact: true }).fill("2099-01-01");
+  await expect(page.locator(".detailedRecordCard")).toHaveCount(0);
+  await visas.getByRole("button", { name: "Clear filters", exact: true }).click();
+  await expect(page.locator(".detailedRecordCard").first()).toBeVisible();
+});
+
+test("student, deferred and completed registers keep office and date filters visible", async ({ page }) => {
+  await signIn(page, OWNER);
+  for (const [screen, module] of [["Students", "students"], ["Defer", "defer"], ["Completed", "case_complete"]]) {
+    await navigateTo(page, screen);
+    const register = page.locator(`.journeyList-${module}`);
+    await expect(register.getByLabel("Office", { exact: true })).toBeVisible();
+    if (await register.locator(".enquiryAdvancedFilters").getAttribute("open") === null)
+      await register.getByText("More filters", { exact: true }).click();
+    await expect(register.getByLabel("Created from", { exact: true })).toBeVisible();
+    await register.getByLabel("Created from", { exact: true }).fill("2099-01-01");
+    await expect(register.locator(".journeyDataRow")).toHaveCount(0);
+    await register.getByRole("button", { name: "Clear all", exact: true }).click();
+    await expect(register.getByLabel("Created from", { exact: true })).toHaveValue("");
+  }
+});
+
+test("portal access is visible to branch staff directly beside the client profile", async ({ page }) => {
+  await signIn(page, OFFICER);
+  await openEnquiries(page);
+  const { drawer } = await openCaseDrawer(page, "Priya Sharma");
+  await expect(drawer.locator(".agentClientPanel").getByRole("button", { name: "Send portal access", exact: true })).toBeVisible();
 });

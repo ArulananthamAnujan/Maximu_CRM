@@ -1,3 +1,4 @@
+import { noteProvenance } from "@/server/case-notes";
 import {
   appendRefreshCookies,
   LiveAccessError,
@@ -132,6 +133,9 @@ export async function GET(request: Request) {
       throw error;
     });
 
+    const noteSources = await noteProvenance(notes, token);
+    const importedNoteKeys = new Set([...noteSources.values()].map(source => String(source.sourceKey)));
+
     const actorIds = Array.from(
       new Set(
         [
@@ -171,7 +175,7 @@ export async function GET(request: Request) {
         }),
         documents,
         tasks,
-        notes,
+        notes: notes.map(row => ({ ...row, sourceAuthorName: noteSources.get(String(row.id))?.authorName ?? actorNames.get(String(row.author_id)) ?? "Staff member", sourceDateLabel: noteSources.get(String(row.id))?.dateLabel ?? "" })),
         invoices,
         communications: [...communications.map((row) => ({
           id: row.id,
@@ -202,7 +206,7 @@ export async function GET(request: Request) {
           visaHistory,
           declarations,
         },
-        timeline: buildTimeline(notes, lifecycle, audit, actorNames, legacyActivity),
+        timeline: buildTimeline(notes, lifecycle, audit, actorNames, legacyActivity.filter(row => row.source_entity_type !== "notes" || !importedNoteKeys.has(String(row.source_key))), noteSources),
       }),
       session.refreshed,
       request,
@@ -588,6 +592,7 @@ type TimelineEntry = {
   detail: string | null;
   actorId: string | null;
   actorName: string;
+  dateLabel?: string;
 };
 
 function buildTimeline(
@@ -596,6 +601,7 @@ function buildTimeline(
   audit: Json[],
   actorNames: Map<string, string>,
   legacyActivity: Json[] = [],
+  noteSources = new Map<string, Json>(),
 ): TimelineEntry[] {
   const entries: TimelineEntry[] = [
     ...notes.map((row) => ({
@@ -605,7 +611,8 @@ function buildTimeline(
       title: "Note",
       detail: typeof row.body === "string" ? row.body : null,
       actorId: (row.author_id as string) ?? null,
-      actorName: actorNames.get(String(row.author_id ?? "")) ?? "Staff member",
+      actorName: String(noteSources.get(String(row.id))?.authorName ?? actorNames.get(String(row.author_id ?? "")) ?? "Staff member"),
+      dateLabel: String(noteSources.get(String(row.id))?.dateLabel ?? ""),
     })),
     ...lifecycle.map((row) => ({
       id: `stage-${row.id}`,

@@ -1,3 +1,4 @@
+import { noteProvenance } from "@/server/case-notes";
 import {
   appendRefreshCookies,
   LiveAccessError,
@@ -108,12 +109,13 @@ export async function GET(request: Request) {
     const clientIds = uniqueIds(cases, "client_id");
     const branchIds = uniqueIds(cases, "branch_id");
     const ownerIds = uniqueIds(cases, "owner_id");
+    let notesUnavailable = false;
     const [clients, enquiries, branches, profiles, notes, documents] = await Promise.all([
       restByIds("clients", "id,first_name,last_name,preferred_name,email,mobile,source,passport_masked,custom_fields", "id", clientIds, token),
       restByIds("enquiries", "id,case_id,client_id,source,campaign,priority,status,score,next_follow_up_at,lost_reason,created_at", "case_id", caseIds, token, "&order=created_at.desc.nullslast,id.asc"),
       restByIds("branches", "id,name", "id", branchIds, token),
       restByIds("profiles", "id,display_name", "id", ownerIds, token),
-      restByIds("case_notes", "case_id,author_id,body,created_at", "case_id", caseIds, token, "&order=created_at.desc,id.asc").catch(() => [] as Json[]),
+      restByIds("case_notes", "id,case_id,author_id,body,created_at", "case_id", caseIds, token, "&order=created_at.desc,id.asc").catch(() => { notesUnavailable = true; return [] as Json[]; }),
       restByIds("documents", "case_id,state", "case_id", caseIds, token, "&state=neq.archived&order=case_id.asc,id.asc").catch(() => [] as Json[]),
     ]);
 
@@ -141,6 +143,7 @@ export async function GET(request: Request) {
       const caseId = String(note.case_id ?? "");
       if (caseId && !latestNoteByCase.has(caseId)) latestNoteByCase.set(caseId, note);
     }
+    const noteSources = await noteProvenance([...latestNoteByCase.values()], token).catch(() => new Map<string, Json>());
     const documentCountsByCase = new Map<string, { total: number; ready: number; waiting: number }>();
     for (const document of documents) {
       const caseId = String(document.case_id ?? "");
@@ -212,9 +215,11 @@ export async function GET(request: Request) {
         lostReason: enquiry.lost_reason ?? "",
         applicationStatus: "",
         visaCategory: row.matter_type ?? "",
+        notesUnavailable,
         latestNote: latestNote.body ?? "",
         latestNoteAt: latestNote.created_at ?? "",
-        latestNoteAuthor: profileById.get(String(latestNote.author_id))?.display_name ?? "",
+        latestNoteAuthor: noteSources.get(String(latestNote.id))?.authorName ?? profileById.get(String(latestNote.author_id))?.display_name ?? "",
+        latestNoteDateLabel: noteSources.get(String(latestNote.id))?.dateLabel ?? "",
         enquiryStatus: enquiry.status ?? row.next_action ?? caseFields.mainStatus ?? "",
         detailedStatus: caseFields.subStatus ?? row.next_action ?? "",
         nextFollowUpAt: enquiry.next_follow_up_at ?? row.due_at ?? "",

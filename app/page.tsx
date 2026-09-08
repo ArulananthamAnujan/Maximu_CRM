@@ -145,7 +145,9 @@ type CaseRecord = {
   visaCategory: string;
   latestNote: string;
   latestNoteAt: string;
+  latestNoteDateLabel?: string;
   latestNoteAuthor: string;
+  notesUnavailable?: boolean;
   enquiryStatus?: string;
   detailedStatus?: string;
   nextFollowUpAt?: string;
@@ -217,6 +219,7 @@ type ApplicationRow = {
   latestNote: string;
   latestNoteBy: string;
   latestNoteAt: string;
+  latestNoteDateLabel?: string;
   archived: boolean;
 };
 type VisaMatterRow = {
@@ -250,6 +253,7 @@ type VisaMatterRow = {
   latestNote: string;
   latestNoteBy: string;
   latestNoteAt: string;
+  latestNoteDateLabel?: string;
 };
 // A client who already looks like the person being entered, and why they
 // matched. Shown before a second record is created for one human being.
@@ -407,6 +411,8 @@ type ChecklistItem = {
   due_at: string | null;
 };
 type CaseNote = {
+  sourceAuthorName?: string;
+  sourceDateLabel?: string;
   id: string;
   body: string;
   visibility: string;
@@ -2256,14 +2262,25 @@ function CaseWorkspace({
             record.intake,
             record.latestNote,
           ]) &&
-          (!officeFilter || record.branch === officeFilter) &&
+          (!officeFilter || record.branchId === officeFilter || record.branch === officeFilter) &&
           (!destinationFilter || destinations.includes(destinationFilter)) &&
           (!serviceFilter || record.serviceType === serviceFilter) &&
           (!priorityFilter || record.priority === priorityFilter) &&
+          (!assignedStaffFilter || record.ownerId === assignedStaffFilter) &&
+          (!statusFilter || record.lifecycleStage === statusFilter) &&
+          (!sourceFilter || `${record.source} ${record.campaign}`.toLowerCase().includes(sourceFilter.toLowerCase())) &&
+          (!intakeFilter || record.intake.toLowerCase().includes(intakeFilter.toLowerCase())) &&
+          (!qualificationFilter || (record.highestQualification || "").toLowerCase().includes(qualificationFilter.toLowerCase())) &&
+          (!testFilter || (testFilter === "yes") === Boolean(record.testGiven && !/^(no|none|not given)$/i.test(record.testGiven))) &&
+          (!spouseFilter || (spouseFilter === "yes") === /^(yes|true|1)$/i.test(record.spouseIncluded || "")) &&
+          (!createdFrom || record.createdAt.slice(0, 10) >= createdFrom) &&
+          (!createdTo || Boolean(record.createdAt) && record.createdAt.slice(0, 10) <= createdTo) &&
+          (!updatedFrom || (record.updatedAt || record.createdAt).slice(0, 10) >= updatedFrom) &&
+          (!updatedTo || Boolean(record.updatedAt || record.createdAt) && (record.updatedAt || record.createdAt).slice(0, 10) <= updatedTo) &&
           matchesDocuments &&
           matchesFollowUp;
       }),
-    [cases, query, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter, module, serverPaged],
+    [cases, query, officeFilter, destinationFilter, serviceFilter, priorityFilter, documentFilter, followUpFilter, assignedStaffFilter, statusFilter, sourceFilter, intakeFilter, qualificationFilter, testFilter, spouseFilter, createdFrom, createdTo, updatedFrom, updatedTo, module, serverPaged],
   );
   const hasDirectoryFilters = Boolean(
     officeFilter || destinationFilter || serviceFilter || priorityFilter || documentFilter || followUpFilter ||
@@ -2435,9 +2452,8 @@ function CaseWorkspace({
           </div>
         </div>
       ) : null}
-      {module === "enquiries" ? (
-        <div className="enquiryDirectoryTools" aria-label="Search and filter enquiries">
-          <div
+        <div className="enquiryDirectoryTools" aria-label={`${title} filters`}>
+          {module === "enquiries" ? <div
             className="enquiryDirectorySearchShell"
             onFocus={() => setDirectorySearchOpen(true)}
             onBlur={(event) => {
@@ -2528,7 +2544,7 @@ function CaseWorkspace({
                 )}
               </div>
             ) : null}
-          </div>
+          </div> : null}
           <div className="enquiryScopeLabel">
             <Building2 size={17} />
             <span><small>Access</small><strong>{scopeLabel || "Your permitted offices"}</strong></span>
@@ -2540,13 +2556,13 @@ function CaseWorkspace({
             ) : !loading && !error && filteredCases.length > 0 ? (
               <span>{firstRecord.toLocaleString()}–{lastRecord.toLocaleString()} visible</span>
             ) : (
-              <span>Total enquiries</span>
+              <span>Total records</span>
             )}
           </div>
           <div className="enquiryDirectoryFilters">
             <label>
               <span>Office</span>
-              <select value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
+              <select aria-label="Office" value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
                 <option value="">All permitted offices</option>
                 {officeOptions.map((office) => <option key={office.value} value={office.value}>{office.label}</option>)}
               </select>
@@ -2604,10 +2620,12 @@ function CaseWorkspace({
                   </select>
                 </label>
                 <label>
-                  <span>Enquiry status</span>
+                  <span>{module === "enquiries" ? "Enquiry status" : "Journey stage"}</span>
                   <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                     <option value="">All statuses</option>
-                    {Array.from(new Set([...ENQUIRY_MAIN_STATUSES, ...ENQUIRY_DETAIL_STATUSES])).map((status) => <option key={status}>{status}</option>)}
+                    {module === "enquiries"
+                      ? Array.from(new Set([...ENQUIRY_MAIN_STATUSES, ...ENQUIRY_DETAIL_STATUSES])).map((status) => <option key={status}>{status}</option>)
+                      : (["student", "application", "visa", "deferred", "completed"] as LifecycleStage[]).map(status => <option key={status} value={status}>{humanise(status)}</option>)}
                   </select>
                 </label>
                 <label><span>Source / reference</span><input value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} placeholder="Facebook, walk-in, partner…" /></label>
@@ -2650,7 +2668,6 @@ function CaseWorkspace({
             </button>
           </div>
         </div>
-      ) : null}
       {loading && cases.length > 0 ? <p className="caseWorkEmpty" role="status">Updating results…</p> : null}
       {loading && cases.length === 0 ? (
         <EmptyState
@@ -2701,8 +2718,8 @@ function CaseWorkspace({
                   </button>
                   <div className="journeyNoteCell">
                     <button type="button" onClick={() => onQuickAction(record, "timeline")}>
-                      <strong title={record.latestNote || "No notes yet"}>{record.latestNote || "No notes yet"}</strong>
-                      <span>{record.latestNoteAt ? `${record.latestNoteAuthor || "Team member"} · ${orgDate(record.latestNoteAt)}` : record.due ? `Follow up ${orgDate(record.due)}` : "No follow-up recorded"}</span>
+                      <strong title={record.latestNote || ""}>{record.notesUnavailable ? "Notes could not be loaded" : record.latestNote || "No notes yet"}</strong>
+                      <span>{record.notesUnavailable ? "Open notes to retry" : record.latestNoteAt ? `${record.latestNoteAuthor || "Team member"} · ${record.latestNoteDateLabel || orgDate(record.latestNoteAt)}` : record.due ? `Follow up ${orgDate(record.due)}` : "No follow-up recorded"}</span>
                     </button>
                   </div>
                   <div className="journeyActionsCell">
@@ -2788,21 +2805,49 @@ function RegisterActions({ name, onNote, onEmail, onDocuments, onOpen }: {
   </div>;
 }
 
+type OperationFilterField = { key: string; label: string; options?: string[]; type?: "date" | "text" };
+const filterOptions = (values: string[]) => [...new Set(values.filter(Boolean))].sort();
+function OperationalFilters({ label, fields, values, onChange, onClear, active }: {
+  label: string; fields: OperationFilterField[]; values: Record<string, string>;
+  onChange: (key: string, value: string) => void; onClear: () => void; active: boolean;
+}) {
+  return <section className="operationalFilters" aria-label={`${label} filters`}>
+    <div className="operationalFilterHead"><strong><SlidersHorizontal size={16} /> Filters</strong><button type="button" className="ghostButton" disabled={!active} onClick={onClear}><X size={14} /> Clear filters</button></div>
+    <div className="operationalFilterGrid">{fields.map(field => <label key={field.key}><span>{field.label}</span>{field.options
+      ? <select aria-label={field.label} value={values[field.key] || ""} onChange={event => onChange(field.key, event.target.value)}><option value="">All</option>{field.options.map(option => <option key={option} value={option}>{humanise(option)}</option>)}</select>
+      : <input aria-label={field.label} type={field.type || "text"} value={values[field.key] || ""} onChange={event => onChange(field.key, event.target.value)} />}</label>)}</div>
+  </section>;
+}
+
 function ApplicationsBoard({
   rows,
   cases,
+  query,
+  onQuery,
   onOpen,
   onPreview,
 }: {
   rows: ApplicationRow[];
   cases: CaseRecord[];
+  query: string;
+  onQuery: (value: string) => void;
   onOpen: (caseId: string) => void;
   onPreview: (caseId: string, tab: CaseTab) => void;
 }) {
   const [showArchived, setShowArchived] = useState(false);
   const archivedCount = rows.filter((row) => row.archived).length;
-  const shown = showArchived ? rows : rows.filter((row) => !row.archived);
+
   const [adding, setAdding] = useState(false);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const countryFor = (row: ApplicationRow) => cases.find(record => record.dbId === row.caseId)?.destinationCountry || "";
+  const shown = rows.filter(row => (showArchived || !row.archived) &&
+    (!filters.branch || row.branch === filters.branch) && (!filters.status || row.status === filters.status) &&
+    (!filters.institution || row.institution === filters.institution) && (!filters.intake || row.intake === filters.intake) &&
+    (!filters.country || countryFor(row) === filters.country) &&
+    (!filters.from || row.submittedOn.slice(0, 10) >= filters.from) &&
+    (!filters.to || Boolean(row.submittedOn) && row.submittedOn.slice(0, 10) <= filters.to) &&
+    (!filters.deadline || (filters.deadline === "overdue" ? overdue(row.deadlineOn) : !row.deadlineOn)) &&
+    matchesSearch(query, [row.client, row.caseNumber, row.email, row.phone, row.institution, row.course, row.intake, row.reference, row.branch, row.notes, row.latestNote]));
   return (
     <article className="panel detailedRecordsPanel">
       <div className="detailedRecordsHead">
@@ -2820,6 +2865,16 @@ function ApplicationsBoard({
           )}
         </div>
       </div>
+      <OperationalFilters label="Applications" values={filters} onChange={(key, value) => setFilters(previous => ({ ...previous, [key]: value }))} active={Boolean(query || Object.values(filters).some(Boolean))} onClear={() => { setFilters({}); onQuery(""); }} fields={[
+        { key: "branch", label: "Branch / office", options: filterOptions(rows.map(row => row.branch)) },
+        { key: "status", label: "Application status", options: filterOptions(rows.map(row => row.status)) },
+        { key: "institution", label: "Institution", options: filterOptions(rows.map(row => row.institution)) },
+        { key: "intake", label: "Intake", options: filterOptions(rows.map(row => row.intake)) },
+        { key: "country", label: "Destination", options: filterOptions(rows.map(countryFor)) },
+        { key: "from", label: "Submitted from", type: "date" },
+        { key: "to", label: "Submitted to", type: "date" },
+        { key: "deadline", label: "Deadline", options: ["overdue", "not_set"] },
+      ]} />
       <div className="registerCreateAction">
         <button className="primaryButton" type="button" onClick={() => setAdding(!adding)} aria-expanded={adding}><Plus size={15} /> New application</button>
         {adding && <form onSubmit={event => { event.preventDefault(); const id = String(new FormData(event.currentTarget).get("caseId") || ""); if (id) { onPreview(id, "applications"); setAdding(false); } }}>
@@ -2829,7 +2884,7 @@ function ApplicationsBoard({
         </form>}
       </div>
       {shown.length === 0 ? (
-        <BoardEmpty what="applications" />
+        <BoardEmpty what={rows.length ? "matching applications" : "applications"} />
       ) : (
         <div className="detailedRecordList">
           {shown.map((row) => (
@@ -2844,7 +2899,7 @@ function ApplicationsBoard({
               <div className="registerSummary">
                 <span><small>Course & intake</small><strong>{row.course || "Course not recorded"}</strong><span>{[row.campus, row.intake].filter(Boolean).join(" · ") || "Intake not set"}</span></span>
                 <span><small>Application reference</small><strong>{row.reference || "Not issued"}</strong><span>{row.deadlineOn ? `Due ${orgDate(row.deadlineOn)}` : row.submittedOn ? `Submitted ${orgDate(row.submittedOn)}` : "Not submitted"}</span></span>
-                <button type="button" className="registerLatestNote" onClick={() => onPreview(row.caseId, "timeline")}><small>Latest note</small><strong>{row.latestNote || row.notes || "No notes yet"}</strong><span>{row.latestNoteAt ? orgDateTime(row.latestNoteAt) : "Add a note"}</span></button>
+                <button type="button" className="registerLatestNote" onClick={() => onPreview(row.caseId, "timeline")}><small>Latest note</small><strong>{row.latestNote || row.notes || "No notes yet"}</strong><span>{row.latestNoteAt ? (row.latestNoteDateLabel || orgDateTime(row.latestNoteAt)) : "Add a note"}</span></button>
               </div>
               <RegisterActions name={row.client || "client"} onNote={() => onPreview(row.caseId, "timeline")} onEmail={() => onPreview(row.caseId, "communication")} onDocuments={() => onPreview(row.caseId, "documents")} onOpen={() => onOpen(row.caseId)} />
               <details className="registerAllDetails"><summary>All application details</summary>
@@ -2859,7 +2914,7 @@ function ApplicationsBoard({
                 <span><small>Branch &amp; passport</small><strong>{[row.branch, row.passportMasked && `Passport ${row.passportMasked}`].filter(Boolean).join(" · ") || "Not recorded"}</strong></span>
                 <span><small>Documents</small><strong>{row.documentSummary}</strong></span>
                 <span><small>Application note</small><strong>{row.notes || "No application note"}</strong></span>
-                <span><small>Latest case note</small><strong>{row.latestNote || "No case note"}{row.latestNoteAt ? ` · ${row.latestNoteBy || "Branch staff"} ${orgDateTime(row.latestNoteAt)}` : ""}</strong></span>
+                <span><small>Latest case note</small><strong>{row.latestNote || "No case note"}{row.latestNoteAt ? ` · ${row.latestNoteBy || "Branch staff"} ${(row.latestNoteDateLabel || orgDateTime(row.latestNoteAt))}` : ""}</strong></span>
               </div>
               </details>
             </article>
@@ -2873,15 +2928,26 @@ function ApplicationsBoard({
 function VisaMattersBoard({
   rows,
   cases,
+  query,
+  onQuery,
   onOpen,
   onPreview,
 }: {
   rows: VisaMatterRow[];
   cases: CaseRecord[];
+  query: string;
+  onQuery: (value: string) => void;
   onOpen: (caseId: string) => void;
   onPreview: (caseId: string, tab: CaseTab) => void;
 }) {
   const [adding, setAdding] = useState(false);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const shown = rows.filter(row => (!filters.branch || row.branch === filters.branch) &&
+    (!filters.status || row.status === filters.status) && (!filters.country || row.destination === filters.country) &&
+    (!filters.subclass || (row.subclass || row.matterType) === filters.subclass) && (!filters.outcome || row.outcome === filters.outcome) &&
+    (!filters.from || row.currentVisaExpiry.slice(0, 10) >= filters.from) &&
+    (!filters.to || Boolean(row.currentVisaExpiry) && row.currentVisaExpiry.slice(0, 10) <= filters.to) &&
+    matchesSearch(query, [row.client, row.caseNumber, row.email, row.phone, row.subclass, row.matterType, row.reference, row.trn, row.branch, row.destination, row.latestNote]));
   return (
     <article className="panel detailedRecordsPanel">
       <div className="detailedRecordsHead">
@@ -2890,8 +2956,17 @@ function VisaMattersBoard({
           <h2>Visa matters</h2>
           <p>Visa identity, lodgement, compliance dates and outcome together.</p>
         </div>
-        <span className="detailedRecordsSummary"><strong>{rows.length}</strong> visa matters</span>
+        <span className="detailedRecordsSummary"><strong>{shown.length}</strong> visa matters</span>
       </div>
+      <OperationalFilters label="Visa" values={filters} onChange={(key, value) => setFilters(previous => ({ ...previous, [key]: value }))} active={Boolean(query || Object.values(filters).some(Boolean))} onClear={() => { setFilters({}); onQuery(""); }} fields={[
+        { key: "branch", label: "Branch / office", options: filterOptions(rows.map(row => row.branch)) },
+        { key: "status", label: "Visa status", options: filterOptions(rows.map(row => row.status)) },
+        { key: "country", label: "Destination", options: filterOptions(rows.map(row => row.destination)) },
+        { key: "subclass", label: "Visa category", options: filterOptions(rows.map(row => row.subclass || row.matterType)) },
+        { key: "outcome", label: "Outcome", options: filterOptions(rows.map(row => row.outcome)) },
+        { key: "from", label: "Visa expiry from", type: "date" },
+        { key: "to", label: "Visa expiry to", type: "date" },
+      ]} />
       <div className="registerCreateAction">
         <button className="primaryButton" type="button" onClick={() => setAdding(!adding)} aria-expanded={adding}><Plus size={15} /> New visa matter</button>
         {adding && <form onSubmit={event => { event.preventDefault(); const id = String(new FormData(event.currentTarget).get("caseId") || ""); if (id) { onPreview(id, "visa"); setAdding(false); } }}>
@@ -2900,11 +2975,11 @@ function VisaMattersBoard({
           <button className="ghostButton" type="button" onClick={() => setAdding(false)}>Cancel</button>
         </form>}
       </div>
-      {rows.length === 0 ? (
-        <BoardEmpty what="visa matters" />
+      {shown.length === 0 ? (
+        <BoardEmpty what={rows.length ? "matching visa matters" : "visa matters"} />
       ) : (
         <div className="detailedRecordList">
-          {rows.map((row) => (
+          {shown.map((row) => (
             <article key={row.id} className="detailedRecordCard">
               <div className="detailedRecordIdentity">
                 <span className="recordStatusPill">{humanise(row.status)}</span>
@@ -2916,7 +2991,7 @@ function VisaMattersBoard({
               <div className="registerSummary">
                 <span><small>Visa & destination</small><strong>{row.subclass || row.matterType || "Type not recorded"}</strong><span>{row.destination || "Destination not recorded"}</span></span>
                 <span><small>Lodgement & next date</small><strong>{row.trn || row.reference || "Reference not issued"}</strong><span className={overdue(row.informationDueOn || row.currentVisaExpiry) ? "overdueFact" : ""}>{row.informationDueOn && !row.informationProvidedOn ? `Information due ${orgDate(row.informationDueOn)}` : row.currentVisaExpiry ? `Visa expires ${orgDate(row.currentVisaExpiry)}` : "No deadline recorded"}</span></span>
-                <button type="button" className="registerLatestNote" onClick={() => onPreview(row.caseId, "timeline")}><small>Latest note</small><strong>{row.latestNote || "No notes yet"}</strong><span>{row.latestNoteAt ? orgDateTime(row.latestNoteAt) : "Add a note"}</span></button>
+                <button type="button" className="registerLatestNote" onClick={() => onPreview(row.caseId, "timeline")}><small>Latest note</small><strong>{row.latestNote || "No notes yet"}</strong><span>{row.latestNoteAt ? (row.latestNoteDateLabel || orgDateTime(row.latestNoteAt)) : "Add a note"}</span></button>
               </div>
               <RegisterActions name={row.client || "client"} onNote={() => onPreview(row.caseId, "timeline")} onEmail={() => onPreview(row.caseId, "communication")} onDocuments={() => onPreview(row.caseId, "documents")} onOpen={() => onOpen(row.caseId)} />
               <details className="registerAllDetails"><summary>All visa details</summary>
@@ -2929,7 +3004,7 @@ function VisaMattersBoard({
                 <span><small>Decision / outcome</small><strong>{[row.decisionOn && orgDate(row.decisionOn), row.outcome && humanise(row.outcome)].filter(Boolean).join(" · ") || "Pending"}</strong></span>
                 <span><small>Branch &amp; passport</small><strong>{[row.branch, row.passportMasked && `Passport ${row.passportMasked}`].filter(Boolean).join(" · ") || "Not recorded"}</strong></span>
                 <span><small>Documents</small><strong>{row.documentSummary}</strong></span>
-                <span><small>Latest case note</small><strong>{row.latestNote || "No case note"}{row.latestNoteAt ? ` · ${row.latestNoteBy || "Branch staff"} ${orgDateTime(row.latestNoteAt)}` : ""}</strong></span>
+                <span><small>Latest case note</small><strong>{row.latestNote || "No case note"}{row.latestNoteAt ? ` · ${row.latestNoteBy || "Branch staff"} ${(row.latestNoteDateLabel || orgDateTime(row.latestNoteAt))}` : ""}</strong></span>
               </div>
               </details>
             </article>
@@ -7180,7 +7255,7 @@ function AdminView({
     try {
       // Connecting a portal login lives with the other case operations, so the
       // caller says which endpoint the action belongs to.
-      const { endpoint, ...payload } = body as { endpoint?: string };
+      const { endpoint, ...payload } = body as Record<string, unknown> & { endpoint?: string };
       const response = await fetch(
         endpoint === "operations" ? "/api/crm/operations" : "/api/crm/admin",
         {
@@ -7193,6 +7268,7 @@ function AdminView({
       if (!response.ok) throw new Error(result.error || "That did not save.");
       await reload();
       setError("");
+      if (result.message && ["resend_account_email", "resend_invitation", "create_invitation"].includes(String(payload.action))) setHandover({ message: result.message });
       return result as { message?: string; setupLink?: string };
     } catch (reason) {
       const message =
@@ -7535,6 +7611,7 @@ function AdminView({
                         <span className="mutedCell">This is you</span>
                       ) : (
                         <div className="staffActions">
+                          {person.active && <button className="linkButton" disabled={working} onClick={() => void send({ action: "resend_account_email", profileId: person.id })}>Resend account email</button>}
                           <button
                             className="linkButton"
                             disabled={working}
@@ -8001,6 +8078,7 @@ type CaseFile = {
     detail: string | null;
     actorId: string | null;
     actorName: string;
+    dateLabel?: string;
   }[];
 };
 
@@ -8178,6 +8256,8 @@ function CaseDrawerBody({
   const [file, setFile] = useState<CaseFile | null>(null);
   const [newItem, setNewItem] = useState("");
   const [newNote, setNewNote] = useState("");
+  const [activityFilter, setActivityFilter] = useState<"all" | "notes">("all");
+  const [noteSearch, setNoteSearch] = useState("");
   const [working, setWorking] = useState(false);
   const [syncingMail, setSyncingMail] = useState(false);
   const [caseError, setCaseError] = useState("");
@@ -8429,6 +8509,10 @@ function CaseDrawerBody({
     .filter((task) => String(task.status ?? "open") !== "completed")
     .slice(0, 3);
   const recentActivity = (file?.timeline ?? []).slice(0, 5);
+  const visibleActivity = (file?.timeline ?? []).filter(entry =>
+    (activityFilter === "all" || ["note", "private_note"].includes(entry.kind)) &&
+    (!noteSearch.trim() || `${entry.title} ${entry.detail || ""} ${entry.actorName}`.toLowerCase().includes(noteSearch.trim().toLowerCase())),
+  );
   const overviewApplications = (file?.applications ?? []).slice(0, 2);
   const completedDocuments = activeCaseDocuments.filter(settledDocument).length;
   const latestCommunication = file?.communications[0] ?? null;
@@ -8574,6 +8658,59 @@ function CaseDrawerBody({
                 <div><dt>Current visa</dt><dd className={item.visaExpiry ? "" : "missingValue"}>{text(visa?.visa_type) || "Not recorded"}</dd></div>
               </dl>
               <button className="ghostButton" onClick={() => setTab("client")}>View full profile</button>
+              {canModify && item.clientId && (
+                <div className="handoverPanel">
+                  <button
+                    type="button"
+                    className="ghostButton"
+                    disabled={sendingPortalAccess}
+                    onClick={async () => {
+                      setSendingPortalAccess(true);
+                      setPortalAccessResult(null);
+                      try {
+                        const response = await fetch("/api/crm/workspace", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            action: "send_portal_access",
+                            clientId: item.clientId,
+                          }),
+                        });
+                        const result = await response.json().catch(() => ({}));
+                        setPortalAccessResult({
+                          message: response.ok
+                            ? result.message || "Portal access was sent."
+                            : result.error || "Portal access could not be sent.",
+                          setupLink: response.ok ? result.setupLink : undefined,
+                        });
+                      } catch {
+                        setPortalAccessResult({
+                          message: "Portal access could not be sent.",
+                        });
+                      } finally {
+                        setSendingPortalAccess(false);
+                      }
+                    }}
+                  >
+                    <Send size={14} />
+                    {sendingPortalAccess ? "Sending…" : "Send portal access"}
+                  </button>
+                  {portalAccessResult && (
+                    <>
+                      <strong>{portalAccessResult.message}</strong>
+                      {portalAccessResult.setupLink && (
+                        <>
+                          <code>{portalAccessResult.setupLink}</code>
+                          <small>
+                            This link is shown once and is not stored anywhere
+                            you can read it again.
+                          </small>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </section>
             <section className="casePriorityBar">
               <div>
@@ -8661,7 +8798,7 @@ function CaseDrawerBody({
                 <div className="caseLastNote">
                   <span>LAST NOTE</span>
                   <p>{latestNote.body}</p>
-                  <small>{orgDateTime(latestNote.created_at)} · {item.branch}</small>
+                  <small>{latestNote.sourceAuthorName} · {latestNote.sourceDateLabel || orgDateTime(latestNote.created_at)} · {item.branch}</small>
                 </div>
               )}
               {openCaseTasks.length > 0 && (
@@ -8692,7 +8829,7 @@ function CaseDrawerBody({
                     <div>
                       <strong>{humanise(entry.title)}</strong>
                       <small>
-                        {entry.actorName} · {orgDateTime(entry.at)} · {item.branch}
+                        {entry.actorName} · {entry.dateLabel || orgDateTime(entry.at)} · {item.branch}
                       </small>
                     </div>
                   </li>
@@ -8818,59 +8955,7 @@ function CaseDrawerBody({
                   </button>
                 ))}
               </div>
-              {stage === "student" && canModify && (
-                <div className="handoverPanel">
-                  <button
-                    type="button"
-                    className="ghostButton"
-                    disabled={sendingPortalAccess}
-                    onClick={async () => {
-                      setSendingPortalAccess(true);
-                      setPortalAccessResult(null);
-                      try {
-                        const response = await fetch("/api/crm/workspace", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            action: "send_portal_access",
-                            clientId: item.clientId,
-                          }),
-                        });
-                        const result = await response.json().catch(() => ({}));
-                        setPortalAccessResult({
-                          message: response.ok
-                            ? result.message || "Portal access was sent."
-                            : result.error || "Portal access could not be sent.",
-                          setupLink: response.ok ? result.setupLink : undefined,
-                        });
-                      } catch {
-                        setPortalAccessResult({
-                          message: "Portal access could not be sent.",
-                        });
-                      } finally {
-                        setSendingPortalAccess(false);
-                      }
-                    }}
-                  >
-                    <Send size={14} />
-                    {sendingPortalAccess ? "Sending…" : "Send portal access"}
-                  </button>
-                  {portalAccessResult && (
-                    <>
-                      <strong>{portalAccessResult.message}</strong>
-                      {portalAccessResult.setupLink && (
-                        <>
-                          <code>{portalAccessResult.setupLink}</code>
-                          <small>
-                            This link is shown once and is not stored anywhere
-                            you can read it again.
-                          </small>
-                        </>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
+
               </details>
             </section>
             {!direct && (
@@ -9385,13 +9470,9 @@ function CaseDrawerBody({
 
         {tab === "timeline" && (
           <section className="caseWorkPanel">
-            <span className="kicker">FILE NOTE AND ACTIVITY</span>
-            <p className="caseWorkEmpty">
-              Every note, stage change and recorded action, newest first. Each
-              entry identifies the staff member who performed it.
-            </p>
+            <div className="caseNotesHeading"><div><span className="kicker">CLIENT HISTORY</span><h3>Notes & activity</h3><p>Keep the conversation, decisions and next steps together.</p></div><span className="caseNotesCount">{file?.notes.length ?? 0} notes</span></div>
             <form
-              className="inlineAdd"
+              className="caseNoteComposer"
               onSubmit={async (event) => {
                 event.preventDefault();
                 if (!newNote.trim()) return;
@@ -9413,7 +9494,7 @@ function CaseDrawerBody({
                 aria-label="Add a file note"
               />
               <button
-                className="ghostButton"
+                className="primaryButton"
                 disabled={working || !newNote.trim()}
               >
                 <Plus size={14} />
@@ -9426,17 +9507,18 @@ function CaseDrawerBody({
               <span>{orgDateTime(task.due_at) || "Date not recorded"}</span>
               {task.description ? <p>{text(task.description)}</p> : null}
             </article>)}
-            {file && file.timeline.length === 0 ? (
-              <p className="caseWorkEmpty">Nothing recorded yet.</p>
+            <div className="caseNotesTools"><div role="group" aria-label="History type"><button type="button" aria-pressed={activityFilter === "all"} onClick={() => setActivityFilter("all")}>All activity</button><button type="button" aria-pressed={activityFilter === "notes"} onClick={() => setActivityFilter("notes")}>Notes only</button></div><input aria-label="Search notes and activity" placeholder="Search history or staff name" value={noteSearch} onChange={event => setNoteSearch(event.target.value)} /></div>
+            {file && visibleActivity.length === 0 ? (
+              <p className="caseWorkEmpty">{file.timeline.length ? "No history matches these filters." : "No notes or activity recorded yet."}</p>
             ) : (
               <ol className="timeline">
-                {(file?.timeline ?? []).map((entry) => (
+                {visibleActivity.map((entry) => (
                   <li key={entry.id} className={`kind-${entry.kind}`}>
                     <div>
                       <b>{humanise(entry.title)}</b>
                       {entry.detail && <p>{entry.detail}</p>}
                       <small>
-                        {entry.actorName} · {orgDateTime(entry.at)} · {item.branch}
+                        {entry.actorName} · {entry.dateLabel ? `${entry.dateLabel} (old CRM)` : orgDateTime(entry.at)} · {item.branch}
                         {entry.kind === "private_note" ? " · private" : ""}
                       </small>
                     </div>
@@ -13323,13 +13405,7 @@ export default function Home() {
         }
         module={active}
         cases={list}
-        scopeLabel={
-          active === "enquiries"
-            ? role === "super_admin"
-              ? "All offices and countries"
-              : `${branches.find((branch) => branch.id === identity?.branchId)?.name || "Your office"} clients only`
-            : ""
-        }
+        scopeLabel={role === "super_admin" ? "All offices and countries" : `${branches.find((branch) => branch.id === identity?.branchId)?.name || "Your office"} clients only`}
         query={query}
         onQueryChange={active === "enquiries" ? changeEnquiryQuery : setQuery}
         searchResults={globalSearchResults}
@@ -13339,8 +13415,8 @@ export default function Home() {
         serverPaged={active === "enquiries"}
         serverPage={enquiryPage}
         onServerPageChange={changeEnquiryPage}
-        filterBranches={active === "enquiries" ? branches : []}
-        filterStaff={active === "enquiries" ? staff : []}
+        filterBranches={branches}
+        filterStaff={staff}
         onDirectoryFiltersChange={active === "enquiries" ? changeEnquiryFilters : undefined}
         loading={active === "enquiries" && enquiriesLoading}
         syncing={active === "enquiries" && enquiriesSyncing}
@@ -13359,6 +13435,7 @@ export default function Home() {
     content =
       active === "applications" ? (
         <ApplicationsBoard
+          query={query} onQuery={setQuery}
           cases={cases.filter(inStream)}
           rows={applicationRows.filter((row) =>
             cases.some((c) => c.dbId === row.caseId && inStream(c)),
@@ -13368,6 +13445,7 @@ export default function Home() {
         />
       ) : active === "visas" ? (
         <VisaMattersBoard
+          query={query} onQuery={setQuery}
           cases={cases.filter(inStream)}
           rows={visaMatterRows.filter((row) =>
             cases.some((c) => c.dbId === row.caseId && inStream(c)),

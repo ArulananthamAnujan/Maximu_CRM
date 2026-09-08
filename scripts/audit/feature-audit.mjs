@@ -1279,9 +1279,9 @@ expect("a colleague's case is still visible, for cover and handover",
   priya !== undefined, JSON.stringify((colleagueWorkspace.json?.records ?? []).map((c) => c.name)));
 const colleagueEdit = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
   body: { action: "update_case", caseId: priya?.dbId, clientId: priya?.clientId,
-          name: "Hijacked Name", email: "hijack@example.test", visaExpiry: "2030-01-01" } });
-expect("but a colleague cannot edit it",
-  colleagueEdit.status >= 400, `${colleagueEdit.status} ${JSON.stringify(colleagueEdit.json)?.slice(0, 200)}`);
+          name: "Priya Sharma", email: priya?.email, visaExpiry: "2030-01-01" } });
+expect("a colleague can edit client and case details within the branch",
+  colleagueEdit.status === 200, `${colleagueEdit.status} ${JSON.stringify(colleagueEdit.json)?.slice(0, 200)}`);
 const colleagueMove = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
   body: { action: "lifecycle", caseId: priya?.dbId, stage: "student" } });
 expect("a colleague can move a branch case through the pipeline",
@@ -2052,10 +2052,10 @@ expect("the invoice email uses the default wording",
 
 // ---------------------------------------------------------------------------
 section("Sending a client their portal access");
-const portalAccessDenied = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
+const colleaguePortalAccess = await call("/api/crm/workspace", { method: "POST", cookie: colleague.cookie,
   body: { action: "send_portal_access", clientId: emailCase.json?.clientId } });
-expect("a colleague cannot send portal access for a client that is not theirs",
-  portalAccessDenied.status >= 400, `${portalAccessDenied.status} ${JSON.stringify(portalAccessDenied.json)?.slice(0, 200)}`);
+expect("a colleague can send portal access for another case in their branch",
+  colleaguePortalAccess.status === 200 && colleaguePortalAccess.json?.emailSent === true, `${colleaguePortalAccess.status} ${JSON.stringify(colleaguePortalAccess.json)?.slice(0, 200)}`);
 
 const portalAccessAsClient = await call("/api/crm/workspace", { method: "POST", cookie: student.cookie,
   body: { action: "send_portal_access", clientId: emailCase.json?.clientId } });

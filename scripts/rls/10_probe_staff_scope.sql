@@ -20,11 +20,12 @@ select 'edited=' || count(*) from public.cases
 select 'colleague_stage=' || lifecycle_stage from public.move_case_lifecycle(
   '00000000-0000-4000-8000-00000000dddd','student','Branch cover handover');
 
-\echo '--- 4. nor can its client record be changed ---'
-update public.clients set last_name = 'Hijacked'
+\echo '--- 4. branch client details can be edited ---'
+update public.clients set last_name = 'Branch colleague edit'
   where id = '00000000-0000-4000-8000-00000000cccc';
 select 'client_edited=' || count(*) from public.clients
-  where id = '00000000-0000-4000-8000-00000000cccc' and last_name = 'Hijacked';
+  where id = '00000000-0000-4000-8000-00000000cccc' and last_name = 'Branch colleague edit';
+update public.clients set last_name='Sharma' where id='00000000-0000-4000-8000-00000000cccc';
 
 \echo '--- 5. branch applications can be added ---'
 insert into public.education_applications (organisation_id,case_id,institution,course)
@@ -32,7 +33,7 @@ insert into public.education_applications (organisation_id,case_id,institution,c
 select 'application_added=' || count(*) from public.education_applications
   where case_id = '00000000-0000-4000-8000-00000000dddd' and institution = 'Branch University';
 
-\echo '--- 5b. nor what its client has been billed, before the case is theirs ---'
+\echo '--- 5b. branch colleagues share client finance ---'
 select 'invoice_visible_before_reassignment=' || count(*) from public.invoices
   where id = '00000000-0000-4000-8000-00000000fee1';
 

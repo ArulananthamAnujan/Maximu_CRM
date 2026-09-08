@@ -29,3 +29,10 @@ insert into auth.users (id,email) values
   ('00000000-0000-4000-8000-000000000010','dhaka.officer@maximus.test');
 insert into public.profiles (id,organisation_id,branch_id,display_name,email,level) values
   ('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-00000000aaaa','00000000-0000-4000-8000-00000000bbb2','Dhaka Officer','dhaka.officer@maximus.test','staff');
+
+insert into auth.users (id,email) values
+ ('00000000-0000-4000-8000-000000000011','melbourne.admin@maximus.test'),
+ ('00000000-0000-4000-8000-000000000012','dhaka.admin@maximus.test');
+insert into public.profiles (id,organisation_id,branch_id,display_name,email,level) values
+ ('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-00000000aaaa','00000000-0000-4000-8000-00000000bbbb','Melbourne Admin','melbourne.admin@maximus.test','branch_admin'),
+ ('00000000-0000-4000-8000-000000000012','00000000-0000-4000-8000-00000000aaaa','00000000-0000-4000-8000-00000000bbb2','Dhaka Admin','dhaka.admin@maximus.test','branch_admin');
