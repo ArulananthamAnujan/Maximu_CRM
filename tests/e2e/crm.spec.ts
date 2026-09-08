@@ -748,10 +748,11 @@ test("a case officer can work a colleague's branch case", async ({ page }) => {
   await expect(drawer.getByRole("button", { name: /request archive/i })).toBeVisible();
 });
 
-test("Super Admin transfers a case inline and sees the destination branch", async ({ page }) => {
+test("Super Admin transfers a case inline and sees the destination branch", async ({ page }, testInfo) => {
   await signIn(page, OWNER);
-  await createEnquiry(page, "Branch Transfer QA", "branch-transfer@maximus.test");
-  const { drawer } = await openCaseDrawer(page, "Branch Transfer QA");
+  const clientName = `Branch Transfer QA ${testInfo.retry}`;
+  await createEnquiry(page, clientName, `branch-transfer-${testInfo.retry}@maximus.test`);
+  const { drawer } = await openCaseDrawer(page, clientName);
   await drawer.getByRole("button", { name: "Transfer branch", exact: true }).click();
   await drawer.getByLabel("Destination branch", { exact: true }).selectOption({ label: "Colombo" });
   const confirm = drawer.getByRole("button", { name: "Confirm branch transfer", exact: true });

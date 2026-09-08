@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 export function CaseBranchTransfer({ caseId, branchId, branchName, branches, onTransferred }: {
   caseId: string;
@@ -9,6 +9,7 @@ export function CaseBranchTransfer({ caseId, branchId, branchName, branches, onT
   branches: { id: string; name: string }[];
   onTransferred: (transfer: { branchId: string; branch: string }) => void | Promise<void>;
 }) {
+  const formId = useId();
   const [open, setOpen] = useState(false);
   const [destination, setDestination] = useState("");
   const [reason, setReason] = useState("");
@@ -50,11 +51,11 @@ export function CaseBranchTransfer({ caseId, branchId, branchName, branches, onT
         } finally { setBusy(false); }
       }}>
         <div className="caseBranchTransferFields">
-          <label>Destination branch<select required value={destination} disabled={busy} onChange={event => setDestination(event.target.value)}>
+          <div><label htmlFor={`${formId}-branch`}>Destination branch</label><select id={`${formId}-branch`} required value={destination} disabled={busy} onChange={event => setDestination(event.target.value)}>
             <option value="">Choose a branch</option>
             {branches.filter(branch => branch.id !== branchId).map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
-          </select></label>
-          <label>Transfer reason<textarea required maxLength={2000} rows={2} value={reason} disabled={busy} onChange={event => setReason(event.target.value)} placeholder="Explain the branch handover" /></label>
+          </select></div>
+          <div><label htmlFor={`${formId}-reason`}>Transfer reason</label><textarea id={`${formId}-reason`} required maxLength={2000} rows={2} value={reason} disabled={busy} onChange={event => setReason(event.target.value)} placeholder="Explain the branch handover" /></div>
         </div>
         <p>The complete case history stays attached. {destinationName || "The destination branch"} will receive access; the previous branch will lose access to this case. Other cases for this client stay in their current branches.</p>
         {error && <p role="alert" className="formError">{error}</p>}
