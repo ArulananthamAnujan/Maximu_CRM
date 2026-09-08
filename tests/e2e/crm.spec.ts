@@ -703,10 +703,8 @@ test("a staff account can be deactivated and brought back", async ({
 }) => {
   await signIn(page, OWNER);
   await navigateTo(page, "Staff & Masters");
-  // The status filter defaults to Active, which would hide this row the
-  // moment it is deactivated -- widen it first so the row stays visible
-  // through both halves of the test.
-  await page.locator(".staffFilters").getByLabel("Status").selectOption("all");
+  // The default view must retain a staff row after deactivation.
+  await expect(page.locator(".staffFilters").getByLabel("Status")).toHaveValue("all");
   const row = page
     .locator(".boardTable tbody tr")
     .filter({ hasText: "colombo@maximus.test" })
@@ -714,8 +712,40 @@ test("a staff account can be deactivated and brought back", async ({
   await expect(row).toBeVisible({ timeout: 25_000 });
   await row.getByRole("button", { name: /deactivate/i }).click();
   await expect(row).toContainText("Deactivated", { timeout: 25_000 });
+  await expect(row.getByRole("button", { name: "Delete account", exact: true })).toBeVisible();
   await row.getByRole("button", { name: /reactivate/i }).click();
   await expect(row).toContainText("Active", { timeout: 25_000 });
+});
+
+test("Super Admin deletes a staff login and recreates the same email", async ({ page }, testInfo) => {
+  await signIn(page, OWNER);
+  await navigateTo(page, "Staff & Masters");
+  const address = `delete-recreate-${Date.now()}-${testInfo.retry}@maximus.test`;
+  const create = async (name: string) => {
+    await page.getByRole("button", { name: "Add staff member", exact: true }).click();
+    const form = page.locator("form").filter({ has: page.locator('input[name="displayName"]') });
+    await form.locator('input[name="displayName"]').fill(name);
+    await form.locator('input[name="email"]').fill(address);
+    await form.getByRole("button", { name: "Create staff account", exact: true }).click();
+    await expect(page.locator(".boardTable tbody tr").filter({ hasText: address })).toContainText(name, { timeout: 25_000 });
+  };
+  await create("Removal QA Officer");
+  const row = page.locator(".boardTable tbody tr").filter({ hasText: address });
+  await row.getByRole("button", { name: "Delete account", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Delete staff account", exact: true });
+  await expect(dialog.getByRole("button", { name: "Permanently delete account", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "Deactivate", exact: true }).click();
+  await expect(row).toContainText("Deactivated");
+  await row.getByRole("button", { name: "Delete account", exact: true }).click();
+  await dialog.getByRole("checkbox").check();
+  await dialog.getByRole("button", { name: "Permanently delete account", exact: true }).click();
+  await expect(dialog).toBeHidden({ timeout: 25_000 });
+  await expect(row).toHaveCount(0);
+  await expect(page.locator(".handoverPanel")).toContainText("account was deleted");
+  await create("Recreated QA Officer");
+  await expect(row).toContainText("Active");
 });
 
 test("a branch can be added from the masters screen", async ({ page }) => {

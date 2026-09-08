@@ -267,13 +267,13 @@ const server = http.createServer((req, res) => {
     try {
       if (url.pathname === "/auth/v1/token") {
         const { email } = JSON.parse(raw || "{}");
-        const id = await sql(`select id::text from auth.users where email = ${lit(email)}`, null, false);
+        const id = await sql(`select id::text from auth.users where deleted_at is null and email = ${lit(email)}`, null, false);
         if (!id) return send(400, { error: "invalid_grant", error_description: "Invalid login credentials" });
         return send(200, { access_token: id, refresh_token: id, expires_in: 3600, token_type: "bearer", user: { id, email } });
       }
       if (url.pathname === "/auth/v1/user") {
         if (!uid) return send(401, { message: "invalid token" });
-        const email = await sql(`select email from auth.users where id = ${lit(uid)}`, null, false);
+        const email = await sql(`select email from auth.users where deleted_at is null and id = ${lit(uid)}`, null, false);
         if (!email) return send(401, { message: "invalid token" });
         return send(200, { id: uid, email });
       }
@@ -307,7 +307,14 @@ const server = http.createServer((req, res) => {
           return send(200, { id, email });
         }
         if (req.method === "DELETE" && adminUser[1]) {
-          await sql(`delete from auth.users where id = ${lit(adminUser[1])}`, null, false);
+          const { should_soft_delete } = JSON.parse(raw || "{}");
+          if (should_soft_delete) {
+            // Auth keeps the referenced row but irreversibly removes the
+            // email/login and rejects every old session for this user.
+            await sql(`update auth.users set email='deleted+'||id::text||'@auth.invalid', deleted_at=coalesce(deleted_at,now()) where id=${lit(adminUser[1])}`, null, false);
+          } else {
+            await sql(`delete from auth.users where id = ${lit(adminUser[1])}`, null, false);
+          }
           return send(200, {});
         }
         if (req.method === "GET" && !adminUser[1]) {

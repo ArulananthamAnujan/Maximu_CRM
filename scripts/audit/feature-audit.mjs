@@ -1199,7 +1199,7 @@ expect("the new member of staff cannot open administration",
 const duplicateStaff = await adminPost({
   action: "create_staff", displayName: "Sanjay Again",
   email: "sanjay@maximus.test", level: "staff" });
-expect("the same person cannot be added twice", duplicateStaff.status === 400,
+expect("the same person cannot be added twice", duplicateStaff.status === 409 && Boolean(duplicateStaff.json?.existingAccount?.profileId),
   JSON.stringify(duplicateStaff.json)?.slice(0, 240));
 
 const managerMakesStaff = await adminPost({
@@ -1225,6 +1225,26 @@ expect("a staff account can be deactivated",
 const afterDeactivation = await loadWorkspace({ cookie: sanjay.cookie });
 expect("a deactivated account cannot use the CRM", afterDeactivation.status === 403,
   JSON.stringify(afterDeactivation.json)?.slice(0, 240));
+
+// Permanent removal must release the email without reviving the old identity.
+const sanjayProfileId = (adminAfter.json?.profiles ?? []).find(p => p.email === "sanjay@maximus.test")?.id;
+const inactiveDirectory = await call("/api/crm/admin", { cookie: owner.cookie });
+expect("deactivated staff stay discoverable in the team directory",
+  (inactiveDirectory.json?.profiles ?? []).some(p => p.id === sanjayProfileId && p.active === false));
+expect("a branch manager cannot permanently delete staff",
+  (await adminPost({ action: "remove_staff", profileId: sanjayProfileId }, manager.cookie)).status === 403);
+const removedStaff = await adminPost({ action: "remove_staff", profileId: sanjayProfileId });
+expect("Super Admin can permanently remove an inactive staff login", removedStaff.status === 200, JSON.stringify(removedStaff.json));
+const removedDirectory = await call("/api/crm/admin", { cookie: owner.cookie });
+expect("deleted staff disappear from the whole team directory",
+  !(removedDirectory.json?.profiles ?? []).some(p => p.id === sanjayProfileId));
+expect("a deleted login cannot use an old session", (await loadWorkspace({ cookie: sanjay.cookie })).status === 401);
+expect("a deleted account cannot be reactivated",
+  (await adminPost({ action: "update_profile", profileId: sanjayProfileId, active: true })).status === 400);
+const recreatedStaff = await adminPost({ action: "create_staff", displayName: "Sanjay Recreated", email: "sanjay@maximus.test", level: "staff" });
+expect("the same staff email can be recreated with a fresh identity",
+  recreatedStaff.status === 200 && recreatedStaff.json?.profileId !== sanjayProfileId, JSON.stringify(recreatedStaff.json));
+expect("the recreated staff account can sign in", (await login("sanjay@maximus.test")).ok);
 
 // ---------------------------------------------------------------------------
 section("Inviting somebody who already has a login");

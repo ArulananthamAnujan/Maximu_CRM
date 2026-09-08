@@ -10,6 +10,7 @@ import {
   supabaseAdminRequest,
   supabaseRequest,
 } from "@/server/supabase";
+import { isRemovedStaffAccount } from "@/lib/staff-account";
 import { findAccountByEmail, sendAccountSetup } from "@/server/account-access";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
       get("client_user_links?select=profile_id,client_id,created_at", token),
       get("organisation_settings?select=*&limit=1", token).catch(() => []),
     ]);
-    return appendRefreshCookies(Response.json({ ok: true, profiles, roles, permissions, invitations, branches, clientLinks, settings: (settings as Json[])[0] ?? null }), session.refreshed, request);
+    return appendRefreshCookies(Response.json({ ok: true, profiles: (profiles as Json[]).filter(person => !isRemovedStaffAccount(person)), roles, permissions, invitations, branches, clientLinks, settings: (settings as Json[])[0] ?? null }), session.refreshed, request);
   } catch (error) { return apiError(error); }
 }
 
@@ -89,11 +90,16 @@ export async function POST(request: Request) {
       const roleId = optionalUuid(body.roleId) ?? (await defaultRoleId(level, org, token));
 
       const existing = await get(
-        `profiles?select=id&organisation_id=eq.${org}&email=eq.${encodeURIComponent(address)}&limit=1`,
+        `profiles?select=id,email,active&organisation_id=eq.${org}&email=eq.${encodeURIComponent(address)}&limit=1`,
         token,
       ) as Json[];
-      if (existing.length)
-        throw new InputError("Somebody with that email address is already on the team.");
+      if (existing.length) return appendRefreshCookies(Response.json({
+        ok: false,
+        error: existing[0].active
+          ? "An active account already uses this email. You can manage it in the team list below."
+          : "This email belongs to a deactivated account. Reactivate it, or delete the account below before creating a fresh one.",
+        existingAccount: { profileId: existing[0].id, email: address },
+      }, { status: 409 }), session.refreshed, request);
 
       // Records an invitation rather than a login: used both when this
       // deployment has no service-role key at all, and when it does but the
@@ -223,10 +229,10 @@ export async function POST(request: Request) {
           if (target === session.identity.profileId)
             throw new InputError("Your own account was not changed.");
           const [person] = await get(
-            `profiles?select=id,level,active,branch_id&id=eq.${target}&limit=1`,
+            `profiles?select=id,email,level,active,branch_id&id=eq.${target}&limit=1`,
             token,
-          ) as { id: string; level: string; active: boolean; branch_id: string | null }[];
-          if (!person) throw new InputError("A selected staff account no longer exists.");
+          ) as { id: string; email: string; level: string; active: boolean; branch_id: string | null }[];
+          if (!person || isRemovedStaffAccount(person)) throw new InputError("A selected staff account was deleted and cannot be reactivated.");
           assertManagedBranch(session.identity, person.branch_id, "manage staff");
           // Super Admin deactivation stays an individual action so the existing
           // last-administrator protection cannot be bypassed by a group edit.
@@ -250,10 +256,11 @@ export async function POST(request: Request) {
       const target = uuid(body.profileId, "Profile");
       if (target === session.identity.profileId && body.active === false) throw new InputError("You cannot deactivate your own account.");
       const [managedProfile] = await get(
-        `profiles?select=id,branch_id&id=eq.${target}&limit=1`,
+        `profiles?select=id,email,branch_id&id=eq.${target}&limit=1`,
         token,
-      ) as { id: string; branch_id: string | null }[];
+      ) as { id: string; email: string; branch_id: string | null }[];
       if (!managedProfile) throw new LiveAccessError(403, "That staff account is outside your branch.");
+      if (isRemovedStaffAccount(managedProfile)) throw new InputError("This account was deleted. Create a fresh account instead.");
       assertManagedBranch(session.identity, managedProfile.branch_id, "manage staff");
       const changes: Json = {};
       if (typeof body.displayName === "string") changes.display_name = required(body.displayName, "Display name");
@@ -298,64 +305,51 @@ export async function POST(request: Request) {
       const target = uuid(body.profileId, "Profile");
       if (target === session.identity.profileId)
         throw new InputError("You cannot remove your own account.");
+      const [person] = await get(
+        `profiles?select=id,display_name,email,level,active,branch_id&organisation_id=eq.${org}&id=eq.${target}&limit=1`, token,
+      ) as Json[];
+      if (!person || person.level === "student") throw new InputError("That staff account is not available.");
+      if (isRemovedStaffAccount(person)) return appendRefreshCookies(Response.json({ ok: true, removedProfileId: target, message: "This account has already been deleted." }), session.refreshed, request);
+      if (person.level === "super_admin" || person.level === "platform_owner") {
+        const remaining = await get(
+          `profiles?select=id&organisation_id=eq.${org}&level=eq.super_admin&active=eq.true&id=neq.${target}`, token,
+        ) as Json[];
+        if (!remaining.length) throw new InputError("Promote another Super Admin before deleting this account.");
+      }
       const replacement = optionalUuid(body.replacementProfileId);
       if (replacement) {
+        const [colleague] = await get(`profiles?select=id,branch_id,active,level&organisation_id=eq.${org}&id=eq.${replacement}&limit=1`, token) as Json[];
+        if (!colleague || !colleague.active || colleague.id === target || colleague.level === "student" || colleague.branch_id !== person.branch_id)
+          throw new InputError("Choose an active colleague in the same branch for the handover.");
         await supabaseRequest("/rest/v1/rpc/transfer_staff_ownership", {
-          method: "POST",
-          body: JSON.stringify({ p_from: target, p_to: replacement }),
+          method: "POST", body: JSON.stringify({ p_from: target, p_to: replacement }),
         }, token);
       }
-      const [person] = await get(
-        `profiles?select=id,display_name,email,level,active&id=eq.${target}&limit=1`,
-        token,
-      ) as Json[];
-      if (!person) throw new InputError("That staff account no longer exists.");
-      if (person.level === "super_admin") {
-        const remaining = await get(
-          `profiles?select=id&organisation_id=eq.${org}&level=eq.super_admin&active=eq.true&id=neq.${target}`,
-          token,
-        ) as Json[];
-        if (remaining.length === 0)
-          throw new InputError("Promote another Super Admin before removing this account.");
-      }
       const assigned = await get(
-        `cases?select=id&organisation_id=eq.${org}&or=(owner_id.eq.${target},supervisor_id.eq.${target})&closed_at=is.null&limit=1`,
-        token,
+        `cases?select=id&organisation_id=eq.${org}&or=(owner_id.eq.${target},supervisor_id.eq.${target})&closed_at=is.null&limit=1`, token,
       ) as Json[];
-      if (assigned.length)
-        throw new InputError("Transfer this staff member's open cases before removing their account.");
+      if (assigned.length) throw new InputError("Choose a colleague to take over this staff member's open cases before deleting the account.");
 
-      const retiredEmail = `removed+${target}@accounts.invalid`;
-      await supabaseAdminRequest(`/auth/v1/admin/users/${target}`, {
-        method: "PUT",
-        body: JSON.stringify({ email: retiredEmail, ban_duration: "876000h" }),
-      });
-      await supabaseRequest(
-        `/rest/v1/profile_roles?profile_id=eq.${target}`,
-        { method: "DELETE", headers: { Prefer: "return=minimal" } },
-        token,
-      ).catch(() => undefined);
-      await supabaseRequest(
-        `/rest/v1/mailbox_connections?profile_id=eq.${target}`,
-        { method: "DELETE", headers: { Prefer: "return=minimal" } },
-        token,
-      ).catch(() => undefined);
-      await patch("profiles", target, {
-        display_name: `${String(person.display_name ?? "Former staff")} (removed)`,
-        email: retiredEmail,
-        active: false,
-        branch_id: null,
-        department: null,
-      }, token);
-      await insert("audit_events", {
-        organisation_id: org,
-        actor_id: session.identity.profileId,
-        action: "staff.removed",
-        resource_type: "profile",
-        resource_id: target,
-        summary: `Removed ${String(person.display_name ?? "former staff")} after preserving historical attribution`,
-        after_data: { replacement_profile_id: replacement, retired_email: retiredEmail },
-      }, token);
+      // Stop CRM access before touching Auth. If any later step fails, this
+      // inactive row stays visible so the owner can retry the same deletion.
+      await patch("profiles", target, { active: false }, token);
+      try {
+        // Supabase's irreversible soft deletion revokes sessions, removes
+        // login identities and frees the address without cascading through
+        // the historical profile foreign keys. A ban/rename alone does not.
+        await supabaseAdminRequest(`/auth/v1/admin/users/${target}`, {
+          method: "DELETE", body: JSON.stringify({ should_soft_delete: true }),
+        });
+        await supabaseRequest("/rest/v1/rpc/retire_staff_profile", {
+          method: "POST", body: JSON.stringify({ p_profile_id: target, p_replacement_profile_id: replacement }),
+        }, token);
+      } catch {
+        throw new InputError("The account is deactivated, but permanent deletion did not finish. Retry Delete account to complete it; its case history is safe.");
+      }
+      return appendRefreshCookies(Response.json({
+        ok: true, removedProfileId: target,
+        message: `${String(person.display_name)}'s account was deleted. You can now create a fresh account with ${String(person.email)}.`,
+      }), session.refreshed, request);
     } else if (action === "update_settings") {
       if (session.identity.role !== "super_admin")
         throw new LiveAccessError(403, "Only a Super Admin can change master configuration.");
@@ -476,7 +470,7 @@ function uuidList(value: unknown, label: string) {
   return Array.from(new Set(value.map((item) => uuid(item, label))));
 }
 function optionalUuid(value: unknown) { const parsed = optional(value); return parsed ? uuid(parsed, "Identifier") : null; }
-function email(value: unknown) { const parsed = required(value, "Email").toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed)) throw new InputError("Email is invalid."); return parsed; }
+function email(value: unknown) { const parsed = required(value, "Email").toLowerCase(); if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed) || parsed.endsWith("@accounts.invalid")) throw new InputError("Email is invalid."); return parsed; }
 function currency(value: unknown) { const parsed = required(value, "Currency").toUpperCase(); if (!/^[A-Z]{3}$/.test(parsed)) throw new InputError("Currency must be a three-letter code."); return parsed; }
 function prefix(value: unknown, label: string) { const parsed = required(value, label).toUpperCase(); if (!/^[A-Z0-9-]{1,12}$/.test(parsed)) throw new InputError(`${label} may contain letters, numbers and hyphens only.`); return parsed; }
 function boundedNumber(value: unknown, label: string, minimum: number, maximum: number) { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum) throw new InputError(`${label} must be between ${minimum} and ${maximum}.`); return parsed; }
