@@ -15,7 +15,14 @@ export async function GET(request: Request) {
   const startedAt = performance.now();
   try {
     const session = await liveSession(request);
-    const query = new URL(request.url).searchParams.get("q")?.trim() ?? "";
+    const params = new URL(request.url).searchParams;
+    const query = params.get("q")?.trim() ?? "";
+    if (params.get("scope") === "cases") {
+      if (session.identity.role === "client") throw new LiveAccessError(403, "Case search is available to staff only.");
+      if (query.length > 100) return Response.json({ ok: false, error: "Search is too long." }, { status: 400 });
+      const results = await findCases(query, session.accessToken, request.signal);
+      return appendRefreshCookies(Response.json({ ok: true, results }, { headers: { "Cache-Control": "private, no-store", "Server-Timing": `search;dur=${(performance.now() - startedAt).toFixed(1)}` } }), session.refreshed, request);
+    }
     if (query.length < 2) return Response.json({ ok: true, results: [] });
     if (query.length > 100) return Response.json({ ok: false, error: "Search is too long." }, { status: 400 });
     const token = session.accessToken;
@@ -97,4 +104,30 @@ export async function GET(request: Request) {
 
 function quotedPattern(value: string) {
   return `"*${value.replace(/[\\"%_*]/g, character => `\\${character}`)}*"`;
+}
+
+// Case picker: join each permitted case to its visible client in the database.
+// Two bounded reads run together; no serial client/case enrichment or counts.
+async function findCases(query: string, token: string, signal: AbortSignal) {
+  const select = "id,case_number,client_id,lifecycle_stage,service_type,opened_at,clients!inner(first_name,last_name,preferred_name,email,mobile,crm_id)";
+  const base = `/rest/v1/cases?select=${select}&clients.archived_at=is.null&order=opened_at.desc,id.asc&limit=12`;
+  const read = (filter = "") => supabaseRequest<Row[]>(base + filter, { method: "GET", signal: AbortSignal.any([signal, AbortSignal.timeout(8000)]) }, token);
+  let rows: Row[];
+  if (!query) rows = await read();
+  else {
+    if (query.length < 2) return [];
+    const needle = quotedPattern(query);
+    const fields = ["first_name", "last_name", "preferred_name", "email", "mobile", "crm_id"].map(field => `${field}.ilike.${needle}`);
+    const parts = query.split(/\s+/).filter(Boolean).slice(0, 6);
+    if (parts.length > 1) fields.push(`and(${parts.map(part => `or(first_name.ilike.${quotedPattern(part)},last_name.ilike.${quotedPattern(part)},preferred_name.ilike.${quotedPattern(part)})`).join(",")})`);
+    const groups = await Promise.all([
+      read(`&clients.or=${encodeURIComponent(`(${fields.join(",")})`)}`),
+      read(`&or=${encodeURIComponent(`(case_number.ilike.${needle})`)}`),
+    ]);
+    rows = groups.flat();
+  }
+  return [...new Map(rows.map(row => [text(row.id), row])).values()].slice(0, 18).map(row => {
+    const client = row.clients as Row | null;
+    return { caseId: row.id, title: displayName(client ?? undefined) || "Client record", reference: row.case_number, subtitle: client?.email || client?.mobile || "", stage: row.lifecycle_stage, service: row.service_type };
+  });
 }

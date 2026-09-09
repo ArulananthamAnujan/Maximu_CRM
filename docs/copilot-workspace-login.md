@@ -1,6 +1,10 @@
 # Copilot and connected staff workspace
 
-The old assistant UI is replaced by Copilot in the Workspace navigation and at `/copilot`. Every case has an **Ask Copilot** link that opens the page with its case ID selected.
+Copilot opens as a compact right-hand panel from the CRM toolbar, Workspace navigation, any case or Gmail. The existing case/email remains visible and usable on desktop. The old `/copilot` link redirects to the CRM with the panel open, preserving a supplied case ID. Closing the panel restores the full working area and reopening retains its draft for the current record. Changing case/email starts a separate conversation to prevent mixing records. Small screens use a dismissible overlay.
+
+The panel automatically uses the open case or email. Staff can attach selected page text (up to 1,500 characters), ask follow-up questions, edit/copy responses and save notes or unsent case email drafts. Case saves refresh the adjacent case records. Gmail context uses the first 7,000 characters of the open email. Earlier saved Copilot work remains available on demand.
+
+The optional case picker reads recent cases in one bounded query and searches names/contact details and case numbers in two parallel joined queries, using the caller’s RLS token throughout. It preserves multiple cases for the same client, caches recent search results only in the mounted panel for 30 seconds, cancels stale requests and times out with a retry message. It does not download the full directory or request total counts. Existing global search remains unchanged.
 
 Staff can search the production directory, summarise a permitted case, ask about recorded requirements and next actions, draft detailed emails or short messages, and improve or translate their own text. General writing works without a case. Results have editable subjects and bodies, source links, and limitations. Saving uses the existing audited case-note and email-draft endpoints. No Copilot endpoint sends mail or changes case details automatically.
 

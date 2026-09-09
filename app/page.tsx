@@ -9,7 +9,7 @@ import { CaseDocumentRequests } from "./case-document-requests";
 import { CaseFollowUpForm } from "./case-follow-up-form";
 import { CaseBranchTransfer } from "./case-branch-transfer";
 import { StaffDeleteDialog } from "./staff-delete-dialog";
-import { CopilotPanel } from "./copilot-panel";
+import { CopilotProvider, useCopilot } from "./copilot-provider";
 import { WorkspaceConnection } from "./workspace-connection";
 import {
   Activity,
@@ -3689,6 +3689,14 @@ function MessagesView({
     message.channel === "email" && !discarded(message) && message.status.toLowerCase() !== "sent",
   );
   const openedGmail = gmailMessages.find((message) => message.id === openGmailId) ?? null;
+  const copilot = useCopilot();
+  const setCopilotContext = copilot.setContext;
+  useEffect(() => {
+    if (!canSend) return;
+    setCopilotContext(openedGmail ? { key: `email:${openedGmail.id}`, label: openedGmail.subject || "Open email", email: { subject: openedGmail.subject, from: openedGmail.from, body: openedGmail.body || openedGmail.snippet } } : { key: "general", label: "General writing" });
+    return () => setCopilotContext({ key: "general", label: "General writing" });
+  }, [openedGmail, canSend, setCopilotContext]);
+
   const openFolder = (folder: "inbox" | "starred" | "sent" | "drafts") => {
     setMailFolder(folder);
     setOpenGmailId(null);
@@ -3711,6 +3719,7 @@ function MessagesView({
           <input value={gmailSearch} onChange={(event) => setGmailSearch(event.target.value)} placeholder="Search Gmail exactly as you would in Gmail" />
           <button disabled={gmailLoading} aria-label="Search Gmail">Search</button>
         </form>
+        <button className="copilotTrigger gmailCopilotTrigger" onClick={copilot.toggle} aria-expanded={copilot.isOpen} aria-controls="crm-copilot"><Sparkles size={19} />Copilot</button>
         <div className="gmailAccount">
           <span><strong>{mailbox?.email || "Maximus Gmail"}</strong><small>{!mailbox ? "Checking connection…" : mailbox.connected ? "Connected to CRM" : "Not connected"}</small></span>
           <div>{(mailbox?.email || "MG").slice(0, 2).toUpperCase()}</div>
@@ -7974,7 +7983,13 @@ function CaseDrawerBody({
   onCaseAction: (caseId: string, kind?: "document" | "visaChecklist" | "invoice" | "message") => void;
 }) {
   const drawerRef = useRef<HTMLElement | null>(null);
-  useOverlayFocus(preview, drawerRef, close);
+  const copilot = useCopilot();
+  const setCopilotContext = copilot.setContext;
+  useOverlayFocus(preview && !copilot.isOpen, drawerRef, close);
+  useEffect(() => {
+    setCopilotContext({ key: `case:${item.dbId}`, caseId: item.dbId || undefined, label: item.name });
+    return () => setCopilotContext({ key: "general", label: "General writing" });
+  }, [item.dbId, item.name, setCopilotContext]);
   const [tab, setTab] = useState<CaseTab>(initialTab);
   // Switching straight from one case to another, without closing the drawer,
   // kept the previous case's active tab -- one that may not exist on the new
@@ -8004,6 +8019,12 @@ function CaseDrawerBody({
   const [caseError, setCaseError] = useState("");
   const [caseNotice, setCaseNotice] = useState("");
   const [caseLoading, setCaseLoading] = useState(true);
+  const [copilotRevision, setCopilotRevision] = useState(0);
+  useEffect(() => {
+    const saved = (event: Event) => { if ((event as CustomEvent<{ caseId: string }>).detail?.caseId === item.dbId) setCopilotRevision(n => n + 1); };
+    window.addEventListener("maximus:copilot-saved", saved);
+    return () => window.removeEventListener("maximus:copilot-saved", saved);
+  }, [item.dbId]);
   const [sendingPortalAccess, setSendingPortalAccess] = useState(false);
   const [portalAccessResult, setPortalAccessResult] = useState<{
     message: string;
@@ -8087,7 +8108,7 @@ function CaseDrawerBody({
       cancelled = true;
       controller.abort();
     };
-  }, [caseId, refreshToken]);
+  }, [caseId, refreshToken, copilotRevision]);
 
   const reload = async () => {
     if (!caseId) return;
@@ -8265,7 +8286,7 @@ function CaseDrawerBody({
 
   return (
     <div className={`drawerBackdrop${preview ? " recordPreviewBackdrop" : ""}`} onClick={close}>
-      <aside ref={drawerRef} className={`caseDrawer wide${preview ? " recordPreview" : ""}`} role={preview ? "dialog" : undefined} aria-modal={preview ? true : undefined} aria-label={`${item.name} case preview`} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+      <aside ref={drawerRef} className={`caseDrawer wide${preview ? " recordPreview" : ""}`} role={preview ? "dialog" : undefined} aria-modal={preview && !copilot.isOpen ? true : undefined} aria-label={`${item.name} case preview`} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <div className="caseWindowTopbar">
           <Image src="/maximus-logo.svg" alt="Maximus Education and Migration" width={126} height={36} unoptimized />
           <span>
@@ -8275,7 +8296,7 @@ function CaseDrawerBody({
             <ArrowLeft size={13} /> {preview ? "Close preview" : "Back to CRM"}
           </button>
           <b>{item.branch}</b>
-          {caseId && <a className="ghostButton" href={`/copilot?case=${encodeURIComponent(caseId)}`} target="_blank" rel="noreferrer"><Sparkles size={16} />Ask Copilot</a>}
+          {caseId && <button className="ghostButton copilotTrigger" aria-expanded={copilot.isOpen} aria-controls="crm-copilot" onClick={copilot.toggle}><Sparkles size={16} />Copilot</button>}
           {preview && <button type="button" onClick={onExpand}>Open full case <ArrowRight size={14} /></button>}
         </div>
         <div className="drawerHead">
@@ -11556,6 +11577,12 @@ function RecordModal({
 }
 
 export default function Home() {
+  return <CopilotProvider><HomeWorkspace /></CopilotProvider>;
+}
+
+function HomeWorkspace() {
+  const copilot = useCopilot();
+  const { open: openCopilot, reset: resetCopilot, toggle: toggleCopilot } = copilot;
   const casePreviewRequest = useRef(0);
   const financeRequests = useRef(new Map<string, { id: string; busy: boolean }>());
   const beginFinanceRequest = (key: string) => {
@@ -11567,7 +11594,7 @@ export default function Home() {
   };
   const searchRef = useRef<HTMLInputElement | null>(null);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
-  const [active, setActive] = useState<ModuleKey>("dashboard"),
+  const [active, setActiveModule] = useState<ModuleKey>("dashboard"),
     [menuOpen, setMenuOpen] = useState(false),
     [query, setQuery] = useState(""),
     [globalSearchOpen, setGlobalSearchOpen] = useState(false),
@@ -12103,6 +12130,10 @@ export default function Home() {
     })();
     return () => controller.abort();
   }, [caseWindowId, cases, enquiryPageRecords, selected]);
+  const setActive = useCallback((module: ModuleKey) => {
+    if (module === "ai") { toggleCopilot(); setMenuOpen(false); return; }
+    setActiveModule(module);
+  }, [toggleCopilot]);
   const openCasePreview = useCallback((record: CaseRecord, tab: CaseTab = "overview") => {
     casePreviewRequest.current += 1;
     setFormError("");
@@ -12134,7 +12165,23 @@ export default function Home() {
     }
     setActive(result.stage === "enquiry" ? "enquiries" : "students");
     setQuery(result.title);
-  }, [cases, enquiryPageRecords, openCasePreview]);
+  }, [cases, enquiryPageRecords, openCasePreview, setActive]);
+  useEffect(() => {
+    if (!signedIn || role === "client") { resetCopilot(); return; }
+    if (new URL(window.location.href).searchParams.get("copilot") === "1") openCopilot();
+  }, [signedIn, role, openCopilot, resetCopilot]);
+  useEffect(() => {
+    const chooseCase = (event: Event) => {
+      const match = (event as CustomEvent<{ caseId: string; title: string; reference: string }>).detail;
+      if (match?.caseId && caseWindowId) {
+        setCaseWindowId(match.caseId);
+        const url = new URL(window.location.href); url.searchParams.set("case", match.caseId); window.history.replaceState(null, "", url);
+      }
+      if (match?.caseId) void openGlobalSearchResult({ ...match, id: match.caseId, clientId: "", type: "case", subtitle: "", service: "", stage: "", target: "", branchId: "" });
+    };
+    window.addEventListener("maximus:copilot-case", chooseCase);
+    return () => window.removeEventListener("maximus:copilot-case", chooseCase);
+  }, [openGlobalSearchResult, caseWindowId]);
   const open = (x: ModalType) => {
     setEditing(null);
     setFormError("");
@@ -13011,8 +13058,6 @@ export default function Home() {
         serviceMode={serviceMode}
       />
     );
-  else if (active === "ai")
-    content = <CopilotPanel />;
   else if (active === "compliance")
     content = (
       <article className="panel listPanel">
@@ -13370,6 +13415,7 @@ export default function Home() {
               </div>
             ) : null}
             <div className="topActions">
+              {role !== "client" && <button className="messageShortcut copilotTrigger" aria-expanded={copilot.isOpen} aria-controls="crm-copilot" onClick={copilot.toggle}><Sparkles size={17} /><span>Copilot</span></button>}
               {role !== "client" ? (
                 <button
                   className={`messageShortcut ${active === "communications" ? "active" : ""}`}

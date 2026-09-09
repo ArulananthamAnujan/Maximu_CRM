@@ -38,6 +38,7 @@ async function fixture(run, options = {}) {
       // Reject the real schema defect that previously made all live search fail.
       if (/created_at/.test((url.searchParams.get('select') ?? '') + (url.searchParams.get('order') ?? ''))) return send(400, { message: 'cases.created_at does not exist' });
       if (options.failCases) return send(503, { message: 'Temporary database outage' });
+      if (url.searchParams.get('select')?.includes('clients!inner')) return send(200, options.denyClient ? [] : cases.slice(0,2).map(row => ({ ...row, clients: client })));
       if (url.searchParams.get('id')?.startsWith('eq.')) return send(200, [{ ...cases[0], lifecycle_stage: 'application' }], { 'Content-Range': '0-0/1' });
       if (url.searchParams.get('select') === 'id' || url.searchParams.has('or')) return send(200, [cases[0]]);
       if (url.searchParams.get('id')?.startsWith('in.')) return send(200, [cases[0]], { 'Content-Range': '0-0/1' });
@@ -255,3 +256,37 @@ test('recovered notes retain their source author and date and appear once in the
   noteSources: [{ target_id: id(40), source_key: 'legacy:note:1', metadata: { legacy_data: { author: 'Original counsellor', source_created_at: '23/09/2024 02:05 pm' } } }],
   legacyActivity: [{ id: id(41), source_entity_type: 'notes', source_key: 'legacy:note:1', event_type: 'note', body: 'Original conversation', occurred_at: '2024-09-23T04:05:00Z' }],
 }));
+
+
+test('Copilot case picker joins visible clients in two bounded reads and keeps multiple cases', async () => fixture(async ({ call, requests }) => {
+  const response = await call('/api/crm/search?scope=cases&q=Test%20Applicant');
+  assert.equal(response.status, 200);
+  const rows = (await response.json()).results;
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every(row => row.title === 'Test Applicant' && row.caseId));
+  const reads = requests.filter(r => r.url.pathname === '/rest/v1/cases');
+  assert.equal(reads.length, 2);
+  assert.ok(reads.every(r => r.url.searchParams.get('limit') === '12' && r.url.searchParams.get('select').includes('clients!inner')));
+  assert.equal(requests.filter(r => r.url.pathname === '/rest/v1/clients').length, 0);
+  assert.match(reads.find(r => r.url.searchParams.has('clients.or')).url.searchParams.get('clients.or'), /and\(or\(first_name\.ilike/);
+  assert.match(response.headers.get('Cache-Control'), /no-store/);
+}));
+test('Copilot recent cases need one bounded read and inaccessible clients remain absent', async () => {
+  await fixture(async ({ call, requests }) => {
+    assert.equal((await call('/api/crm/search?scope=cases')).status, 200);
+    assert.equal(requests.filter(r => r.url.pathname === '/rest/v1/cases').length, 1);
+  });
+  await fixture(async ({ call }) => {
+    assert.deepEqual((await (await call('/api/crm/search?scope=cases&q=Test')).json()).results, []);
+  }, { denyClient: true });
+});
+test('Copilot picker escapes punctuation and reports database failure', async () => {
+  await fixture(async ({ call, requests }) => {
+    assert.equal((await call('/api/crm/search?scope=cases&q=' + encodeURIComponent('A&B, "Test"'))).status, 200);
+    const read = requests.find(r => r.url.searchParams.has('clients.or'));
+    assert.deepEqual([...read.url.searchParams.keys()].sort(), ['clients.archived_at', 'clients.or', 'limit', 'order', 'select']);
+  });
+  await fixture(async ({ call }) => {
+    assert.equal((await call('/api/crm/search?scope=cases&q=Test')).status, 503);
+  }, { failCases: true });
+});
