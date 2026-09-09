@@ -6916,7 +6916,7 @@ function AdminView({
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [section, setSection] = useState<"staff" | "invitations" | "branches" | "settings">("staff");
+  const [section, setSection] = useState<"staff" | "clients" | "invitations" | "branches" | "settings">("staff");
   const [addingBranch, setAddingBranch] = useState(false);
   const [staffSearch, setStaffSearch] = useState("");
   const [staffStatus, setStaffStatus] = useState("all");
@@ -7007,11 +7007,12 @@ function AdminView({
       if (!response.ok) {
         if (result.existingAccount?.email) {
           setStaffStatus("all"); setStaffBranch(""); setStaffSearch(result.existingAccount.email);
+          setSection(result.existingAccount.level === "student" ? "clients" : "staff");
           setAdding(false);
         }
         throw new Error(result.error || "That did not save.");
       }
-      if (payload.action === "remove_staff") {
+      if (payload.action === "remove_staff" || payload.action === "remove_client_account") {
         setProfiles(current => current.filter(person => person.id !== payload.profileId));
         setHandover({ message: result.message });
       }
@@ -7064,6 +7065,7 @@ function AdminView({
     <section className="adminStack">
       <nav className="staffManagementTabs" aria-label="Staff management sections">
         <button type="button" aria-pressed={section === "staff"} onClick={() => setSection("staff")}>Team <span>{profiles.filter(person => person.level !== "student").length}</span></button>
+        <button type="button" aria-pressed={section === "clients"} onClick={() => setSection("clients")}>Client logins <span>{portalAccounts.length}</span></button>
         <button type="button" aria-pressed={section === "invitations"} onClick={() => setSection("invitations")}>Invitations <span>{actionableInvitations.length}</span></button>
         <button type="button" aria-pressed={section === "branches"} onClick={() => setSection("branches")}>Branches</button>
         <button type="button" aria-pressed={section === "settings"} onClick={() => setSection("settings")}>Settings</button>
@@ -7358,7 +7360,7 @@ function AdminView({
 
       </>}
 
-      {deletingStaff && <StaffDeleteDialog person={deletingStaff} profiles={profiles} onClose={() => setDeletingStaff(null)} onDelete={async replacement => Boolean(await send({ action: "remove_staff", profileId: deletingStaff.id, replacementProfileId: replacement }, true))} />}
+      {deletingStaff && <StaffDeleteDialog person={deletingStaff} profiles={profiles} onClose={() => setDeletingStaff(null)} onDelete={async replacement => Boolean(await send({ action: deletingStaff.level === "student" ? "remove_client_account" : "remove_staff", profileId: deletingStaff.id, replacementProfileId: replacement }, true))} />}
 
       {section === "invitations" && (
         <article className="panel listPanel">
@@ -7413,92 +7415,34 @@ function AdminView({
         </article>
       )}
 
-      {section === "settings" && <div className="staffSettings">
-        <details className="staffSettingsGroup"><summary>Client portal accounts</summary>
-      <article className="panel listPanel">
-        <div className="panelHead">
-          <div>
-            <span className="kicker">CLIENT PORTAL</span>
-            <h2>Portal logins</h2>
-          </div>
+      {section === "clients" && <article className="panel listPanel">
+        <div className="panelHead"><h2>Client logins</h2></div>
+        <p className="coverageIntro">Manage portal access here. Deleting a login keeps the client’s files and case history. Disconnecting a file does not deactivate the login.</p>
+        <div className="staffFilters">
+          <input aria-label="Search client logins" placeholder="Search name or email" value={staffSearch} onChange={event => setStaffSearch(event.target.value)} />
+          <select aria-label="Client login status" value={staffStatus} onChange={event => setStaffStatus(event.target.value)}><option value="all">All accounts</option><option value="active">Active</option><option value="inactive">Deactivated</option></select>
         </div>
-        <p className="coverageIntro">
-          A client sees nothing until their login is connected to their file.
-          Until then their portal says so and asks them to contact you.
-        </p>
-        {portalAccounts.length === 0 ? (
-          <p className="boardEmpty">
-            No client logins yet. Create one under Add staff member with the
-            Client / Student level, or invite them.
-          </p>
-        ) : (
-          portalAccounts.map((person) => {
-            const linked = clientLinks.find(
-              (link) => link.profile_id === person.id,
-            );
-            return (
-              <div className="functionalRow" key={person.id}>
-                <GraduationCap size={18} />
-                <div>
-                  <strong>{person.display_name}</strong>
-                  <span>{person.email}</span>
-                  <small className={linked ? "" : "unlinkedHint"}>
-                    {linked
-                      ? `Connected to ${
-                          clients.find((c) => c.id === linked.client_id)
-                            ?.name ?? "a client record"
-                        }`
-                      : "Not connected to a client record yet"}
-                  </small>
-                </div>
-                <select
-                  aria-label={`Client record for ${person.display_name}`}
-                  value={linked?.client_id ?? ""}
-                  disabled={working}
-                  onChange={(event) => {
-                    if (!event.target.value) return;
-                    void send({
-                      action: "link_client_account",
-                      profileId: person.id,
-                      clientId: event.target.value,
-                      endpoint: "operations",
-                    });
-                  }}
-                >
-                  <option value="">Connect to a client…</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
-                {linked && (
-                  <button
-                    className="linkButton"
-                    disabled={working}
-                    onClick={() => {
-                      if (
-                        confirm(
-                          `Disconnect ${person.display_name} from their client record? They can be reconnected at any time.`,
-                        )
-                      )
-                        void send({
-                          action: "unlink_client_account",
-                          profileId: person.id,
-                          endpoint: "operations",
-                        });
-                    }}
-                  >
-                    Disconnect
-                  </button>
-                )}
+        {loading && <p>Loading client logins…</p>}
+        {portalAccounts.filter(person => (!staffSearch.trim() || `${person.display_name} ${person.email}`.toLowerCase().includes(staffSearch.trim().toLowerCase())) && (staffStatus === "all" || (staffStatus === "active" ? person.active : !person.active))).map(person => {
+          const linked = clientLinks.find(link => link.profile_id === person.id);
+          return <div className="functionalRow" key={person.id}>
+            <GraduationCap size={18} />
+            <div><strong>{person.display_name}</strong><span>{person.email}</span><small>{person.active ? "Active" : "Deactivated"} · {linked ? "Connected to a client record" : "No client record connected"}</small></div>
+            <details className="staffSettingsGroup"><summary>Manage {person.display_name}</summary>
+              <label>Client record<select aria-label={`Client record for ${person.display_name}`} value={linked?.client_id ?? ""} disabled={working || !person.active} onChange={event => { if (event.target.value) void send({ action: "link_client_account", profileId: person.id, clientId: event.target.value, endpoint: "operations" }); }}>
+                <option value="">Connect to a client…</option>{clients.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
+              </select></label>
+              <div className="staffActions">
+                {linked && <button className="linkButton" disabled={working} onClick={() => { if (confirm(`Disconnect ${person.display_name} from their client record?`)) void send({ action: "unlink_client_account", profileId: person.id, endpoint: "operations" }); }}>Disconnect file</button>}
+                <button className="linkButton" disabled={working} onClick={() => void send({ action: "update_profile", profileId: person.id, active: !person.active })}>{person.active ? "Deactivate" : "Reactivate"}</button>
+                {isOwner && !person.active && <button className="linkButton dangerLink" disabled={working} onClick={() => { setError(""); setDeletingStaff(person); }}>Delete account</button>}
               </div>
-            );
-          })
-        )}
-      </article>
-
-        </details>
+            </details>
+          </div>;
+        })}
+        {!loading && !portalAccounts.some(person => (!staffSearch.trim() || `${person.display_name} ${person.email}`.toLowerCase().includes(staffSearch.trim().toLowerCase())) && (staffStatus === "all" || (staffStatus === "active" ? person.active : !person.active))) && <p className="boardEmpty">No client logins match these filters.</p>}
+      </article>}
+      {section === "settings" && <div className="staffSettings">
         {isOwner && <>
           <details className="staffSettingsGroup"><summary>Organisation defaults</summary>
       {isOwner && settings ? (
@@ -13118,11 +13062,10 @@ function HomeWorkspace() {
           currentProfileId={identity?.profileId ?? ""}
           clients={clientDirectory}
         />
-        <ReadinessPanel />
-        <FeatureCoverage />
+
       </>
     );
-  else if (active === "integrations") content = <GoogleWorkspaceView />;
+  else if (active === "integrations") content = <><GoogleWorkspaceView /><details className="staffSettingsGroup"><summary>System diagnostics</summary><ReadinessPanel /><FeatureCoverage /></details></>;
   else {
     // Opens the case an application or visa matter belongs to.
     const openCase = (id: string) => {

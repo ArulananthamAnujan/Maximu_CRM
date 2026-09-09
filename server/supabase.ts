@@ -32,9 +32,8 @@ export function supabaseConfig(): SupabaseRuntime {
 
 /**
  * The service-role key, if this deployment has one. It bypasses row-level
- * security entirely, so it is used on exactly one path -- creating the Supabase
- * login for a member of staff an administrator is adding -- and never with any
- * value a request supplied as a filter.
+ * security entirely. Account lifecycle callers must authorize the actor and
+ * verify the target through their organisation/RLS scope before using it.
  */
 export function serviceRoleKey(): string {
   return (

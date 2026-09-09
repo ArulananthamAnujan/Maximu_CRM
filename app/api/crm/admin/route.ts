@@ -90,15 +90,15 @@ export async function POST(request: Request) {
       const roleId = optionalUuid(body.roleId) ?? (await defaultRoleId(level, org, token));
 
       const existing = await get(
-        `profiles?select=id,email,active&organisation_id=eq.${org}&email=eq.${encodeURIComponent(address)}&limit=1`,
+        `profiles?select=id,email,active,level&organisation_id=eq.${org}&email=eq.${encodeURIComponent(address)}&limit=1`,
         token,
       ) as Json[];
       if (existing.length) return appendRefreshCookies(Response.json({
         ok: false,
         error: existing[0].active
-          ? "An active account already uses this email. You can manage it in the team list below."
+          ? `An active ${existing[0].level === "student" ? "client login" : "staff account"} already uses this email. Manage it in ${existing[0].level === "student" ? "Client logins" : "Team"} below.`
           : "This email belongs to a deactivated account. Reactivate it, or delete the account below before creating a fresh one.",
-        existingAccount: { profileId: existing[0].id, email: address },
+        existingAccount: { profileId: existing[0].id, email: address, level: existing[0].level, active: existing[0].active },
       }, { status: 409 }), session.refreshed, request);
 
       // Records an invitation rather than a login: used both when this
@@ -297,6 +297,46 @@ export async function POST(request: Request) {
         }
       }
       await patch("profiles", target, changes, token);
+    } else if (action === "remove_client_account") {
+      if (session.identity.role !== "super_admin")
+        throw new LiveAccessError(403, "Only a Super Admin can remove a client login.");
+      if (!serviceRoleKey()) throw new InputError("Account removal requires the Supabase service-role connection.");
+      const target = uuid(body.profileId, "Profile");
+      if (target === session.identity.profileId) throw new InputError("You cannot remove your own account.");
+      // Authorize through the caller's RLS scope before any elevated cleanup.
+      const [person] = await get(`profiles?select=id,display_name,email,level,active,branch_id&organisation_id=eq.${org}&id=eq.${target}&limit=1`, token) as Json[];
+      if (!person || person.level !== "student") throw new InputError("That client login is not available.");
+      if (isRemovedStaffAccount(person)) return appendRefreshCookies(Response.json({ ok: true, removedProfileId: target, message: "This account has already been deleted." }), session.refreshed, request);
+      if (person.active !== false) throw new InputError("Deactivate this client login before deleting it.");
+      try {
+        // Soft-delete Auth to revoke access and release the email without
+        // cascading through historical profile references. Every cleanup is
+        // scoped to the verified account and safe to retry. Retire the profile
+        // last, so incomplete removals remain visible for an administrator.
+        await supabaseAdminRequest(`/auth/v1/admin/users/${target}`, {
+          method: "DELETE", body: JSON.stringify({ should_soft_delete: true }),
+        });
+        for (const path of [
+          `client_user_links?profile_id=eq.${target}`,
+          `profile_roles?profile_id=eq.${target}`,
+          `mailbox_connections?organisation_id=eq.${org}&profile_id=eq.${target}`,
+          `staff_invitations?organisation_id=eq.${org}&email=eq.${encodeURIComponent(String(person.email))}`,
+        ]) await supabaseAdminRequest(`/rest/v1/${path}`, { method: "DELETE" });
+        await insert("audit_events", {
+          organisation_id: org, actor_id: session.identity.profileId,
+          action: "client.account_removed", resource_type: "profile", resource_id: target,
+          summary: `Removed ${String(person.display_name)}'s client login; client files and history retained.`,
+          after_data: { branch_id: person.branch_id },
+        }, token);
+        await supabaseAdminRequest(`/rest/v1/profiles?organisation_id=eq.${org}&id=eq.${target}`, {
+          method: "PATCH", body: JSON.stringify({ email: `removed+${target}@accounts.invalid`, active: false, branch_id: null, department: null }),
+        });
+      } catch {
+        throw new InputError("The client login is deactivated, but permanent deletion did not finish. Retry Delete account to complete it; its client files and case history are safe.");
+      }
+      return appendRefreshCookies(Response.json({ ok: true, removedProfileId: target,
+        message: `${String(person.display_name)}'s client login was deleted. You can now create a fresh account with ${String(person.email)}.`,
+      }), session.refreshed, request);
     } else if (action === "remove_staff") {
       if (session.identity.role !== "super_admin")
         throw new LiveAccessError(403, "Only a Super Admin can remove a staff account.");

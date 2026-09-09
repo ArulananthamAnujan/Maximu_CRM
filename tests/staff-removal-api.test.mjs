@@ -7,15 +7,15 @@ const TARGET = "00000000-0000-4000-8000-000000000002";
 const ORG = "00000000-0000-4000-8000-00000000aaaa";
 const BRANCH = "00000000-0000-4000-8000-00000000bbbb";
 
-async function admin({ action = "remove_staff", level = "super_admin", removed = false, missing = false, assigned = false, failAuth = false, failRetire = false, get = false, body: extra = {} } = {}) {
+async function admin({ action = "remove_staff", targetLevel = "staff", targetActive = false, failCleanup = false, level = "super_admin", removed = false, missing = false, assigned = false, failAuth = false, failRetire = false, get = false, body: extra = {} } = {}) {
   const calls = [];
   const actor = { id: ACTOR, organisation_id: ORG, branch_id: BRANCH, display_name: "Owner", email: "owner@maximus.test", active: true, level };
-  const person = { id: TARGET, organisation_id: ORG, branch_id: BRANCH, display_name: "Past Author", email: removed ? `removed+${TARGET}@accounts.invalid` : "staff@maximus.test", active: false, level: "staff" };
+  const person = { id: TARGET, organisation_id: ORG, branch_id: BRANCH, display_name: "Past Author", email: removed ? `removed+${TARGET}@accounts.invalid` : "staff@maximus.test", active: targetActive, level: targetLevel };
   const server = http.createServer(async (req, res) => {
     let raw = ""; for await (const chunk of req) raw += chunk;
     const url = new URL(req.url, "http://stub");
     const body = raw ? JSON.parse(raw) : null;
-    calls.push({ path: url.pathname, method: req.method, body, token: req.headers.authorization });
+    calls.push({ path: url.pathname, query: url.searchParams.toString(), method: req.method, body, token: req.headers.authorization });
     const send = (status, value) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(value)); };
     if (url.pathname === "/auth/v1/user") return send(200, { id: ACTOR, email: actor.email });
     if (url.pathname === "/rest/v1/profiles") {
@@ -24,6 +24,7 @@ async function admin({ action = "remove_staff", level = "super_admin", removed =
       if (url.searchParams.has("id") || url.searchParams.has("email")) return send(200, missing ? [] : [person]);
       return send(200, [actor, person]);
     }
+    if (failCleanup && url.pathname === "/rest/v1/client_user_links" && req.method === "DELETE") return send(503, {});
     if (url.pathname === "/rest/v1/branches") return send(200, [{ id: BRANCH }]);
     if (url.pathname === "/rest/v1/cases") return send(200, assigned ? [{ id: "case" }] : []);
     if (url.pathname === `/auth/v1/admin/users/${TARGET}`) return send(failAuth ? 503 : 200, {});
@@ -89,4 +90,43 @@ test("deleted profiles cannot be reactivated and duplicate inactive email points
   const duplicate = await admin({ action: "create_staff", body: { displayName: "New Staff", email: "staff@maximus.test", branchId: BRANCH, level: "staff", roleId: BRANCH } });
   assert.equal(duplicate.status, 409); assert.equal(duplicate.result.existingAccount.profileId, TARGET);
   assert.match(duplicate.result.error, /deactivated account/);
+});
+
+
+test("client removal preserves client/case data, releases Auth and retires the profile last", async () => {
+  const { status, result, calls } = await admin({ action: "remove_client_account", targetLevel: "student" });
+  assert.equal(status, 200); assert.equal(result.removedProfileId, TARGET);
+  const writes = calls.filter(call => call.method !== "GET");
+  assert.equal(writes[0].path, `/auth/v1/admin/users/${TARGET}`);
+  assert.deepEqual(writes[0].body, { should_soft_delete: true });
+  assert.deepEqual(writes.slice(1, 5).map(call => call.path), ["/rest/v1/client_user_links", "/rest/v1/profile_roles", "/rest/v1/mailbox_connections", "/rest/v1/staff_invitations"]);
+  assert.equal(writes.at(-1).body.email, `removed+${TARGET}@accounts.invalid`);
+  assert.equal(writes.at(-1).body.active, false);
+  assert.ok(writes.at(-1).query.includes(ORG));
+  assert.ok(writes.at(-1).query.includes(TARGET));
+  assert.ok(!writes.some(call => ["/rest/v1/clients", "/rest/v1/cases"].includes(call.path)));
+});
+
+test("client deletion rejects active, unavailable, non-client, self and non-owner targets before writes", async () => {
+  for (const options of [{ targetActive: true }, { missing: true }, { targetLevel: "staff" }, { body: { profileId: ACTOR } }, { level: "branch_admin" }]) {
+    const { status, calls } = await admin({ action: "remove_client_account", targetLevel: "student", ...options });
+    assert.ok([400, 403].includes(status));
+    assert.equal(calls.filter(call => call.method !== "GET").length, 0);
+  }
+});
+
+test("incomplete client cleanup stays visible for retry and a retired client removal is idempotent", async () => {
+  for (const options of [{ failAuth: true }, { failCleanup: true }]) {
+    const { status, result, calls } = await admin({ action: "remove_client_account", targetLevel: "student", ...options });
+    assert.equal(status, 400); assert.match(result.error, /Retry Delete account/);
+    assert.ok(!calls.some(call => call.method === "PATCH"));
+  }
+  const repeated = await admin({ action: "remove_client_account", targetLevel: "student", removed: true });
+  assert.equal(repeated.status, 200); assert.equal(repeated.calls.filter(call => call.method !== "GET").length, 0);
+});
+
+test("duplicate client email identifies the client list and real login status", async () => {
+  const { status, result } = await admin({ action: "create_staff", targetLevel: "student", targetActive: true, body: { displayName: "New Staff", email: "staff@maximus.test", branchId: BRANCH, level: "staff", roleId: BRANCH } });
+  assert.equal(status, 409); assert.equal(result.existingAccount.level, "student");
+  assert.equal(result.existingAccount.active, true); assert.match(result.error, /Client logins/);
 });
