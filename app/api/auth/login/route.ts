@@ -1,3 +1,4 @@
+import { googleOAuthConfigured } from "@/server/google-oauth-client";
 import {
   clientIp,
   isSecureRequest,
@@ -129,7 +130,7 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     return jsonWithCookies(
-      { ok: true },
+      { ok: true, next: profile.level !== "student" && googleOAuthConfigured() ? "/api/auth/gmail/start?workspace=1&auto=1" : "/" },
       200,
       sessionCookieHeaders(session, isSecureRequest(request)),
     );

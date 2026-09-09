@@ -64,13 +64,17 @@ export const GMAIL_SCOPE =
 export function gmailAuthorizeUrl(options: {
   redirectUri: string;
   state: string;
+  workspace?: boolean;
+  loginHint?: string;
 }): string {
   const { clientId } = googleOAuthClient("Gmail sending");
   const url = new URL(`${authBase()}/o/oauth2/v2/auth`);
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("redirect_uri", options.redirectUri);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", GMAIL_SCOPE);
+  url.searchParams.set("scope", GMAIL_SCOPE + (options.workspace ? " https://www.googleapis.com/auth/calendar.events" : ""));
+  url.searchParams.set("include_granted_scopes", "true");
+  if (options.loginHint) url.searchParams.set("login_hint", options.loginHint);
   url.searchParams.set("access_type", "offline");
   // Forces Google to hand back a refresh token even if this person connected
   // before; without it a reconnect silently returns none.

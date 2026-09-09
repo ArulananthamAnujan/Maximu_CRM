@@ -1,20 +1,13 @@
 import { appendRefreshCookies, liveSession } from "@/server/supabase-session";
-import { cookie, isSecureRequest } from "@/server/supabase";
+import { cookie, isSecureRequest, supabaseRequest } from "@/server/supabase";
 import { gmailAuthorizeUrl, gmailOAuthConfigured } from "@/server/gmail";
 
 export const dynamic = "force-dynamic";
 
 const STATE_COOKIE = "maximus_gmail_state";
 
-/**
- * Connecting a member of staff's own Gmail account for sending case-linked
- * mail. This is separate from Google sign-in: it needs its own OAuth client
- * (a web client with gmail.send access, not the sign-in client) because a
- * refresh token has to be kept afterwards, which sign-in never needs.
- *
- * The redirect carries a random state, set as a short-lived cookie here and
- * checked against the same value on the callback, so the code exchange
- * cannot be forged by a request that never went through this page.
+/** Reuse saved personal connections after sign-in, or request Google consent
+ * for Gmail and Calendar together. The state is bound to the CRM profile.
  */
 export async function GET(request: Request) {
   const home = () => Response.redirect(new URL("/", request.url).toString(), 302);
@@ -26,10 +19,19 @@ export async function GET(request: Request) {
       return appendRefreshCookies(home(), session.refreshed, request);
 
     const origin = new URL(request.url).origin;
-    const state = crypto.randomUUID();
+    const params = new URL(request.url).searchParams;
+    const workspace = params.get("workspace") === "1";
+    if (workspace && params.get("auto") === "1") {
+      const rows = await supabaseRequest<{ provider: string; email: string; active: boolean; token_reference: string | null }[]>(`/rest/v1/mailbox_connections?select=provider,email,active,token_reference&profile_id=eq.${session.identity.profileId}&provider=in.(gmail,google_calendar)`, { method: "GET" }, session.accessToken);
+      const ready = ["gmail", "google_calendar"].every(provider => rows.some(row => row.provider === provider && row.active && row.token_reference && row.email.toLowerCase() === session.identity.email.toLowerCase()));
+      if (ready) return appendRefreshCookies(home(), session.refreshed, request);
+    }
+    const state = `${session.identity.profileId}.${workspace ? "workspace" : "gmail"}.${crypto.randomUUID()}`;
     const authorize = gmailAuthorizeUrl({
       redirectUri: `${origin}/api/auth/gmail/callback`,
       state,
+      workspace,
+      loginHint: session.identity.email,
     });
     const headers = new Headers({ Location: authorize });
     headers.append(

@@ -97,6 +97,7 @@ const server = http.createServer((req, res) => {
         return send(200, {
           access_token: `gmail-access-${code}`,
           refresh_token: `gmail-refresh-${code}`,
+          scope: "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email",
           expires_in: 3600,
           token_type: "Bearer",
         });
@@ -116,7 +117,7 @@ const server = http.createServer((req, res) => {
       const bearer = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
       const code = bearer.replace(/^gmail-access-/, "");
       if (!code || code === bearer) return send(401, { error: "invalid token" });
-      return send(200, { email: `${code}@gmail.stub.test` });
+      return send(200, { email: code.includes("@") ? code : `${code}@gmail.stub.test` });
     }
 
     if (req.method === "POST" && url.pathname === "/gmail/v1/users/me/messages/send") {

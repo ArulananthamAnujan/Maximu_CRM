@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 export default function GoogleCallbackPage() {
   const started = useRef(false);
+  const continueTo = useRef("/");
   const [error, setError] = useState("");
   const [setup, setSetup] = useState(false);
   const [working, setWorking] = useState(false);
@@ -32,8 +33,9 @@ export default function GoogleCallbackPage() {
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) { setError(result.error || "Your sign-in could not be completed."); return; }
+        continueTo.current = result.next === "/api/auth/gmail/start?workspace=1&auto=1" ? result.next : "/";
         if (requestedSetup || ["recovery", "invite"].includes(params.get("type") || "")) setSetup(true);
-        else window.location.replace("/");
+        else window.location.replace(continueTo.current);
       } catch { setError("Your sign-in could not be completed. Please try again."); }
     })();
   }, []);
@@ -51,7 +53,7 @@ export default function GoogleCallbackPage() {
       const response = await fetch("/api/auth/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password }) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "Your password could not be saved.");
-      window.location.replace("/");
+      window.location.replace(continueTo.current);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Please try again."); }
     finally { setWorking(false); }
   };

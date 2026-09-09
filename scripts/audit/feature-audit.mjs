@@ -1472,7 +1472,7 @@ expect("a CSRF state cookie is set for the round trip", Boolean(stateCookie));
 const state = new URL(start.headers.get("location")).searchParams.get("state");
 
 const wrongState = await call(
-  "/api/auth/gmail/callback?code=officer-gmail-test&state=not-the-real-state",
+  "/api/auth/gmail/callback?code=officer%40maximus.test&state=not-the-real-state",
   { cookie: `${officer.cookie}; ${stateCookie}` });
 expect("a mismatched state is refused",
   wrongState.status === 302 && (wrongState.headers.get("location") ?? "").includes("gmail=error"),
@@ -1481,7 +1481,7 @@ const stillDisconnected = await call("/api/crm/mailbox", { cookie: officer.cooki
 expect("the mismatched attempt connected nothing", stillDisconnected.json?.connected === false);
 
 const callback = await call(
-  `/api/auth/gmail/callback?code=officer-gmail-test&state=${state}`,
+  `/api/auth/gmail/callback?code=officer%40maximus.test&state=${state}`,
   { cookie: `${officer.cookie}; ${stateCookie}` });
 expect("the callback completes the connection",
   callback.status === 302 && (callback.headers.get("location") ?? "").includes("gmail=connected"),
@@ -1490,7 +1490,7 @@ expect("the callback completes the connection",
 const afterConnect = await call("/api/crm/mailbox", { cookie: officer.cookie });
 expect("the officer's own Gmail account now shows connected",
   afterConnect.json?.connected === true &&
-    afterConnect.json?.email === "officer-gmail-test@gmail.stub.test",
+    afterConnect.json?.email === "officer@maximus.test",
   JSON.stringify(afterConnect.json));
 
 const managerSend = await call("/api/crm/mailbox", { method: "POST", cookie: manager.cookie,

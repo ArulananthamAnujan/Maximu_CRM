@@ -27,7 +27,9 @@ export async function GET(request: Request) {
         "The assistant is not available in the client portal.",
       );
     const caseId = new URL(request.url).searchParams.get("caseId");
-    if (!caseId) throw new InputError("Case is required.");
+    if (!caseId || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(caseId)) throw new InputError("A valid case is required.");
+    const visibleCases = await rest<Json[]>(`cases?select=id&id=eq.${caseId}&limit=1`, session.accessToken);
+    if (!visibleCases.length) throw new LiveAccessError(403, "That case is not available to you.");
     // RLS answers this: a case the caller cannot access returns no rows and
     // no interactions, rather than a 403 that would confirm the case exists.
     const rows = await rest<Json[]>(
