@@ -353,3 +353,46 @@
 .staffDeleteButton { background: #ac342d; color: #fff; }
 .staffDeleteButton:disabled { opacity: .5; cursor: not-allowed; }
 .staffDeleteDialog .formError { color: #9e2e28; font-weight: 600; }
+/* Staff management opens on the team; occasional tools live in their own views. */
+.staffManagementTabs { display:flex; flex-wrap:wrap; gap:6px; padding:6px; border:1px solid #d8e3ea; border-radius:10px; background:#fff; }
+.staffManagementTabs button { display:inline-flex; align-items:center; gap:8px; padding:10px 16px; border:0; border-radius:7px; background:transparent; color:#526b7b; font:inherit; font-size:.9375rem; cursor:pointer; }
+.staffManagementTabs button[aria-pressed="true"] { background:#153e53; color:#fff; }
+.staffManagementTabs button span { padding:0 6px; border-radius:4px; background:#dbeaf133; font-size:.875rem; }
+.adminStack .staffAccountTable { width:100%; min-width:0; table-layout:fixed; }
+.adminStack .staffAccountTable :is(th,td) { white-space:normal; overflow-wrap:anywhere; vertical-align:top; font-size:.9375rem; padding:14px 10px; }
+.adminStack .staffAccountTable th:first-child { width:40px; }
+.adminStack .staffAccountTable th:nth-child(2) { width:28%; }
+.adminStack .staffAccountTable th:nth-child(3) { width:13%; }
+.adminStack .staffAccountTable th:nth-child(4) { width:17%; }
+.adminStack .staffAccountTable th:nth-child(5) { width:14%; }
+.staffAccountTable .bulkSelectAll > span { position:absolute; width:1px; height:1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.staffAccountTable .bulkSelectAll { margin:0; padding:0; }
+.staffMemberEmail,.staffMemberDepartment { display:block; margin-top:4px; font-size:.875rem; color:#56707f; }
+.staffMemberDepartment { color:#71838e; }
+.staffAccountStatus { display:inline-block; padding:3px 8px; border-radius:5px; background:#edf3f6; font-size:.875rem; }
+.staffAccountStatus.active { color:#246953; background:#e8f4ef; }
+.staffAccountStatus.inactive { color:#6b6260; background:#f1eeec; }
+.staffManage summary { padding:5px 9px; border:1px solid #d2dfe7; border-radius:6px; color:#176582; background:#fff; font-size:.875rem; cursor:pointer; width:fit-content; }
+.staffManage[open] summary { margin-bottom:12px; }
+.staffManageBody { display:grid; gap:12px; }
+.staffManageBody label { display:grid; gap:5px; font-size:.875rem; }
+.adminStack .staffAccountTable .staffManageBody select { width:100%; min-width:0; max-width:100%; padding:7px 5px; border:1px solid #c9d9e2; border-radius:5px; font:inherit; background:#fff; }
+.staffManageBody .staffActions { display:grid; justify-items:start; gap:10px; padding-top:10px; border-top:1px solid #dce7ec; }
+.staffManageBody .staffActions button { font-size:.875rem; text-align:left; line-height:1.4; }
+.staffAccountHint { margin:16px 20px; font-size:.875rem; color:#637b88; }
+.staffSettings { display:grid; gap:12px; }
+.staffSettingsGroup { background:#fff; border:1px solid #d6e2e9; border-radius:9px; min-width:0; }
+.staffSettingsGroup > summary { padding:16px 20px; color:#244c60; font-size:1rem; font-weight:600; cursor:pointer; }
+.staffSettingsGroup > .panel { margin:0; box-shadow:none; border:0; border-top:1px solid #e1e9ee; border-radius:0 0 9px 9px; }
+.staffManagementTabs button:focus-visible,.staffManage summary:focus-visible,.staffSettingsGroup > summary:focus-visible { outline:2px solid #167896; outline-offset:2px; }
+@media(max-width:760px) {
+  .staffManagementTabs button { padding:8px 10px; }
+  .adminStack .staffAccountTable,.adminStack .staffAccountTable tbody { display:block; }
+  .adminStack .staffAccountTable thead { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0); }
+  .adminStack .staffAccountTable tbody tr { display:grid; grid-template-columns:36px minmax(0,1fr); padding:10px; border-bottom:1px solid #dce6ec; }
+  .adminStack .staffAccountTable td { display:block; padding:6px; border:0; }
+  .adminStack .staffAccountTable td:first-child { grid-column:1; grid-row:1; }
+  .adminStack .staffAccountTable td:not(:first-child) { grid-column:2; }
+  .staffAccountTable td[data-label]::before { content:attr(data-label) ": "; font-size:.875rem; color:#637b88; }
+  .staffManageBody { max-width:350px; }
+}

@@ -681,7 +681,6 @@ const dailyNavGroups = [
   {
     label: "Workspace",
     items: [
-      ["ai", "Copilot", Sparkles],
       ["calendar", "Calendar", CalendarDays],
       ["work", "Tasks", Check],
     ],
@@ -718,7 +717,7 @@ const adminToolGroups = [
     label: "Branch management",
     items: [
       ["workflows", "Workflow Templates", Workflow],
-      ["administration", "Staff & Masters", Settings],
+      ["administration", "Staff management", Settings],
       ["compliance", "Activity & Compliance", LockKeyhole],
     ],
   },
@@ -1099,9 +1098,9 @@ const meta: Record<ModuleKey, [string, string, string]> = {
     "Login activity, staff activity and audit controls.",
   ],
   administration: [
-    "Staff & Masters",
+    "Staff management",
     "Organisation settings",
-    "Staff, roles, branches, partners, institutions, courses and integrations.",
+    "Manage your team’s accounts, roles and access.",
   ],
   integrations: [
     "Integrations",
@@ -6917,6 +6916,7 @@ function AdminView({
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [section, setSection] = useState<"staff" | "invitations" | "branches" | "settings">("staff");
   const [addingBranch, setAddingBranch] = useState(false);
   const [staffSearch, setStaffSearch] = useState("");
   const [staffStatus, setStaffStatus] = useState("all");
@@ -7062,38 +7062,15 @@ function AdminView({
 
   return (
     <section className="adminStack">
-      <LegacyImportPanel branches={adminBranches} />
-      {isOwner && settings ? (
-        <article className="panel listPanel">
-          <div className="panelHead"><div><span className="kicker">MASTER CONFIGURATION</span><h2>Organisation defaults</h2></div></div>
-          <p className="coverageIntro">These values control new invoices, receipts, reminders and appointments across every branch.</p>
-          <form className="stackedForm" onSubmit={async (event) => {
-            event.preventDefault();
-            const data = new FormData(event.currentTarget);
-            await send({
-              action: "update_settings",
-              timezone: data.get("timezone"), defaultCurrency: data.get("defaultCurrency"),
-              taxLabel: data.get("taxLabel"), taxRate: Number(data.get("taxRate")),
-              invoicePrefix: data.get("invoicePrefix"), receiptPrefix: data.get("receiptPrefix"),
-              creditNotePrefix: data.get("creditNotePrefix"), paymentTermsDays: Number(data.get("paymentTermsDays")),
-              appointmentDurationMinutes: Number(data.get("appointmentDurationMinutes")),
-              overdueRemindersEnabled: data.get("overdueRemindersEnabled") === "on",
-            });
-          }}>
-            <label>Timezone<input name="timezone" required defaultValue={settings.timezone} /></label>
-            <label>Currency<input name="defaultCurrency" required maxLength={3} defaultValue={settings.default_currency} /></label>
-            <label>Tax label<input name="taxLabel" required defaultValue={settings.tax_label} /></label>
-            <label>Tax rate<input name="taxRate" type="number" min="0" max="1" step="0.0001" required defaultValue={settings.tax_rate} /></label>
-            <label>Invoice prefix<input name="invoicePrefix" required defaultValue={settings.invoice_prefix} /></label>
-            <label>Receipt prefix<input name="receiptPrefix" required defaultValue={settings.receipt_prefix} /></label>
-            <label>Credit-note prefix<input name="creditNotePrefix" required defaultValue={settings.credit_note_prefix} /></label>
-            <label>Payment terms (days)<input name="paymentTermsDays" type="number" min="0" max="365" required defaultValue={settings.payment_terms_days} /></label>
-            <label>Appointment duration (minutes)<input name="appointmentDurationMinutes" type="number" min="15" max="480" required defaultValue={settings.appointment_duration_minutes} /></label>
-            <label className="checkboxLabel"><input name="overdueRemindersEnabled" type="checkbox" defaultChecked={settings.overdue_reminders_enabled} /> Automatic overdue reminders</label>
-            <button className="primaryButton" disabled={working}><Check size={15} /> Save master configuration</button>
-          </form>
-        </article>
-      ) : null}
+      <nav className="staffManagementTabs" aria-label="Staff management sections">
+        <button type="button" aria-pressed={section === "staff"} onClick={() => setSection("staff")}>Team <span>{profiles.filter(person => person.level !== "student").length}</span></button>
+        <button type="button" aria-pressed={section === "invitations"} onClick={() => setSection("invitations")}>Invitations <span>{actionableInvitations.length}</span></button>
+        <button type="button" aria-pressed={section === "branches"} onClick={() => setSection("branches")}>Branches</button>
+        <button type="button" aria-pressed={section === "settings"} onClick={() => setSection("settings")}>Settings</button>
+      </nav>
+      {section !== "staff" && error && <p role="alert" className="caseWorkError">{error}</p>}
+      {section !== "staff" && handover && <p role="status" className="handoverPanel">{handover.message}</p>}
+      {section === "staff" && <>
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
@@ -7254,9 +7231,6 @@ function AdminView({
           <p className="boardEmpty">No staff match these filters.</p>
         ) : (
           <>
-          <div className="listSelectionTools">
-            <SelectAllControl checked={staffSelection.allSelected} onChange={staffSelection.toggleAll} label="Select all shown staff except yourself" />
-          </div>
           <BulkActionBar count={staffSelection.selected.length} onClear={staffSelection.clear}>
             <select
               aria-label="Move selected staff to branch"
@@ -7284,15 +7258,13 @@ function AdminView({
             })))}><Download size={14} /> Export</button>
           </BulkActionBar>
           <div className="recordTableWrap">
-            <table className="recordTable boardTable">
+            <table className="recordTable boardTable staffAccountTable">
               <thead>
                 <tr>
-                  <th scope="col" className="selectionColumn"><span className="srOnly">Select</span></th>
-                  <th scope="col">Name</th>
-                  <th scope="col">Email</th>
-                  <th scope="col">Level</th>
+                  <th scope="col" className="selectionColumn"><SelectAllControl checked={staffSelection.allSelected} onChange={staffSelection.toggleAll} label="Select all shown staff except yourself" /></th>
+                  <th scope="col">Team member</th>
+                  <th scope="col">Role</th>
                   <th scope="col">Branch</th>
-                  <th scope="col">Department</th>
                   <th scope="col">Status</th>
                   <th scope="col">Action</th>
                 </tr>
@@ -7308,9 +7280,13 @@ function AdminView({
                         <RowSelection checked={staffSelection.selectedIds.has(person.id)} onChange={() => staffSelection.toggle(person.id)} label={`Select ${person.display_name}`} />
                       )}
                     </td>
-                    <td>{person.display_name}</td>
-                    <td>{person.email}</td>
+                    <td><strong>{person.display_name}</strong><span className="staffMemberEmail">{person.email}</span>{person.department && <small className="staffMemberDepartment">{person.department}</small>}</td>
+                    <td data-label="Role">{levelLabel(person.level)}</td>
+                    <td data-label="Branch">{branchName(person.branch_id)}</td>
+                    <td data-label="Status"><span className={`staffAccountStatus ${person.active ? "active" : "inactive"}`}>{person.active ? "Active" : "Deactivated"}</span></td>
                     <td>
+                      <details className="staffManage"><summary>Manage</summary><div className="staffManageBody">
+                        <label>Account role
                       {isOwner && person.level !== "student" ? (
                         <select
                           aria-label={`Account level for ${person.display_name}`}
@@ -7333,8 +7309,8 @@ function AdminView({
                       ) : (
                         levelLabel(person.level)
                       )}
-                    </td>
-                    <td>
+                        </label>
+                        <label>Branch
                       <select
                         aria-label={`Branch for ${person.display_name}`}
                         value={person.branch_id ?? ""}
@@ -7354,13 +7330,8 @@ function AdminView({
                           </option>
                         ))}
                       </select>
-                    </td>
-                    <td>{person.department || "—"}</td>
-                    <td>{person.active ? "Active" : "Deactivated"}</td>
-                    <td>
-                      {person.id === currentProfileId ? (
-                        <span className="mutedCell">This is you</span>
-                      ) : (
+                        </label>
+                        {person.id === currentProfileId ? <span className="mutedCell">This is your account</span> : (
                         <div className="staffActions">
                           {person.active && <button className="linkButton" disabled={working} onClick={() => void send({ action: "resend_account_email", profileId: person.id })}>Resend account email</button>}
                           <button
@@ -7372,7 +7343,8 @@ function AdminView({
                           </button>
                           {isOwner && <button className="linkButton dangerLink" disabled={working} onClick={() => { setError(""); setDeletingStaff(person); }}>Delete account</button>}
                         </div>
-                      )}
+                        )}
+                      </div></details>
                     </td>
                   </tr>
                 ))}
@@ -7381,16 +7353,14 @@ function AdminView({
           </div>
           </>
         )}
-        <p className="coverageIntro">
-          Deactivate pauses access and keeps the account here for reactivation.
-          Delete account permanently removes the login and frees its email for a fresh account.
-          Past case work and author names are preserved.
-        </p>
+        <p className="staffAccountHint">Manage an account to change its role or branch, resend access details, deactivate or delete it.</p>
       </article>
+
+      </>}
 
       {deletingStaff && <StaffDeleteDialog person={deletingStaff} profiles={profiles} onClose={() => setDeletingStaff(null)} onDelete={async replacement => Boolean(await send({ action: "remove_staff", profileId: deletingStaff.id, replacementProfileId: replacement }, true))} />}
 
-      {actionableInvitations.length > 0 && (
+      {section === "invitations" && (
         <article className="panel listPanel">
           <div className="panelHead">
             <div>
@@ -7398,10 +7368,7 @@ function AdminView({
               <h2>Invitations</h2>
             </div>
           </div>
-          <p className="coverageIntro">
-            Their CRM account is created the first time they sign in with the
-            Supabase login for that address.
-          </p>
+          {actionableInvitations.length === 0 && <p className="boardEmpty">No outstanding invitations.</p>}
           {actionableInvitations.map((invitation) => (
             <div className="functionalRow" key={invitation.id}>
               <UserCog size={18} />
@@ -7446,6 +7413,8 @@ function AdminView({
         </article>
       )}
 
+      {section === "settings" && <div className="staffSettings">
+        <details className="staffSettingsGroup"><summary>Client portal accounts</summary>
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
@@ -7529,8 +7498,51 @@ function AdminView({
         )}
       </article>
 
-      <MergeClientsPanel />
+        </details>
+        {isOwner && <>
+          <details className="staffSettingsGroup"><summary>Organisation defaults</summary>
+      {isOwner && settings ? (
+        <article className="panel listPanel">
+          <div className="panelHead"><div><span className="kicker">MASTER CONFIGURATION</span><h2>Organisation defaults</h2></div></div>
+          <p className="coverageIntro">These values control new invoices, receipts, reminders and appointments across every branch.</p>
+          <form className="stackedForm" onSubmit={async (event) => {
+            event.preventDefault();
+            const data = new FormData(event.currentTarget);
+            await send({
+              action: "update_settings",
+              timezone: data.get("timezone"), defaultCurrency: data.get("defaultCurrency"),
+              taxLabel: data.get("taxLabel"), taxRate: Number(data.get("taxRate")),
+              invoicePrefix: data.get("invoicePrefix"), receiptPrefix: data.get("receiptPrefix"),
+              creditNotePrefix: data.get("creditNotePrefix"), paymentTermsDays: Number(data.get("paymentTermsDays")),
+              appointmentDurationMinutes: Number(data.get("appointmentDurationMinutes")),
+              overdueRemindersEnabled: data.get("overdueRemindersEnabled") === "on",
+            });
+          }}>
+            <label>Timezone<input name="timezone" required defaultValue={settings.timezone} /></label>
+            <label>Currency<input name="defaultCurrency" required maxLength={3} defaultValue={settings.default_currency} /></label>
+            <label>Tax label<input name="taxLabel" required defaultValue={settings.tax_label} /></label>
+            <label>Tax rate<input name="taxRate" type="number" min="0" max="1" step="0.0001" required defaultValue={settings.tax_rate} /></label>
+            <label>Invoice prefix<input name="invoicePrefix" required defaultValue={settings.invoice_prefix} /></label>
+            <label>Receipt prefix<input name="receiptPrefix" required defaultValue={settings.receipt_prefix} /></label>
+            <label>Credit-note prefix<input name="creditNotePrefix" required defaultValue={settings.credit_note_prefix} /></label>
+            <label>Payment terms (days)<input name="paymentTermsDays" type="number" min="0" max="365" required defaultValue={settings.payment_terms_days} /></label>
+            <label>Appointment duration (minutes)<input name="appointmentDurationMinutes" type="number" min="15" max="480" required defaultValue={settings.appointment_duration_minutes} /></label>
+            <label className="checkboxLabel"><input name="overdueRemindersEnabled" type="checkbox" defaultChecked={settings.overdue_reminders_enabled} /> Automatic overdue reminders</label>
+            <button className="primaryButton" disabled={working}><Check size={15} /> Save master configuration</button>
+          </form>
+        </article>
+      ) : null}
+          </details>
+        </>}
+          <details className="staffSettingsGroup"><summary>Import and duplicate records</summary>
+            <LegacyImportPanel branches={adminBranches} />
+            <MergeClientsPanel />
+          </details>
+      </div>}
 
+
+
+      {section === "branches" && (
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
@@ -7628,13 +7640,15 @@ function AdminView({
         )}
       </article>
 
+      )}
+
+      {section === "settings" && <details className="staffSettingsGroup"><summary>Account access guide</summary>
       <article className="panel permissionPanel">
         <div className="panelHead">
           <div>
             <span className="kicker">PERMISSION MAP</span>
             <h2>What each account can access</h2>
           </div>
-          <Status value="Enforced by Supabase RLS" />
         </div>
         <div className="permissionTable">
           <div className="permissionHead">
@@ -7676,6 +7690,7 @@ function AdminView({
           </div>
         )}
       </article>
+      </details>}
     </section>
   );
 }
@@ -13415,7 +13430,7 @@ function HomeWorkspace() {
               </div>
             ) : null}
             <div className="topActions">
-              {role !== "client" && <button className="messageShortcut copilotTrigger" aria-expanded={copilot.isOpen} aria-controls="crm-copilot" onClick={copilot.toggle}><Sparkles size={17} /><span>Copilot</span></button>}
+              {role !== "client" && !selected && active !== "communications" && <button className="messageShortcut copilotTrigger" aria-expanded={copilot.isOpen} aria-controls="crm-copilot" onClick={copilot.toggle}><Sparkles size={17} /><span>Copilot</span></button>}
               {role !== "client" ? (
                 <button
                   className={`messageShortcut ${active === "communications" ? "active" : ""}`}
