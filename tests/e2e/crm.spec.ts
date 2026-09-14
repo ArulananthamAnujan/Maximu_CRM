@@ -650,7 +650,7 @@ test("the staff screen shows the team rather than role artwork", async ({
   });
   const table = page.locator(".boardTable").first();
   await expect(table).toBeVisible();
-  for (const column of ["Name", "Email", "Level", "Branch", "Status"])
+  for (const column of ["Team member", "Role", "Branch", "Status", "Action"])
     await expect(
       table.getByRole("columnheader", { name: column, exact: true }),
     ).toBeVisible();
@@ -710,6 +710,7 @@ test("a staff account can be deactivated and brought back", async ({
     .filter({ hasText: "colombo@maximus.test" })
     .first();
   await expect(row).toBeVisible({ timeout: 25_000 });
+  await row.locator(".staffManage summary").click();
   await row.getByRole("button", { name: /deactivate/i }).click();
   await expect(row).toContainText("Deactivated", { timeout: 25_000 });
   await expect(row.getByRole("button", { name: "Delete account", exact: true })).toBeVisible();
@@ -731,6 +732,7 @@ test("Super Admin deletes a staff login and recreates the same email", async ({ 
   };
   await create("Removal QA Officer");
   const row = page.locator(".boardTable tbody tr").filter({ hasText: address });
+  await row.locator(".staffManage summary").click();
   await row.getByRole("button", { name: "Delete account", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Delete staff account", exact: true });
   await expect(dialog.getByRole("button", { name: "Permanently delete account", exact: true })).toBeDisabled();
