@@ -1,0 +1,86 @@
+name: Mobile apps
+on:
+  push:
+    branches: [main]
+    paths: ['mobile/**', 'app/**', 'lib/**', '.github/workflows/mobile.yml']
+  pull_request:
+    paths: ['mobile/**', 'app/**', 'lib/**', '.github/workflows/mobile.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mobile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  mobile-ui:
+    name: Mobile bundle and browser tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npm ci --ignore-scripts
+        working-directory: mobile
+      - run: npm run build && npm test
+        working-directory: mobile
+      - run: npx playwright install --with-deps chromium
+        working-directory: mobile
+      - run: npm run test:ui
+        working-directory: mobile
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mobile-ui-results
+          path: mobile/test-results
+          retention-days: 7
+  android:
+    name: Android APK and unsigned App Bundle
+    needs: mobile-ui
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - run: npm ci --ignore-scripts
+      - run: npm ci --ignore-scripts && npm run sync
+        working-directory: mobile
+      - run: chmod +x gradlew && ./gradlew assembleDebug bundleRelease
+        working-directory: mobile/android
+        env:
+          MOBILE_BUILD_NUMBER: ${{ github.run_number }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maximus-android-builds
+          path: |
+            mobile/android/app/build/outputs/apk/debug/*.apk
+            mobile/android/app/build/outputs/bundle/release/*.aab
+          retention-days: 14
+  ios:
+    name: iPhone simulator build
+    needs: mobile-ui
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npm ci --ignore-scripts && npm run sync
+        working-directory: mobile
+      - run: xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+        working-directory: mobile
+      - run: ditto -c -k --keepParent build/Build/Products/Debug-iphonesimulator/App.app maximus-iphone-simulator.zip
+        working-directory: mobile
+      - uses: actions/upload-artifact@v4
+        with:
+          name: maximus-iphone-simulator
+          path: mobile/maximus-iphone-simulator.zip
+          retention-days: 14
