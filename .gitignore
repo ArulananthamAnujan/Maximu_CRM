@@ -52,3 +52,20 @@ tsconfig.tsbuildinfo
 /.crm-ui/
 /playwright-report/
 /test-results/
+
+# Native app dependencies, generated bundles, signing material and platform caches.
+/mobile/node_modules/
+/mobile/dist/
+/mobile/test-results/
+/mobile/playwright-report/
+/mobile/android/.gradle/
+/mobile/android/local.properties
+/mobile/android/**/build/
+/mobile/android/app/src/main/assets/public/
+/mobile/ios/App/App/public/
+/mobile/ios/App/Pods/
+/mobile/ios/App/build/
+*.jks
+*.keystore
+*.p12
+*.mobileprovision

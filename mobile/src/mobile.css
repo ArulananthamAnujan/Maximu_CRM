@@ -1,0 +1,62 @@
+.maximusNative { --mobile-bottom: calc(68px + env(safe-area-inset-bottom, 0px)); background: #f4f7fa; }
+.maximusNative body { padding-top: env(safe-area-inset-top, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
+.maximusNative .mainArea, .maximusNative .main { padding-bottom: var(--mobile-bottom); }
+.maximusNative input:not([type=checkbox]):not([type=radio]), .maximusNative select, .maximusNative textarea { font-size: 16px !important; }
+.maximusNative button, .maximusNative .ghostButton, .maximusNative .primaryButton { min-height: 44px; touch-action: manipulation; }
+.maximusNative input[type=checkbox] { width: 20px; height: 20px; }
+.mobileTabbar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; display: flex; padding: 7px 8px calc(7px + env(safe-area-inset-bottom, 0px)); background: #12384e; border-top: 1px solid #2e5872; gap: 4px; }
+.mobileTabbar button { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 5px 3px; color: #d9e5ed; background: transparent; border: 0; border-radius: 12px; font-size: 11px; }
+.mobileTabbar button[aria-current] { background: #20597d; color: #f4b16b; }
+.mobileNotice { position: fixed; bottom: calc(var(--mobile-bottom) + 12px); left: 12px; right: 12px; z-index: 2000; display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; background: #12384e; border: 1px solid #f1b573; color: white; border-radius: 16px; box-shadow: 0 8px 24px #0003; }
+.mobileNotice span { flex: 1; min-width: 180px; font-size: 15px; }
+.mobileNotice button, .mobileStartup button { border: 0; border-radius: 10px; padding: 10px 18px; background: #f1b573; color: #12384e; font-weight: 700; }
+.mobileError { background: #702c2c; }
+.mobileStartup { max-width: 460px; margin: 25vh auto 0; padding: 28px; color: #12384e; }
+.mobileKeyboard .mobileTabbar { display: none; }
+.mobileBackground #root { visibility: hidden; }
+.maximusNative .mobileFiltersCollapsed { display: none !important; }
+.mobileFiltersToggle { grid-column: 1 / -1; justify-content: center; }
+.mobileMenuAccount { display: grid; gap: 8px; padding: 16px; border-top: 1px solid #dbe5eb; }
+.mobileMenuAccount > span { overflow-wrap: anywhere; font-size: 13px; }
+.mobileMenuAccount button { display: flex; align-items: center; gap: 10px; border: 1px solid #dbe5eb; background: white; color: #12384e; padding: 8px 12px; border-radius: 10px; }
+@media (max-width: 767px) {
+  .maximusNative .content { padding: 18px 14px calc(var(--mobile-bottom) + 24px) !important; }
+  .maximusNative .topbar, .maximusNative .topbar.clientOnly { top: env(safe-area-inset-top, 0px); height: auto; min-height: 64px; }
+  .maximusNative .topbarPrimary { display: flex; flex-wrap: wrap; height: auto; min-height: 64px; padding: 8px 14px; gap: 8px; }
+  .maximusNative .topbarPrimary .searchWrap { flex: 1 1 calc(100% - 60px); width: auto; min-width: 0; max-width: none; }
+  .maximusNative .topbarPrimary .searchWrap input { width: 100%; min-width: 0; }
+  .maximusNative .serviceAndFinder { flex: 1 1 auto; gap: 5px; }
+  .maximusNative .topActions { flex: 0 1 auto; margin-left: auto; gap: 5px; }
+  .maximusNative .topActions .signedAccount, .maximusNative .topActions .messageShortcut:not(.copilotTrigger) { display: none; }
+  .maximusNative .topbar .copilotTrigger { display: flex; }
+  .maximusNative .topActions .copilotTrigger span, .maximusNative .topActions .quickButton span, .maximusNative .topActions .quickButton > svg:last-child { display: none; }
+  .maximusNative .topActions .copilotTrigger, .maximusNative .topActions .quickButton { width: 44px; padding: 0; justify-content: center; }
+  .maximusNative .topbarSecondary { display: none; }
+  .maximusNative .pageTitle h1 { font-size: 26px; line-height: 1.2; }
+  .maximusNative .pageTitle p { font-size: 15px; }
+  .maximusNative .pageTitle, .maximusNative .listFilterBar { flex-wrap: wrap; gap: 12px; }
+  .maximusNative .signedAccount > span, .maximusNative .signedAccount > .avatar { display: none; }
+  .maximusNative .unifiedLoginShell { display: block; }
+  .maximusNative .loginStory { display: none; }
+  .maximusNative .unifiedLogin { min-height: 100dvh; padding: 28px 18px; }
+  .maximusNative .loginBrand { margin-bottom: 28px; }
+  .maximusNative .unifiedLogin form { width: 100%; max-width: 100%; padding: 26px 20px; }
+  .maximusNative .workspaceConnection { align-items: flex-start; flex-direction: column; }
+  .maximusNative .journeyDataRow { grid-template-columns: 1fr !important; gap: 10px; margin: 12px; padding: 16px; border: 1px solid #dbe5eb; border-radius: 14px; }
+  .maximusNative .journeyDataRow > * { grid-column: 1 !important; }
+  .maximusNative .journeyNoteCell { padding: 12px; background: #f3f7fa; border-radius: 10px; }
+  .maximusNative .journeyActionsCell { width: 100%; }
+  .maximusNative .journeyDataRow .registerActions { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 6px; width: 100%; }
+  .maximusNative .tableWrap, .maximusNative .tableScroll { overflow: visible; }
+  .maximusNative table[data-mobile-cards] { display: block; width: 100%; min-width: 0 !important; }
+  .maximusNative table[data-mobile-cards] thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .maximusNative table[data-mobile-cards] tbody { display: grid; gap: 14px; }
+  .maximusNative table[data-mobile-cards] tbody tr { display: grid; min-width: 0; width: 100%; padding: 10px 14px; border: 1px solid #dfe6df; border-radius: 16px; background: white; box-shadow: 0 3px 12px #12384e08; }
+  .maximusNative table[data-mobile-cards] tbody td { display: flex; gap: 14px; justify-content: space-between; align-items: center; width: auto !important; max-width: 100%; min-width: 0 !important; padding: 9px 0 !important; border: 0; white-space: normal !important; overflow-wrap: anywhere; }
+  .maximusNative table[data-mobile-cards] tbody td::before { content: attr(data-label); flex: 0 0 30%; font-size: 12px; font-weight: 650; color: #62756c; }
+  .maximusNative table[data-mobile-cards] tbody td[colspan]::before { display: none; }
+  .maximusNative table[data-mobile-cards] td > * { min-width: 0; max-width: 100%; }
+  .maximusNative .caseDrawer { width: 100vw !important; max-width: 100vw !important; padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .maximusNative .copilotPanel { max-width: 100vw; padding-bottom: env(safe-area-inset-bottom, 0px); }
+}
+@media (min-width: 768px) { .mobileTabbar { left: 50%; transform: translateX(-50%); max-width: 520px; border-radius: 20px 20px 0 0; } }

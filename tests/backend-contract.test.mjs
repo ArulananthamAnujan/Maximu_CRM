@@ -419,14 +419,16 @@ test("an invited person can actually become a staff account", async () => {
   assert.match(login, /profileForUser\(session\.access_token, session\.user\.id\)/);
 });
 
-test("the service-role key is used only for bounded staff-auth operations and never as a filter", async () => {
+test("the service-role key is used only for bounded account operations and never as a filter", async () => {
   const supabase = await read("server/supabase.ts");
   assert.match(supabase, /export async function supabaseAdminRequest/);
   const admin = await read("app/api/crm/admin/route.ts");
-  // Admin calls create/undo/find a login and can retire a removed staff login
-  // so its real email is available for a future account.
+  // One import plus six calls: create/undo a login, retire a staff login,
+  // and three calls for the existing Super-Admin-only client removal flow
+  // (revoke Auth, remove scoped links, retire the verified profile).
+  // Behavioural authorization/cleanup checks live in staff-removal-api.test.mjs.
   const uses = admin.match(/supabaseAdminRequest/g) ?? [];
-  assert.equal(uses.length, 4, "unexpected service-role calls");
+  assert.equal(uses.length, 7, "unexpected service-role calls");
   assert.match(admin, /supabaseAdminRequest<\{ id\?: string \}>\("\/auth\/v1\/admin\/users"/);
   const access = await read("server/account-access.ts");
   assert.match(admin, /findAccountByEmail/);

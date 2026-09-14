@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+import { MobileNavigation } from "./mobile-navigation";
+import { browserWorkspaceReturn, connectGoogleWorkspace, isNativeApp, openGoogleSignIn, reportMobileError, saveDownload } from "@/lib/mobile-platform";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { orgDate, orgDateTime } from "@/lib/timezone";
 import { ClientProfileEditor } from "./client-profile-editor";
@@ -1288,12 +1290,7 @@ function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
     columns.map(cell).join(","),
     ...rows.map((row) => columns.map((column) => cell(row[column])).join(",")),
   ].join("\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  saveDownload(new Blob([csv], { type: "text/csv;charset=utf-8" }), filename);
 }
 
 function downloadCalendarFile(filename: string, appointments: AppointmentRecord[]) {
@@ -1312,15 +1309,14 @@ function downloadCalendarFile(filename: string, appointments: AppointmentRecord[
     ];
   });
   const calendar = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Maximus CRM//Client appointments//EN", ...events, "END:VCALENDAR"].join("\r\n");
-  const url = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
+  saveDownload(new Blob([calendar], { type: "text/calendar;charset=utf-8" }), filename);
 }
 
 function downloadDocumentFiles(documentIds: string[]) {
+  if (window.maximusNative) {
+    void window.maximusNative.downloadDocuments(documentIds).catch(reportMobileError);
+    return;
+  }
   documentIds.forEach((documentId, index) => {
     window.setTimeout(() => {
       const anchor = document.createElement("a");
@@ -1418,7 +1414,9 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
         next?: string;
       };
       if (!response.ok) throw new Error(result.error || "Sign-in failed.");
-      if (result.next === "/api/auth/gmail/start?workspace=1&auto=1") { window.location.assign(result.next); return; }
+      const workspaceReturn = browserWorkspaceReturn();
+      if (workspaceReturn) { window.location.assign(workspaceReturn); return; }
+      if (!isNativeApp() && result.next === "/api/auth/gmail/start?workspace=1&auto=1") { window.location.assign(result.next); return; }
       await onLogin();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Sign-in failed.");
@@ -1565,7 +1563,7 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
               type="button"
               className="googleLoginButton"
               onClick={() => {
-                window.location.href = "/api/auth/google/start";
+                void openGoogleSignIn().catch(reason => setError(reason instanceof Error ? reason.message : "Google sign-in could not be opened."));
               }}
             >
               <div className="googleG">G</div>
@@ -1593,6 +1591,7 @@ function Sidebar({
   setOpen,
   role,
   serviceMode,
+  mobileAccount,
 }: {
   active: ModuleKey;
   setActive: (x: ModuleKey) => void;
@@ -1600,6 +1599,7 @@ function Sidebar({
   setOpen: (x: boolean) => void;
   role: AppRole;
   serviceMode: ServiceMode;
+  mobileAccount?: React.ReactNode;
 }) {
   const navigationRef = useRef<HTMLElement | null>(null);
   useOverlayFocus(open && role !== "client", navigationRef, () => setOpen(false));
@@ -1677,6 +1677,7 @@ function Sidebar({
           </div>
         ))}
       </nav>
+      {mobileAccount}
       <div className="sidebarFooter">
         <div className="avatar">{config.initials}</div>
         <div>
@@ -2193,6 +2194,7 @@ function CaseWorkspace({
   onMoveStage: (record: CaseRecord, stage: LifecycleStage, reason: string) => Promise<void>;
 }) {
   const [rowActionId, setRowActionId] = useState("");
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
   const searchDraft = query;
   const [searchSelection, setSearchSelection] = useState({ query, results: searchResults, index: -1 });
@@ -2564,7 +2566,11 @@ function CaseWorkspace({
               <span>Total records</span>
             )}
           </div>
-          <div className="enquiryDirectoryFilters">
+          {isNativeApp() && <button className="ghostButton mobileFiltersToggle" aria-expanded={mobileFiltersOpen}
+            onClick={() => setMobileFiltersOpen(value => !value)}><SlidersHorizontal size={16} />
+            {mobileFiltersOpen ? "Hide filters" : "Show filters"}
+          </button>}
+          <div className={`enquiryDirectoryFilters${isNativeApp() && !mobileFiltersOpen ? " mobileFiltersCollapsed" : ""}`}>
             <label>
               <span>Office</span>
               <select aria-label="Office" value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
@@ -2806,7 +2812,7 @@ function RegisterActions({ name, onNote, onEmail, onDocuments, onOpen }: {
     <button type="button" title="Add or read notes" onClick={onNote}><Pencil size={15} /><span>Notes</span></button>
     <button type="button" title="Email and conversation" onClick={onEmail}><Mail size={15} /><span>Email</span></button>
     <button type="button" title="Documents and checklist" onClick={onDocuments}><FileText size={15} /><span>Files</span></button>
-    <button type="button" title="Open full case in a new tab" onClick={onOpen}><ArrowRight size={15} /><span>Open case</span></button>
+    <button type="button" title={isNativeApp() ? "Open full case" : "Open full case in a new tab"} onClick={onOpen}><ArrowRight size={15} /><span>Open case</span></button>
   </div>;
 }
 
@@ -3256,7 +3262,7 @@ function CalendarView({
             <button
               className="ghostButton"
               onClick={() => {
-                window.location.href = "/api/auth/gmail/start?workspace=1";
+                connectGoogleWorkspace();
               }}
             >
               <Link2 size={15} />
@@ -3748,7 +3754,7 @@ function MessagesView({
               <Mail size={42} />
               <h1>Connect your Gmail inbox</h1>
               <p>Open your complete Maximus mailbox here and keep every client conversation connected to the correct case.</p>
-              {mailbox?.oauthConfigured ? <button onClick={() => { window.location.href = "/api/auth/gmail/start?workspace=1"; }}><Link2 size={17} />Connect Gmail</button> : <span>Gmail OAuth must be configured for this deployment.</span>}
+              {mailbox?.oauthConfigured ? <button onClick={connectGoogleWorkspace}><Link2 size={17} />Connect Gmail</button> : <span>Gmail OAuth must be configured for this deployment.</span>}
               {mailboxError ? <em>{mailboxError}</em> : null}
             </div>
           ) : openedGmail ? (
@@ -11950,8 +11956,15 @@ function HomeWorkspace() {
   const loadWorkspaceRef = useRef(loadWorkspace);
   loadWorkspaceRef.current = loadWorkspace;
   useEffect(() => {
-    const timer = window.setTimeout(() => void loadWorkspaceRef.current(), 0);
-    return () => window.clearTimeout(timer);
+    const pendingWorkspace = browserWorkspaceReturn();
+    if (pendingWorkspace && new URLSearchParams(window.location.search).has("gmail")) {
+      window.location.replace(pendingWorkspace + window.location.search);
+      return;
+    }
+    const refresh = () => void loadWorkspaceRef.current();
+    const timer = window.setTimeout(refresh, 0);
+    window.addEventListener("maximus:resume", refresh);
+    return () => { window.clearTimeout(timer); window.removeEventListener("maximus:resume", refresh); };
   }, []);
   const loadEnquiryDirectoryRef = useRef(loadEnquiryDirectory);
   loadEnquiryDirectoryRef.current = loadEnquiryDirectory;
@@ -12101,11 +12114,30 @@ function HomeWorkspace() {
   }, []);
   const openCaseWorkspace = useCallback((record: CaseRecord) => {
     if (!record.dbId) return;
+    if (isNativeApp()) {
+      setSelected(record);
+      setCaseWindowId(record.dbId);
+      setPreviewTab("overview");
+      return;
+    }
     const target = new URL(window.location.href);
     target.search = "";
     target.searchParams.set("case", record.dbId);
     window.open(target.toString(), `maximus-case-${record.dbId}`, "noopener,noreferrer");
   }, []);
+  useEffect(() => {
+    const back = (event: Event) => {
+      if (copilot.isOpen) { event.preventDefault(); copilot.toggle(); return; }
+      if (modal) { event.preventDefault(); setModal(null); return; }
+      if (selected) { event.preventDefault(); setSelected(null); setCaseWindowId(""); return; }
+      if (menuOpen) { event.preventDefault(); setMenuOpen(false); return; }
+      if (active !== (role === "client" ? "portal" : "dashboard")) {
+        event.preventDefault(); setActiveModule(role === "client" ? "portal" : "dashboard");
+      }
+    };
+    window.addEventListener("maximus:back", back);
+    return () => window.removeEventListener("maximus:back", back);
+  }, [active, copilot, menuOpen, modal, role, selected]);
   const openGlobalSearchResult = useCallback(async (result: GlobalSearchResult) => {
     setGlobalSearchOpen(false);
     if (result.caseId) {
@@ -12452,13 +12484,8 @@ function HomeWorkspace() {
             ),
           ],
           { type: "application/json" },
-        ),
-        url = URL.createObjectURL(blob),
-        a = document.createElement("a");
-      a.href = url;
-      a.download = "maximus-crm-export.json";
-      a.click();
-      URL.revokeObjectURL(url);
+        );
+      saveDownload(blob, "maximus-crm-export.json");
       say(
         role === "staff"
           ? `Exported ${mine.length} branch cases. The export is on the audit trail.`
@@ -12704,7 +12731,8 @@ function HomeWorkspace() {
     if (removed) void mutateRemote("template", "delete", removed.id);
   };
   const signOut = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    const logoutResponse = await fetch("/api/auth/logout", { method: "POST" });
+    if (!logoutResponse.ok) { say("Sign-out could not be completed. Please try again."); return; }
     setIdentity(null);
     // The next person to sign in gets their own landing screen.
     landedAs.current = null;
@@ -13225,6 +13253,11 @@ function HomeWorkspace() {
         setOpen={setMenuOpen}
         role={role}
         serviceMode={serviceMode}
+        mobileAccount={isNativeApp() ? <div className="mobileMenuAccount">
+          <strong>{identity?.displayName}</strong><span>{identity?.email}</span>
+          <button onClick={() => void changePassword().catch(reportMobileError)}><LockKeyhole size={18} />Change password</button>
+          <button onClick={() => void signOut().then(() => setMenuOpen(false)).catch(reportMobileError)}><LogOut size={18} />Sign out</button>
+        </div> : undefined}
       />
       {role !== "client" && menuOpen ? (
         <button className="sidebarBackdrop" type="button" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />
@@ -13581,6 +13614,8 @@ function HomeWorkspace() {
           onCaseAction={openForCase}
         />
       ) : null}
+      {!selected && !modal && !copilot.isOpen && <MobileNavigation active={active} client={role === "client"}
+        navigate={module => { setActive(module); setMenuOpen(false); }} menu={() => setMenuOpen(value => !value)} />}
       <RecordModal
         type={modal}
         close={() => {
