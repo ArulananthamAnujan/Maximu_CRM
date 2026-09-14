@@ -261,7 +261,7 @@ test("the portal shows a client their own view and no staff tools", async ({
 }) => {
   await signIn(page, CLIENT);
   await expect(
-    page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }),
+    page.locator(".sidebar").getByRole("button", { name: /staff management/i }),
   ).toHaveCount(0);
   await expect(page.getByRole("button", { name: /^Reports$/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /quick create/i })).toHaveCount(
@@ -336,7 +336,7 @@ test("a case officer is given no way into Accounts", async ({ page }) => {
   for (const absent of [
     /^Accounts$/,
     /^Reports$/,
-    /staff & masters/i,
+    /staff management/i,
     /activity & compliance/i,
   ])
     await expect(page.getByRole("button", { name: absent })).toHaveCount(0);
@@ -355,7 +355,7 @@ test("a branch manager gets the operations tools but not the organisation", asyn
   await expect(page.getByRole("button", { name: /^Accounts$/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Reports$/ })).toBeVisible();
   await expect(
-    page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }),
+    page.locator(".sidebar").getByRole("button", { name: /staff management/i }),
   ).toBeVisible();
   // Integrations is the organisation-wide screen, and belongs to the owner.
   await expect(
@@ -370,7 +370,7 @@ test("an owner gets the organisation screens as well", async ({ page }) => {
     page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }),
   ).toBeVisible();
   await expect(
-    page.locator(".sidebar").getByRole("button", { name: /staff & masters/i }),
+    page.locator(".sidebar").getByRole("button", { name: /staff management/i }),
   ).toBeVisible();
 });
 
@@ -382,7 +382,7 @@ test("a client is offered none of the staff navigation", async ({ page }) => {
     "students",
     "accounts",
     "reports",
-    "staff & masters",
+    "staff management",
     "integrations",
     "activity & compliance",
     "templates",
@@ -644,7 +644,7 @@ test("the staff screen shows the team rather than role artwork", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await navigateTo(page, "Staff & Masters");
+  await navigateTo(page, "Staff management");
   await expect(page.getByText(/staff accounts/i)).toBeVisible({
     timeout: 25_000,
   });
@@ -663,7 +663,7 @@ test("an owner creates a staff account with secure setup instructions", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await navigateTo(page, "Staff & Masters");
+  await navigateTo(page, "Staff management");
   await page.getByRole("button", { name: /add staff member/i }).click();
 
   const accountEmail = `browser.officer.${Date.now()}@maximus.test`;
@@ -688,7 +688,7 @@ test("a branch manager is not offered administrator levels", async ({
   page,
 }) => {
   await signIn(page, MANAGER);
-  await navigateTo(page, "Staff & Masters");
+  await navigateTo(page, "Staff management");
   await page.getByRole("button", { name: /add staff member/i }).click();
   const levels = await page
     .locator('.stackedForm select[name="level"] option')
@@ -702,7 +702,7 @@ test("a staff account can be deactivated and brought back", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await navigateTo(page, "Staff & Masters");
+  await navigateTo(page, "Staff management");
   // The default view must retain a staff row after deactivation.
   await expect(page.locator(".staffFilters").getByLabel("Status")).toHaveValue("all");
   const row = page
@@ -719,7 +719,7 @@ test("a staff account can be deactivated and brought back", async ({
 
 test("Super Admin deletes a staff login and recreates the same email", async ({ page }, testInfo) => {
   await signIn(page, OWNER);
-  await navigateTo(page, "Staff & Masters");
+  await navigateTo(page, "Staff management");
   const address = `delete-recreate-${Date.now()}-${testInfo.retry}@maximus.test`;
   const create = async (name: string) => {
     await page.getByRole("button", { name: "Add staff member", exact: true }).click();
@@ -750,7 +750,8 @@ test("Super Admin deletes a staff login and recreates the same email", async ({ 
 
 test("a branch can be added from the masters screen", async ({ page }) => {
   await signIn(page, OWNER);
-  await navigateTo(page, "Staff & Masters");
+  await navigateTo(page, "Staff management");
+  await page.getByRole("navigation", { name: "Staff management sections" }).getByRole("button", { name: "Branches", exact: true }).click();
   await page.getByRole("button", { name: /add branch/i }).click();
   const form = page.locator(".stackedForm");
   await form.locator('input[name="name"]').fill("Kandy");
@@ -840,10 +841,12 @@ test("an administrator can connect a portal login to a client file", async ({
   page,
 }) => {
   await signIn(page, OWNER);
-  await navigateTo(page, "Staff & Masters");
-  await expect(page.getByText(/portal logins/i)).toBeVisible({
+  await navigateTo(page, "Staff management");
+  await page.getByRole("navigation", { name: "Staff management sections" }).getByRole("button", { name: /^Client logins/ }).click();
+  await expect(page.getByRole("heading", { name: "Client logins", exact: true })).toBeVisible({
     timeout: 25_000,
   });
+  await page.locator(".adminStack .staffSettingsGroup summary").first().click();
   const link = page.getByLabel(/client record for/i).first();
   await expect(link).toBeVisible();
   const options = await link.locator("option").allInnerTexts();
