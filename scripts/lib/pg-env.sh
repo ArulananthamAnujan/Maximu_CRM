@@ -60,7 +60,7 @@ pg_run() {
 # they share one server, so start each run from empty schemas.
 pg_reset_schemas() {
   pg_psql -U "${PGUSER}" -d postgres -q -c \
-    'drop schema if exists public cascade; drop schema if exists auth cascade; create schema public;' \
+    'drop schema if exists private cascade; drop schema if exists public cascade; drop schema if exists auth cascade; create schema public;' \
     >/dev/null 2>&1
 }
 
