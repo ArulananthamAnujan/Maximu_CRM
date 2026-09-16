@@ -1950,10 +1950,10 @@ expect("the updated contact details are reflected on the case",
 
 const staffContactUpdate = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
   body: { action: "update_own_contact", email: "not.allowed@example.test" } });
-// A staff account has no client_user_links row of its own, so the RPC
-// refuses for want of a linked client -- a plain 400, not a role check.
+// The function-access guard rejects staff before the client-only RPC runs.
 expect("staff cannot use the client's own-contact action",
-  staffContactUpdate.status === 400, JSON.stringify(staffContactUpdate.json));
+  staffContactUpdate.status === 403 && staffContactUpdate.json?.ok === false,
+  JSON.stringify(staffContactUpdate.json));
 
 const acknowledge = await call("/api/crm/workspace", { method: "POST", cookie: selfServiceLogin.cookie,
   body: { action: "acknowledge_consent", declarationType: "privacy_policy", response: true } });
