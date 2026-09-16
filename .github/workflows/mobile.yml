@@ -49,6 +49,8 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - run: npm ci --ignore-scripts
       - run: npm ci --ignore-scripts && npm run sync
         working-directory: mobile

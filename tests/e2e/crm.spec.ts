@@ -614,7 +614,7 @@ test("every button still has a name on a phone", async ({ page }) => {
   }
 });
 
-test("the case drawer keeps four tabs on a phone and the rest under More", async ({
+test("the case drawer keeps tasks and daily work visible on a phone", async ({
   page,
 }) => {
   await signIn(page, OFFICER);
@@ -625,8 +625,8 @@ test("the case drawer keeps four tabs on a phone and the rest under More", async
   const { popup, drawer } = await openCaseDrawer(page, "Phone Sized");
   // The case's own window starts at a desktop size; resize it the same way.
   await popup.setViewportSize({ width: 390, height: 844 });
-  await expect(drawer.getByRole("tab")).toHaveCount(4);
-  for (const tab of ["Case home", "Applications", "Documents", "Messages"])
+  await expect(drawer.getByRole("tab")).toHaveCount(5);
+  for (const tab of ["Case home", "Tasks", "Applications", "Documents", "Messages"])
     await expect(drawer.getByRole("tab", { name: tab })).toBeVisible();
   // The rest are one control away, and selecting one shows it.
   const more = drawer.getByLabel("More case sections");
@@ -667,7 +667,7 @@ test("an owner creates a staff account with secure setup instructions", async ({
   await page.getByRole("button", { name: /add staff member/i }).click();
 
   const accountEmail = `browser.officer.${Date.now()}@maximus.test`;
-  const form = page.locator(".stackedForm");
+  const form = page.locator("form").filter({ has: page.getByLabel("Full name *", { exact: true }) });
   await form.locator('input[name="displayName"]').fill("Browser Made Officer");
   await form
     .locator('input[name="email"]')
@@ -690,8 +690,10 @@ test("a branch manager is not offered administrator levels", async ({
   await signIn(page, MANAGER);
   await navigateTo(page, "Staff management");
   await page.getByRole("button", { name: /add staff member/i }).click();
-  const levels = await page
-    .locator('.stackedForm select[name="level"] option')
+  const level = page.getByLabel(/^Account level/);
+  await expect(level).toBeVisible();
+  const levels = await level
+    .locator('option')
     .allInnerTexts();
   expect(levels.join(" | ").toLowerCase()).not.toContain("super admin");
   expect(levels.join(" | ").toLowerCase()).not.toContain("branch manager");

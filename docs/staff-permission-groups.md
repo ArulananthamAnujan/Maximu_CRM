@@ -21,6 +21,4 @@ Permissions are checked in navigation, API actions, restrictive PostgreSQL polic
 
 ## Release status
 
-Prepared locally. Migration `20260916012511_staff_permission_groups.sql` is NOT applied to production. Source and interface are NOT published. Apply this migration with the matching application release. Earlier task/access migrations already exist in production; do not reapply them manually.
-
-Public GitHub publication was blocked by automatic approval review, which requested explicit consent to public source disclosure. Do not retry the rejected upload by another route. The user's subsequent screenshot request authorized this additional implementation; it did not resolve that specific publication block.
+The user approved publication and production deployment on 16 September 2026. Source is saved in pull request #6. Apply `20260916012511_staff_permission_groups.sql` and `20260916034500_restore_legacy_note_visibility.sql` with the matching application release. Earlier task/access migrations already exist in production; do not reapply them manually. GitHub CI and the Netlify production deploy provide the release status.

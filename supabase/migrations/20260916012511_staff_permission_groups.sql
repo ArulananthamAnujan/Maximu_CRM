@@ -81,9 +81,9 @@ create or replace function public.can_access_client(target_client uuid)
 returns boolean language sql stable security definer set search_path='' as $$
  select exists(select 1 from public.clients c where c.id=target_client and c.organisation_id=public.current_organisation_id() and (
  public.current_user_level()::text in ('platform_owner','super_admin')
- or (public.is_internal_user() and c.branch_id=public.current_user_branch() and
+ or (public.is_internal_user() and
  (exists(select 1 from public.cases f where f.client_id=c.id and public.can_access_case(f.id))
- or (not exists(select 1 from public.cases f where f.client_id=c.id) and private.function_allowed('enquiries'))))
+ or (c.branch_id=public.current_user_branch() and not exists(select 1 from public.cases f where f.client_id=c.id) and private.function_allowed('enquiries'))))
  or (public.current_user_level()='student' and exists(select 1 from public.client_user_links l where l.profile_id=auth.uid() and l.client_id=c.id))))
 $$;
 
