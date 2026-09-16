@@ -166,6 +166,8 @@ function predicateOn(target, spec) {
   if (op === "is") return `${target} is ${value === "null" ? "null" : value}`;
   if (op === "ilike") return `${target}::text ilike ${lit(value.replace(/\*/g, "%"))}`;
   if (op === "in") return `${target}::text = any(array[${splitTopLevel(value.replace(/^\(/, "").replace(/\)$/, "")).map((v) => lit(v.replace(/^"|"$/g, ""))).join(",")} ]::text[])`;
+  if (op === "lt") return `${target} < ${lit(value)}`;
+  if (op === "gt") return `${target} > ${lit(value)}`;
   if (op === "gte") return `${target} >= ${lit(value)}`;
   if (op === "lte") return `${target} <= ${lit(value)}`;
   throw new Error(`unsupported filter operator: ${op}`);

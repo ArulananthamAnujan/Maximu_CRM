@@ -9,9 +9,9 @@ const branchId = "44444444-4444-4444-8444-444444444444";
 const clientId = "55555555-5555-4555-8555-555555555555";
 const email = "recipient@maximus.test";
 
-async function exercise({ action = "create_staff", role = "super_admin", rejected = false, resend = false, portal = false, permitted = true, mismatch = false, otherBranch = false, resendProvider = false } = {}) {
+async function exercise({ action = "create_staff", role = "super_admin", rejected = false, resend = false, portal = false, permitted = true, mismatch = false, otherBranch = false, resendProvider = false, functionAccess = null, actorAccess = null, noService = false } = {}) {
   const requests = [];
-  const profiles = new Map([[actorId, { id: actorId, organisation_id: orgId, branch_id: branchId, level: role, email: "actor@maximus.test", display_name: "Actor", active: true }]]);
+  const profiles = new Map([[actorId, { id: actorId, organisation_id: orgId, branch_id: branchId, level: role, email: "actor@maximus.test", display_name: "Actor", active: true, function_access: actorAccess }]]);
   if (resend || portal) profiles.set(accountId, { id: accountId, organisation_id: orgId, branch_id: otherBranch ? clientId : branchId, level: portal ? "student" : "staff", email: mismatch ? "different@maximus.test" : email, display_name: "Recipient", active: true });
   const server = http.createServer(async (req, res) => {
     let raw = ""; for await (const chunk of req) raw += chunk;
@@ -41,8 +41,8 @@ async function exercise({ action = "create_staff", role = "super_admin", rejecte
   try {
     const worker = (await import(`../dist/server/index.js?account-access=${Date.now()}-${Math.random()}`)).default;
     const origin = `http://127.0.0.1:${server.address().port}`;
-    const env = { SUPABASE_URL: origin, SUPABASE_PUBLISHABLE_KEY: "test-public", SUPABASE_SERVICE_ROLE_KEY: "test-service", ASSETS: { fetch: async () => new Response("", { status: 404 }) }, ...(resendProvider ? { RESEND_API_KEY: "test-email", RESEND_API_BASE: origin, RESEND_FROM_EMAIL: "Maximus <sender@maximus.test>" } : {}) };
-    const response = await worker.fetch(new Request(`https://crm.maximus.test/api/crm/${portal ? "workspace" : "admin"}`, { method: "POST", headers: { cookie: "maximus_access=test-actor-session", "Content-Type": "application/json" }, body: JSON.stringify({ action: portal ? "send_portal_access" : action, email, displayName: "Recipient <Name>", branchId, level: "staff", profileId: accountId, clientId }) }), env, { waitUntil() {}, passThroughOnException() {} });
+    const env = { SUPABASE_URL: origin, SUPABASE_PUBLISHABLE_KEY: "test-public", SUPABASE_SERVICE_ROLE_KEY: noService ? undefined : "test-service", ASSETS: { fetch: async () => new Response("", { status: 404 }) }, ...(resendProvider ? { RESEND_API_KEY: "test-email", RESEND_API_BASE: origin, RESEND_FROM_EMAIL: "Maximus <sender@maximus.test>" } : {}) };
+    const response = await worker.fetch(new Request(`https://crm.maximus.test/api/crm/${portal ? "workspace" : "admin"}`, { method: "POST", headers: { cookie: "maximus_access=test-actor-session", "Content-Type": "application/json" }, body: JSON.stringify({ action: portal ? "send_portal_access" : action, email, displayName: "Recipient <Name>", branchId, level: "staff", functionAccess, profileId: accountId, clientId }) }), env, { waitUntil() {}, passThroughOnException() {} });
     return { status: response.status, result: await response.json(), requests, profiles };
   } finally { server.close(); }
 }
@@ -98,4 +98,24 @@ test("the transactional email path sends the private link only to the recipient"
   assert.equal(generated.body.redirect_to, "https://crm.maximus.test/auth/google-callback?setup=1");
   const mail = requests.find(r => r.path === "/emails").body;
   assert.deepEqual(mail.to, [email]); assert.match(mail.html, /Recipient &lt;Name&gt;/); assert.match(mail.text, /private-token/);
+});
+
+
+test("new staff receive selected function access before their setup email is sent",async()=>{
+ const functionAccess={enquiries:true,applications:true,work:false,finance:false};
+ const {status,requests}=await exercise({functionAccess});assert.equal(status,200);
+ const index=requests.findIndex(r=>r.path==="/rest/v1/profiles"&&r.method==="POST");assert.deepEqual(requests[index].body.function_access,functionAccess);
+ assert.ok(index<requests.findIndex(r=>r.path==="/auth/v1/recover"));
+});
+test("invitation fallback preserves selected function access",async()=>{
+ const functionAccess={finance:false,work:false};const {status,requests}=await exercise({functionAccess,noService:true});assert.equal(status,200);
+ assert.deepEqual(requests.find(r=>r.path==="/rest/v1/staff_invitations"&&r.method==="POST").body.function_access,functionAccess);
+});
+test("branch admin creation inherits restrictions even if request asks for broader access",async()=>{
+ const actorAccess={finance:false,work:false};const {status,requests}=await exercise({role:"branch_admin",actorAccess,functionAccess:{finance:true,work:true}});assert.equal(status,200);
+ assert.deepEqual(requests.find(r=>r.path==="/rest/v1/profiles"&&r.method==="POST").body.function_access,actorAccess);
+});
+test("invalid creation permissions are rejected before creating a login or sending mail",async()=>{
+ const {status,requests}=await exercise({functionAccess:{finance:"yes"}});assert.equal(status,400);
+ assert.equal(requests.filter(r=>r.path==="/auth/v1/admin/users"||r.path==="/auth/v1/recover").length,0);
 });

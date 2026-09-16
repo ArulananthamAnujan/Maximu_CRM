@@ -1,4 +1,5 @@
 "use client";
+import { browserWorkspaceReturn } from "@/lib/mobile-platform";
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -33,7 +34,7 @@ export default function GoogleCallbackPage() {
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) { setError(result.error || "Your sign-in could not be completed."); return; }
-        continueTo.current = result.next === "/api/auth/gmail/start?workspace=1&auto=1" ? result.next : "/";
+        continueTo.current = browserWorkspaceReturn() || (result.next === "/api/auth/gmail/start?workspace=1&auto=1" ? result.next : "/");
         if (requestedSetup || ["recovery", "invite"].includes(params.get("type") || "")) setSetup(true);
         else window.location.replace(continueTo.current);
       } catch { setError("Your sign-in could not be completed. Please try again."); }

@@ -50,6 +50,10 @@ values ('00000000-0000-4000-8000-00000000f104','00000000-0000-4000-8000-00000000
 set test.uid = '00000000-0000-4000-8000-000000000009';
 do $$ begin
  if not exists(select 1 from public.legacy_external_keys where id='00000000-0000-4000-8000-00000000f104') then raise exception 'Branch staff cannot read original note attribution'; end if;
+ update public.legacy_external_keys set metadata='{}' where id='00000000-0000-4000-8000-00000000f104';
+ if found then raise exception 'Branch staff can overwrite original note attribution'; end if;
+ delete from public.legacy_external_keys where id='00000000-0000-4000-8000-00000000f104';
+ if found then raise exception 'Branch staff can delete original note attribution'; end if;
 end $$;
 set test.uid = '00000000-0000-4000-8000-000000000010';
 do $$ begin

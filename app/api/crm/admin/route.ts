@@ -1,3 +1,6 @@
+import {validatedStaffDetails} from "@/lib/staff-details";
+import {canUse} from "@/lib/function-access";
+import { validatedAccess } from "@/lib/function-access";
 import {
   appendRefreshCookies,
   LiveAccessError,
@@ -22,7 +25,7 @@ export async function GET(request: Request) {
     requireAdmin(session.identity.role);
     const token = session.accessToken;
     const [profiles, roles, permissions, invitations, branches, clientLinks, settings] = await Promise.all([
-      get("profiles?select=id,display_name,email,level,department,branch_id,active,created_at&order=display_name.asc", token),
+      get("profiles?select=id,display_name,email,level,department,branch_id,active,created_at,function_access,staff_details&order=display_name.asc", token),
       get("roles?select=*&order=system_role.desc,name.asc", token),
       get("permissions?select=*&order=resource.asc,action.asc", token),
       get("staff_invitations?select=*&order=created_at.desc", token),
@@ -30,7 +33,7 @@ export async function GET(request: Request) {
       get("client_user_links?select=profile_id,client_id,created_at", token),
       get("organisation_settings?select=*&limit=1", token).catch(() => []),
     ]);
-    return appendRefreshCookies(Response.json({ ok: true, profiles: (profiles as Json[]).filter(person => !isRemovedStaffAccount(person)), roles, permissions, invitations, branches, clientLinks, settings: (settings as Json[])[0] ?? null }), session.refreshed, request);
+    return appendRefreshCookies(Response.json({ ok: true, profiles: (profiles as Json[]).filter(person => !isRemovedStaffAccount(person) && (person.level!=="partner" || canUse(session.identity,"partner_access"))), roles, permissions, invitations, branches, clientLinks, settings: (settings as Json[])[0] ?? null }), session.refreshed, request);
   } catch (error) { return apiError(error); }
 }
 
@@ -42,6 +45,17 @@ export async function POST(request: Request) {
     const action = required(body.action, "Action");
     const token = session.accessToken;
     const org = session.identity.organisationId;
+    const creationAccess = () => {
+      if (session.identity.role !== "super_admin") return session.identity.functionAccess ?? null;
+      try { return validatedAccess(body.functionAccess); } catch (error) { throw new InputError(error instanceof Error ? error.message : "Invalid function access."); }
+    };
+    if (action === "set_function_access") {
+      if (session.identity.role !== "super_admin") throw new LiveAccessError(403, "Only Super Admin can change function access.");
+      let access; try { access = validatedAccess(body.access); } catch { throw new InputError("Choose valid function access options."); }
+      await supabaseRequest("/rest/v1/rpc/set_function_access", { method: "POST", body: JSON.stringify({ p_profile: uuid(body.profileId, "Staff member"), p_access: access }) }, token);
+      return appendRefreshCookies(Response.json({ ok: true }), session.refreshed, request);
+    }
+
 
     const deliverAccess = async (address: string, name: string, resourceId: string, invitation = false) => {
       const delivery = await sendAccountSetup({ email: address, name, origin: new URL(request.url).origin, invitation });
@@ -79,6 +93,7 @@ export async function POST(request: Request) {
       const displayName = required(body.displayName, "Full name");
       const address = email(body.email);
       const level = staffLevel(body.level, session.identity.role);
+      const functionAccess = ["super_admin", "platform_owner"].includes(level) ? null : creationAccess();
       const branchId = optionalUuid(body.branchId) ?? session.identity.branchId;
       assertManagedBranch(session.identity, branchId, "create staff");
       if (level !== "super_admin" && !branchId) throw new InputError("Choose the branch this account belongs to.");
@@ -87,6 +102,7 @@ export async function POST(request: Request) {
         if (!branches.length) throw new InputError("Choose a branch in your organisation.");
       }
       const department = optional(body.department);
+      let staffDetails; try{staffDetails=validatedStaffDetails(body.staffDetails);}catch(error){throw new InputError(error instanceof Error?error.message:"Invalid staff details.");}
       const roleId = optionalUuid(body.roleId) ?? (await defaultRoleId(level, org, token));
 
       const existing = await get(
@@ -113,7 +129,7 @@ export async function POST(request: Request) {
           id: invitationId, organisation_id: org, email: address,
           role_id: roleId, branch_id: branchId, display_name: displayName,
           department, level, invited_by: session.identity.profileId,
-          status: "pending",
+          status: "pending", function_access: functionAccess, staff_details:staffDetails,
         }, token);
         return appendRefreshCookies(Response.json({
           ok: true,
@@ -155,7 +171,7 @@ export async function POST(request: Request) {
         await insert("profiles", {
           id: created.id, organisation_id: org, branch_id: branchId,
           display_name: displayName, email: address, level,
-          department, active: true,
+          department, active: true, function_access: functionAccess, staff_details:staffDetails,
         }, token);
       } catch (error) {
         // Leaving a login with no profile behind would block that person from
@@ -210,7 +226,7 @@ export async function POST(request: Request) {
       const level = staffLevel(body.level || role.level, session.identity.role);
       if (role.level !== level) throw new InputError("Choose a role matching the account level.");
       if (!branchId && level !== "super_admin") throw new InputError("Choose the account's branch.");
-      await insert("staff_invitations", { id: invitationId, organisation_id: org, email: address, role_id: roleId, branch_id: branchId, display_name: optional(body.displayName), department: optional(body.department), level, invited_by: session.identity.profileId, status: "pending" }, token);
+      await insert("staff_invitations", { id: invitationId, organisation_id: org, email: address, role_id: roleId, branch_id: branchId, display_name: optional(body.displayName), department: optional(body.department), level, invited_by: session.identity.profileId, status: "pending", function_access: ["super_admin", "platform_owner"].includes(level) ? null : creationAccess() }, token);
       return appendRefreshCookies(Response.json({ ok: true, ...await deliverAccess(address, optional(body.displayName) || address, invitationId, true) }), session.refreshed, request);
     } else if (action === "bulk_update_profiles") {
       const targets = uuidList(body.profileIds, "Staff accounts");
@@ -264,6 +280,11 @@ export async function POST(request: Request) {
       assertManagedBranch(session.identity, managedProfile.branch_id, "manage staff");
       const changes: Json = {};
       if (typeof body.displayName === "string") changes.display_name = required(body.displayName, "Display name");
+      if (Object.hasOwn(body,"staffDetails")) {try{changes.staff_details=validatedStaffDetails(body.staffDetails);}catch(error){throw new InputError(error instanceof Error?error.message:"Invalid staff details.");}}
+      if (Object.hasOwn(body,"functionAccess")) {
+        if(session.identity.role!=="super_admin")throw new LiveAccessError(403,"Only Super Admin can change function access.");
+        try{changes.function_access=validatedAccess(body.functionAccess);}catch{throw new InputError("Invalid function access.");}
+      }
       if (typeof body.department === "string" || body.department === null) changes.department = optional(body.department);
       if (typeof body.branchId === "string" || body.branchId === null) {
         changes.branch_id = optionalUuid(body.branchId);

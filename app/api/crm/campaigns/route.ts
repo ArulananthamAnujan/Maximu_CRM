@@ -1,3 +1,4 @@
+import {canUse} from "@/lib/function-access";
 import { appendRefreshCookies, LiveAccessError, liveSession } from "@/server/supabase-session";
 import { sendEmail, EmailProviderError, renderTemplate } from "@/server/email";
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
       const campaignId = uuid(body.campaignId, "Campaign");
       const [campaign] = await rest<Json[]>(`communication_campaigns?select=*&id=eq.${campaignId}&limit=1`, token);
       if (!campaign) throw new LiveAccessError(403, "That campaign is not available to you.");
+      if (!canUse(session.identity, `action_send_${campaign.channel}`) || (campaign.channel === "whatsapp" && !canUse(session.identity,"whatsapp"))) throw new LiveAccessError(403,"Sending through this channel is disabled for your account.");
       if (!["draft", "failed"].includes(String(campaign.status)))
         throw new InputError("Only a draft or failed campaign can be launched.");
       const recipients = await rest<Json[]>(`campaign_recipients?select=*&campaign_id=eq.${campaignId}&status=in.(queued,failed)&order=created_at.asc&limit=200`, token);

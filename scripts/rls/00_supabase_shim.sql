@@ -18,6 +18,7 @@ create table if not exists storage.buckets (
 create table if not exists auth.users (
   id uuid primary key,
   email text,
+  email_confirmed_at timestamptz default now(),
   deleted_at timestamptz
 );
 -- auth.uid() reads the impersonated user from a session GUC.
