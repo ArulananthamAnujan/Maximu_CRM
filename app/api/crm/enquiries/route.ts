@@ -63,7 +63,7 @@ export async function GET(request: Request) {
     const createdTo = dayFilter(url.searchParams.get("createdTo"));
     const updatedFrom = dayFilter(url.searchParams.get("updatedFrom"));
     const updatedTo = dayFilter(url.searchParams.get("updatedTo"));
-    const accessKey = `${session.identity.organisationId}:${session.identity.profileId}`;
+    const accessKey = `${session.identity.organisationId}:${session.identity.profileId}:${session.identity.branchId}:${session.identity.sourceLevel}:${JSON.stringify(session.identity.functionAccess)}`;
 
     // The normal directory path asks PostgREST for exactly one visible page.
     // The old implementation downloaded every enquiry and all its relations

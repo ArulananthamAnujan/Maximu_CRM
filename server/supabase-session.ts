@@ -1,3 +1,5 @@
+import { deniedFunction } from "@/server/function-access";
+import type { FunctionAccess } from "@/lib/function-access";
 import {
   ACCESS_COOKIE,
   isSecureRequest,
@@ -19,6 +21,7 @@ export type LiveIdentity = {
   department: string | null;
   sourceLevel: string;
   role: LiveRole;
+  functionAccess?: FunctionAccess | null;
 };
 
 type ProfileRow = {
@@ -30,6 +33,7 @@ type ProfileRow = {
   level: string;
   department: string | null;
   active: boolean;
+  function_access?: FunctionAccess | null;
 };
 
 export async function liveSession(
@@ -87,7 +91,9 @@ export async function liveSession(
       403,
       "This Maximus CRM account has been deactivated. Ask an administrator to reactivate it.",
     );
-  return { accessToken, identity: mapIdentity(profile), refreshed };
+  const identity = mapIdentity(profile);
+  if (await deniedFunction(request, identity)) throw new LiveAccessError(403, "You do not have access to this function. Ask your Super Admin to enable it.");
+  return { accessToken, identity, refreshed };
 }
 
 /**
@@ -101,7 +107,7 @@ export async function profileForUser(
   userId: string,
 ): Promise<ProfileRow | undefined> {
   const rows = await supabaseRequest<ProfileRow[]>(
-    `/rest/v1/profiles?select=id,organisation_id,branch_id,display_name,email,level,department,active&id=eq.${encodeURIComponent(userId)}&limit=1`,
+    `/rest/v1/profiles?select=id,organisation_id,branch_id,display_name,email,level,department,active,function_access&id=eq.${encodeURIComponent(userId)}&limit=1`,
     { method: "GET" },
     accessToken,
   );
@@ -171,6 +177,7 @@ function mapIdentity(profile: ProfileRow): LiveIdentity {
     department: profile.department,
     sourceLevel: profile.level,
     role,
+    functionAccess: profile.function_access ?? null,
   };
 }
 

@@ -142,11 +142,11 @@ test("bulk actions are server-authorised and bounded", async () => {
   assert.match(checklists, /action === "bulk_update"/);
   for (const label of [
     "Export selected",
-    "Mark complete",
     "Archive selected",
     "Void selected",
     "Deactivate selected",
   ]) assert.match(page, new RegExp(label));
+  assert.match(await read("app/task-board.tsx"), /Complete selected/);
 });
 
 test("every portal list provides client-safe bulk tools", async () => {

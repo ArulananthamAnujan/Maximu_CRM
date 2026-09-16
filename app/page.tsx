@@ -1,6 +1,12 @@
 "use client";
+import {staffTimezones,type StaffDetails} from "@/lib/staff-details";
 
 import Image from "next/image";
+import {TaskBoard} from "./task-board";
+import accessStyles from "./staff-function-access.module.css";
+import {StaffFunctionAccess,FunctionAccessFields} from "./staff-function-access";
+import {FunctionAccessContext,useFunctionAccess} from "./function-access-context";
+import {canUse,stageFunction,type FunctionAccess} from "@/lib/function-access";
 import { MobileNavigation } from "./mobile-navigation";
 import { browserWorkspaceReturn, connectGoogleWorkspace, isNativeApp, openGoogleSignIn, reportMobileError, saveDownload } from "@/lib/mobile-platform";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -441,6 +447,7 @@ type EmailTemplateRecord = {
 };
 type BranchRecord = { id: string; name: string; code: string };
 type StaffRecord = {
+  function_access?: FunctionAccess | null;
   id: string;
   display_name: string;
   email: string;
@@ -448,6 +455,7 @@ type StaffRecord = {
   active: boolean;
 };
 type LiveIdentity = {
+  functionAccess?: FunctionAccess | null;
   profileId: string;
   organisationId: string;
   branchId: string | null;
@@ -1279,7 +1287,9 @@ function RowSelection({
   );
 }
 
-function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
+async function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
+  const response = await fetch("/api/crm/operations", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"record_export",scope:filename,count:rows.length})});
+  if (!response.ok) { alert("Export is not enabled for your account."); return; }
   if (!rows.length) return;
   const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
   const cell = (value: unknown) => {
@@ -1601,6 +1611,7 @@ function Sidebar({
   serviceMode: ServiceMode;
   mobileAccount?: React.ReactNode;
 }) {
+  const allowed = useFunctionAccess();
   const navigationRef = useRef<HTMLElement | null>(null);
   useOverlayFocus(open && role !== "client", navigationRef, () => setOpen(false));
   const config = roleConfig[role],
@@ -1616,7 +1627,7 @@ function Sidebar({
       .map((g) => ({
         ...g,
         items: g.items.filter(([key]) =>
-          config.modules.includes(key as ModuleKey),
+          config.modules.includes(key as ModuleKey) && allowed(key),
         ),
       }))
       .filter((g) => g.items.length);
@@ -1704,7 +1715,9 @@ function ProfileServiceSwitch({
   setServiceMode: (x: ServiceMode) => void;
   setActive: (x: ModuleKey) => void;
 }) {
+  const allowed = useFunctionAccess();
   const switchMode = (next: ServiceMode) => {
+    if (!allowed(next === "study" ? "study_access" : "direct_visa_access")) return;
     setServiceMode(next);
     setActive("dashboard");
   };
@@ -1717,6 +1730,7 @@ function ProfileServiceSwitch({
       <button
         className={serviceMode === "study" ? "active" : ""}
         onClick={() => switchMode("study")}
+        disabled={!allowed("study_access")}
         aria-label="Study Abroad workspace"
         title="Study Abroad workspace"
       >
@@ -1726,6 +1740,7 @@ function ProfileServiceSwitch({
       <button
         className={serviceMode === "direct_visa" ? "active" : ""}
         onClick={() => switchMode("direct_visa")}
+        disabled={!allowed("direct_visa_access")}
         aria-label="Direct Visa workspace"
         title="Direct Visa workspace"
       >
@@ -1743,9 +1758,10 @@ function DailyTopNav({
   active: ModuleKey;
   setActive: (x: ModuleKey) => void;
 }) {
+  const allowed=useFunctionAccess();
   return (
     <nav className="dailyTopNav" aria-label="Daily workspace navigation">
-      {dailyNavGroups[0].items.map(([key, label, Icon]) => (
+      {dailyNavGroups[0].items.filter(([key])=>allowed(key)).map(([key, label, Icon]) => (
         <button
           key={key}
           className={active === key ? "active" : ""}
@@ -3026,107 +3042,7 @@ function VisaMattersBoard({
   );
 }
 
-function TasksView({
-  tasks,
-  cases,
-  openModal,
-  onBulkAction,
-}: {
-  tasks: TaskRecord[];
-  cases: CaseRecord[];
-  openModal: (x: ModalType) => void;
-  onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
-}) {
-  const [query, setQuery] = useState("");
-  const [state, setState] = useState("open");
-  const [priority, setPriority] = useState("");
-  const shown = tasks
-    .filter((task) => state === "all" || (state === "done" ? task.completed : !task.completed))
-    .filter((task) => !priority || task.priority === priority)
-    .filter((task) => matchesSearch(query, [task.title, task.description, task.type, task.branch, task.assignedTo, task.createdBy, task.priority, task.due, cases.find((c) => c.dbId === task.caseId)?.name]));
-  const priorities = [...new Set(tasks.map((task) => task.priority).filter(Boolean))].sort();
-  const selection = useBulkSelection(shown);
-  const run = async (operation: string, extra: Record<string, unknown> = {}) => {
-    await onBulkAction("task", operation, selection.selected.map((item) => item.id), extra);
-    selection.clear();
-  };
-  return (
-    <article className="panel listPanel">
-      <div className="panelHead">
-        <div>
-          <span className="kicker">ASSIGNED WORK</span>
-          <h2>Tasks</h2>
-        </div>
-        <button className="primaryButton" onClick={() => openModal("task")}>
-          <Plus size={16} />
-          New task
-        </button>
-      </div>
-      <ListFilterBar query={query} onQuery={setQuery} placeholder="Search task, client or due date" resultCount={shown.length}>
-        <label className="compactFilter">Status<select value={state} onChange={(event) => setState(event.target.value)}><option value="open">Open</option><option value="done">Completed</option><option value="all">All</option></select></label>
-        <label className="compactFilter">Priority<select value={priority} onChange={(event) => setPriority(event.target.value)}><option value="">All priorities</option>{priorities.map((item) => <option key={item} value={item}>{humanise(item)}</option>)}</select></label>
-      </ListFilterBar>
-      {shown.length === 0 ? (
-        <EmptyState
-          icon={Check}
-          title="No tasks"
-          copy="Create tasks and link them to a case."
-          action="Create task"
-          onAction={() => openModal("task")}
-        />
-      ) : (
-        <>
-        <div className="listSelectionTools">
-          <SelectAllControl checked={selection.allSelected} onChange={selection.toggleAll} />
-        </div>
-        <BulkActionBar count={selection.selected.length} onClear={selection.clear}>
-          <button className="ghostButton" onClick={() => void run("toggle", { completed: true })}>
-            <Check size={14} /> Mark complete
-          </button>
-          <button className="ghostButton" onClick={() => void run("toggle", { completed: false })}>
-            Reopen
-          </button>
-          <button className="ghostButton dangerAction" onClick={() => {
-            if (confirm(`Delete ${selection.selected.length} selected task${selection.selected.length === 1 ? "" : "s"}?`)) void run("delete");
-          }}>
-            <Trash2 size={14} /> Delete
-          </button>
-        </BulkActionBar>
-        {shown.map((t) => (
-          <div className="functionalRow bulkEnabled" key={t.id}>
-            <RowSelection checked={selection.selectedIds.has(t.id)} onChange={() => selection.toggle(t.id)} label={`Select ${t.title}`} />
-            <button
-              className={`taskCheck ${t.completed ? "done" : ""}`}
-              onClick={() => void onBulkAction("task", "toggle", [t.id], { completed: !t.completed })}
-              aria-label={t.completed ? `Reopen ${t.title}` : `Complete ${t.title}`}
-            >
-              {t.completed ? <Check size={15} /> : null}
-            </button>
-            <div>
-              <strong>{t.title}</strong>
-              <span>{t.description || "No task description"}</span>
-              <small>{cases.find((c) => c.dbId === t.caseId)?.name || "General task"} · {humanise(t.type)} · {t.branch || "Personal work"}</small>
-              <small>Created by {t.createdBy || "Branch staff"}{t.assignedTo ? ` · Responsible: ${t.assignedTo}` : ""}{t.completedBy ? ` · Completed by ${t.completedBy}` : ""}</small>
-            </div>
-            <div className={overdue(t.due) && !t.completed ? "taskDueBlock overdueFact" : "taskDueBlock"}><small>Due</small><strong>{t.due ? orgDate(t.due) : "Not set"}</strong></div>
-            <Status value={t.completed ? "Completed" : t.priority} />
-            <button
-              className="iconButton"
-              onClick={() => {
-                if (confirm(`Delete “${t.title}”?`)) void onBulkAction("task", "delete", [t.id]);
-              }}
-              aria-label="Delete task"
-              title="Delete task"
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        ))}
-        </>
-      )}
-    </article>
-  );
-}
+
 function CalendarView({
   items,
   openModal,
@@ -6548,7 +6464,7 @@ function ReadinessPanel() {
 }
 
 const STAFF_LEVELS: [string, string][] = [
-  ["staff", "Staff — every case in their branch"],
+  ["staff", "Staff — enabled functions in their branch"],
   ["partner", "Partner — every case in their branch"],
   ["manager", "Manager — their branch's cases and finance"],
   ["branch_admin", "Branch Manager — their branch, staff and finance"],
@@ -6560,6 +6476,8 @@ const levelLabel = (level: string) =>
   humanise(level);
 
 type AdminProfile = {
+  staff_details?: StaffDetails;
+  function_access?: FunctionAccess | null;
   id: string;
   display_name: string;
   email: string;
@@ -6910,6 +6828,9 @@ function AdminView({
   currentProfileId: string;
   clients: { id: string; name: string }[];
 }) {
+  const [accessStaff,setAccessStaff]=useState<AdminProfile|null>(null);
+  const [newStaffAccess,setNewStaffAccess]=useState<FunctionAccess|null>(null);
+  const [newStaffLevel,setNewStaffLevel]=useState("staff");
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
   const [invitations, setInvitations] = useState<AdminInvitation[]>([]);
   const [adminBranches, setAdminBranches] = useState<AdminBranch[]>([]);
@@ -7069,6 +6990,7 @@ function AdminView({
 
   return (
     <section className="adminStack">
+      {accessStaff&&<StaffFunctionAccess person={accessStaff} close={()=>setAccessStaff(null)} save={async (access,details)=>Boolean(await send({action:"update_profile",profileId:accessStaff.id,functionAccess:access,...details}))}/>}
       <nav className="staffManagementTabs" aria-label="Staff management sections">
         <button type="button" aria-pressed={section === "staff"} onClick={() => setSection("staff")}>Team <span>{profiles.filter(person => person.level !== "student").length}</span></button>
         <button type="button" aria-pressed={section === "clients"} onClick={() => setSection("clients")}>Client logins <span>{portalAccounts.length}</span></button>
@@ -7149,12 +7071,14 @@ function AdminView({
 
         {adding && (
           <form
-            className="stackedForm"
+            className={accessStyles.accountForm}
             onSubmit={async (event) => {
               event.preventDefault();
               const data = new FormData(event.currentTarget);
               const result = await send({
                 action: "create_staff",
+                functionAccess: newStaffAccess,
+                staffDetails:{mobile:data.get("mobile"),timezone:data.get("timezone")},
                 displayName: data.get("displayName"),
                 email: data.get("email"),
                 level: data.get("level"),
@@ -7163,6 +7087,8 @@ function AdminView({
               });
               if (result) {
                 setAdding(false);
+                setNewStaffAccess(null);
+                setNewStaffLevel("staff");
                 setHandover({
                   message: result.message ?? "Staff account created.",
                   setupLink: result.setupLink,
@@ -7170,7 +7096,7 @@ function AdminView({
               }
             }}
           >
-            <label>
+            <div className={accessStyles.accountFields}><label>
               Full name *<input name="displayName" required />
             </label>
             <label>
@@ -7182,7 +7108,7 @@ function AdminView({
             </label>
             <label>
               Account level *
-              <select name="level" defaultValue="staff">
+              <select name="level" value={newStaffLevel} onChange={event=>{setNewStaffLevel(event.target.value);setNewStaffAccess(null);}}>
                 {STAFF_LEVELS.filter(
                   ([key]) => isOwner || key === "staff" || key === "partner",
                 ).map(([key, label]) => (
@@ -7211,10 +7137,14 @@ function AdminView({
               </select>
             </label>
             <label>
-              Department
+              Team / department
               <input name="department" placeholder="e.g. Admissions" />
             </label>
-            <div className="formActions">
+            <label>Mobile<input name="mobile" type="tel" placeholder="Include country code" /></label>
+            <label>Timezone<select name="timezone" defaultValue="Australia/Melbourne">{staffTimezones.map(zone=><option key={zone}>{zone}</option>)}</select></label>
+            <label>Password setup<small>A secure setup link is emailed to the staff member so they can choose their password.</small></label>
+            </div><section aria-label="Function access">{isOwner?<FunctionAccessFields level={newStaffLevel} value={newStaffAccess} onChange={setNewStaffAccess} disabled={working}/>:<p>The new account inherits your function restrictions. Super Admin can adjust its access later.</p>}</section>
+            <div className={accessStyles.formActions}>
               <button className="primaryButton" disabled={working}>
                 <Check size={15} />
                 {working ? "Creating…" : "Create staff account"}
@@ -7294,6 +7224,7 @@ function AdminView({
                     <td data-label="Status"><span className={`staffAccountStatus ${person.active ? "active" : "inactive"}`}>{person.active ? "Active" : "Deactivated"}</span></td>
                     <td>
                       <details className="staffManage"><summary>Manage</summary><div className="staffManageBody">
+                        {isOwner&&!['super_admin','platform_owner'].includes(person.level)&&<button className="ghostButton" onClick={()=>setAccessStaff(person)}>Function access</button>}
                         <label>Account role
                       {isOwner && person.level !== "student" ? (
                         <select
@@ -7723,6 +7654,7 @@ function CaseDrawer({
 }
 
 type CaseTab =
+  | "tasks"
   | "overview"
   | "client"
   | "family"
@@ -7736,6 +7668,7 @@ type CaseTab =
 
 const caseTabs: [CaseTab, string][] = [
   ["overview", "Case home"],
+  ["tasks", "Tasks"],
   ["applications", "Applications"],
   ["visa", "Visa matter"],
   ["documents", "Documents"],
@@ -7748,6 +7681,7 @@ const caseTabs: [CaseTab, string][] = [
 ];
 
 const caseTabDescriptions: Record<CaseTab, string> = {
+  tasks: "Assignments, follow-ups, comments and completed work for this student file.",
   overview: "Priorities, branch-wide access, deadlines and the complete case workflow.",
   applications: "Institution applications, offers, enrolment and COE progress.",
   visa: "Visa preparation, lodgement, checks and decision details.",
@@ -7947,6 +7881,7 @@ function CaseDrawerBody({
   storageConnected: boolean;
   onCaseAction: (caseId: string, kind?: "document" | "visaChecklist" | "invoice" | "message") => void;
 }) {
+  const allowed = useFunctionAccess();
   const drawerRef = useRef<HTMLElement | null>(null);
   const copilot = useCopilot();
   const setCopilotContext = copilot.setContext;
@@ -7997,7 +7932,7 @@ function CaseDrawerBody({
   } | null>(null);
   const caseId = item.dbId;
   const stage = item.lifecycleStage;
-  const moves = allowedStageMoves(stage);
+  const moves = allowedStageMoves(stage).filter(next=>allowed(stageFunction(next)));
   const needsExpiry = !recordedExpiry;
   const direct = item.serviceType === "direct_visa";
   // A migration matter has no institution applications -- that tab describes
@@ -8006,14 +7941,15 @@ function CaseDrawerBody({
   // this account may actually change, not one it can merely see for cover.
   const availableTabs = (
     direct ? caseTabs.filter(([key]) => key !== "applications") : caseTabs
-  ).filter(([key]) => key !== "finance" || canModify);
+  ).filter(([key]) => (key !== "finance" || canModify) && ({tasks:allowed("work"),applications:allowed("view_applications"),visa:allowed("visas")||allowed("direct_visas"),documents:allowed("student_documents"),communication:allowed("communications"),finance:allowed("finance")} as Partial<Record<CaseTab,boolean>>)[key] !== false);
+  if(!availableTabs.some(([key])=>key===tab))setTab("overview");
   // Nine tabs do not fit a phone. The four that carry the day's work stay in
   // view -- with the visa matter taking the place of applications on a
   // migration file -- and the rest move behind one control.
   const compact = useCompactScreen();
   const primaryTabs: CaseTab[] = direct
-    ? ["overview", "visa", "documents", "communication"]
-    : ["overview", "applications", "documents", "communication"];
+    ? ["overview", "tasks", "visa", "documents", "communication"]
+    : ["overview", "tasks", "applications", "documents", "communication"];
   const shownTabs = compact
     ? availableTabs.filter(([key]) => primaryTabs.includes(key) || key === tab)
     : availableTabs;
@@ -8037,7 +7973,7 @@ function CaseDrawerBody({
     const checklistResult = await checklistResponse.json();
     if (!fileResponse.ok)
       throw new Error(fileResult.error || "The case file could not be loaded.");
-    if (!checklistResponse.ok)
+    if (!checklistResponse.ok && checklistResponse.status !== 403)
       throw new Error(checklistResult.error || "The document checklist could not be loaded.");
     return {
       file: fileResult as CaseFile,
@@ -8214,6 +8150,7 @@ function CaseDrawerBody({
                 ? "Review the deferment and resume the case when ready"
                 : "Review the completed file and its final records";
   const tabCount = (key: CaseTab) => {
+    if (key === "tasks") return file?.tasks.filter(task=>task.status!=="completed").length ?? 0;
     if (key === "applications") return file?.applications.length ?? 0;
     if (key === "family") return file?.dependants.length ?? 0;
     if (key === "documents") return outstandingDocuments;
@@ -8225,8 +8162,8 @@ function CaseDrawerBody({
     {
       label: "Daily work",
       tabs: direct
-        ? ["overview", "visa", "documents", "communication"]
-        : ["overview", "applications", "visa", "documents", "communication"],
+        ? ["overview", "tasks", "visa", "documents", "communication"]
+        : ["overview", "tasks", "applications", "visa", "documents", "communication"],
     },
     { label: "Client profile", tabs: ["client", "family", "history"] },
     { label: "Records", tabs: ["finance", "timeline"] },
@@ -8368,7 +8305,7 @@ function CaseDrawerBody({
                 <p className="caseSectionDescription">{caseTabDescriptions[tab]}</p>
               </div>
               <div className="caseQuickActions">
-                <button className="ghostButton" onClick={() => edit(item)} disabled={!canModify}>
+                <button className="ghostButton" onClick={() => edit(item)} disabled={!canModify || !allowed(stageFunction(stage))}>
                   <Pencil size={14} /> Edit case
                 </button>
               </div>
@@ -8381,6 +8318,7 @@ function CaseDrawerBody({
             {file && caseLoading && <p className="caseRefreshState" role="status">Updating this case… Your existing records remain visible.</p>}
             {file && <>
 
+        {tab === "tasks" && caseId && <TaskBoard caseId={caseId} branchId={String(file?.case.branch_id??"")||null} onChanged={async()=>{const loaded=await fetchCaseFile(caseId);setFile(loaded.file);setChecklist(loaded.checklist);await refresh();}}/>}
         {tab === "overview" && (
           <div className={`caseHome${direct ? " directCase" : ""}`}>
             <section className="caseWorkPanel agentClientPanel">
@@ -8694,7 +8632,7 @@ function CaseDrawerBody({
 
               </details>
             </section>
-            {!direct && (
+            {!direct && allowed("applications") && (
               <section className="caseWorkPanel agentApplicationsPanel">
                 <div className="caseWorkPanelHead">
                   <div>
@@ -8724,7 +8662,7 @@ function CaseDrawerBody({
                 </div>
               </section>
             )}
-            <section className="caseWorkPanel agentDocumentsPanel">
+            {allowed("documents")&&<section className="caseWorkPanel agentDocumentsPanel">
               <div className="caseWorkPanelHead">
                 <div>
                   <span className="kicker">DOCUMENTS</span>
@@ -8744,8 +8682,8 @@ function CaseDrawerBody({
                 {!checklist.length && !activeCaseDocuments.length ? <small>Add a request, upload a file or choose a checklist here.</small> : null}
               </div>
               <button className="ghostButton agentPanelFooter" onClick={() => setTab("documents")}>Open document workspace</button>
-            </section>
-            <section className="caseWorkPanel agentCommunicationPanel">
+            </section>}
+            {allowed("communications")&&<section className="caseWorkPanel agentCommunicationPanel">
               <div className="caseWorkPanelHead">
                 <div>
                   <span className="kicker">COMMUNICATION</span>
@@ -8766,9 +8704,9 @@ function CaseDrawerBody({
               ) : (
                 <p className="caseWorkEmpty">No messages have been recorded for this case.</p>
               )}
-            </section>
+            </section>}
             <div className="agentBottomSummary">
-              <section className="caseWorkPanel">
+              {(allowed("visas")||allowed("direct_visas"))&&<section className="caseWorkPanel">
                 <span className="kicker">VISA &amp; COMPLIANCE</span>
                 <h3>Visa details</h3>
                 <div className={`agentAlert ${item.visaExpiry ? "ready" : ""}`}>
@@ -8776,8 +8714,8 @@ function CaseDrawerBody({
                   <small>{item.visaExpiry ? "The case can progress to the visa stage." : "This blocks movement to the visa stage."}</small>
                 </div>
                 <button className="primaryButton compactButton" onClick={() => setTab("visa")}>Record visa details</button>
-              </section>
-              <section className="caseWorkPanel">
+              </section>}
+              {(allowed("finance"))&&<section className="caseWorkPanel">
                 <span className="kicker">FINANCE</span>
                 <h3>Account position</h3>
                 <div className="agentFinanceFacts">
@@ -8785,7 +8723,7 @@ function CaseDrawerBody({
                   <span><small>Total</small><strong>${invoiceTotal.toLocaleString()}</strong></span>
                 </div>
                 <button className="ghostButton" onClick={() => setTab("finance")}>Open finance</button>
-              </section>
+              </section>}
             </div>
 
           </div>
@@ -8793,7 +8731,7 @@ function CaseDrawerBody({
 
         {tab === "client" && (
           <>
-            {file?.client && <ClientProfileEditor key={String(client.id)} client={client} canModify={canModify} onSave={intake} />}
+            {file?.client && <ClientProfileEditor key={String(client.id)} client={client} canModify={canModify&&allowed(stageFunction(stage))} onSave={intake} />}
             <FactList
               title="Case & enquiry"
               rows={[
@@ -11546,6 +11484,7 @@ export default function Home() {
 }
 
 function HomeWorkspace() {
+  const quickTaskId=useRef<string|null>(null);
   const copilot = useCopilot();
   const { open: openCopilot, reset: resetCopilot, toggle: toggleCopilot } = copilot;
   const casePreviewRequest = useRef(0);
@@ -11590,6 +11529,7 @@ function HomeWorkspace() {
         title: string;
         body: string | null;
         read_at: string | null;
+        action_url?: string | null;
       }[]
     >([]);
   const [cases, setCases] = useState<CaseRecord[]>([]),
@@ -11647,10 +11587,13 @@ function HomeWorkspace() {
   // already usable between them, so re-applying the default on the second step
   // would throw away a screen the person had already opened.
   const landedAs = useRef<AppRole | null>(null);
-  const landOn = (nextRole: AppRole) => {
+  const landOn = (nextRole: AppRole, nextIdentity?:LiveIdentity) => {
     if (landedAs.current === nextRole) return;
     landedAs.current = nextRole;
-    setActive(roleConfig[nextRole].modules[0]);
+    const next = nextIdentity ?? identity;
+    const mode = canUse(next,"study_access") ? serviceMode === "direct_visa" && canUse(next,"direct_visa_access") ? "direct_visa" : "study" : "direct_visa";
+    setServiceMode(mode);
+    setActiveModule(roleConfig[nextRole].modules.find(key=>canUse(next,key,mode))??roleConfig[nextRole].modules[0]);
   };
   const [identity, setIdentity] = useState<LiveIdentity | null>(null),
     [sessionReady, setSessionReady] = useState(false),
@@ -11658,13 +11601,14 @@ function HomeWorkspace() {
       "maximus.serviceMode",
       "study",
     );
+  const accessIdentity = identity ? {...identity, serviceMode} : null;
   const role = identity?.role || "staff",
     signedIn = Boolean(identity),
     // Every internal case-team member can complete finance work for a case
     // they are allowed to work on. Branch-wide commissions, masters and staff
     // redistribution remain management functions.
     canManageBranch = role === "super_admin" || role === "admin",
-    canManageCaseFinance = role !== "client";
+    canManageCaseFinance = role !== "client" && canUse(accessIdentity,"finance");
   const workspaceRefreshRef = useRef<Promise<void> | null>(null);
   const enquiryPageCacheRef = useRef(new Map<string, { records: CaseRecord[]; count: number | null; storedAt: number }>());
   const enquiryRequestRef = useRef<AbortController | null>(null);
@@ -11902,7 +11846,7 @@ function HomeWorkspace() {
       );
       setStorageConnected(result.capabilities?.documentStorage === true);
       setBranches((result.branches || []) as BranchRecord[]);
-      landOn(result.identity.role as AppRole);
+      landOn(result.identity.role as AppRole, result.identity);
       if (result.identity.role !== "client") {
         void loadChecklistTemplates();
         void loadEmailTemplates();
@@ -11941,7 +11885,7 @@ function HomeWorkspace() {
         throw new Error(sessionResult.error || "Sign in is required.");
       authenticatedIdentity = sessionResult.identity as LiveIdentity;
       setIdentity(authenticatedIdentity);
-      landOn(authenticatedIdentity.role);
+      landOn(authenticatedIdentity.role, authenticatedIdentity);
       // Authentication is enough to open the CRM shell. The complete
       // workspace refresh is deliberately detached from the opening screen.
       setSessionReady(true);
@@ -11953,6 +11897,20 @@ function HomeWorkspace() {
       setSessionReady(true);
     }
   };
+  useEffect(()=>{
+    if(!identity)return;
+    let live=true;
+    const check=async()=>{try{const response=await fetch("/api/auth/session",{cache:"no-store"});const result=await response.json();if(!live)return;
+      if(!response.ok||!result.authenticated){window.location.reload();return;}
+      const next=result.identity as LiveIdentity;
+      if(next.profileId!==identity.profileId||next.branchId!==identity.branchId||next.role!==identity.role||JSON.stringify(next.functionAccess)!==JSON.stringify(identity.functionAccess)){window.location.reload();return;}
+      await loadAlerts(next.role);
+    }catch{}};
+    const timer=window.setInterval(()=>void check(),30000);const focus=()=>void check();window.addEventListener("focus",focus);
+    return()=>{live=false;window.clearInterval(timer);window.removeEventListener("focus",focus);};
+  // Identity changes restart the check after a fresh workspace load.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[identity?.profileId,identity?.branchId,identity?.role,JSON.stringify(identity?.functionAccess)]);
   const loadWorkspaceRef = useRef(loadWorkspace);
   loadWorkspaceRef.current = loadWorkspace;
   useEffect(() => {
@@ -12055,7 +12013,7 @@ function HomeWorkspace() {
   }, [active, query, searchKey]);
   useEffect(() => {
     const timer = window.setTimeout(
-      () => setCaseWindowId(new URL(window.location.href).searchParams.get("case") ?? ""),
+      () => {const params=new URL(window.location.href).searchParams;setCaseWindowId(params.get("case")??"");if(params.get("tab")==="tasks")setPreviewTab("tasks");if(params.get("module")==="work")setActiveModule("work");},
       0,
     );
     return () => window.clearTimeout(timer);
@@ -12103,9 +12061,10 @@ function HomeWorkspace() {
     return () => controller.abort();
   }, [caseWindowId, cases, enquiryPageRecords, selected]);
   const setActive = useCallback((module: ModuleKey) => {
+    if(!canUse(identity,module,serviceMode)){setToast("This function is not enabled for your account.");return;}
     if (module === "ai") { toggleCopilot(); setMenuOpen(false); return; }
     setActiveModule(module);
-  }, [toggleCopilot]);
+  }, [toggleCopilot,identity,serviceMode]);
   const openCasePreview = useCallback((record: CaseRecord, tab: CaseTab = "overview") => {
     casePreviewRequest.current += 1;
     setFormError("");
@@ -12174,6 +12133,9 @@ function HomeWorkspace() {
     return () => window.removeEventListener("maximus:copilot-case", chooseCase);
   }, [openGlobalSearchResult, caseWindowId]);
   const open = (x: ModalType) => {
+    const required=({task:"work",case:"enquiries",appointment:"calendar",message:"communications",document:"documents",visaChecklist:"documents",invoice:"finance",template:"templates",workflow:"workflows",role:"administration"} as Record<string,string>)[x??""];
+    if(required&&!canUse(accessIdentity,required)){setToast("This function is not enabled for your account.");return;}
+    if(x==="task")quickTaskId.current=crypto.randomUUID();
     setEditing(null);
     setFormError("");
     setModal(x);
@@ -12357,6 +12319,7 @@ function HomeWorkspace() {
       return;
     }
     payload.action = modal;
+    if(modal==="task")payload.requestId=quickTaskId.current??(quickTaskId.current=crypto.randomUUID());
     // The portal asks; staff confirm. The workspace accepts only the actions
     // built for a client account.
     if (role === "client" && modal === "appointment")
@@ -12434,6 +12397,7 @@ function HomeWorkspace() {
       }
     },
     exportData = () => {
+      if(!canUse(accessIdentity,"action_export")){say("Export is not enabled for your account.");return;}
       // Case work is shared throughout the branch. Exports therefore follow
       // the same visible branch boundary and remain fully auditable.
       const mine = cases;
@@ -12856,15 +12820,7 @@ function HomeWorkspace() {
         enquiriesTotal={enquiriesTotal}
       />
     );
-  else if (active === "work")
-    content = (
-      <TasksView
-        tasks={tasks}
-        cases={cases}
-        openModal={open}
-        onBulkAction={bulkMutateRemote}
-      />
-    );
+  else if (active === "work") content = <TaskBoard onChanged={refreshWorkspace}/>;
   else if (active === "calendar")
     content = (
       <CalendarView
@@ -13239,7 +13195,7 @@ function HomeWorkspace() {
       );
   }
   return (
-    <div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}${active === "dashboard" && role !== "client" ? " dashboardMode" : ""}${active === "communications" && role !== "client" ? " gmailMode" : ""}${role !== "client" ? " staffFullMode" : ""}${active === "enquiries" && role !== "client" ? " enquiryFullMode" : ""}`}>
+    <FunctionAccessContext.Provider value={accessIdentity}><div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}${active === "dashboard" && role !== "client" ? " dashboardMode" : ""}${active === "communications" && role !== "client" ? " gmailMode" : ""}${role !== "client" ? " staffFullMode" : ""}${active === "enquiries" && role !== "client" ? " enquiryFullMode" : ""}`}>
       {schemaWarning && (
         <div className="schemaBanner" role="status">
           <AlertTriangle size={15} />
@@ -13392,7 +13348,7 @@ function HomeWorkspace() {
                   setServiceMode={setServiceMode}
                   setActive={setActive}
                 />
-                {serviceMode === "study" ? (
+                {serviceMode === "study" && canUse(accessIdentity,"courseFinder") ? (
                   <button
                     className={`courseFinderSwitchButton ${active === "courseFinder" ? "active" : ""}`}
                     onClick={() => setActive("courseFinder")}
@@ -13406,7 +13362,7 @@ function HomeWorkspace() {
               </div>
             ) : null}
             <div className="topActions">
-              {role !== "client" && !selected && active !== "communications" && <button className="messageShortcut copilotTrigger" aria-expanded={copilot.isOpen} aria-controls="crm-copilot" onClick={copilot.toggle}><Sparkles size={17} /><span>Copilot</span></button>}
+              {role !== "client" && canUse(accessIdentity,"ai") && !selected && active !== "communications" && <button className="messageShortcut copilotTrigger" aria-expanded={copilot.isOpen} aria-controls="crm-copilot" onClick={copilot.toggle}><Sparkles size={17} /><span>Copilot</span></button>}
               {role !== "client" ? (
                 <button
                   className={`messageShortcut ${active === "communications" ? "active" : ""}`}
@@ -13468,7 +13424,7 @@ function HomeWorkspace() {
                         {unreadAlerts.slice(0, 6).map((alert) => (
                           <li key={alert.id}>
                             <button
-                              onClick={() => void markAlertRead(alert.id)}
+                              onClick={()=>{void markAlertRead(alert.id);setNotifications(false);if(alert.action_url?.startsWith("/?")){const url=new URL(alert.action_url,window.location.origin);if(url.searchParams.get("case")){setCaseWindowId(url.searchParams.get("case")!);setPreviewTab(url.searchParams.get("tab")==="tasks"?"tasks":"overview");}else if(url.searchParams.get("module")==="work")setActive("work");}}}
                             >
                               <span>
                                 <b>{alert.title}</b>
@@ -13520,7 +13476,7 @@ function HomeWorkspace() {
                         ["task", "Task", Check],
                         ["appointment", "Appointment", CalendarDays],
                         ["message", "Message draft", Mail],
-                      ].map(([k, l, Icon]) => (
+                      ].filter(([k])=>canUse(accessIdentity,({case:"enquiries",task:"work",appointment:"calendar",message:"communications"} as Record<string,string>)[String(k)])).map(([k, l, Icon]) => (
                         <button
                           key={String(k)}
                           onClick={() => open(k as ModalType)}
@@ -13529,9 +13485,9 @@ function HomeWorkspace() {
                           {String(l)}
                         </button>
                       ))}
-                      <button onClick={() => void generateIntakeLink()}>
+                      {canUse(accessIdentity,"enquiries")&&<button onClick={() => void generateIntakeLink()}>
                         <Link2 size={16} /> Generate enquiry link
-                      </button>
+                      </button>}
                     </div>
                   )}
                 </div>
@@ -13569,7 +13525,7 @@ function HomeWorkspace() {
             ) : null}
           </div>
           {active === "dashboard" && role !== "client" && <WorkspaceConnection />}
-          {content}
+          {canUse(accessIdentity,active)?content:<article className="panel listPanel"><h2>Choose an available function</h2><p>Your account has access to the functions shown in the menu.</p></article>}
         </div>
       </main>
       {role !== "client" ? (
@@ -13636,7 +13592,7 @@ function HomeWorkspace() {
         cases={selected && !cases.some(c => c.dbId === selected.dbId) ? [selected, ...cases] : cases}
         editing={editing}
         branches={branches}
-        staff={staff}
+        staff={modal==="task"?staff.filter(person=>person.function_access?.work!==false||["super_admin","platform_owner"].includes(person.level)):staff}
         role={role}
         documents={documents}
         checklistTemplates={checklistTemplates}
@@ -13649,6 +13605,6 @@ function HomeWorkspace() {
           {toast}
         </div>
       )}
-    </div>
+    </div></FunctionAccessContext.Provider>
   );
 }

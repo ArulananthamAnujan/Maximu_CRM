@@ -46,7 +46,7 @@ openssl pkey -in "${work}/keys/service.pem" -pubout -out "${work}/keys/service.p
 chmod 600 "${work}/keys/service.pem"
 
 pg_stage_sql "${work}" "${root}"/supabase/migrations/*.sql \
-  "${root}/scripts/rls/00_supabase_shim.sql" "${root}/scripts/audit/seed.sql"
+  "${root}/scripts/rls/00_supabase_shim.sql" "${root}/scripts/audit/seed.sql" "${root}/scripts/rls/task_function_access.sql" "${root}/scripts/rls/staff_permission_groups.sql"
 
 pg_reset_schemas
 echo "Applying migrations..."
@@ -56,6 +56,8 @@ for migration in "${root}"/supabase/migrations/*.sql; do
 done
 echo "Seeding a two-branch agency..."
 pg_run "${work}/sql/seed.sql"
+pg_run "${work}/sql/task_function_access.sql"
+pg_run "${work}/sql/staff_permission_groups.sql"
 
 service_role_key="ui-service-role-$(head -c 12 /dev/urandom | base64 | tr -d '/+=')"
 SHIM_DEBUG="${SHIM_DEBUG:-}" SHIM_PORT="${shim_port}" \

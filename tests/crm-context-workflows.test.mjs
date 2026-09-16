@@ -72,8 +72,8 @@ test('contextual follow-ups preserve the chosen timestamp',async()=>fixture(asyn
   const due='2026-10-10T03:30:00.000Z';
   const response=await call('/api/crm/workspace',{action:'task',caseId:uuid(1),taskType:'follow_up',title:'Follow up with applicant',due});
   assert.equal(response.status,200);
-  const task=writes.find(w=>w.table==='tasks');
-  assert.equal(task.body.due_at,due);assert.equal(task.body.case_id,uuid(1));
+  const task=writes.find(w=>w.table==='task_action');
+  assert.equal(task.body.p_values.due,due);assert.equal(task.body.p_values.caseId,uuid(1));
 }));
 
 

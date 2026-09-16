@@ -69,3 +69,5 @@ tsconfig.tsbuildinfo
 *.keystore
 *.p12
 *.mobileprovision
+
+/supabase/.temp/

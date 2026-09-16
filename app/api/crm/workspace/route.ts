@@ -188,7 +188,7 @@ export async function GET(request: Request) {
         degraded,
       ),
       safeRest(
-        "profiles?select=id,display_name,email,branch_id,level,active&active=eq.true&order=display_name.asc",
+        "profiles?select=id,display_name,email,branch_id,level,active,function_access&active=eq.true&order=display_name.asc",
         token,
         degraded,
       ),
@@ -1364,36 +1364,9 @@ export async function POST(request: Request) {
     }
 
     if (action === "task") {
-      const id = crypto.randomUUID();
-      const assignedTo = nullable(body.assignedTo) ?? actor;
-      await insert(
-        "tasks",
-        {
-          id,
-          organisation_id: org,
-          case_id: nullable(body.caseId),
-          title: required(body.title, "Task title"),
-          description: nullable(body.description),
-          assigned_to: assignedTo,
-          assigned_by: actor,
-          task_type: nullable(body.taskType) ?? "case_work",
-          priority: String(body.priority || "medium").toLowerCase(),
-          status: "open",
-          due_at: nullableDate(body.due),
-        },
-        token,
-      );
-      await auditEvent(
-        org,
-        actor,
-        "task.created",
-        "task",
-        id,
-        session.identity.branchId,
-        `Created task: ${String(body.title)}`,
-        token,
-      );
-      return Response.json({ ok: true });
+      const id = nullable(body.requestId) ?? crypto.randomUUID();
+      await supabaseRequest("/rest/v1/rpc/task_action", {method:"POST",body:JSON.stringify({p_action:"create",p_id:id,p_expected:null,p_values:{caseId:nullable(body.caseId),title:required(body.title,"Task title"),description:nullable(body.description),assignedTo:nullable(body.assignedTo)??actor,taskType:nullable(body.taskType)??"case_work",priority:String(body.priority||"medium").toLowerCase(),due:nullableDate(body.due)}})},token);
+      return Response.json({ok:true,id});
     }
 
     if (action === "appointment") {
@@ -3290,6 +3263,8 @@ function apiError(error: unknown): Response {
       { status: error.status },
     );
   if (error instanceof SupabaseError) {
+    let detail:{code?:string;message?:string}={};try{detail=JSON.parse(error.message);}catch{}
+    if(["22023","40001","42501"].includes(detail.code??""))return Response.json({ok:false,error:detail.message||"This action is not available."},{status:detail.code==="42501"?403:detail.code==="40001"?409:400});
     console.error(error.message);
     return Response.json(
       {
