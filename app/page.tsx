@@ -16,6 +16,7 @@ import { useOverlayFocus } from "./use-overlay-focus";
 import { CaseDocumentRequests } from "./case-document-requests";
 import { CaseFollowUpForm } from "./case-follow-up-form";
 import { CaseBranchTransfer } from "./case-branch-transfer";
+import { CourseMasters } from "./course-masters";
 import { StaffDeleteDialog } from "./staff-delete-dialog";
 import { CopilotProvider, useCopilot } from "./copilot-provider";
 import { WorkspaceConnection } from "./workspace-connection";
@@ -6828,6 +6829,7 @@ function AdminView({
   currentProfileId: string;
   clients: { id: string; name: string }[];
 }) {
+  const canUseAdminFunction = useFunctionAccess();
   const [accessStaff,setAccessStaff]=useState<AdminProfile|null>(null);
   const [newStaffAccess,setNewStaffAccess]=useState<FunctionAccess|null>(null);
   const [newStaffLevel,setNewStaffLevel]=useState("staff");
@@ -6843,7 +6845,7 @@ function AdminView({
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [section, setSection] = useState<"staff" | "clients" | "invitations" | "branches" | "settings">("staff");
+  const [section, setSection] = useState<"staff" | "clients" | "invitations" | "branches" | "settings" | "courses">("staff");
   const [addingBranch, setAddingBranch] = useState(false);
   const [staffSearch, setStaffSearch] = useState("");
   const [staffStatus, setStaffStatus] = useState("all");
@@ -6997,7 +6999,9 @@ function AdminView({
         <button type="button" aria-pressed={section === "invitations"} onClick={() => setSection("invitations")}>Invitations <span>{actionableInvitations.length}</span></button>
         <button type="button" aria-pressed={section === "branches"} onClick={() => setSection("branches")}>Branches</button>
         <button type="button" aria-pressed={section === "settings"} onClick={() => setSection("settings")}>Settings</button>
+        {canUseAdminFunction("courseFinder") && <button type="button" aria-pressed={section === "courses"} onClick={() => setSection("courses")}>Universities &amp; courses</button>}
       </nav>
+      {section === "courses" && <CourseMasters />}
       {section !== "staff" && error && <p role="alert" className="caseWorkError">{error}</p>}
       {section !== "staff" && handover && <p role="status" className="handoverPanel">{handover.message}</p>}
       {section === "staff" && <>
@@ -13544,11 +13548,24 @@ function HomeWorkspace() {
           storageConnected={storageConnected}
           canModify={true}
           canArchive={role !== "staff"}
-          canTransferBranch={role === "super_admin"}
+          canTransferBranch={canUse(accessIdentity, "action_transfer_branch")}
           branches={branches}
           onBranchTransferred={async transfer => {
             if (!selected) return;
             const transferredId = selected.dbId;
+            if (role !== "super_admin" && transfer.branchId !== identity?.branchId) {
+              setSelected(null);
+              setCaseWindowId("");
+              const target = new URL(window.location.href);
+              target.searchParams.delete("case");
+              window.history.replaceState(null, "", target);
+              setCases(previous => previous.filter(record => record.dbId !== transferredId));
+              setToast(`Case transferred to ${transfer.branch}. It is now managed by that branch.`);
+              enquiryPageCacheRef.current.clear();
+              setEnquiriesLoaded(false);
+              await loadWorkspace();
+              return;
+            }
             setSelected(previous => previous && previous.dbId === transferredId ? { ...previous, ...transfer } : previous);
             setCases(previous => previous.map(record => record.dbId === transferredId ? { ...record, ...transfer } : record));
             enquiryPageCacheRef.current.clear();

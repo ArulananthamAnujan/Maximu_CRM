@@ -7,6 +7,7 @@ export async function deniedFunction(request:Request,identity:AccessIdentity):Pr
  if(!path.startsWith("/api/crm/"))return false;
  const body = request.method === "GET" || request.method === "HEAD" ? {} : await request.clone().json().catch(()=>({})) as Record<string,unknown>;
  const action=String(body.action??""), operation=String(body.operation??"");
+ if(action === "transfer_branch") return !canUse(identity,"action_transfer_branch");
  const deleting=request.method==="DELETE" || ["delete","archive","remove_staff","remove_client_account","delete_invitation"].includes(action) || ["delete","archive"].includes(operation);
  if(deleting && (!canUse(identity,"action_delete") || ((action.startsWith("bulk") || Array.isArray(body.ids) || Array.isArray(body.items)) && !canUse(identity,"action_bulk_delete"))))return true;
  if((["assign","bulk_assign","add_collaborator","remove_collaborator"].includes(action) || operation==="assign") && !canUse(identity,"action_assign"))return true;

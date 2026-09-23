@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import test from "node:test";
 
-async function transfer({ level = "super_admin", failure, reason = "Requested handover" } = {}) {
+async function transfer({ level = "super_admin", access = null, failure, reason = "Requested handover" } = {}) {
   const calls = [];
   const server = http.createServer(async (req, res) => {
     let raw = ""; for await (const chunk of req) raw += chunk;
@@ -11,7 +11,7 @@ async function transfer({ level = "super_admin", failure, reason = "Requested ha
     calls.push({ path, body, authorization: req.headers.authorization });
     const send = (status, data) => { res.writeHead(status, { "Content-Type": "application/json" }); res.end(JSON.stringify(data)); };
     if (path === "/auth/v1/user") return send(200, { id: "actor", email: "actor@maximus.test" });
-    if (path === "/rest/v1/profiles") return send(200, [{ id: "actor", organisation_id: "org", branch_id: "source", display_name: "Actor", email: "actor@maximus.test", active: true, level }]);
+    if (path === "/rest/v1/profiles") return send(200, [{ id: "actor", organisation_id: "org", branch_id: "source", display_name: "Actor", email: "actor@maximus.test", active: true, level, function_access: access }]);
     if (path === "/rest/v1/rpc/transfer_case_branch") return failure ? send(400, failure) : send(200, { caseId: "case", branchId: "destination", branch: "Colombo" });
     return send(200, []);
   });
@@ -35,11 +35,27 @@ test("Super Admin transfers through one atomic RPC with their own identity", asy
   assert.deepEqual(mutations[0].body, { p_case_id: "case", p_destination_branch_id: "destination", p_expected_branch_id: "source", p_reason: "Requested handover" });
 });
 
-test("Admin, Staff and clients cannot call the branch transfer RPC", async () => {
+test("Admin and Staff have no transfer permission by default; clients cannot transfer", async () => {
   for (const level of ["branch_admin", "staff", "student"]) {
     const { status, calls } = await transfer({ level });
     assert.equal(status, 403, level);
     assert.equal(calls.filter(call => call.path.endsWith("transfer_case_branch")).length, 0);
+  }
+});
+
+test("explicitly delegated Admin and Staff can transfer without Staff & Masters access", async () => {
+  for (const level of ["branch_admin", "staff"]) {
+    const { status, calls } = await transfer({level,access:{action_transfer_branch:true,administration:false}});
+    assert.equal(status,200,level);
+    assert.equal(calls.filter(call=>call.path.endsWith('transfer_case_branch')).length,1);
+  }
+});
+
+test("revoked transfer and disabled special permissions deny before mutation", async () => {
+  for (const access of [{action_transfer_branch:false},{action_transfer_branch:true,special_access:false}]) {
+    const {status,calls}=await transfer({level:'staff',access});
+    assert.equal(status,403);
+    assert.equal(calls.filter(call=>call.path.endsWith('transfer_case_branch')).length,0);
   }
 });
 

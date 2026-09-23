@@ -1,4 +1,5 @@
 import { noteProvenance } from "@/server/case-notes";
+import { canUse } from "@/lib/function-access";
 import { financeRequestId, financeRpc, recordInvoiceAction, FinanceInputError } from "@/server/finance";
 import {
   appendRefreshCookies,
@@ -183,7 +184,8 @@ export async function GET(request: Request) {
         degraded,
       ),
       safeRest(
-        "branches?select=id,name,code,country_code&active=eq.true&order=name.asc",
+        canUse(session.identity, "action_transfer_branch") && session.identity.role !== "super_admin"
+          ? "rpc/branch_transfer_destinations" : "branches?select=id,name,code,country_code&active=eq.true&order=name.asc",
         token,
         degraded,
       ),
@@ -1056,8 +1058,8 @@ export async function POST(request: Request) {
     }
 
     if (action === "transfer_branch") {
-      if (session.identity.role !== "super_admin")
-        throw new LiveAccessError(403, "Only Super Admin can transfer cases between branches.");
+      if (!canUse(session.identity, "action_transfer_branch"))
+        throw new LiveAccessError(403, "Super Admin must enable branch transfers for your account.");
       const caseId = required(body.caseId, "Case");
       const destinationBranchId = required(body.destinationBranchId, "Destination branch");
       const reason = required(body.reason, "Transfer reason");

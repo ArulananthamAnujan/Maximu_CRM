@@ -122,12 +122,18 @@ export async function POST(request: Request) {
       if (body.notes !== undefined) changes.notes = optional(body.notes);
       await patch("institutions", uuid(body.institutionId, "Institution"), changes, token);
     } else if (action === "create_course") {
+      const institutionId = uuid(body.institutionId, "Institution");
+      const institutions = await supabaseRequest<Json[]>(
+        `/rest/v1/institutions?select=id&id=eq.${institutionId}&organisation_id=eq.${org}&active=eq.true&limit=1`,
+        { method: "GET" }, token,
+      );
+      if (!institutions.length) throw new InputError("Choose an active institution from your catalogue.");
       await insert(
         "courses",
         {
           id: crypto.randomUUID(),
           organisation_id: org,
-          institution_id: uuid(body.institutionId, "Institution"),
+          institution_id: institutionId,
           name: required(body.name, "Course name"),
           level: optional(body.level),
           field_of_study: optional(body.fieldOfStudy),
@@ -200,6 +206,7 @@ function apiError(error: unknown): Response {
   if (error instanceof InputError) return Response.json({ ok: false, error: error.message }, { status: 400 });
   if (error instanceof LiveAccessError) return Response.json({ ok: false, error: error.message }, { status: error.status });
   if (error instanceof SupabaseError) {
+    if (/23505/.test(error.message)) return Response.json({ ok: false, error: "That catalogue entry already exists. Search the existing list before adding it again." }, { status: 409 });
     const migrationMissing = /search_course_catalog|PGRST202|does not exist/i.test(error.message);
     return Response.json(
       { ok: false, error: migrationMissing ? "Course Finder needs database migration 0026_course_finder_catalog.sql." : "The database rejected this Course Finder action." },

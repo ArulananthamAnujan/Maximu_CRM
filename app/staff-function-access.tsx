@@ -24,7 +24,7 @@ export function FunctionAccessFields({ level, value, onChange, disabled = false 
     onChange(next);
   };
   const toggle = (key: PermissionKey, label: string, locked = false) => {
-    const eligible = canUse({ role }, key);
+    const eligible = key === "action_transfer_branch" ? ["admin", "staff"].includes(role) : canUse({ role }, key);
     return <label className={styles.toggle} key={key}>
       <span>{label}{!eligible && <small>{key.endsWith("integrations") ? "Super Admin only" : "Admin accounts only"}</small>}</span>
       <input type="checkbox" role="switch" aria-label={label} checked={canUse(identity, key)}
