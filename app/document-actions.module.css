@@ -1,0 +1,8 @@
+.actions { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.error { color:#a42525; max-width:350px; font-size:13px; }
+.backdrop { position:fixed; inset:0; z-index:1500; background:#102f42b3; display:flex; align-items:center; justify-content:center; padding:24px; }
+.preview { width:min(100%,1000px); height:85vh; background:white; border-radius:12px; display:flex; flex-direction:column; box-shadow:0 16px 60px #0004; overflow:hidden; }
+.preview header { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:16px; border-bottom:1px solid #dbe3e9; }
+.preview strong { overflow-wrap:anywhere; }
+.preview iframe { width:100%; flex:1; border:0; }
+.preview pre { padding:24px; margin:0; white-space:pre-wrap; overflow:auto; color:#173a4c; font-size:14px; line-height:1.7; }

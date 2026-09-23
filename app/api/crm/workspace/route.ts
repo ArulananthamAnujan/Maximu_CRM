@@ -1111,7 +1111,7 @@ export async function POST(request: Request) {
     if (action === "update_case") {
       const displayName = required(body.name, "Client name");
       const emailAddress = requiredEmail(body.email);
-      const visaExpiry = requiredDay(body.visaExpiry, "Visa expiry date");
+      const visaExpiry = nullableDay(body.visaExpiry);
       const parts = displayName.split(/\s+/);
       const firstName = parts.shift() || displayName;
       const lastName = parts.join(" ") || "—";
@@ -1125,6 +1125,8 @@ export async function POST(request: Request) {
           last_name: lastName,
           email: emailAddress,
           mobile: nullable(body.phone),
+          ...(body.dob !== undefined ? { date_of_birth: nullableDay(body.dob) } : {}),
+          ...(body.nationality !== undefined ? { nationality: nullable(body.nationality) } : {}),
           updated_at: new Date().toISOString(),
         },
         token,

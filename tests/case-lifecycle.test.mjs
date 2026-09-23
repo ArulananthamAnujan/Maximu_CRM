@@ -288,6 +288,27 @@ test("a write row-level security refused is reported, not reported as saved", as
   assert.match(result.body.error, /not yours to change/i);
 });
 
+test("staff can edit an early case without a visa expiry and save personal details", async () => {
+  const result = await post({ action: "update_case", caseId: CASE_ID, clientId: CASE_ID,
+    name: "QA Applicant", email: "qa@example.test", phone: "+61491570006",
+    visaExpiry: "", dob: "2000-01-15", nationality: "Australian" });
+  assert.equal(result.status, 200);
+  const client = result.requests.find(r => r.method === "PATCH" && r.path === "/rest/v1/clients");
+  assert.equal(client.body.date_of_birth, "2000-01-15");
+  assert.equal(client.body.nationality, "Australian");
+  const record = result.requests.find(r => r.method === "PATCH" && r.path === "/rest/v1/cases");
+  assert.equal(record.body.visa_expiry_on, null);
+});
+
+test("contact-only edits preserve personal details omitted by older clients", async () => {
+  const result = await post({ action: "update_case", caseId: CASE_ID, clientId: CASE_ID,
+    name: "QA Applicant", email: "qa@example.test", visaExpiry: "" });
+  assert.equal(result.status, 200);
+  const client = result.requests.find(r => r.method === "PATCH" && r.path === "/rest/v1/clients");
+  assert.equal(Object.hasOwn(client.body, "date_of_birth"), false);
+  assert.equal(Object.hasOwn(client.body, "nationality"), false);
+});
+
 test("a staff account can transfer a case they own", async () => {
   const result = await post(
     { action: "assign", caseId: CASE_ID, ownerId: TARGET_STAFF.id },

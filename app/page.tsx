@@ -17,6 +17,7 @@ import { CaseDocumentRequests } from "./case-document-requests";
 import { CaseFollowUpForm } from "./case-follow-up-form";
 import { CaseBranchTransfer } from "./case-branch-transfer";
 import { CourseMasters } from "./course-masters";
+import { DocumentActions } from "./document-actions";
 import { StaffDeleteDialog } from "./staff-delete-dialog";
 import { CopilotProvider, useCopilot } from "./copilot-provider";
 import { WorkspaceConnection } from "./workspace-connection";
@@ -123,6 +124,8 @@ type CaseRecord = {
   name: string;
   email: string;
   phone: string;
+  dob?: string;
+  nationality?: string;
   type: string;
   serviceType: string;
   matterType: string;
@@ -8309,7 +8312,7 @@ function CaseDrawerBody({
                 <p className="caseSectionDescription">{caseTabDescriptions[tab]}</p>
               </div>
               <div className="caseQuickActions">
-                <button className="ghostButton" onClick={() => edit(item)} disabled={!canModify || !allowed(stageFunction(stage))}>
+                <button className="ghostButton" onClick={() => edit({ ...item, email: String(client.email ?? item.email), phone: String(client.mobile ?? item.phone), dob: String(client.date_of_birth ?? item.dob ?? ""), nationality: String(client.nationality ?? item.nationality ?? "") })} disabled={caseLoading || !canModify || !allowed(stageFunction(stage))}>
                   <Pencil size={14} /> Edit case
                 </button>
               </div>
@@ -9593,13 +9596,7 @@ function DocumentsPanel({
                   {(row.metadata as Record<string, unknown> | null)?.note ? <p>{text((row.metadata as Record<string, unknown>).note)}</p> : null}
                 </div>
                 {stored ? (
-                  <a
-                    className="ghostButton"
-                    href={`/api/crm/documents?documentId=${id}`}
-                  >
-                    <Download size={14} />
-                    Download
-                  </a>
+                  <DocumentActions id={id} name={text(row.display_name)} />
                 ) : null}
                   <label
                     className={`ghostButton fileButton${
@@ -10660,11 +10657,11 @@ function RecordModal({
                 </label>
                 <label>
                   Date of birth
-                  <input name="dob" type="date" />
+                  <input name="dob" type="date" defaultValue={editing?.dob} />
                 </label>
                 <label>
                   Nationality
-                  <input name="nationality" />
+                  <input name="nationality" defaultValue={editing?.nationality} />
                 </label>
                 <label>
                   Matter type *
@@ -10750,7 +10747,7 @@ function RecordModal({
                 {!editing && <label className="wide">Appointment remarks<input name="appointmentRemarks" placeholder="Purpose, preparation or location" /></label>}
                 <label>
                   Source
-                  <select name="source">
+                  <select name="source" defaultValue={editing?.source || ""}>
                     <option value="">Select source</option>
                     <option>Walk in</option>
                     <option>Referral</option>

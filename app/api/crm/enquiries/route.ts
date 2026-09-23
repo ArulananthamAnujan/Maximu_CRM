@@ -111,7 +111,7 @@ export async function GET(request: Request) {
     const ownerIds = uniqueIds(cases, "owner_id");
     let notesUnavailable = false;
     const [clients, enquiries, branches, profiles, notes, documents] = await Promise.all([
-      restByIds("clients", "id,first_name,last_name,preferred_name,email,mobile,source,passport_masked,custom_fields", "id", clientIds, token),
+      restByIds("clients", "id,first_name,last_name,preferred_name,email,mobile,date_of_birth,nationality,source,passport_masked,custom_fields", "id", clientIds, token),
       restByIds("enquiries", "id,case_id,client_id,source,campaign,priority,status,score,next_follow_up_at,lost_reason,created_at", "case_id", caseIds, token, "&order=created_at.desc.nullslast,id.asc"),
       restByIds("branches", "id,name", "id", branchIds, token),
       restByIds("profiles", "id,display_name", "id", ownerIds, token),
@@ -183,6 +183,8 @@ export async function GET(request: Request) {
         name,
         email: client.email ?? "",
         phone: client.mobile ?? "",
+        dob: client.date_of_birth ?? "",
+        nationality: client.nationality ?? "",
         type: row.matter_type || row.service_type,
         serviceType: row.service_type ?? "study_abroad",
         matterType: row.matter_type ?? "",
