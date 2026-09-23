@@ -106,6 +106,8 @@ expect_scope "another branch has case write permission" "other_branch_can_modify
 echo
 probe 11_probe_branch_work.sql
 probe 12_probe_branch_transfer.sql
+probe 14_probe_delegated_transfer.sql
+probe 15_probe_course_masters.sql
 pg_run "${work}/sql/13_probe_staff_removal.sql"
 
 echo "== Duplicate clients are found before a second record is made =="

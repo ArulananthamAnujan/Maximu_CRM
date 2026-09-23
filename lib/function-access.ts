@@ -18,6 +18,7 @@ export const actionPermissions = [
   ["action_export", "Excel / export"], ["action_assign", "Assign"],
   ["action_send_email", "Send email"], ["action_send_sms", "Send SMS"],
   ["action_send_whatsapp", "Send WhatsApp"],
+  ["action_transfer_branch", "Transfer cases between branches"],
 ] as const;
 export const accessGroups = [
   ["study_access", "Study Abroad permission"], ["direct_visa_access", "Direct Visa permission"],
@@ -42,6 +43,8 @@ const dependencies: Partial<Record<ModulePermission, ModulePermission>> = {
 };
 export function canUse(identity: AccessIdentity | null | undefined, key: string, mode = identity?.serviceMode): boolean {
   if (!identity) return false;
+  if (key === "action_transfer_branch") return identity.role === "super_admin" ||
+    (["admin", "staff"].includes(identity.role) && identity.functionAccess?.special_access !== false && identity.functionAccess?.action_transfer_branch === true);
   if (identity.role === "super_admin" || identity.role === "client") return true;
   if (!permissionKeys.includes(key as PermissionKey)) return false;
   const access = identity.functionAccess;
