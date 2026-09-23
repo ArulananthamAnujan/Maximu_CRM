@@ -35,7 +35,7 @@ export function DocumentActions({ id, name }: { id: string; name: string }) {
     {preview && <div className={styles.backdrop} onClick={() => setPreview(null)}>
       <section role="dialog" aria-modal="true" aria-label={`Document preview: ${name}`} className={styles.preview} onClick={event => event.stopPropagation()}>
         <header><strong>{name}</strong><button type="button" className="ghostButton" onClick={() => setPreview(null)} autoFocus><X size={16} />Close document</button></header>
-        {preview.type === "text/plain" ? <pre>{preview.text}</pre> : <iframe title={name} src={preview.url} sandbox="" />}
+        {preview.type === "text/plain" ? <pre>{preview.text}</pre> : <iframe title={name} src={preview.url} />}
       </section>
     </div>}
   </div>;
