@@ -34,5 +34,5 @@ do $$ begin
   if not exists (select 1 from pg_roles where rolname='app_user') then create role app_user login; end if;
 end $$;
 grant authenticated to app_user;
-grant usage on schema public, auth to anon, authenticated;
+grant usage on schema public, auth to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to authenticated;
