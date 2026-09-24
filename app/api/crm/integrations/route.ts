@@ -213,11 +213,11 @@ export async function GET(request: Request) {
       },
       {
         key: "email",
-        name: "Client email notices",
-        purpose: "Emails a client when a document or invoice is requested, and when their portal access is sent.",
+        name: "Automatic email notices",
+        purpose: "Staff task assignment and completion emails, plus client document, invoice and portal-access notices.",
         state: emailConfigured() ? "connected" : "not_configured",
         detail: emailConfigured()
-          ? "Sent through Resend. Wording is editable per organisation under Templates."
+          ? "Sent through Resend. Task emails are queued automatically and checked every minute. Client notice wording is editable under Templates."
           : "RESEND_API_KEY and RESEND_FROM_EMAIL are not set, so these emails are not sent -- the underlying request or invoice is still recorded either way.",
         setup: ["RESEND_API_KEY", "RESEND_FROM_EMAIL"],
       },
