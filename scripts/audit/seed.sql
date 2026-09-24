@@ -68,4 +68,6 @@ insert into auth.users (id,email) values
   ('c0000000-0000-4000-8000-000000000007','stranger@maximus.test');
 
 grant all on all tables in schema public to authenticated;
+-- Preserve the migration's server-only email delivery boundary.
+revoke all on public.task_email_outbox, public.task_email_worker_status from authenticated;
 grant usage, select on all sequences in schema public to authenticated;
