@@ -44,14 +44,15 @@ export async function POST(request: Request) {
     if (action === "create") {
       const moduleKey = required(body.module, "Module");
       const name = required(body.name, "Name");
+      if (name.length > 80) throw new InputError("Use a view name of 80 characters or fewer.");
+      if (JSON.stringify(body.filters ?? {}).length > 16000) throw new InputError("This saved view is too large.");
       const filters = isObject(body.filters) ? body.filters : {};
       await supabaseRequest(
-        "/rest/v1/saved_views",
+        "/rest/v1/saved_views?on_conflict=profile_id,module,name",
         {
           method: "POST",
           headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
           body: JSON.stringify({
-            id: crypto.randomUUID(),
             organisation_id: session.identity.organisationId,
             profile_id: session.identity.profileId,
             module: moduleKey,

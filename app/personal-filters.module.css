@@ -1,0 +1,20 @@
+.panel{grid-column:1/-1;margin:12px 0 18px;padding:14px 16px;border:1px solid #dce5ed;border-radius:12px;background:#f7f9fc;min-width:0;color:#18324a}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:9px}
+.toolbar strong{display:flex;align-items:center;gap:7px;margin-right:6px;font-size:14px}
+.panel button,.panel select,.panel input{font:inherit;font-size:13px;min-height:38px;border:1px solid #cbd9e4;border-radius:7px;background:white;color:#18324a;padding:8px 10px;max-width:100%;box-sizing:border-box}
+.panel button{display:inline-flex;gap:6px;align-items:center;justify-content:center;cursor:pointer}
+.panel button:disabled,.panel select:disabled{opacity:.55;cursor:default}
+.panel :is(button,input,select):focus-visible{outline:2px solid #277399;outline-offset:2px}
+.add{display:flex;align-items:center;gap:5px}.add select{max-width:230px}
+.view{min-width:160px;max-width:100%}.view select{width:100%;max-width:260px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:12px;margin-top:14px}
+.field{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px;align-items:center;min-width:0}
+.field label{font-size:12px;font-weight:600}
+.field :is(input,select){grid-column:1/-1;width:100%}
+.field .remove{min-height:26px;padding:4px;border:0;background:transparent}
+.hint{font-size:12px;color:#536b7c;margin:10px 0 0;line-height:1.5}
+.save{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid #dce5ed;margin-bottom:10px}
+.save label{font-size:13px}.save small{flex-basis:100%;color:#536b7c}.save input{flex:1 1 200px}
+.error{color:#a52b32;font-size:13px}
+.srOnly{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media(max-width:600px){.panel{padding:12px}.toolbar strong{flex-basis:100%}.add,.view{flex:1 1 140px}.add select,.view select{max-width:100%;width:100%}.grid{grid-template-columns:1fr}.toolbar button{flex-grow:1}}
