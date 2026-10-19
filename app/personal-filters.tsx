@@ -96,7 +96,7 @@ export function PersonalFilters({ module, label, fields, values, query, onChange
           <option value="">{loading ? "Loading views…" : "My saved views"}</option>{views.map(view => <option key={view.id} value={view.id}>{view.name}</option>)}
         </select>
       </label>
-      <button type="button" disabled={busy} onClick={() => { setSaving(!saving); setName(selected ? views.find(view => view.id === selected)?.name || "" : ""); }}><Save size={15} /> Save view</button>
+      <button type="button" disabled={busy || loading} onClick={() => { setSaving(!saving); setName(selected ? views.find(view => view.id === selected)?.name || "" : ""); }}><Save size={15} /> Save view</button>
       {selected && <button type="button" disabled={busy} aria-label="Delete selected saved view" onClick={() => { if (window.confirm("Delete this saved view?")) void mutate("delete"); }}><Trash2 size={15} /></button>}
       <button type="button" disabled={busy || !(shown.length || query)} onClick={() => { setVisible([]); onApply({}, ""); edited(); setSaving(false); }}><X size={15} /> Clear filters</button>
     </div>
