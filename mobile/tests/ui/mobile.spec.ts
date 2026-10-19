@@ -74,7 +74,13 @@ test("case records keep notes and actions readable on a phone", async ({ page })
     latestNoteAt: "2026-09-14", latestNoteAuthor: "Test Staff" }]);
   await page.getByRole("navigation", { name: "Mobile navigation" }).getByRole("button", { name: "Cases", exact: true }).click();
   await expect(page.getByText("Sample Student", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Show filters" })).toBeVisible();
+  await page.getByLabel("Add filter", { exact: true }).selectOption("destination");
+  const filteredRequest = page.waitForRequest(request => request.url().includes("/api/crm/enquiries?") && new URL(request.url()).searchParams.get("destination") === "Australia");
+  await page.getByLabel("Destination", { exact: true }).selectOption("Australia");
+  await filteredRequest;
+  await expect(page.getByLabel("Destination", { exact: true })).toHaveValue("Australia");
+  await page.getByRole("button", { name: "Remove Destination filter", exact: true }).click();
+  await expect(page.getByLabel("Destination", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Follow up about the course shortlist.", { exact: true })).toBeVisible();
   const cards = page.locator('.journeyDataRow');
   expect((await cards.boundingBox())!.width).toBeLessThanOrEqual(390);

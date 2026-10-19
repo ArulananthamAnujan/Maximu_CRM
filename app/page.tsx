@@ -1,4 +1,5 @@
 "use client";
+import { PersonalFilters } from "./personal-filters";
 import {staffTimezones,type StaffDetails} from "@/lib/staff-details";
 
 import Image from "next/image";
@@ -58,7 +59,6 @@ import {
   School,
   Settings,
   ShieldCheck,
-  SlidersHorizontal,
   Trash2,
   UserCog,
   Users,
@@ -2214,7 +2214,6 @@ function CaseWorkspace({
   onMoveStage: (record: CaseRecord, stage: LifecycleStage, reason: string) => Promise<void>;
 }) {
   const [rowActionId, setRowActionId] = useState("");
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
   const searchDraft = query;
   const [searchSelection, setSearchSelection] = useState({ query, results: searchResults, index: -1 });
@@ -2243,6 +2242,12 @@ function CaseWorkspace({
   const [createdTo, setCreatedTo] = useState("");
   const [updatedFrom, setUpdatedFrom] = useState("");
   const [updatedTo, setUpdatedTo] = useState("");
+  const directorySetters: Record<string, (value: string) => void> = {
+    branchId: setOfficeFilter, destination: setDestinationFilter, service: setServiceFilter, priority: setPriorityFilter,
+    documents: setDocumentFilter, followUp: setFollowUpFilter, ownerId: setAssignedStaffFilter, status: setStatusFilter,
+    source: setSourceFilter, intake: setIntakeFilter, qualification: setQualificationFilter, testGiven: setTestFilter,
+    spouse: setSpouseFilter, createdFrom: setCreatedFrom, createdTo: setCreatedTo, updatedFrom: setUpdatedFrom, updatedTo: setUpdatedTo,
+  };
   const pageSize = 50;
   const officeOptions = useMemo(
     () => filterBranches.length
@@ -2314,7 +2319,6 @@ function CaseWorkspace({
       assignedStaffFilter || statusFilter || sourceFilter || intakeFilter || qualificationFilter || testFilter || spouseFilter ||
       createdFrom || createdTo || updatedFrom || updatedTo,
   );
-  const hasDirectoryControls = hasDirectoryFilters || Boolean(query.trim()) || Boolean(searchDraft.trim());
   const isServerDirectory = module === "enquiries" && serverPaged;
   const isUnfilteredDirectory = module === "enquiries" && !query.trim() && !hasDirectoryFilters;
   const recordCount = isServerDirectory && typeof totalRecords === "number"
@@ -2586,118 +2590,32 @@ function CaseWorkspace({
               <span>Total records</span>
             )}
           </div>
-          {isNativeApp() && <button className="ghostButton mobileFiltersToggle" aria-expanded={mobileFiltersOpen}
-            onClick={() => setMobileFiltersOpen(value => !value)}><SlidersHorizontal size={16} />
-            {mobileFiltersOpen ? "Hide filters" : "Show filters"}
-          </button>}
-          <div className={`enquiryDirectoryFilters${isNativeApp() && !mobileFiltersOpen ? " mobileFiltersCollapsed" : ""}`}>
-            <label>
-              <span>Office</span>
-              <select aria-label="Office" value={officeFilter} onChange={(event) => setOfficeFilter(event.target.value)}>
-                <option value="">All permitted offices</option>
-                {officeOptions.map((office) => <option key={office.value} value={office.value}>{office.label}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>Destination</span>
-              <select value={destinationFilter} onChange={(event) => setDestinationFilter(event.target.value)}>
-                <option value="">All countries</option>
-                {destinationOptions.map((destination) => <option key={destination} value={destination}>{destination}</option>)}
-              </select>
-            </label>
-            <label>
-              <span>Service</span>
-              <select value={serviceFilter} onChange={(event) => setServiceFilter(event.target.value)}>
-                <option value="">All services</option>
-                <option value="study_abroad">Study Abroad</option>
-                <option value="direct_visa">Direct Visa</option>
-              </select>
-            </label>
-            <label>
-              <span>Priority</span>
-              <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
-                <option value="">All priorities</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </select>
-            </label>
-            <label>
-              <span>Documents</span>
-              <select value={documentFilter} onChange={(event) => setDocumentFilter(event.target.value)}>
-                <option value="">All document states</option>
-                <option value="ready">Ready</option>
-                <option value="waiting">Waiting</option>
-                <option value="missing">No documents</option>
-              </select>
-            </label>
-            <label>
-              <span>Follow-up</span>
-              <select value={followUpFilter} onChange={(event) => setFollowUpFilter(event.target.value)}>
-                <option value="">All follow-ups</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="noted">Notes recorded</option>
-                <option value="needed">Needs follow-up</option>
-              </select>
-            </label>
-            <details className="enquiryAdvancedFilters">
-              <summary><SlidersHorizontal size={14} /> More filters</summary>
-              <div>
-                <label>
-                  <span>Assigned staff</span>
-                  <select value={assignedStaffFilter} onChange={(event) => setAssignedStaffFilter(event.target.value)}>
-                    <option value="">All permitted staff</option>
-                    {filterStaff.map((person) => <option value={person.id} key={person.id}>{person.display_name}</option>)}
-                  </select>
-                </label>
-                <label>
-                  <span>{module === "enquiries" ? "Enquiry status" : "Journey stage"}</span>
-                  <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-                    <option value="">All statuses</option>
-                    {module === "enquiries"
-                      ? Array.from(new Set([...ENQUIRY_MAIN_STATUSES, ...ENQUIRY_DETAIL_STATUSES])).map((status) => <option key={status}>{status}</option>)
-                      : (["student", "application", "visa", "deferred", "completed"] as LifecycleStage[]).map(status => <option key={status} value={status}>{humanise(status)}</option>)}
-                  </select>
-                </label>
-                <label><span>Source / reference</span><input value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)} placeholder="Facebook, walk-in, partner…" /></label>
-                <label><span>Intake</span><input value={intakeFilter} onChange={(event) => setIntakeFilter(event.target.value)} placeholder="February 2027" /></label>
-                <label><span>Highest qualification</span><input value={qualificationFilter} onChange={(event) => setQualificationFilter(event.target.value)} placeholder="Bachelor, Diploma…" /></label>
-                <label><span>English test</span><select value={testFilter} onChange={(event) => setTestFilter(event.target.value)}><option value="">Any test state</option><option value="yes">Test recorded</option><option value="no">No test recorded</option></select></label>
-                <label><span>Spouse / dependant</span><select value={spouseFilter} onChange={(event) => setSpouseFilter(event.target.value)}><option value="">Any family state</option><option value="yes">Recorded</option><option value="no">Not recorded</option></select></label>
-                <label><span>Created from</span><input type="date" value={createdFrom} onChange={(event) => setCreatedFrom(event.target.value)} /></label>
-                <label><span>Created to</span><input type="date" value={createdTo} onChange={(event) => setCreatedTo(event.target.value)} /></label>
-                <label><span>Updated from</span><input type="date" value={updatedFrom} onChange={(event) => setUpdatedFrom(event.target.value)} /></label>
-                <label><span>Updated to</span><input type="date" value={updatedTo} onChange={(event) => setUpdatedTo(event.target.value)} /></label>
-              </div>
-            </details>
-            <button
-              type="button"
-              className="enquiryClearFilters"
-              disabled={!hasDirectoryControls}
-              onClick={() => {
-                onQueryChange?.("");
-                setOfficeFilter("");
-                setDestinationFilter("");
-                setServiceFilter("");
-                setPriorityFilter("");
-                setDocumentFilter("");
-                setFollowUpFilter("");
-                setAssignedStaffFilter("");
-                setStatusFilter("");
-                setSourceFilter("");
-                setIntakeFilter("");
-                setQualificationFilter("");
-                setTestFilter("");
-                setSpouseFilter("");
-                setCreatedFrom("");
-                setCreatedTo("");
-                setUpdatedFrom("");
-                setUpdatedTo("");
-              }}
-            >
-              <X size={14} /> Clear all
-            </button>
-          </div>
+          <PersonalFilters key={module} module={module} label={title} query={query}
+            values={{ branchId: officeFilter, destination: destinationFilter, service: serviceFilter, priority: priorityFilter,
+              documents: documentFilter, followUp: followUpFilter, ownerId: assignedStaffFilter, status: statusFilter,
+              source: sourceFilter, intake: intakeFilter, qualification: qualificationFilter, testGiven: testFilter,
+              spouse: spouseFilter, createdFrom, createdTo, updatedFrom, updatedTo }}
+            onChange={(key, value) => directorySetters[key]?.(value)}
+            onApply={(values, search) => { for (const [key, setter] of Object.entries(directorySetters)) setter(values[key] || ""); onQueryChange?.(search); }}
+            fields={[
+              { key: "branchId", label: "Office", options: officeOptions },
+              { key: "destination", label: "Destination", options: destinationOptions.map(value => ({ value, label: value })) },
+              { key: "service", label: "Service", options: [{ value: "study_abroad", label: "Study Abroad" }, { value: "direct_visa", label: "Direct Visa" }] },
+              { key: "priority", label: "Priority", options: ["high", "medium", "low"].map(value => ({ value, label: humanise(value) })) },
+              { key: "documents", label: "Documents", options: [{ value: "ready", label: "Ready" }, { value: "waiting", label: "Waiting" }, { value: "missing", label: "No documents" }] },
+              { key: "followUp", label: "Follow-up", options: [{ value: "scheduled", label: "Scheduled" }, { value: "noted", label: "Notes recorded" }, { value: "needed", label: "Needs follow-up" }] },
+              { key: "ownerId", label: "Assigned staff", options: filterStaff.map(person => ({ value: person.id, label: person.display_name })) },
+              { key: "status", label: module === "enquiries" ? "Enquiry status" : "Journey stage", options: (module === "enquiries"
+                ? Array.from(new Set([...ENQUIRY_MAIN_STATUSES, ...ENQUIRY_DETAIL_STATUSES]))
+                : ["student", "application", "visa", "deferred", "completed"]).map(value => ({ value, label: humanise(value) })) },
+              { key: "source", label: "Source / reference", placeholder: "Facebook, walk-in, partner…" },
+              { key: "intake", label: "Intake", placeholder: "February 2027" },
+              { key: "qualification", label: "Highest qualification", placeholder: "Bachelor, Diploma…" },
+              { key: "testGiven", label: "English test", options: [{ value: "yes", label: "Test recorded" }, { value: "no", label: "No test recorded" }] },
+              { key: "spouse", label: "Spouse / dependant", options: [{ value: "yes", label: "Recorded" }, { value: "no", label: "Not recorded" }] },
+              { key: "createdFrom", label: "Created from", type: "date" }, { key: "createdTo", label: "Created to", type: "date" },
+              { key: "updatedFrom", label: "Updated from", type: "date" }, { key: "updatedTo", label: "Updated to", type: "date" },
+            ]} />
         </div>
       {loading && cases.length > 0 ? <p className="caseWorkEmpty" role="status">Updating results…</p> : null}
       {loading && cases.length === 0 ? (
@@ -2838,16 +2756,15 @@ function RegisterActions({ name, onNote, onEmail, onDocuments, onOpen }: {
 
 type OperationFilterField = { key: string; label: string; options?: string[]; type?: "date" | "text" };
 const filterOptions = (values: string[]) => [...new Set(values.filter(Boolean))].sort();
-function OperationalFilters({ label, fields, values, onChange, onClear, active }: {
-  label: string; fields: OperationFilterField[]; values: Record<string, string>;
-  onChange: (key: string, value: string) => void; onClear: () => void; active: boolean;
+function OperationalFilters({ label, fields, values, onChange, onApply, query }: {
+  label: string; fields: OperationFilterField[]; values: Record<string, string>; query: string;
+  onChange: (key: string, value: string) => void; onApply: (values: Record<string, string>, query: string) => void;
 }) {
-  return <section className="operationalFilters" aria-label={`${label} filters`}>
-    <div className="operationalFilterHead"><strong><SlidersHorizontal size={16} /> Filters</strong><button type="button" className="ghostButton" disabled={!active} onClick={onClear}><X size={14} /> Clear filters</button></div>
-    <div className="operationalFilterGrid">{fields.map(field => <label key={field.key}><span>{field.label}</span>{field.options
-      ? <select aria-label={field.label} value={values[field.key] || ""} onChange={event => onChange(field.key, event.target.value)}><option value="">All</option>{field.options.map(option => <option key={option} value={option}>{humanise(option)}</option>)}</select>
-      : <input aria-label={field.label} type={field.type || "text"} value={values[field.key] || ""} onChange={event => onChange(field.key, event.target.value)} />}</label>)}</div>
-  </section>;
+  return <div className="operationalFilters" style={{ padding: 0, border: 0, background: "transparent" }}>
+    <PersonalFilters module={label === "Applications" ? "applications" : "visas"} label={label} values={values} query={query}
+      onChange={onChange} onApply={onApply}
+      fields={fields.map(field => ({ ...field, options: field.options?.map(value => ({ value, label: humanise(value) })) }))} />
+  </div>;
 }
 
 function ApplicationsBoard({
@@ -2896,7 +2813,7 @@ function ApplicationsBoard({
           )}
         </div>
       </div>
-      <OperationalFilters label="Applications" values={filters} onChange={(key, value) => setFilters(previous => ({ ...previous, [key]: value }))} active={Boolean(query || Object.values(filters).some(Boolean))} onClear={() => { setFilters({}); onQuery(""); }} fields={[
+      <OperationalFilters label="Applications" values={filters} onChange={(key, value) => setFilters(previous => ({ ...previous, [key]: value }))} query={query} onApply={(values, search) => { setFilters(values); onQuery(search); }} fields={[
         { key: "branch", label: "Branch / office", options: filterOptions(rows.map(row => row.branch)) },
         { key: "status", label: "Application status", options: filterOptions(rows.map(row => row.status)) },
         { key: "institution", label: "Institution", options: filterOptions(rows.map(row => row.institution)) },
@@ -2989,7 +2906,7 @@ function VisaMattersBoard({
         </div>
         <span className="detailedRecordsSummary"><strong>{shown.length}</strong> visa matters</span>
       </div>
-      <OperationalFilters label="Visa" values={filters} onChange={(key, value) => setFilters(previous => ({ ...previous, [key]: value }))} active={Boolean(query || Object.values(filters).some(Boolean))} onClear={() => { setFilters({}); onQuery(""); }} fields={[
+      <OperationalFilters label="Visa" values={filters} onChange={(key, value) => setFilters(previous => ({ ...previous, [key]: value }))} query={query} onApply={(values, search) => { setFilters(values); onQuery(search); }} fields={[
         { key: "branch", label: "Branch / office", options: filterOptions(rows.map(row => row.branch)) },
         { key: "status", label: "Visa status", options: filterOptions(rows.map(row => row.status)) },
         { key: "country", label: "Destination", options: filterOptions(rows.map(row => row.destination)) },
@@ -13128,6 +13045,7 @@ function HomeWorkspace() {
                       : education;
     const caseList = (
       <CaseWorkspace
+        key={`${identity?.profileId}:${serviceMode}:${active}`}
         title={
           active === "applications"
             ? "Cases at the application stage"
@@ -13173,6 +13091,7 @@ function HomeWorkspace() {
     content =
       active === "applications" ? (
         <ApplicationsBoard
+          key={`${identity?.profileId}:${serviceMode}:applications`}
           query={query} onQuery={setQuery}
           cases={cases.filter(inStream)}
           rows={applicationRows.filter((row) =>
@@ -13183,6 +13102,7 @@ function HomeWorkspace() {
         />
       ) : active === "visas" ? (
         <VisaMattersBoard
+          key={`${identity?.profileId}:${serviceMode}:visas`}
           query={query} onQuery={setQuery}
           cases={cases.filter(inStream)}
           rows={visaMatterRows.filter((row) =>

@@ -955,9 +955,11 @@ test("super admin filters application and visa records and clears the result", a
   await navigateTo(page, "Applications");
   const applications = page.getByRole("region", { name: "Applications filters" });
   await expect(applications).toBeVisible();
+  await applications.getByLabel("Add filter", { exact: true }).selectOption("institution");
   await applications.getByLabel("Institution", { exact: true }).selectOption("Monash University");
   await expect(page.locator(".detailedRecordCard")).toHaveCount(1);
   await expect(page.locator(".detailedRecordCard")).toContainText("Monash University");
+  await applications.getByLabel("Add filter", { exact: true }).selectOption("from");
   await applications.getByLabel("Submitted from", { exact: true }).fill("2099-01-01");
   await expect(page.locator(".detailedRecordCard")).toHaveCount(0);
   await applications.getByRole("button", { name: "Clear filters", exact: true }).click();
@@ -965,27 +967,29 @@ test("super admin filters application and visa records and clears the result", a
   await navigateTo(page, "Visa");
   const visas = page.getByRole("region", { name: "Visa filters" });
   await expect(visas).toBeVisible();
+  await visas.getByLabel("Add filter", { exact: true }).selectOption("subclass");
   await visas.getByLabel("Visa category", { exact: true }).selectOption("500");
   await expect(page.locator(".detailedRecordCard").first()).toContainText("500");
+  await visas.getByLabel("Add filter", { exact: true }).selectOption("from");
   await visas.getByLabel("Visa expiry from", { exact: true }).fill("2099-01-01");
   await expect(page.locator(".detailedRecordCard")).toHaveCount(0);
   await visas.getByRole("button", { name: "Clear filters", exact: true }).click();
   await expect(page.locator(".detailedRecordCard").first()).toBeVisible();
 });
 
-test("student, deferred and completed registers keep office and date filters visible", async ({ page }) => {
+test("student, deferred and completed registers allow choosing office and date filters", async ({ page }) => {
   await signIn(page, OWNER);
   for (const [screen, module] of [["Students", "students"], ["Defer", "defer"], ["Completed", "case_complete"]]) {
     await navigateTo(page, screen);
     const register = page.locator(`.journeyList-${module}`);
+    await register.getByLabel("Add filter", { exact: true }).selectOption("branchId");
     await expect(register.getByLabel("Office", { exact: true })).toBeVisible();
-    if (await register.locator(".enquiryAdvancedFilters").getAttribute("open") === null)
-      await register.getByText("More filters", { exact: true }).click();
+    await register.getByLabel("Add filter", { exact: true }).selectOption("createdFrom");
     await expect(register.getByLabel("Created from", { exact: true })).toBeVisible();
     await register.getByLabel("Created from", { exact: true }).fill("2099-01-01");
     await expect(register.locator(".journeyDataRow")).toHaveCount(0);
-    await register.getByRole("button", { name: "Clear all", exact: true }).click();
-    await expect(register.getByLabel("Created from", { exact: true })).toHaveValue("");
+    await register.getByRole("button", { name: "Clear filters", exact: true }).click();
+    await expect(register.getByLabel("Created from", { exact: true })).toHaveCount(0);
   }
 });
 

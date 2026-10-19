@@ -192,7 +192,7 @@ function logicPredicate(raw, join = "or") {
 function buildWhere(params) {
   const clauses = [];
   for (const [key, value] of params) {
-    if (["select", "order", "limit", "offset"].includes(key)) continue;
+    if (["select", "order", "limit", "offset", "on_conflict"].includes(key)) continue;
     if (key === "or" || key === "and") { clauses.push(logicPredicate(value, key)); continue; }
     clauses.push(predicate(key, value));
   }
@@ -219,7 +219,7 @@ function buildOrder(order) {
 function buildWhereQualified(params, embedAliasByTable) {
   const clauses = [];
   for (const [key, value] of params) {
-    if (["select", "order", "limit", "offset"].includes(key)) continue;
+    if (["select", "order", "limit", "offset", "on_conflict"].includes(key)) continue;
     if (key === "or" || key === "and") { clauses.push(logicPredicate(value, key)); continue; }
     const dot = key.indexOf(".");
     if (dot !== -1) {
@@ -422,7 +422,14 @@ const server = http.createServer((req, res) => {
         const values = rows
           .map((r) => `(${columns.map((c) => toSql(r[c], types.get(c))).join(",")})`)
           .join(",");
-        const conflict = prefer.includes("merge-duplicates") ? " on conflict do nothing" : "";
+        // PostgREST's explicit unique-key upsert updates supplied columns and
+        // leaves generated columns (such as the saved-view ID) unchanged.
+        const conflictKeys = url.searchParams.get("on_conflict")?.split(",").filter(Boolean);
+        const conflict = prefer.includes("merge-duplicates")
+          ? conflictKeys?.length
+            ? ` on conflict (${conflictKeys.map(ident).join(",")}) do update set ${columns.map(column => `${ident(column)} = excluded.${ident(column)}`).join(",")}`
+            : " on conflict do nothing"
+          : "";
         const statement = `insert into public.${ident(table)} (${columns.map(ident).join(",")}) values ${values}${conflict}`;
         // PostgREST only adds RETURNING when the caller asks for the row back.
         // That matters: RETURNING makes PostgreSQL apply the SELECT policy too.

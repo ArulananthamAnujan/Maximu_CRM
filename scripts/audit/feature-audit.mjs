@@ -1914,6 +1914,12 @@ expect("a saved view is private to whoever saved it",
   !(otherOfficerViews.json?.views ?? []).some((v) => v.name === "My waiting cases"),
   JSON.stringify(otherOfficerViews.json));
 const savedViewId = (createView.json?.views ?? []).find((v) => v.name === "My waiting cases")?.id;
+const updateView = await call("/api/crm/saved-views", { method: "POST", cookie: officer.cookie,
+  body: { action: "create", module: "enquiries", name: "My waiting cases", filters: { values: { destination: "Australia" }, visible: ["destination"] } } });
+const updatedViews = (updateView.json?.views ?? []).filter(v => v.name === "My waiting cases");
+expect("saving the same personal view updates filters without duplicating or changing its ID",
+  updateView.status === 200 && updatedViews.length === 1 && updatedViews[0].id === savedViewId &&
+  updatedViews[0].filters?.values?.destination === "Australia", JSON.stringify(updateView.json));
 const deleteViewResult = await call("/api/crm/saved-views", { method: "POST", cookie: officer.cookie,
   body: { action: "delete", id: savedViewId, module: "enquiries" } });
 expect("a saved view can be deleted",
