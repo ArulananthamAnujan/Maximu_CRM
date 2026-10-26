@@ -50,6 +50,8 @@ export async function deliverTaskEmails({ env, fetchImpl = fetch }) {
       } else {
         // Never persist provider response bodies: they may contain addresses.
         error = `Email provider returned HTTP ${response.status}.`;
+        if (response.status === 403) error += ' Check the verified sender domain, API-key domain permissions and any test-mode recipient restriction.';
+        if (response.status === 401) error += ' Check the email API key.';
         status = response.status === 429 || response.status === 409 || response.status >= 500 ? 'queued' : 'failed';
       }
     } catch {

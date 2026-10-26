@@ -1,10 +1,11 @@
+import { createHmac } from "node:crypto";
 import {
   appendRefreshCookies,
   LiveAccessError,
   liveSession,
 } from "@/server/supabase-session";
 import { driveProbe } from "@/server/google-drive";
-import { serviceRoleKey, supabaseRequest } from "@/server/supabase";
+import { serviceRoleKey, supabaseRequest, supabaseAdminRequest } from "@/server/supabase";
 import { aiConfigured } from "@/server/ai";
 import { emailConfigured } from "@/server/email";
 import { protectionConfigured } from "@/server/protected-fields";
@@ -75,13 +76,18 @@ export async function GET(request: Request) {
       supabaseRequest<{ component: string; status: string; checked_at: string; details: Record<string, unknown> }[]>("/rest/v1/operational_checks?select=component,status,checked_at,details&order=checked_at.desc&limit=50", { method: "GET" }, session.accessToken).catch(() => []),
       supabaseRequest<{ id: string }[]>("/rest/v1/operational_incidents?select=id&status=neq.resolved", { method: "GET" }, session.accessToken).catch(() => []),
     ]);
+    const emailEvidence = await supabaseAdminRequest<{ status: string; last_error: string | null; provider_message_id: string | null }[]>(
+      `/rest/v1/task_email_outbox?select=status,last_error,provider_message_id&organisation_id=eq.${session.identity.organisationId}${role === "super_admin" ? "" : `&recipient_id=eq.${session.identity.profileId}`}&status=in.(sent,failed)&order=created_at.desc&limit=1`,
+    ).catch(() => []);
+    const emailAccepted = emailEvidence[0]?.status === "sent" && Boolean(emailEvidence[0]?.provider_message_id);
+    const emailFailed = emailEvidence[0]?.status === "failed";
     const latestCheck = (component: string) => checks.find((row) => row.component === component);
     const backupReady = backups[0]?.status === "completed" && drills[0]?.status === "passed";
     const integrations = [
       {
         key: "backup_restore",
         name: "Database backup and restore drill",
-        purpose: "Daily logical archive plus automatic checksum and relationship validation.",
+        purpose: "Daily logical archive with stored-object readback, checksum and relationship validation. This does not restore a database or copy Drive file contents.",
         state: backupReady ? "connected" : "not_configured",
         detail: backupReady
           ? `Latest backup and restore drill passed ${drills[0]?.completed_at ?? backups[0]?.completed_at}.`
@@ -215,9 +221,11 @@ export async function GET(request: Request) {
         key: "email",
         name: "Automatic email notices",
         purpose: "Staff task assignment and completion emails, plus client document, invoice and portal-access notices.",
-        state: emailConfigured() ? "connected" : "not_configured",
+        state: emailConfigured() && emailAccepted ? "connected" : "not_configured",
         detail: emailConfigured()
-          ? "Sent through Resend. Task emails are queued automatically and checked every minute. Client notice wording is editable under Templates."
+          ? emailFailed ? `Task email delivery failed: ${emailEvidence[0].last_error || "Check the sender domain and email provider permissions."}`
+            : emailAccepted ? "The email provider accepted the latest task notification. Recipient inbox delivery is not independently verified."
+            : "Email credentials are configured, but no successful task email submission has been recorded yet."
           : "RESEND_API_KEY and RESEND_FROM_EMAIL are not set, so these emails are not sent -- the underlying request or invoice is still recorded either way.",
         setup: ["RESEND_API_KEY", "RESEND_FROM_EMAIL"],
       },
@@ -252,5 +260,28 @@ export async function GET(request: Request) {
       { ok: false, error: "The integration status could not be read." },
       { status: 500 },
     );
+  }
+}
+
+// Explicit owner-only, non-messaging operational check. Credentials stay server-side.
+export async function POST(request: Request) {
+  try {
+    const session = await liveSession(request);
+    if (session.identity.role !== "super_admin") throw new LiveAccessError(403, "Super Admin access is required.");
+    const body = await request.json();
+    if (body.action !== "run_backup") return Response.json({ error: "Unknown operation." }, { status: 400 });
+    const site = process.env.URL || process.env.PRODUCTION_URL;
+    const key = serviceRoleKey();
+    const secret = process.env.OPERATIONS_JOB_SECRET || (key ? createHmac("sha256", key).update("maximus-production-operations-v1").digest("hex") : "");
+    if (!site || !secret) return Response.json({ error: "Backup runtime is not configured." }, { status: 503 });
+    const response = await fetch(`${site.replace(/\/$/, "")}/.netlify/functions/production-operations-background`, {
+      method: "POST", headers: { "x-operations-secret": secret, "Content-Type": "application/json" },
+      body: JSON.stringify({ organisationId: session.identity.organisationId, backupOnly: true }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok) throw new Error("The backup worker could not be started.");
+    return appendRefreshCookies(Response.json({ ok: true, message: "Backup started. Check again shortly for the stored archive verification result." }), session.refreshed, request);
+  } catch (error) {
+    return Response.json({ error: error instanceof LiveAccessError ? error.message : "The backup could not be started." }, { status: error instanceof LiveAccessError ? error.status : 503 });
   }
 }

@@ -6142,6 +6142,17 @@ const integrationLabels: Record<IntegrationStatus["state"], string> = {
 };
 
 function GoogleWorkspaceView() {
+  const [backupNotice, setBackupNotice] = useState("");
+  const [backupStarting, setBackupStarting] = useState(false);
+  const startBackup = async () => {
+    setBackupStarting(true);
+    try {
+      const response = await fetch("/api/crm/integrations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "run_backup" }) });
+      const result = await response.json();
+      setBackupNotice(response.ok ? result.message : result.error || "Backup could not start.");
+    } catch { setBackupNotice("Backup could not start. Check your connection."); }
+    finally { setBackupStarting(false); }
+  };
   const [integrations, setIntegrations] = useState<IntegrationStatus[] | null>(
     null,
   );
@@ -6225,6 +6236,8 @@ function GoogleWorkspaceView() {
             {checking ? "Checking…" : "Check again"}
           </button>
         </div>
+        <button className="ghostButton" disabled={backupStarting} onClick={() => void startBackup()}>{backupStarting ? "Starting backup…" : "Run backup verification"}</button>
+        {backupNotice && <p role="status">{backupNotice}</p>}
         {error && <p className="caseWorkError">{error}</p>}
         {!integrations && !error ? (
           <div className="skeletonRow">
@@ -7757,7 +7770,7 @@ function LegacyDataPanel({
 }
 
 function CaseDrawerBody({
-  item,
+  item: providedItem,
   close,
   edit,
   remove,
@@ -7805,6 +7818,15 @@ function CaseDrawerBody({
   storageConnected: boolean;
   onCaseAction: (caseId: string, kind?: "document" | "visaChecklist" | "invoice" | "message") => void;
 }) {
+  const [file, setFile] = useState<CaseFile | null>(null);
+  // The freshly fetched case is authoritative, not a cached directory row.
+  const current = file && file.case.id === providedItem.dbId ? file.case : null;
+  const item: CaseRecord = current ? {
+    ...providedItem,
+    lifecycleStage: (current.lifecycle_stage || providedItem.lifecycleStage) as LifecycleStage,
+    stage: stageLabelFor((current.lifecycle_stage || providedItem.lifecycleStage) as LifecycleStage, providedItem.serviceType === "direct_visa"),
+    visaExpiry: String(current.visa_expiry_on || "").slice(0, 10),
+  } : providedItem;
   const allowed = useFunctionAccess();
   const drawerRef = useRef<HTMLElement | null>(null);
   const copilot = useCopilot();
@@ -7833,7 +7855,6 @@ function CaseDrawerBody({
   const [recordedExpiry, setRecordedExpiry] = useState(item.visaExpiry || "");
   const [savingExpiry, setSavingExpiry] = useState(false);
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
-  const [file, setFile] = useState<CaseFile | null>(null);
   const [newItem, setNewItem] = useState("");
   const [newNote, setNewNote] = useState("");
   const [activityFilter, setActivityFilter] = useState<"all" | "notes">("all");
@@ -7857,7 +7878,7 @@ function CaseDrawerBody({
   const caseId = item.dbId;
   const stage = item.lifecycleStage;
   const moves = allowedStageMoves(stage).filter(next=>allowed(stageFunction(next)));
-  const needsExpiry = !recordedExpiry;
+  const needsExpiry = !(item.visaExpiry || recordedExpiry);
   const direct = item.serviceType === "direct_visa";
   // A migration matter has no institution applications -- that tab describes
   // a Study Abroad case. Its own matter lives on the Visa matter tab. Finance
@@ -12018,7 +12039,7 @@ function HomeWorkspace() {
   const openGlobalSearchResult = useCallback(async (result: GlobalSearchResult) => {
     setGlobalSearchOpen(false);
     if (result.caseId) {
-      const existing = [...enquiryPageRecords, ...cases].find(record => record.dbId === result.caseId);
+      const existing = cases.find(record => record.dbId === result.caseId && record.lifecycleStage === result.stage);
       if (existing) { openCasePreview(existing); return; }
       const requestId = ++casePreviewRequest.current;
       try {
@@ -12398,6 +12419,9 @@ function HomeWorkspace() {
       if (!response.ok)
         throw new Error(result.error || "The case could not be moved.");
       setSelected(null);
+      enquiryPageCacheRef.current.clear();
+      setEnquiryPageRecords(current => current.filter(item => item.dbId !== record.dbId));
+      setEnquiriesLoaded(false);
       const movedDirect = record.serviceType === "direct_visa";
       setCases((current) =>
         current.map((item) =>

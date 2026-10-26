@@ -220,11 +220,7 @@ export async function GET(request: Request) {
         token,
         degraded,
       ),
-      safeRest(
-        "case_notes?select=id,case_id,author_id,body,created_at,cases!inner(lifecycle_stage)&cases.lifecycle_stage=neq.enquiry&order=created_at.desc&limit=5000",
-        token,
-        degraded,
-      ),
+      Promise.resolve([] as Json[]),
     ]);
 
     // A dataset fetched exactly up to its cap may have more rows the
@@ -302,6 +298,16 @@ export async function GET(request: Request) {
     }
     const branchById = new Map(branches.map((row) => [String(row.id), row]));
     const profileById = new Map(profiles.map((row) => [String(row.id), row]));
+    // Scope note reads to the actual loaded cases, including parent enquiries.
+    // Avoid an ambiguous embedded cases relationship and a global note cap.
+    const noteCaseIds = [...new Set(cases.map(row => String(row.id)))];
+    for (let offset = 0; offset < noteCaseIds.length; offset += 100) {
+      const ids = noteCaseIds.slice(offset, offset + 100).join(",");
+      caseNotes.push(...await safeRestPaged(
+        `case_notes?select=id,case_id,author_id,body,created_at&case_id=in.(${ids})&order=created_at.desc,id.asc`,
+        token, 5000, degraded,
+      ));
+    }
     const latestNoteByCase = new Map<string, Json>();
     for (const note of caseNotes) {
       const key = String(note.case_id);
@@ -456,6 +462,7 @@ export async function GET(request: Request) {
             caseIntake.visaType ??
             row.matter_type ??
             "",
+          notesUnavailable: degraded.includes("case_notes"),
           latestNote: latestNote.body ?? "",
           latestNoteAt: latestNote.created_at ?? "",
           latestNoteDateLabel: noteSources.get(String(latestNote.id))?.dateLabel ?? "",

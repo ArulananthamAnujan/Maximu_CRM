@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
+import { operationsSecret } from "../lib/operations-auth.mjs";
 
-const TABLES = [
+export const TABLES = [
+  "case_notes", "case_checklist_items", "case_lifecycle_events", "case_stage_history",
+  "client_consents", "client_declarations", "client_education_history", "client_employment_history",
+  "dependants", "english_tests", "enquiries", "study_preferences", "visa_history",
+  "roles", "content_templates", "document_checklist_templates", "email_templates",
+  "institutions", "courses", "service_agreements", "saved_views", "task_comments",
+  "data_retention_rules", "staff_invitations",
   "organisations", "branches", "profiles", "clients", "cases", "case_collaborators",
   "education_applications", "visa_matters", "tasks", "appointments", "documents",
   "email_threads", "email_messages", "invoices", "payments", "payment_receipts",
@@ -33,10 +40,7 @@ async function allRows(table, organisationId) {
   const rows = [];
   for (let offset = 0; ; offset += 1000) {
     const orgFilter = table === "organisations" ? `id=eq.${organisationId}` : `organisation_id=eq.${organisationId}`;
-    const page = await rest(`${table}?select=*&${orgFilter}&limit=1000&offset=${offset}`).catch((error) => {
-      if (/404|does not exist/i.test(String(error.message))) return [];
-      throw error;
-    });
+    const page = await rest(`${table}?select=*&${orgFilter}&order=${table === "organisation_settings" ? "organisation_id.asc" : table === "case_collaborators" ? "case_id.asc,profile_id.asc" : "id.asc"}&limit=1000&offset=${offset}`);
     rows.push(...page);
     if (page.length < 1000) return rows;
   }
@@ -69,16 +73,24 @@ async function backupOrganisation(org) {
   }
 }
 
-async function restoreDrill(org, backup) {
+export async function restoreDrill(org, backup) {
   const drill = (await rest("restore_drills", { method: "POST", headers: { Prefer: "return=representation" }, body: { organisation_id: org.id, backup_run_id: backup.runId, status: "running" } }))[0];
   try {
-    const parsed = JSON.parse(backup.payload);
-    const checksum = createHash("sha256").update(backup.payload).digest("hex");
+    // Read the persisted object, not the in-memory payload that was uploaded.
+    const response = await fetch(`${base()}/storage/v1/object/authenticated/crm-backups/${backup.path}`, {
+      headers: { apikey: key(), Authorization: `Bearer ${key()}` },
+    });
+    if (!response.ok) throw new Error(`Backup readback failed (${response.status}).`);
+    const restoredPayload = await response.text();
+    const parsed = JSON.parse(restoredPayload);
+    const checksum = createHash("sha256").update(restoredPayload).digest("hex");
     const checks = {
       format: parsed.format === "maximus-crm-backup-v1",
       organisation: parsed.organisationId === org.id,
       checksum: checksum === backup.checksum,
-      coreTables: ["clients", "cases", "documents", "invoices", "audit_events"].every((table) => Array.isArray(parsed.tables?.[table])),
+      coreTables: TABLES.every((table) => Array.isArray(parsed.tables?.[table])),
+      rowCounts: Object.entries(backup.counts).every(([table, count]) => parsed.tables?.[table]?.length === count),
+      storedObjectReadback: true,
       foreignKeys: (parsed.tables.cases || []).every((row) => (parsed.tables.clients || []).some((client) => client.id === row.client_id)),
     };
     if (Object.values(checks).some((value) => !value)) throw new Error("Restore archive validation failed.");
@@ -174,9 +186,11 @@ async function verifySecurityHeaders() {
 }
 
 export default async function handler(request) {
-  if (!env("OPERATIONS_JOB_SECRET") || request.headers.get("x-operations-secret") !== env("OPERATIONS_JOB_SECRET"))
+  if (!operationsSecret(env) || request.headers.get("x-operations-secret") !== operationsSecret(env))
     return new Response(null, { status: 401 });
-  const organisations = await rest("organisations?select=id,name&order=created_at.asc");
+  const options = await request.json().catch(() => ({}));
+  const organisationId = typeof options.organisationId === "string" && /^[0-9a-f-]{36}$/i.test(options.organisationId) ? options.organisationId : "";
+  const organisations = await rest(`organisations?select=id,name&order=created_at.asc${organisationId ? `&id=eq.${organisationId}` : ""}`);
   const results = [];
   for (const org of organisations) {
     const backup = await probe(org, "backup_restore", async () => {
@@ -187,8 +201,10 @@ export default async function handler(request) {
     const checks = await Promise.all([
       probe(org, "database", async () => ({ organisations: (await rest(`organisations?select=id&id=eq.${org.id}`)).length })),
       probe(org, "security_headers", verifySecurityHeaders),
-      probe(org, "integration_recovery", () => recoverJobs(org)),
-      probe(org, "invoice_reminders", () => processInvoiceReminders(org)),
+      ...(options.backupOnly ? [] : [
+        probe(org, "integration_recovery", () => recoverJobs(org)),
+        probe(org, "invoice_reminders", () => processInvoiceReminders(org)),
+      ]),
       probe(org, "gmail_configuration", async () => {
         if (!env("GOOGLE_OAUTH_CLIENT_ID") || !env("GOOGLE_OAUTH_CLIENT_SECRET")) throw new Error("Gmail OAuth is not configured.");
         return { configured: true };

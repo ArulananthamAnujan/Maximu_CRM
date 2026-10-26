@@ -1,8 +1,9 @@
+import { operationsSecret } from "../lib/operations-auth.mjs";
 const env = (name) => globalThis.Netlify?.env?.get(name) ?? "";
 
 export default async function handler() {
   const site = env("URL") || env("PRODUCTION_URL");
-  const secret = env("OPERATIONS_JOB_SECRET");
+  const secret = operationsSecret(env);
   if (!site || !secret) throw new Error("Production operations URL or secret is not configured.");
   const response = await fetch(`${site.replace(/\/$/, "")}/.netlify/functions/production-operations-background`, {
     method: "POST",

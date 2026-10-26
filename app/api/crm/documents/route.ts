@@ -190,13 +190,7 @@ export async function POST(request: Request) {
       content,
     });
 
-    // Replacing a stored file supersedes the previous one rather than orphaning
-    // it in the drive.
-    if (document.drive_file_id)
-      await trashFile(String(document.drive_file_id)).catch((error) =>
-        console.error("Could not bin the superseded Drive file", error),
-      );
-
+    // Keep the previous file intact until its replacement is committed.
     await patch(
       "documents",
       String(document.id),
@@ -218,6 +212,13 @@ export async function POST(request: Request) {
       },
       token,
     );
+
+    // A database failure above leaves the old version available. A failed
+    // cleanup below must not invalidate the successfully stored replacement.
+    if (document.drive_file_id)
+      await trashFile(String(document.drive_file_id)).catch((error) =>
+        console.error("Could not bin the superseded Drive file", error),
+      );
 
     await insert(
       "audit_events",
@@ -259,15 +260,16 @@ async function rest<T>(query: string, token: string): Promise<T> {
   return supabaseRequest<T>(`/rest/v1/${query}`, { method: "GET" }, token);
 }
 async function patch(table: string, id: string, value: Json, token: string) {
-  await supabaseRequest(
+  const rows = await supabaseRequest<Json[]>(
     `/rest/v1/${table}?id=eq.${id}`,
     {
       method: "PATCH",
-      headers: { Prefer: "return=minimal" },
+      headers: { Prefer: "return=representation" },
       body: JSON.stringify(value),
     },
     token,
   );
+  if (rows.length !== 1) throw new InputError("The record was not saved. Your access may have changed; reopen it and retry.");
 }
 async function insert(table: string, value: Json, token: string) {
   await supabaseRequest(
