@@ -3658,6 +3658,12 @@ function MessagesView({
   );
 }
 
+// Notify other same-origin CRM tabs only after a mutation, never after a read.
+function notifyWorkspaceChanged() {
+  try { window.localStorage.setItem("maximus.workspaceRefresh", crypto.randomUUID()); }
+  catch { /* Saving a record must not fail when browser storage is unavailable. */ }
+}
+
 function FinanceView({
   items,
   openModal,
@@ -3682,7 +3688,7 @@ function FinanceView({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [type, setType] = useState("");
-  const total = items.reduce((s, x) => s + x.amount, 0);
+  const total = items.filter(x => x.status !== "Void").reduce((s, x) => s + x.amount, 0);
   const outstanding = items.reduce((s, x) => s + x.balance, 0);
   const received = items.reduce((s, x) => s + x.paid, 0);
   const statuses = [...new Set(items.map((item) => item.status).filter(Boolean))].sort();
@@ -7973,6 +7979,18 @@ function CaseDrawerBody({
     }
   };
 
+  const reloadCaseRef = useRef(reload);
+  reloadCaseRef.current = reload;
+  useEffect(() => {
+    const receive = (event: StorageEvent) => {
+      if (event.key === "maximus.workspaceRefresh") void reloadCaseRef.current();
+    };
+    const focus = () => { void reloadCaseRef.current(); };
+    window.addEventListener("storage", receive);
+    window.addEventListener("focus", focus);
+    return () => { window.removeEventListener("storage", receive); window.removeEventListener("focus", focus); };
+  }, []);
+
   // Posts to an endpoint and refreshes the file, reporting the reason on failure.
   const send = async (url: string, body: Record<string, unknown>) => {
     setWorking(true);
@@ -7989,10 +8007,7 @@ function CaseDrawerBody({
       // Status, deadlines and intake changes made inside a case must also be
       // visible on the dashboard and module lists immediately.
       void refresh().catch(() => setCaseNotice("Saved. The directory refresh failed; reopen the directory to retry."));
-      window.localStorage.setItem(
-        "maximus.workspaceRefresh",
-        window.localStorage.getItem("maximus.workspaceRefresh") === "1" ? "0" : "1",
-      );
+      notifyWorkspaceChanged();
       return true;
     } catch (reason_) {
       setCaseError(
@@ -11798,7 +11813,8 @@ function HomeWorkspace() {
       if (workspaceRefreshRef.current === request) workspaceRefreshRef.current = null;
     }
   };
-  const queueWorkspaceRefresh = (invalidateEnquiries = false) => {
+  const queueWorkspaceRefresh = (invalidateEnquiries = false, broadcast = true) => {
+    if (broadcast) notifyWorkspaceChanged();
     if (invalidateEnquiries) {
       enquiryPageCacheRef.current.clear();
       setEnquiriesLoaded(false);
@@ -11830,7 +11846,7 @@ function HomeWorkspace() {
       setSessionReady(true);
       void loadAlerts(authenticatedIdentity.role);
       if (authenticatedIdentity.role !== "client") void loadEnquirySummary();
-      queueWorkspaceRefresh();
+      queueWorkspaceRefresh(false, false);
     } catch {
       if (!authenticatedIdentity) setIdentity(null);
       setSessionReady(true);
@@ -11893,13 +11909,24 @@ function HomeWorkspace() {
     setEnquiryPage(1);
     setEnquiriesLoaded(false);
   }, []);
+  const receiveWorkspaceUpdateRef = useRef(async () => {});
+  receiveWorkspaceUpdateRef.current = async () => {
+    if (!identity) return;
+    enquiryPageCacheRef.current.clear();
+    setEnquiriesLoaded(false);
+    // A write can finish while an older read is in flight. Fetch again after it.
+    await workspaceRefreshRef.current?.catch(() => {});
+    await refreshWorkspace();
+  };
   useEffect(() => {
-    const receiveWorkspaceUpdate = (event: StorageEvent) => {
-      if (event.key === "maximus.workspaceRefresh") void loadWorkspace();
+    const refresh = () => { void receiveWorkspaceUpdateRef.current().catch(() => {}); };
+    const receive = (event: StorageEvent) => {
+      if (event.key === "maximus.workspaceRefresh") refresh();
     };
-    window.addEventListener("storage", receiveWorkspaceUpdate);
-    return () => window.removeEventListener("storage", receiveWorkspaceUpdate);
-  });
+    window.addEventListener("storage", receive);
+    window.addEventListener("focus", refresh);
+    return () => { window.removeEventListener("storage", receive); window.removeEventListener("focus", refresh); };
+  }, []);
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
@@ -12762,7 +12789,7 @@ function HomeWorkspace() {
         enquiriesTotal={enquiriesTotal}
       />
     );
-  else if (active === "work") content = <TaskBoard onChanged={refreshWorkspace}/>;
+  else if (active === "work") content = <TaskBoard onChanged={async()=>{notifyWorkspaceChanged();await refreshWorkspace();}}/>;
   else if (active === "calendar")
     content = (
       <CalendarView
@@ -13483,7 +13510,7 @@ function HomeWorkspace() {
           onExpand={() => selected && openCaseWorkspace(selected)}
           refreshToken={selected ? [...documents.filter(d => d.caseId === selected.dbId).map(d => `${d.id}:${d.status}`), ...messages.filter(m => m.caseId === selected.dbId).map(m => `${m.id}:${m.status}`)].sort().join("|") : ""}
           moveStage={moveCaseStage}
-          refresh={async () => { enquiryPageCacheRef.current.clear(); setEnquiriesLoaded(false); await loadWorkspace(); }}
+          refresh={async () => { notifyWorkspaceChanged(); enquiryPageCacheRef.current.clear(); setEnquiriesLoaded(false); await loadWorkspace(); }}
           lifecycleReady={!schemaWarning}
           schemaWarning={schemaWarning}
           storageConnected={storageConnected}

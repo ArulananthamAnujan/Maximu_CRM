@@ -52,7 +52,7 @@ async function fixture(run, options = {}) {
     if (table === 'case_notes') return options.failNotes ? send(503, { message: 'Temporary notes outage' }) : send(200, options.notes || []);
     if (table === 'branches') return send(200, [{ id: BRANCH, name: 'Test office' }]);
     if (table === 'client_education_history') return send(200, options.denyHistory ? [] : [{ id: id(20), client_id: CLIENT, institution: 'Test institution', qualification: 'Degree', currently_studying: true, details: { legacy_data: { source: 'retained' } } }]);
-    if (table === 'invoices') return send(200, [{ id: id(30), total: 100, paid: 0, currency: 'AUD', state: options.invoiceState ?? 'sent', client_id: CLIENT, case_id: id(1) }]);
+    if (table === 'invoices') return send(200, [{ id: id(30), total: 100, paid: options.invoicePaid ?? 0, currency: 'AUD', state: options.invoiceState ?? 'sent', client_id: CLIENT, case_id: id(1) }]);
     if (table === 'mailbox_connections') return send(200, [{ active: true, email: 'staff@example.test', token_reference: null }]);
     return send(200, []);
   });
@@ -290,3 +290,20 @@ test('Copilot picker escapes punctuation and reports database failure', async ()
     assert.equal((await call('/api/crm/search?scope=cases&q=Test')).status, 503);
   }, { failCases: true });
 });
+
+for (const scenario of [
+  { state: 'part_paid', paid: 40, status: 'Part paid', balance: 60 },
+  { state: 'void', paid: 0, status: 'Void', balance: 0 },
+  { state: 'paid', paid: 100, status: 'Paid', balance: 0 },
+  { state: 'sent', paid: 0, status: 'Unpaid', balance: 100 },
+]) {
+  test(`workspace invoice ${scenario.state} has accurate label and collectible balance`, async () => fixture(async ({ call }) => {
+    const response = await call('/api/crm/workspace');
+    assert.equal(response.status, 200);
+    const invoice = (await response.json()).invoices.find(row => row.id === id(30));
+    assert.ok(invoice);
+    assert.equal(invoice.status, scenario.status);
+    assert.equal(invoice.balance, scenario.balance);
+    assert.equal(invoice.amount, 100, 'Historical invoice total must remain intact');
+  }, { invoiceState: scenario.state, invoicePaid: scenario.paid }));
+}

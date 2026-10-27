@@ -577,7 +577,7 @@ export async function GET(request: Request) {
           amount: total,
           paid,
           credited,
-          balance: Math.max(0, total - paid - credited),
+          balance: row.state === "void" ? 0 : Math.max(0, total - paid - credited),
           // The portal shows only what the client is billed. Anything else --
           // a commission claim raised against a partner, for instance -- is
           // never a client's business and is filtered out on the way to them.
@@ -594,7 +594,9 @@ export async function GET(request: Request) {
                 ? "Refunded"
                 : row.state === "void"
                   ? "Void"
-                  : "Unpaid",
+                  : row.state === "part_paid"
+                    ? "Part paid"
+                    : row.state === "draft" ? "Draft" : "Unpaid",
           pdfDocumentId: invoicePdfByInvoice.get(String(row.id))?.drive_file_id
             ? String(invoicePdfByInvoice.get(String(row.id))?.id ?? "")
             : "",
