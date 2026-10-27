@@ -113,6 +113,8 @@ export async function emailSenderDiagnostics(): Promise<string> {
     if (!response.ok) return `Sender verification could not be inspected (HTTP ${response.status}). A sending-only API key may not allow domain inspection. Check sender-domain verification in Resend.`;
     const result = await response.json() as {data?:{name:string;status:string}[]};
     const sender = result.data?.find(row=>row.name.toLowerCase()===domain);
+    const verified = (result.data || []).filter(row=>row.status === "verified").map(row=>row.name).join(", ");
+    if (domain === "resend.dev") return `The CRM is using the Resend test sender, which is restricted to the provider account owner. Configure a sender on your own verified domain. Verified domains available: ${verified || "none"}.`;
     return sender ? `Sender domain ${domain}: ${sender.status}.` : `Sender domain ${domain} is not listed in this email-provider account. Verify it in Resend or configure a sender on an already verified domain.`;
   } catch { return "The email provider could not be reached for sender verification."; }
 }
