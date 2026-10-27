@@ -3148,7 +3148,7 @@ body {
   background: rgba(255, 255, 255, 0.65);
 }
 .clientWelcome span {
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 0.14em;
   font-weight: 900;
   color: #1b9a7e;
@@ -3160,7 +3160,7 @@ body {
   margin: 7px 0 9px;
 }
 .clientWelcome p {
-  font-size: 10px;
+  font-size: 13px;
   color: #667b8e;
 }
 .clientAvatar {
@@ -3182,7 +3182,7 @@ body {
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 16px;
 }
-.journeyProgress,
+.clientJourney,
 .supportCard {
   padding: 20px;
 }
@@ -3264,16 +3264,16 @@ body {
   display: block;
 }
 .clientNext span {
-  font-size: 7px;
+  font-size: 10px;
   font-weight: 900;
   color: #dd7c22;
 }
 .clientNext strong {
-  font-size: 10px;
+  font-size: 14px;
   margin: 3px 0;
 }
 .clientNext small {
-  font-size: 8px;
+  font-size: 12px;
   color: #8290a0;
 }
 .supportCard {
@@ -3580,6 +3580,62 @@ body {
   letter-spacing: 0.03em;
   color: var(--muted);
   text-transform: uppercase;
+}
+.clientNextSteps .clientNextStepsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+.clientNextStepsGrid > div {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #eaf0f5;
+  border-radius: 12px;
+  background: #f9fbfd;
+}
+.clientNextStepsGrid h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.clientNextStepsGrid p {
+  margin: 0;
+  font-size: 13px;
+  color: #5d7084;
+}
+.clientNextStepsGrid strong {
+  color: #183c63;
+}
+.consentRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 5px;
+  border-top: 1px solid #eaf0f5;
+}
+.consentRow:first-of-type {
+  margin-top: 12px;
+}
+.consentRow > div {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.consentRow > div strong,
+.consentRow > div span {
+  display: block;
+}
+.consentRow > div strong {
+  font-size: 13px;
+}
+.consentRow > div span {
+  font-size: 12px;
+  color: #8190a2;
+  margin-top: 3px;
 }
 .functionalRow {
   display: grid;
@@ -6390,9 +6446,13 @@ body {
   .calendarConnectBar {
     grid-template-columns: 38px 1fr;
   }
-  .calendarConnectBar > .status,
+  .calendarConnectBar > .status {
+    grid-column: 2;
+    justify-self: start;
+  }
   .calendarConnectBar > .ghostButton {
-    grid-column: span 1;
+    grid-column: 1 / -1;
+    justify-content: center;
   }
   .weekGrid {
     overflow: auto;

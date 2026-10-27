@@ -35,7 +35,7 @@ export async function GET(request: Request) {
 
     const [allCases, allApplications, allVisas, tasks, allDocuments, invoices, profiles, branches, enquiries, campaigns, credits] =
       await Promise.all([
-        rest("cases?select=id,branch_id,owner_id,service_type,matter_type,lifecycle_stage,health,opened_at,closed_at,due_at,visa_expiry_on&limit=5000", token),
+        rest("cases?select=id,case_number,branch_id,owner_id,service_type,matter_type,lifecycle_stage,health,opened_at,closed_at,due_at,visa_expiry_on&limit=5000", token),
         rest("education_applications?select=id,case_id,status,submitted_at,offer_received_at,coe_received_at,deadline_at,archived_at&limit=5000", token),
         rest("visa_matters?select=id,case_id,status,outcome,lodged_at,decision_at,information_due_at,information_provided_at,current_visa_expiry&limit=5000", token),
         rest("tasks?select=id,status,due_at,assigned_to&limit=5000", token),
@@ -52,6 +52,7 @@ export async function GET(request: Request) {
       ? allCases.filter((row) => row.service_type === stream)
       : allCases;
     const caseIds = new Set(cases.map((row) => String(row.id)));
+    const caseNumbers = new Map(allCases.map((row) => [String(row.id), row.case_number ? String(row.case_number) : null]));
     const applications = stream
       ? allApplications.filter((row) => caseIds.has(String(row.case_id)))
       : allApplications;
@@ -175,6 +176,7 @@ export async function GET(request: Request) {
           .filter((row) => row.information_due_at && !row.information_provided_at)
           .map((row) => ({
             caseId: row.case_id,
+            caseNumber: caseNumbers.get(String(row.case_id)) ?? null,
             dueAt: row.information_due_at,
             daysRemaining: days(row.information_due_at),
           }))

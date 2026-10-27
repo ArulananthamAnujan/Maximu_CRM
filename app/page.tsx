@@ -2082,7 +2082,7 @@ function WorkspaceDashboard({
                     </span>
                     <span>
                       <b title={c.target || undefined}>{nextAction}</b>
-                      <small>{c.applicationStatus || c.matterType || "Review enquiry"}</small>
+                      <small>{humanise(c.applicationStatus || c.matterType || "Review enquiry")}</small>
                     </span>
                     <span>{c.due || "No due date"}</span>
                     <ArrowRight size={16} />
@@ -4693,13 +4693,28 @@ function PortalView({
 
   return (
     <section className="clientPortal">
-      <article className="panel listPanel" id="student-actions"><h2>Your next steps</h2>
-        <p>{documents.filter(d => d.clientVisible !== false && /request|reject/i.test(d.status)).length} document requests awaiting upload.</p>
-        <a className="primaryButton" href="/?portal=documents">View requests and upload documents</a>
-        <h3>Amounts due</h3>
-        {[...new Set(invoices.map(i=>i.currency))].map(currency=><p key={currency}><strong>{currency} {invoices.filter(i=>i.currency===currency).reduce((sum,i)=>sum+i.balance,0).toFixed(2)}</strong> outstanding</p>)}
-        {!invoices.length&&<p>No invoices have been raised.</p>}
-        <p>Open Accounts for invoice details. Contact your case team for payment instructions.</p>
+      <article className="panel listPanel clientNextSteps" id="student-actions">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">TO DO</span>
+            <h2>Your next steps</h2>
+          </div>
+        </div>
+        <div className="clientNextStepsGrid">
+          <div>
+            <h3>Documents</h3>
+            <p>{documents.filter(d => d.clientVisible !== false && /request|reject/i.test(d.status)).length} document requests awaiting upload.</p>
+            {/* A full load: the portal reads ?portal= only when the page starts. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a className="primaryButton" href="/?portal=documents">View requests and upload documents</a>
+          </div>
+          <div>
+            <h3>Amounts due</h3>
+            {[...new Set(invoices.map(i=>i.currency))].map(currency=><p key={currency}><strong>{currency} {invoices.filter(i=>i.currency===currency).reduce((sum,i)=>sum+i.balance,0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</strong> outstanding</p>)}
+            {!invoices.length&&<p>No invoices have been raised.</p>}
+            <p>Open Invoices for the details. Contact your case team for payment instructions.</p>
+          </div>
+        </div>
       </article>
       <AgreementsPanel student/>
       <article className="clientWelcome">
@@ -4707,7 +4722,7 @@ function PortalView({
           <span>PRIVATE CLIENT PORTAL</span>
           <h2>Welcome, {c.name}.</h2>
           <p>
-            Your {c.type.toLowerCase()} journey is currently at {c.stage}.
+            Your {humanise(c.type).toLowerCase()} journey is currently at {c.stage}.
           </p>
         </div>
         <div className="clientAvatar">
@@ -4718,7 +4733,7 @@ function PortalView({
             .join("")}
         </div>
       </article>
-      <article className="panel journeyProgress">
+      <article className="panel clientJourney">
         <div className="panelHead">
           <div>
             <span className="kicker">YOUR JOURNEY</span>
@@ -4844,7 +4859,7 @@ function PortalView({
             (row) => row.type === item.type && row.response === true,
           );
           return (
-            <div className="functionalRow" key={item.type}>
+            <div className="consentRow" key={item.type}>
               <div>
                 <strong>{item.label}</strong>
                 <span>{item.detail}</span>
@@ -5317,6 +5332,7 @@ type AgencyReport = {
   deadlines: {
     informationRequests: {
       caseId: string;
+      caseNumber?: string | null;
       dueAt: string;
       daysRemaining: number | null;
     }[];
@@ -5845,7 +5861,7 @@ function ReportsView({
         {canSeeFinance && (
           <article>
             <span>Outstanding fees</span>
-            <strong>{finance.byCurrency?.length > 1 ? `${finance.byCurrency.length} currencies` : finance.byCurrency?.length ? `${finance.byCurrency[0].currency} ${money(finance.outstanding ?? 0)}` : "No invoices"}</strong>
+            <strong>{finance.byCurrency?.length > 1 ? `${finance.byCurrency.length} currencies` : finance.byCurrency?.length ? `${finance.byCurrency[0].currency} ${(finance.outstanding ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "No invoices"}</strong>
             <small>{finance.byCurrency?.length > 1 ? "See fees by currency below" : "After payments and credit notes"}</small>
           </article>
         )}
@@ -5917,7 +5933,7 @@ function ReportsView({
               <tbody>
                 {deadlines.informationRequests.slice(0, 10).map((entry) => (
                   <tr key={entry.caseId}>
-                    <td>Case {String(entry.caseId).slice(0, 8)}</td>
+                    <td>{entry.caseNumber || `Case ${String(entry.caseId).slice(0, 8)}`}</td>
                     <td>{String(entry.dueAt).slice(0, 10)}</td>
                     <td>
                       {entry.daysRemaining === null
@@ -7996,7 +8012,9 @@ function CaseDrawerBody({
   };
 
   const reloadCaseRef = useRef(reload);
-  reloadCaseRef.current = reload;
+  useEffect(() => {
+    reloadCaseRef.current = reload;
+  });
   useEffect(() => {
     const receive = (event: StorageEvent) => {
       if (event.key === "maximus.workspaceRefresh") void reloadCaseRef.current();
