@@ -101,3 +101,18 @@ export function renderTemplate(
     Object.prototype.hasOwnProperty.call(values, key) ? values[key] : match,
   );
 }
+
+/** Read-only sender diagnostics. Never returns the API key or provider response body. */
+export async function emailSenderDiagnostics(): Promise<string> {
+  if (!emailConfigured()) return "Email sender or API key is missing.";
+  const address = fromAddress().match(/<([^>]+)>/)?.[1] || fromAddress();
+  const domain = address.split("@")[1]?.toLowerCase();
+  if (!domain) return "The configured sender email address is invalid.";
+  try {
+    const response = await fetch(`${apiBase()}/domains`, { headers: { Authorization: `Bearer ${apiKey()}` }, signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return `Sender verification could not be inspected (HTTP ${response.status}). A sending-only API key may not allow domain inspection. Check sender-domain verification in Resend.`;
+    const result = await response.json() as {data?:{name:string;status:string}[]};
+    const sender = result.data?.find(row=>row.name.toLowerCase()===domain);
+    return sender ? `Sender domain ${domain}: ${sender.status}.` : `Sender domain ${domain} is not listed in this email-provider account. Verify it in Resend or configure a sender on an already verified domain.`;
+  } catch { return "The email provider could not be reached for sender verification."; }
+}

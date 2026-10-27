@@ -7,7 +7,7 @@ export const TABLES = [
   "dependants", "english_tests", "enquiries", "study_preferences", "visa_history",
   "roles", "content_templates", "document_checklist_templates", "email_templates",
   "institutions", "courses", "service_agreements", "saved_views", "task_comments",
-  "data_retention_rules", "staff_invitations",
+  "data_retention_rules", "staff_invitations", "client_notice_outbox",
   "organisations", "branches", "profiles", "clients", "cases", "case_collaborators",
   "education_applications", "visa_matters", "tasks", "appointments", "documents",
   "email_threads", "email_messages", "invoices", "payments", "payment_receipts",

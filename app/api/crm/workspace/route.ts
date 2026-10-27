@@ -1447,6 +1447,7 @@ export async function POST(request: Request) {
           // until storage is connected and someone records that it arrived.
           metadata: {
             storage: "not_connected",
+            notify_client: body.uploading !== true,
             note: nullable(body.documentNote),
             due_on: nullable(body.due),
           },
@@ -2499,6 +2500,7 @@ async function notifyClient(
   to: string | null | undefined,
   values: Record<string, string>,
 ): Promise<void> {
+  if (kind === "document_request") return; // Transactional client_notice_outbox owns delivery.
   if (!to || !emailConfigured()) return;
   try {
     const template = await emailTemplateFor(org, kind, token);

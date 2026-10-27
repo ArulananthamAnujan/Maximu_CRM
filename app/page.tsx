@@ -14,6 +14,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { orgDate, orgDateTime } from "@/lib/timezone";
 import { ClientProfileEditor } from "./client-profile-editor";
 import { useOverlayFocus } from "./use-overlay-focus";
+import { AgreementsPanel } from "./agreements-panel";
 import { CaseDocumentRequests } from "./case-document-requests";
 import { CaseFollowUpForm } from "./case-follow-up-form";
 import { CaseBranchTransfer } from "./case-branch-transfer";
@@ -3660,6 +3661,7 @@ function MessagesView({
 
 // Notify other same-origin CRM tabs only after a mutation, never after a read.
 function notifyWorkspaceChanged() {
+  window.dispatchEvent(new Event("maximus:records-changed"));
   try { window.localStorage.setItem("maximus.workspaceRefresh", crypto.randomUUID()); }
   catch { /* Saving a record must not fail when browser storage is unavailable. */ }
 }
@@ -4620,10 +4622,14 @@ function PortalView({
   cases,
   journeyHistory,
   declarations,
+  invoices,
+  documents,
 }: {
   cases: CaseRecord[];
   journeyHistory: JourneyMilestone[];
   declarations: ClientDeclaration[];
+  invoices: InvoiceRecord[];
+  documents: DocumentRecord[];
 }) {
   const [editingContact, setEditingContact] = useState(false);
   const [contactError, setContactError] = useState("");
@@ -4687,6 +4693,15 @@ function PortalView({
 
   return (
     <section className="clientPortal">
+      <article className="panel listPanel" id="student-actions"><h2>Your next steps</h2>
+        <p>{documents.filter(d => d.clientVisible !== false && /request|reject/i.test(d.status)).length} document requests awaiting upload.</p>
+        <a className="primaryButton" href="/?portal=documents">View requests and upload documents</a>
+        <h3>Amounts due</h3>
+        {[...new Set(invoices.map(i=>i.currency))].map(currency=><p key={currency}><strong>{currency} {invoices.filter(i=>i.currency===currency).reduce((sum,i)=>sum+i.balance,0).toFixed(2)}</strong> outstanding</p>)}
+        {!invoices.length&&<p>No invoices have been raised.</p>}
+        <p>Open Accounts for invoice details. Contact your case team for payment instructions.</p>
+      </article>
+      <AgreementsPanel student/>
       <article className="clientWelcome">
         <div>
           <span>PRIVATE CLIENT PORTAL</span>
@@ -4723,12 +4738,10 @@ function PortalView({
           <button
             className="heroPrimary"
             onClick={() =>
-              alert(
-                "Your next action and approved instructions will appear here.",
-              )
+              document.getElementById("student-agreements")?.scrollIntoView({behavior:"smooth"})
             }
           >
-            View next step
+            Review agreements
           </button>
         </div>
         {milestones.length > 0 && (
@@ -7607,7 +7620,8 @@ type CaseTab =
   | "documents"
   | "communication"
   | "timeline"
-  | "finance";
+  | "finance"
+  | "agreements";
 
 const caseTabs: [CaseTab, string][] = [
   ["overview", "Case home"],
@@ -7620,6 +7634,7 @@ const caseTabs: [CaseTab, string][] = [
   ["family", "Family"],
   ["history", "Background"],
   ["finance", "Finance"],
+  ["agreements", "Agreements"],
   ["timeline", "Activity & notes"],
 ];
 
@@ -7635,6 +7650,7 @@ const caseTabDescriptions: Record<CaseTab, string> = {
   history: "Education, employment, English tests and previous visa history.",
   finance: "Invoices and payments recorded against this case.",
   timeline: "File notes and a complete, time-ordered audit trail.",
+  agreements: "Prepare agreements, track student review and record signatures.",
 };
 
 type CaseFile = {
@@ -8126,7 +8142,7 @@ function CaseDrawerBody({
         : ["overview", "tasks", "applications", "visa", "documents", "communication"],
     },
     { label: "Client profile", tabs: ["client", "family", "history"] },
-    { label: "Records", tabs: ["finance", "timeline"] },
+    { label: "Records", tabs: ["finance", "agreements", "timeline"] },
   ];
   const latestNote = file?.notes[0] ?? null;
   const openCaseTasks = (file?.tasks ?? [])
@@ -8278,6 +8294,8 @@ function CaseDrawerBody({
             {file && caseLoading && <p className="caseRefreshState" role="status">Updating this case… Your existing records remain visible.</p>}
             {file && <>
 
+        {tab === "agreements" && caseId && <AgreementsPanel caseId={caseId} onChanged={refresh}/> }
+        {tab === "documents" && caseId && <AgreementsPanel caseId={caseId} noticesOnly/>}
         {tab === "tasks" && caseId && <TaskBoard caseId={caseId} branchId={String(file?.case.branch_id??"")||null} onChanged={async()=>{const loaded=await fetchCaseFile(caseId);setFile(loaded.file);setChecklist(loaded.checklist);await refresh();}}/>}
         {tab === "overview" && (
           <div className={`caseHome${direct ? " directCase" : ""}`}>
@@ -11547,6 +11565,7 @@ function HomeWorkspace() {
     const next = nextIdentity ?? identity;
     const mode = canUse(next,"study_access") ? serviceMode === "direct_visa" && canUse(next,"direct_visa_access") ? "direct_visa" : "study" : "direct_visa";
     setServiceMode(mode);
+    if(nextRole === "client" && new URLSearchParams(window.location.search).get("portal") === "documents") { setActiveModule("documents"); return; }
     setActiveModule(roleConfig[nextRole].modules.find(key=>canUse(next,key,mode))??roleConfig[nextRole].modules[0]);
   };
   const [identity, setIdentity] = useState<LiveIdentity | null>(null),
@@ -12759,7 +12778,7 @@ function HomeWorkspace() {
   if (role === "client")
     content =
       active === "portal" ? (
-        <PortalView cases={cases} journeyHistory={journeyHistory} declarations={declarations} />
+        <PortalView cases={cases} journeyHistory={journeyHistory} declarations={declarations} invoices={invoices} documents={documents} />
       ) : active === "courseFinder" ? (
         <CourseFinderView canManage={false} />
       ) : (

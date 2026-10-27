@@ -109,7 +109,7 @@ export async function POST(request: Request) {
       await insert("client_declarations", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, declaration_type: slug(body.declarationType,"Declaration"), response: optionalBoolean(body.response), details: optional(body.details), declared_by: session.identity.profileId, declared_at: new Date().toISOString() }, token, "resolution=merge-duplicates,return=minimal");
     } else if (action === "agreement") {
       if (session.identity.role === "client") throw new LiveAccessError(403,"Only staff can prepare service agreements.");
-      await insert("service_agreements", { id: crypto.randomUUID(), organisation_id: org, client_id: clientId, case_id: optionalUuid(body.caseId), agreement_type: required(body.agreementType,"Agreement type"), version: required(body.version,"Version"), status: "draft", terms_snapshot: isObject(body.terms) ? cleanObject(body.terms) : {}, created_by: session.identity.profileId }, token);
+      await rpc("agreement_action", { p_action: "create", p_case: uuid(body.caseId,"Case"), p_title: required(body.agreementType,"Agreement type"), p_version: required(body.version,"Version"), p_terms: required(isObject(body.terms) ? body.terms.text : body.terms,"Agreement terms") }, token);
     } else throw new InputError("Unsupported intake action.");
 
     return appendRefreshCookies(Response.json({ ok: true }), session.refreshed, request);
