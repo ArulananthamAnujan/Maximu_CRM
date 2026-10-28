@@ -1158,6 +1158,122 @@ function useStored<T>(key: string, initial: T) {
   }, [key, value]);
   return [value, setValue] as const;
 }
+/**
+ * A case field you can type into: matching cases pop up by client name, case
+ * number, email or phone, instead of scrolling a dropdown of every case. The
+ * chosen case is submitted as a hidden `name` field, so forms read it exactly
+ * as they read the old select.
+ */
+function CasePicker({
+  cases,
+  name = "caseId",
+  required = false,
+  emptyLabel,
+  placeholder = "Type a name or case number…",
+}: {
+  cases: CaseRecord[];
+  name?: string;
+  required?: boolean;
+  /** Offered as the first choice when a case is optional, e.g. "General". */
+  emptyLabel?: string;
+  placeholder?: string;
+}) {
+  const listId = `case-picker-${name}-options`;
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [selected, setSelected] = useState<CaseRecord | null>(null);
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const caseValue = (record: CaseRecord) => record.dbId || record.id;
+  const caseLabel = (record: CaseRecord) => `${record.name || "Client name not recorded"} · ${record.id}`;
+
+  const matches = useMemo(() => {
+    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const found = words.length
+      ? cases.filter((record) => {
+          const haystack = [record.name, record.id, record.email, record.phone, record.branch]
+            .filter(Boolean).join(" ").toLowerCase();
+          return words.every((word) => haystack.includes(word));
+        })
+      : cases;
+    return found.slice(0, 50);
+  }, [cases, query]);
+  // "No case" is offered until a search starts, so Enter picks the first match.
+  const options: (CaseRecord | null)[] = emptyLabel !== undefined && !query.trim() ? [null, ...matches] : matches;
+
+  // An unfinished search must not submit silently: ask for a pick from the list.
+  useEffect(() => {
+    const missing = !selected && (required || query.trim() !== "");
+    inputRef.current?.setCustomValidity(missing ? "Choose a case from the list." : "");
+  }, [selected, required, query]);
+
+  const choose = (record: CaseRecord | null) => {
+    setSelected(record);
+    setQuery("");
+    setOpen(false);
+  };
+
+  return (
+    <div className="casePicker">
+      <div className="institutionPickerControl casePickerControl">
+        <Search size={16} aria-hidden="true" />
+        <input
+          ref={inputRef}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={open}
+          aria-controls={listId}
+          aria-label="Search cases"
+          autoComplete="off"
+          required={required}
+          value={open || !selected ? query : caseLabel(selected)}
+          placeholder={selected ? caseLabel(selected) : emptyLabel && !open ? emptyLabel : placeholder}
+          onFocus={() => { setOpen(true); setHighlight(0); }}
+          onBlur={() => setOpen(false)}
+          onChange={(event) => { setQuery(event.target.value); setSelected(null); setOpen(true); setHighlight(0); }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setHighlight((value) => Math.min(value + 1, options.length - 1)); }
+            else if (event.key === "ArrowUp") { event.preventDefault(); setHighlight((value) => Math.max(value - 1, 0)); }
+            else if (event.key === "Enter" && open && options.length) { event.preventDefault(); choose(options[Math.min(highlight, options.length - 1)]); }
+            else if (event.key === "Escape" && open) { event.preventDefault(); event.stopPropagation(); setOpen(false); }
+          }}
+        />
+        {(selected || query) && (
+          <button type="button" aria-label="Clear case" onMouseDown={(event) => event.preventDefault()} onClick={() => { choose(null); inputRef.current?.focus(); }}>
+            <X size={15} />
+          </button>
+        )}
+      </div>
+      <input type="hidden" name={name} value={selected ? caseValue(selected) : ""} />
+      {open && (
+        <div className="institutionOptions casePickerOptions" id={listId} role="listbox">
+          {options.map((record, index) => (
+            <button
+              type="button"
+              role="option"
+              key={record ? caseValue(record) : "none"}
+              aria-selected={index === highlight}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setHighlight(index)}
+              onClick={() => choose(record)}
+            >
+              {record ? (
+                <>
+                  <span>{record.name || "Client name not recorded"}</span>
+                  <small>{[record.id, record.email, record.branch].filter(Boolean).join(" · ")}</small>
+                </>
+              ) : (
+                <span>{emptyLabel}</span>
+              )}
+            </button>
+          ))}
+          {matches.length === 0 && <p>No cases match “{query.trim()}”.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Status({ value }: { value: string }) {
   const cls = /critical|overdue|unpaid/i.test(value)
     ? "danger"
@@ -2811,7 +2927,7 @@ function ApplicationsBoard({
       <div className="registerCreateAction">
         <button className="primaryButton" type="button" onClick={() => setAdding(!adding)} aria-expanded={adding}><Plus size={15} /> New application</button>
         {adding && <form onSubmit={event => { event.preventDefault(); const id = String(new FormData(event.currentTarget).get("caseId") || ""); if (id) { onPreview(id, "applications"); setAdding(false); } }}>
-          <label>Client / case<select name="caseId" required defaultValue=""><option value="">Choose a client</option>{cases.map(record => <option key={record.dbId || record.id} value={record.dbId || record.id}>{record.name} · {record.id}</option>)}</select></label>
+          <label>Client / case<CasePicker cases={cases} required /></label>
           <button className="ghostButton">Continue</button>
           <button className="ghostButton" type="button" onClick={() => setAdding(false)}>Cancel</button>
         </form>}
@@ -2903,7 +3019,7 @@ function VisaMattersBoard({
       <div className="registerCreateAction">
         <button className="primaryButton" type="button" onClick={() => setAdding(!adding)} aria-expanded={adding}><Plus size={15} /> New visa matter</button>
         {adding && <form onSubmit={event => { event.preventDefault(); const id = String(new FormData(event.currentTarget).get("caseId") || ""); if (id) { onPreview(id, "visa"); setAdding(false); } }}>
-          <label>Client / case<select name="caseId" required defaultValue=""><option value="">Choose a client</option>{cases.map(record => <option key={record.dbId || record.id} value={record.dbId || record.id}>{record.name} · {record.id}</option>)}</select></label>
+          <label>Client / case<CasePicker cases={cases} required /></label>
           <button className="ghostButton">Continue</button>
           <button className="ghostButton" type="button" onClick={() => setAdding(false)}>Cancel</button>
         </form>}
@@ -10951,14 +11067,7 @@ function RecordModal({
               </label>
               <label>
                 Case
-                <select name="caseId">
-                  <option value="">General</option>
-                  {cases.map((c) => (
-                    <option key={c.id} value={c.dbId || c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                <CasePicker cases={cases} emptyLabel="General" />
               </label>
               <label>
                 Due date
@@ -11018,18 +11127,18 @@ function RecordModal({
               ) : (
                 <label>
                   {isClientAppointment ? "Case" : "Linked case"}
-                  <select name="caseId" required={isClientAppointment}>
-                    <option value="">
-                      {isClientAppointment
-                        ? "Select your case"
-                        : "Internal appointment"}
-                    </option>
-                    {cases.map((c) => (
-                      <option key={c.id} value={c.dbId || c.id}>
-                        {isClientAppointment ? `${c.name} · ${c.id}` : c.name}
-                      </option>
-                    ))}
-                  </select>
+                  {isClientAppointment ? (
+                    <select name="caseId" required>
+                      <option value="">Select your case</option>
+                      {cases.map((c) => (
+                        <option key={c.id} value={c.dbId || c.id}>
+                          {`${c.name} · ${c.id}`}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <CasePicker cases={cases} emptyLabel="Internal appointment" />
+                  )}
                 </label>
               )}
               <label>
@@ -11219,12 +11328,7 @@ function RecordModal({
               {!isClientMessage && !presetCase ? (
                 <label>
                   Case
-                  <select name="caseId" required defaultValue="">
-                    <option value="">Select case</option>
-                    {cases.map((c) => (
-                      <option key={c.id} value={c.dbId || c.id}>{c.name} · {c.id}</option>
-                    ))}
-                  </select>
+                  <CasePicker cases={cases} required />
                 </label>
               ) : null}
               {!isClientMessage ? (
@@ -11289,14 +11393,7 @@ function RecordModal({
               ) : (
                 <label>
                   Case
-                  <select name="caseId" required>
-                    <option value="">Select case</option>
-                    {cases.map((c) => (
-                      <option key={c.id} value={c.dbId || c.id}>
-                        {c.name} · {c.id}
-                      </option>
-                    ))}
-                  </select>
+                  <CasePicker cases={cases} required />
                 </label>
               )}
               <label>

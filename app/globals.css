@@ -3694,6 +3694,16 @@ body {
 .courseFinderFilters label { color: #41536b; font-size: 12px; font-weight: 750; }
 .courseFinderFilters input, .courseFinderFilters select { width: 100%; min-height: 43px; margin-top: 6px; border: 1px solid #d6e0e9; border-radius: 10px; padding: 9px 11px; background: white; color: #18324a; font: inherit; }
 .institutionPicker { position: relative; min-width: 0; }
+/* The case field sits inside form labels that are uppercase and bold; reset
+   that so the search text and the suggestions read normally. */
+.casePicker { position: relative; min-width: 0; margin-top: 6px; text-transform: none; letter-spacing: normal; font-weight: 400; font-size: 14px; }
+.casePicker .casePickerControl { margin-top: 0; }
+.casePicker .casePickerControl input[role="combobox"],
+.casePicker .casePickerControl input[role="combobox"]:focus { flex: 1; width: 100%; min-height: 39px; margin: 0; padding: 0; border: 0; border-radius: 0; outline: 0; box-shadow: none; background: transparent; font: inherit; color: #183c63; }
+.casePicker .casePickerOptions p { margin: 0; padding: 10px; color: #718396; font-size: 13px; }
+.casePicker .casePickerOptions button { font: inherit; text-transform: none; letter-spacing: normal; }
+.casePicker .casePickerOptions span { font-weight: 600; font-size: 14px; color: #183c63; }
+.casePicker .casePickerOptions small { color: #718396; font-size: 12px; font-weight: 400; margin-top: 2px; text-transform: none; letter-spacing: normal; overflow-wrap: anywhere; }
 .institutionPicker > label { display: block; }
 .institutionPickerControl { min-height: 43px; margin-top: 6px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid #d6e0e9; border-radius: 10px; background: white; color: #718396; }
 .institutionPickerControl:focus-within { border-color: #2682b3; box-shadow: 0 0 0 3px rgba(38, 130, 179, .12); }

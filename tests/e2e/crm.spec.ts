@@ -999,3 +999,21 @@ test("portal access is visible to branch staff directly beside the client profil
   const { drawer } = await openCaseDrawer(page, "Priya Sharma");
   await expect(drawer.locator(".agentClientPanel").getByRole("button", { name: "Send portal access", exact: true })).toBeVisible();
 });
+
+test("a task's case is found by typing rather than scrolling a list", async ({ page }) => {
+  await signIn(page, OWNER);
+  await page.getByRole("button", { name: "Quick create", exact: true }).click();
+  await page.locator(".quickMenu").getByRole("button", { name: "Task", exact: true }).click();
+  const modal = page.getByRole("dialog", { name: "Create or edit record" });
+  const caseSearch = modal.getByRole("combobox", { name: "Search cases" });
+  await caseSearch.fill("chamara");
+  const options = modal.locator(".casePickerOptions").getByRole("option");
+  await expect(options.first()).toContainText("Chamara Silva");
+  // Earlier tests add clients, so only check that every suggestion matches.
+  for (const text of await options.allInnerTexts()) expect(text.toLowerCase()).toContain("chamara");
+  await page.keyboard.press("Enter");
+  await expect(caseSearch).toHaveValue(/Chamara Silva · CASE-/);
+  await expect(modal.locator('input[name="caseId"]')).toHaveValue(/.+/);
+  await caseSearch.fill("no such client");
+  await expect(modal.getByText(/No cases match/)).toBeVisible();
+});
