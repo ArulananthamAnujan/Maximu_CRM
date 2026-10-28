@@ -225,16 +225,6 @@ body {
   box-shadow: 0 14px 27px rgba(22, 106, 151, .25);
 }
 .singleLoginButton:disabled { cursor: wait; opacity: .7; }
-.googleLoginButton {
-  min-height: 52px;
-  border-radius: 10px;
-  transition: border-color .18s ease, background .18s ease, transform .18s ease;
-}
-.googleLoginButton:hover {
-  transform: translateY(-1px);
-  border-color: #b9cfda;
-  background: #fbfdfe;
-}
 .unifiedLoginCard > footer {
   padding-top: 15px;
   color: #738693;

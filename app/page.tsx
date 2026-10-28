@@ -9,7 +9,7 @@ import {StaffFunctionAccess,FunctionAccessFields} from "./staff-function-access"
 import {FunctionAccessContext,useFunctionAccess} from "./function-access-context";
 import {canUse,stageFunction,type FunctionAccess} from "@/lib/function-access";
 import { MobileNavigation } from "./mobile-navigation";
-import { browserWorkspaceReturn, connectGoogleWorkspace, isNativeApp, openGoogleSignIn, reportMobileError, saveDownload } from "@/lib/mobile-platform";
+import { browserWorkspaceReturn, connectGoogleWorkspace, isNativeApp, reportMobileError, saveDownload } from "@/lib/mobile-platform";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { orgDate, orgDateTime } from "@/lib/timezone";
 import { ClientProfileEditor } from "./client-profile-editor";
@@ -1573,22 +1573,6 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
             {busy ? "Signing in…" : "Sign in"}
             <ArrowRight size={18} />
           </button>
-          {portal === "staff" ? (
-            <button
-              type="button"
-              className="googleLoginButton"
-              onClick={() => {
-                void openGoogleSignIn().catch(reason => setError(reason instanceof Error ? reason.message : "Google sign-in could not be opened."));
-              }}
-            >
-              <div className="googleG">G</div>
-              <span>
-                <b>Continue with Google</b>
-                <small>Use your Maximus Workspace account</small>
-              </span>
-              <ChevronDown size={17} />
-            </button>
-          ) : null}
           <footer>
             <LockKeyhole size={16} />
             Secure, role-based access to your Maximus workspace.

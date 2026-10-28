@@ -14,12 +14,6 @@ export function isNativeApp(): boolean {
   return typeof window !== "undefined" && Boolean(window.maximusNative);
 }
 
-export function openGoogleSignIn(): Promise<void> {
-  if (window.maximusNative) return window.maximusNative.signInWithGoogle();
-  window.location.assign("/api/auth/google/start");
-  return Promise.resolve();
-}
-
 export function connectGoogleWorkspace(): void {
   if (window.maximusNative) {
     void window.maximusNative.connectWorkspace().catch(reportMobileError);

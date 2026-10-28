@@ -43,14 +43,6 @@ export async function GET(request: Request) {
       { method: "GET" },
       session.accessToken,
     ).catch(() => []);
-    // The Google provider toggle lives in the Supabase dashboard, not in this
-    // deployment's own environment, so it is read back from Supabase's own
-    // public settings endpoint rather than assumed from anything set here.
-    const authSettings = await supabaseRequest<{ external?: { google?: boolean } }>(
-      "/auth/v1/settings",
-      { method: "GET" },
-    ).catch(() => null);
-    const googleSignInEnabled = authSettings?.external?.google === true;
     const gmailReady = gmailOAuthConfigured();
     const mailbox = await supabaseRequest<{ email: string; active: boolean; token_reference: string | null }[]>(
       `/rest/v1/mailbox_connections?select=email,active,token_reference&profile_id=eq.${session.identity.profileId}&provider=eq.gmail&limit=1`,
@@ -207,16 +199,6 @@ export async function GET(request: Request) {
           ? "Twilio SMS is configured for case drafts and reviewed campaigns."
           : "The CRM workflow is built. Connect a Twilio sender or Messaging Service before sending SMS.",
         setup: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID"],
-      },
-      {
-        key: "google_signin",
-        name: "Google sign-in",
-        purpose: "Staff sign in with their Maximus Google account.",
-        state: googleSignInEnabled ? "connected" : "not_configured",
-        detail: googleSignInEnabled
-          ? "The Google button on the sign-in page redirects through Supabase's Google provider, checked the same way an actual sign-in would."
-          : "The Google button on the sign-in page is wired up, but the Google provider is not yet switched on for this Supabase project (Authentication -> Providers -> Google).",
-        setup: [],
       },
       {
         key: "email",

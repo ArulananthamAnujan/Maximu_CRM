@@ -107,7 +107,7 @@ Integration and feature readiness (external services still require their own cre
 | Secure enquiry links | Built. Staff can create a hashed, expiring Study Abroad or Direct Visa intake link; submissions create the linked client, case, owner, follow-up and audit record. |
 | Campaigns | Built. Staff can create an explicit recipient list from cases they are permitted to access, review it, and send an audited email, SMS or WhatsApp campaign. |
 | Partner and university commission invoices | Built. Numbered invoices retain student membership, net commission, tax, total, partial payments, received/pending balances and numbered receipts. Invoices and receipts can be emailed through the configured Resend account. Legacy commission invoice/payment exports are resumable and idempotent. |
-| Google sign-in | Built. The Google button redirects through Supabase's own Google OAuth provider, which is switched on separately in the Supabase dashboard -- see "Google sign-in setup" below. |
+| Google sign-in | Removed. Everyone signs in with their email and password; staff then connect Gmail and Calendar from inside the CRM. |
 | AI assistant | Built. Drafts and summarises against one case at a time from that case's own facts, with nothing written until a person chooses to save it. Needs `ANTHROPIC_API_KEY`; until set, the assistant screen has nothing to call. |
 | Course Finder | Built: a searchable institution/course catalogue with country and level filters. The 61,000+ row legacy Maximus export is imported separately -- see "Importing the legacy Course Finder" below. |
 | Lead scoring, follow-up SLA automation, structured lost-lead reasons, campaign performance | Built. New enquiries receive a calculated or staff-set score, a follow-up SLA date, structured status/reason fields and reportable campaign delivery metrics. |
@@ -330,7 +330,7 @@ individual file, defaulting to 25.
 
 ## Safe Google rollout
 
-The Shared Drive, Gmail, Calendar and Google sign-in are all built. Each is
+The Shared Drive, Gmail and Calendar are all built. Each is
 independently optional: an unconfigured one reports **Not configured** on the
 Integrations screen and changes nothing elsewhere in the CRM, rather than
 failing partway through something a user started.
@@ -348,7 +348,7 @@ failing partway through something a user started.
    back, so a key that does not match the account, or an account that was
    never added to the drive, shows as broken there rather than at the moment
    somebody uploads a passport.
-6. For Gmail, Calendar and Google sign-in, follow "Google sign-in setup"
+6. For Gmail and Calendar, follow "Gmail and Calendar setup"
    below -- they use a separate, per-user OAuth client rather than the Drive
    service account.
 7. Test with dummy clients and documents before enabling real client data.
@@ -357,13 +357,13 @@ Never commit `.env.local`, OAuth secrets, service-account credentials or real
 student data. Production requires privacy, migration-agent workflow and
 security review before launch.
 
-## Google sign-in setup
+## Gmail and Calendar setup
 
-Gmail send, Calendar sync and the "Continue with Google" sign-in button share
+There is no Google button on the sign-in page: people sign in with their email
+and password, then connect Gmail and Calendar from inside the CRM. Those share
 one Google Cloud OAuth client (a person, not a service account), unlike the
-Shared Drive above. Gmail and Calendar work once `GOOGLE_OAUTH_CLIENT_ID` and
-`GOOGLE_OAUTH_CLIENT_SECRET` are set; sign-in needs one further step because
-Supabase performs that exchange itself.
+Shared Drive above, and work once `GOOGLE_OAUTH_CLIENT_ID` and
+`GOOGLE_OAUTH_CLIENT_SECRET` are set.
 
 1. In the Google Cloud project, **APIs & Services -> Credentials -> Create
    credentials -> OAuth client ID**, type **Web application**. Reuse the
@@ -375,10 +375,6 @@ Supabase performs that exchange itself.
 3. Under **Authorized redirect URIs**, add every one this deployment needs:
    - `https://your-app-domain/api/auth/gmail/callback`
    - `https://your-app-domain/api/auth/calendar/callback`
-   - `https://<your-project-ref>.supabase.co/auth/v1/callback` -- sign-in
-     only, and note this is Supabase's callback, not this app's; find the
-     exact URL in the Supabase dashboard's Google provider settings, it fills
-     it in for you.
    Add the equivalent `http://localhost:3000/...` pair for local dev if
    needed.
 4. Copy the client's ID and secret into `GOOGLE_OAUTH_CLIENT_ID` and
@@ -386,19 +382,5 @@ Supabase performs that exchange itself.
    in Netlify or Cloudflare). This alone turns on Gmail and Calendar
    connecting from the Integrations screen -- reload it and both should show
    **Not configured** turn into an active "Connect" button.
-5. For sign-in specifically: in the **Supabase dashboard**, go to
-   **Authentication -> Providers -> Google**, switch it on, and paste the
-   same client ID and secret from step 4. Save.
-6. In the same dashboard, **Authentication -> URL Configuration -> Redirect
-   URLs**, add `https://your-app-domain/auth/google-callback` (and the
-   `http://localhost:3000/auth/google-callback` equivalent for local dev).
-   Supabase refuses the redirect otherwise.
-7. Reopen **Integrations** in the CRM as a Super Admin or branch manager --
-   "Google sign-in" reads this setting back live from Supabase's own
-   `/auth/v1/settings` endpoint, so it will not show connected until step 5
-   is actually saved on Supabase's side, independent of anything in this
-   app's own environment variables.
-8. Test with a Google account that already has a matching, active Maximus CRM
-   profile before relying on it -- the button signs a person in, it does not
-   create or invite an account. An unrecognised Google account is told
-   plainly to ask an administrator to add them under Staff & Masters.
+5. Sign in to the CRM with your email and password, then use **Connect
+   Gmail** on the Messages screen and **Connect** on the Calendar screen.

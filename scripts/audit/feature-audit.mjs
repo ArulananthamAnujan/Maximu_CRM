@@ -1142,8 +1142,8 @@ expect("Gmail requires the current staff mailbox even when OAuth is configured",
   JSON.stringify(byKey.gmail));
 expect("Calendar sync reports connected once the OAuth client is configured",
   byKey.calendar?.state === "connected", JSON.stringify(byKey.calendar));
-expect("Google sign-in is read from Supabase's own settings, not assumed",
-  byKey.google_signin?.state === "connected", JSON.stringify(byKey.google_signin));
+expect("the sign-in page offers no Google sign-in, so integrations do not list it",
+  byKey.google_signin === undefined, JSON.stringify(byKey.google_signin));
 expect("client email notices report connected once Resend is configured",
   byKey.email?.state === "connected", JSON.stringify(byKey.email));
 const officerIntegrations = await call("/api/crm/integrations", { cookie: officer.cookie });
