@@ -11603,6 +11603,8 @@ function HomeWorkspace() {
         action_url?: string | null;
       }[]
     >([]);
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
+  const [workspaceLoadError, setWorkspaceLoadError] = useState("");
   const [cases, setCases] = useState<CaseRecord[]>([]),
     [enquiryPageRecords, setEnquiryPageRecords] = useState<CaseRecord[]>([]),
     [enquiryPage, setEnquiryPage] = useState(1),
@@ -11891,6 +11893,8 @@ function HomeWorkspace() {
         throw new Error(
           result.error || "Your workspace data could not be loaded.",
         );
+      setWorkspaceLoaded(true);
+      setWorkspaceLoadError("");
       setIdentity(result.identity);
       setCases((result.cases || []) as CaseRecord[]);
       setTasks(result.tasks || []);
@@ -11927,6 +11931,9 @@ function HomeWorkspace() {
     workspaceRefreshRef.current = request;
     try {
       await request;
+    } catch (error) {
+      setWorkspaceLoadError(error instanceof Error ? error.message : "Your workspace could not be loaded.");
+      throw error;
     } finally {
       if (workspaceRefreshRef.current === request) workspaceRefreshRef.current = null;
     }
@@ -12787,6 +12794,8 @@ function HomeWorkspace() {
     setIdentity(null);
     // The next person to sign in gets their own landing screen.
     landedAs.current = null;
+    setWorkspaceLoaded(false);
+    setWorkspaceLoadError("");
     setCases([]);
     setTasks([]);
     setAppointments([]);
@@ -12876,7 +12885,13 @@ function HomeWorkspace() {
   let content: React.ReactNode;
   if (role === "client")
     content =
-      active === "portal" ? (
+      !workspaceLoaded ? (
+        <article className="panel clientEmpty" role={workspaceLoadError ? "alert" : "status"}>
+          <h2>{workspaceLoadError ? "Your journey could not be loaded" : "Loading your journey…"}</h2>
+          <p>{workspaceLoadError || "We are loading your case, documents and account details."}</p>
+          {workspaceLoadError && <button className="ghostButton" onClick={() => { setWorkspaceLoadError(""); void refreshWorkspace().catch(() => {}); }}>Try again</button>}
+        </article>
+      ) : active === "portal" ? (
         <PortalView cases={cases} journeyHistory={journeyHistory} declarations={declarations} invoices={invoices} documents={documents} />
       ) : active === "courseFinder" ? (
         <CourseFinderView canManage={false} />
