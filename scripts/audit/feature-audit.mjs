@@ -2157,6 +2157,89 @@ expect("the case owner is told the client confirmed",
   (confirmationAlerts.json?.data ?? []).some((n) => /confirmed/i.test(n.title ?? "")),
   JSON.stringify((confirmationAlerts.json?.data ?? []).map((n) => n.title))?.slice(0, 240));
 
+// ---------------------------------------------------------------------------
+section("Report builder: filtered datasets for Excel");
+const today = new Date().toISOString().slice(0, 10);
+const builderAll = await call(`/api/crm/reports?export=true&from=2000-01-01&to=${today}`, { cookie: owner.cookie });
+expect("the report builder returns every dataset for an owner", builderAll.status === 200 &&
+  ["Enquiries & leads", "Pipeline", "Applications", "Visa matters", "Finance", "Staff performance", "Patterns"].every((name) => builderAll.json?.sheets?.some((sheet) => sheet.name === name)),
+  JSON.stringify(builderAll.json?.sheets?.map((sheet) => [sheet.name, sheet.rows.length]) ?? builderAll.json));
+const leadSheet = builderAll.json?.sheets?.find((sheet) => sheet.name === "Enquiries & leads");
+expect("each enquiry row names the client, office, source, stage, owner and conversion",
+  leadSheet?.rows?.length > 0 && leadSheet.rows.every((row) => "client" in row && "office" in row && "source" in row && "currentStage" in row && "assignedTo" in row && "converted" in row),
+  JSON.stringify(leadSheet?.rows?.[0]));
+expect("every column of a sheet is described for the workbook header",
+  builderAll.json?.sheets?.every((sheet) => Array.isArray(sheet.columns) && sheet.columns.every((column) => column.key && column.header)),
+  JSON.stringify(builderAll.json?.sheets?.[0]?.columns?.slice(0, 3)));
+const patternsSheet = builderAll.json?.sheets?.find((sheet) => sheet.name === "Patterns");
+expect("patterns group the same enquiries by month, source, office and staff with conversion rates",
+  ["Month", "Lead source", "Office", "Assigned to", "Current stage"].every((label) => patternsSheet?.rows?.some((row) => row.breakdown === label))
+    && patternsSheet.rows.every((row) => typeof row.conversionRate === "number"),
+  JSON.stringify(patternsSheet?.rows?.slice(0, 4)));
+const builderNarrow = await call(`/api/crm/reports?export=true&from=2099-01-01&to=2099-12-31&datasets=enquiries,patterns`, { cookie: owner.cookie });
+expect("a date range with no enquiries exports empty sheets, and only the sheets asked for",
+  builderNarrow.status === 200 && builderNarrow.json?.sheets?.length === 2 && builderNarrow.json.sheets.every((sheet) => sheet.rows.length === 0),
+  JSON.stringify(builderNarrow.json?.sheets?.map((sheet) => [sheet.name, sheet.rows.length])));
+const builderOffice = await call(`/api/crm/reports?export=true&branchId=b0000000-0000-4000-8000-000000000002&datasets=enquiries`, { cookie: owner.cookie });
+const officeFilter = builderOffice.json?.filtersApplied?.find(([label]) => label === "Office")?.[1];
+expect("an office filter is applied and named in the filters the workbook records",
+  builderOffice.status === 200 && typeof officeFilter === "string" && officeFilter.length > 0 && !/^[0-9a-f-]{36}$/.test(officeFilter)
+    && builderOffice.json.sheets[0].rows.length > 0 && builderOffice.json.sheets[0].rows.every((row) => row.office === officeFilter),
+  JSON.stringify({ filters: builderOffice.json?.filtersApplied, offices: builderOffice.json?.sheets?.[0]?.rows?.map((row) => row.office) }));
+const builderOfficer = await call(`/api/crm/reports?export=true`, { cookie: officer.cookie });
+expect("a case officer's export carries no finance sheet",
+  builderOfficer.status === 200 && !builderOfficer.json?.sheets?.some((sheet) => sheet.name === "Finance"),
+  JSON.stringify(builderOfficer.json?.sheets?.map((sheet) => sheet.name)));
+const builderStudent = await call(`/api/crm/reports?export=true`, { cookie: student.cookie });
+expect("a client cannot use the report builder", builderStudent.status === 403);
+const auditRows = await call("/api/crm/workspace", { cookie: owner.cookie });
+expect("the export is on the audit trail against the person who made it",
+  (auditRows.json?.audits ?? []).some((entry) => /Exported \d+ report rows/.test(String(entry.text))),
+  JSON.stringify((auditRows.json?.audits ?? []).slice(0, 3)));
+
+section("Enquiries export follows the register's filters");
+const enquiryExport = await call(`/api/crm/enquiries?offset=0&limit=5000&export=true&createdFrom=2000-01-01&createdTo=${today}`, { cookie: owner.cookie });
+expect("the whole filtered directory is returned for an Excel export, not one page",
+  enquiryExport.status === 200 && Array.isArray(enquiryExport.json?.records) && enquiryExport.json.records.length > 0,
+  JSON.stringify(enquiryExport.json)?.slice(0, 160));
+const enquiryExportFuture = await call(`/api/crm/enquiries?offset=0&limit=5000&export=true&createdFrom=2099-01-01`, { cookie: owner.cookie });
+expect("a created-from date in the future leaves nothing to export",
+  enquiryExportFuture.status === 200 && enquiryExportFuture.json?.records?.length === 0, JSON.stringify(enquiryExportFuture.json)?.slice(0, 160));
+
+section("View and edit are separate permissions");
+const officerId = "c0000000-0000-4000-8000-000000000003";
+const viewOnly = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie,
+  body: { action: "set_function_access", profileId: officerId, access: { "edit.enquiries": false, "edit.students": false, "edit.applications": false, "edit.visas": false, "edit.direct_visas": false, "edit.defer": false, "edit.case_complete": false, "edit.work": false } } });
+expect("Super Admin makes every case section and tasks view-only for a case officer", viewOnly.status === 200, JSON.stringify(viewOnly.json));
+const officerAgain = await login("officer@maximus.test");
+const viewOnlyRead = await call("/api/crm/enquiries", { cookie: officerAgain.cookie });
+expect("a view-only officer still reads the register", viewOnlyRead.status === 200 && (viewOnlyRead.json?.records?.length ?? 0) > 0, JSON.stringify(viewOnlyRead.json)?.slice(0, 160));
+const viewOnlyExport = await call("/api/crm/enquiries?offset=0&limit=5000&export=true", { cookie: officerAgain.cookie });
+expect("and still exports it", viewOnlyExport.status === 200, JSON.stringify(viewOnlyExport.json)?.slice(0, 120));
+const viewOnlyCreate = await call("/api/crm/workspace", { method: "POST", cookie: officerAgain.cookie,
+  body: { action: "case", name: "View Only Attempt", phone: "+61400000777", email: "view.only@example.com", workspace: "Study Abroad", matterType: "Student visa" } });
+expect("but cannot create an enquiry", viewOnlyCreate.status === 403 && /view-only/i.test(String(viewOnlyCreate.json?.error)), `${viewOnlyCreate.status} ${JSON.stringify(viewOnlyCreate.json)}`);
+const viewOnlyTask = await call("/api/crm/tasks", { method: "POST", cookie: officerAgain.cookie, body: { action: "create", values: { title: "Denied task" } } });
+expect("nor add a task", viewOnlyTask.status === 403, `${viewOnlyTask.status} ${JSON.stringify(viewOnlyTask.json)}`);
+const viewOnlyWorkspace = await call("/api/crm/workspace", { cookie: officerAgain.cookie });
+const viewOnlyCase = (viewOnlyWorkspace.json?.cases ?? []).find((c) => c.dbId && c.clientId);
+expect("the view-only officer still sees their cases", Boolean(viewOnlyCase), JSON.stringify(viewOnlyWorkspace.json?.cases?.length));
+const viewOnlyNote = await call("/api/crm/operations", { method: "POST", cookie: officerAgain.cookie,
+  body: { action: "case_note", caseId: viewOnlyCase?.dbId, body: "A note from a view-only account" } });
+expect("nor record a file note on a case", viewOnlyNote.status === 403, `${viewOnlyNote.status} ${JSON.stringify(viewOnlyNote.json)}`);
+const viewOnlyDocument = await call("/api/crm/workspace", { method: "POST", cookie: officerAgain.cookie,
+  body: { action: "document", clientId: viewOnlyCase?.clientId, caseId: viewOnlyCase?.dbId, title: "Still allowed", folder: "Identity" } });
+expect("documents, which stayed editable, still accept a request", viewOnlyDocument.status === 200, `${viewOnlyDocument.status} ${JSON.stringify(viewOnlyDocument.json)}`);
+const sessionAccess = await call("/api/auth/session", { cookie: officerAgain.cookie });
+expect("the session carries the edit keys so the interface can show View only",
+  sessionAccess.json?.identity?.functionAccess?.["edit.enquiries"] === false, JSON.stringify(sessionAccess.json?.identity?.functionAccess));
+const restoreAccess = await call("/api/crm/admin", { method: "POST", cookie: owner.cookie, body: { action: "set_function_access", profileId: officerId, access: null } });
+expect("access is restored", restoreAccess.status === 200, JSON.stringify(restoreAccess.json));
+const restoredOfficer = await login("officer@maximus.test");
+const restoredCreate = await call("/api/crm/workspace", { method: "POST", cookie: restoredOfficer.cookie,
+  body: { action: "case", name: "Restored Attempt", phone: "+61400000778", email: "restored@example.com", workspace: "Study Abroad", matterType: "Student visa" } });
+expect("and the officer can create enquiries again", restoredCreate.status === 200, `${restoredCreate.status} ${JSON.stringify(restoredCreate.json)}`);
+
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });
 expect("sign out succeeds", out.status === 200);

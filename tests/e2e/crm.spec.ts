@@ -256,6 +256,34 @@ test("reporting renders the figures an agency acts on", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("the report builder previews leads and patterns for a date range and offers Excel", async ({ page }) => {
+  await signIn(page, OWNER);
+  await navigateTo(page, "Reports");
+  const builder = page.locator(".reportBuilder");
+  await expect(builder.getByRole("heading", { name: /analyse and export by date range/i })).toBeVisible({ timeout: 25_000 });
+  await builder.getByLabel("Period").selectOption("all");
+  await builder.getByRole("button", { name: "Preview analysis", exact: true }).click();
+  await expect(builder.getByText(/where enquiries come from and what converts/i)).toBeVisible({ timeout: 25_000 });
+  await expect(builder.getByText(/enquiries in range/i)).toBeVisible();
+  await builder.getByLabel("Group by").selectOption("Office");
+  await expect(builder.locator("table").first().locator("tbody tr").first()).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 30_000 }),
+    builder.getByRole("button", { name: "Export to Excel", exact: true }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^maximus-report-.*\.xlsx$/);
+});
+
+test("the enquiries register exports the filtered list as Excel", async ({ page }) => {
+  await signIn(page, OWNER);
+  await openEnquiries(page);
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 30_000 }),
+    page.locator(".journeyList-enquiries").getByRole("button", { name: "Export to Excel", exact: true }).click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^enquiries-.*\.xlsx$/);
+});
+
 test("the portal shows a client their own view and no staff tools", async ({
   page,
 }) => {

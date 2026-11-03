@@ -460,6 +460,18 @@ button {
 .titleActions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+.viewOnlyBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fff4e5;
+  color: #7c4a03;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .signalGrid {
   display: grid;
@@ -11381,3 +11393,29 @@ body { font-size: 14px; }
 .accountSetupCard label { display: grid; gap: 8px; margin: 16px 0; font-size: 1rem; }
 .accountSetupCard input { min-width: 0; width: 100%; padding: 12px; border: 1px solid #ccd5e2; border-radius: 8px; font: inherit; }
 .accountSetupCard button { width: 100%; justify-content: center; }
+
+/* Report builder: the period, business filters and sheet choice above the
+   agency figures, with the on-screen pattern analysis beneath. */
+.reportBuilder .panelHead { align-items: flex-start; }
+.reportBuilderIntro { margin: 6px 0 0; max-width: 60ch; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.reportBuilderGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 4px; }
+.reportBuilderGrid label { display: grid; gap: 5px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #536875; }
+.reportBuilderGrid input, .reportBuilderGrid select { font: inherit; font-size: 14px; font-weight: 500; text-transform: none; letter-spacing: 0; min-height: 40px; padding: 8px 10px; border: 1px solid #cfd8de; border-radius: 8px; background: #fff; color: var(--ink, #102f40); }
+.datasetChips { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 14px 0 4px; }
+.datasetChips label { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border: 1px solid #d7e0e5; border-radius: 999px; background: #f7f9fb; font-size: 13px; font-weight: 600; color: #244a5e; cursor: pointer; }
+.datasetChips label:has(input:checked) { border-color: #176582; background: #e9f2f7; }
+.datasetChips input { margin: 0; accent-color: #176582; }
+.reportPreview { margin-top: 18px; padding-top: 16px; border-top: 1px solid #e3eaef; }
+.reportPreview .miniStats { margin-bottom: 14px; }
+.reportPreviewHead { margin-top: 14px; }
+.reportPreviewHead h3 { margin: 2px 0 0; font-size: 1rem; font-weight: 650; }
+.reportBreakdownPick { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: #536875; }
+.reportBreakdownPick select { font: inherit; min-height: 36px; padding: 6px 10px; border: 1px solid #cfd8de; border-radius: 8px; background: #fff; }
+.registerExport { margin-left: 10px; white-space: nowrap; }
+.enquiryDirectoryTools .registerExport { align-self: center; justify-self: start; width: auto; }
+@media (max-width: 760px) {
+  .reportBuilder .panelHead { flex-direction: column; }
+  .reportBuilder .titleActions { width: 100%; }
+  .reportBuilder .titleActions > * { flex: 1; justify-content: center; }
+  .registerExport { margin-left: 0; width: 100%; justify-content: center; }
+}

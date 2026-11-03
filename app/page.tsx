@@ -6,12 +6,13 @@ import Image from "next/image";
 import {TaskBoard} from "./task-board";
 import accessStyles from "./staff-function-access.module.css";
 import {StaffFunctionAccess,FunctionAccessFields} from "./staff-function-access";
-import {FunctionAccessContext,useFunctionAccess} from "./function-access-context";
-import {canUse,stageFunction,type FunctionAccess} from "@/lib/function-access";
+import {FunctionAccessContext,useFunctionAccess,useFunctionEdit} from "./function-access-context";
+import {canUse,canEdit,stageFunction,type FunctionAccess} from "@/lib/function-access";
 import { MobileNavigation } from "./mobile-navigation";
 import { browserWorkspaceReturn, connectGoogleWorkspace, isNativeApp, reportMobileError, saveDownload } from "@/lib/mobile-platform";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { orgDate, orgDateTime, orgGreeting } from "@/lib/timezone";
+import { buildWorkbook, columnsFromRows, workbookFileName, type SheetSpec } from "@/lib/workbook";
 import { ClientProfileEditor } from "./client-profile-editor";
 import { useOverlayFocus } from "./use-overlay-focus";
 import { AgreementsPanel } from "./agreements-panel";
@@ -1408,20 +1409,48 @@ function RowSelection({
   );
 }
 
+/**
+ * Every "Export" in the CRM produces an Excel workbook: the file managers
+ * open, filter and pivot without conversion. The export is recorded on the
+ * audit trail first, against the person, with what they took.
+ */
+async function downloadWorkbook(label: string, sheets: SheetSpec[], filters: [string, string][] = []) {
+  const count = sheets.reduce((total, sheet) => total + sheet.rows.length, 0);
+  const response = await fetch("/api/crm/operations", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"record_export",scope:label,count})});
+  if (!response.ok) { alert("Export is not enabled for your account."); return false; }
+  if (!count) { alert("There is nothing to export for this selection."); return false; }
+  let exportedBy = "";
+  try { exportedBy = String((await (await fetch("/api/auth/session", { cache: "no-store" })).json()).identity?.email ?? ""); } catch { /* the summary names nobody */ }
+  const blob = await buildWorkbook(sheets, { title: label, exportedBy, filters, generatedAt: new Date() });
+  saveDownload(blob, workbookFileName(label));
+  return true;
+}
+/** A single-sheet export of plain rows, used by every "Export selected" button. */
+const caseExportColumns: SheetSpec["columns"] = [
+  { key: "createdAt", header: "Enquiry date", type: "date" }, { key: "id", header: "Case number" }, { key: "name", header: "Client" },
+  { key: "email", header: "Email" }, { key: "phone", header: "Mobile" }, { key: "nationality", header: "Nationality" }, { key: "dob", header: "Date of birth", type: "date" },
+  { key: "branch", header: "Office" }, { key: "serviceType", header: "Service stream" }, { key: "matterType", header: "Matter type" }, { key: "target", header: "Course / visa target" },
+  { key: "destinationCountry", header: "Destination" }, { key: "intake", header: "Intake" }, { key: "source", header: "Lead source" }, { key: "campaign", header: "Campaign" },
+  { key: "enquiryStatus", header: "Lead status" }, { key: "detailedStatus", header: "Detailed status" }, { key: "leadScore", header: "Lead score", type: "number" },
+  { key: "stage", header: "Stage" }, { key: "health", header: "Health" }, { key: "priority", header: "Priority" }, { key: "owner", header: "Assigned to" },
+  { key: "nextFollowUpAt", header: "Next follow-up", type: "date" }, { key: "due", header: "Due", type: "date" }, { key: "visaExpiry", header: "Visa expiry", type: "date" },
+  { key: "applicationStatus", header: "Application status" }, { key: "visaCategory", header: "Visa category" }, { key: "documentSummary", header: "Documents" },
+  { key: "highestQualification", header: "Highest qualification" }, { key: "testGiven", header: "English test" }, { key: "spouseIncluded", header: "Spouse / dependant" },
+  { key: "latestNote", header: "Latest note" }, { key: "latestNoteAt", header: "Latest note at", type: "date" }, { key: "lostReason", header: "Lost reason" },
+  { key: "deferReason", header: "Deferral reason" }, { key: "completedAt", header: "Completed", type: "date" }, { key: "updatedAt", header: "Updated", type: "date" },
+];
+function caseExportRows(records: CaseRecord[]): Record<string, unknown>[] {
+  return records.map((record) => ({
+    ...record,
+    serviceType: record.serviceType === "direct_visa" ? "Direct Visa" : record.serviceType === "study_abroad" ? "Study Abroad" : record.serviceType,
+    stage: stageLabelFor(record.lifecycleStage, record.serviceType === "direct_visa"),
+    createdAt: record.createdAt?.slice(0, 10) ?? "",
+  }));
+}
+
 async function downloadCsv(filename: string, rows: Record<string, unknown>[]) {
-  const response = await fetch("/api/crm/operations", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"record_export",scope:filename,count:rows.length})});
-  if (!response.ok) { alert("Export is not enabled for your account."); return; }
-  if (!rows.length) return;
-  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
-  const cell = (value: unknown) => {
-    const text = value == null ? "" : Array.isArray(value) ? value.join(" | ") : String(value);
-    return `"${text.replaceAll('"', '""')}"`;
-  };
-  const csv = [
-    columns.map(cell).join(","),
-    ...rows.map((row) => columns.map((column) => cell(row[column])).join(",")),
-  ].join("\n");
-  saveDownload(new Blob([csv], { type: "text/csv;charset=utf-8" }), filename);
+  const label = filename.replace(/\.(csv|xlsx)$/i, "").replace(/[-_]+/g, " ");
+  await downloadWorkbook(label, [{ name: label.slice(0, 28), columns: columnsFromRows(rows), rows }]);
 }
 
 function downloadCalendarFile(filename: string, appointments: AppointmentRecord[]) {
@@ -2286,10 +2315,13 @@ function CaseWorkspace({
   onQuickAction,
   onOpenFull,
   onMoveStage,
+  onExport,
 }: {
   title: string;
   module: string;
   cases: CaseRecord[];
+  /** Exports every record matching the current filters, not only the visible page. */
+  onExport?: () => Promise<void> | void;
   scopeLabel?: string;
   query?: string;
   onQueryChange?: (query: string) => void;
@@ -2420,6 +2452,28 @@ function CaseWorkspace({
       assignedStaffFilter || statusFilter || sourceFilter || intakeFilter || qualificationFilter || testFilter || spouseFilter ||
       createdFrom || createdTo || updatedFrom || updatedTo,
   );
+  const allowedFunction = useFunctionAccess();
+  const canExport = allowedFunction("action_export");
+  // The filters as a person would read them, for the workbook's Summary sheet.
+  const activeFilterLabels = (): [string, string][] => {
+    const labels: [string, string][] = [];
+    if (query.trim()) labels.push(["Search", query.trim()]);
+    const named: [string, string][] = [
+      ["Office", filterBranches.find((b) => b.id === officeFilter)?.name ?? officeFilter], ["Destination", destinationFilter],
+      ["Service", serviceFilter === "study_abroad" ? "Study Abroad" : serviceFilter === "direct_visa" ? "Direct Visa" : serviceFilter],
+      ["Priority", priorityFilter], ["Documents", documentFilter], ["Follow-up", followUpFilter],
+      ["Assigned staff", filterStaff.find((p) => p.id === assignedStaffFilter)?.display_name ?? assignedStaffFilter],
+      ["Status", statusFilter], ["Source", sourceFilter], ["Intake", intakeFilter], ["Qualification", qualificationFilter],
+      ["English test", testFilter], ["Spouse / dependant", spouseFilter], ["Created from", createdFrom], ["Created to", createdTo],
+      ["Updated from", updatedFrom], ["Updated to", updatedTo],
+    ];
+    for (const [label, value] of named) if (value) labels.push([label, value]);
+    return labels;
+  };
+  const exportRegister = async () => {
+    if (onExport) { await onExport(); return; }
+    await downloadWorkbook(title, [{ name: title.slice(0, 28), columns: caseExportColumns, rows: caseExportRows(filteredCases) }], activeFilterLabels());
+  };
   const isServerDirectory = module === "enquiries" && serverPaged;
   const isUnfilteredDirectory = module === "enquiries" && !query.trim() && !hasDirectoryFilters;
   const recordCount = isServerDirectory && typeof totalRecords === "number"
@@ -2581,6 +2635,7 @@ function CaseWorkspace({
             {!loading && !error && filteredCases.length > 0 ? (
               <small>Showing {firstRecord.toLocaleString()}–{lastRecord.toLocaleString()}</small>
             ) : null}
+            {canExport ? <button type="button" className="ghostButton registerExport" onClick={() => void exportRegister()}><Download size={14} /> Export to Excel</button> : null}
           </div>
         </div>
       ) : null}
@@ -2691,6 +2746,7 @@ function CaseWorkspace({
               <span>Total records</span>
             )}
           </div>
+          {canExport ? <button type="button" className="ghostButton registerExport" onClick={() => void exportRegister()} title="Every enquiry matching the filters and dates above, as an Excel workbook"><Download size={15} /> Export to Excel</button> : null}
           <PersonalFilters key={module} module={module} label={title} query={query}
             values={{ branchId: officeFilter, destination: destinationFilter, service: serviceFilter, priority: priorityFilter,
               documents: documentFilter, followUp: followUpFilter, ownerId: assignedStaffFilter, status: statusFilter,
@@ -5832,12 +5888,165 @@ function CourseFinderDetails({ course, canManage }: { course: CourseFinderCourse
   </div>;
 }
 
+type ReportExportSheet = { name: string; columns: SheetSpec["columns"]; rows: Record<string, unknown>[]; notes?: string[] };
+type ReportExportResult = { sheets: ReportExportSheet[]; filtersApplied: [string, string][]; generatedAt: string };
+const REPORT_DATASETS: [string, string, string][] = [
+  ["enquiries", "Enquiries & leads", "One row per enquiry: who, where from, status, who owns it, whether it converted and how long that took."],
+  ["cases", "Pipeline", "Every case in range with its stage, health, owner and dates."],
+  ["applications", "Applications", "Institution applications with submission, offer and CoE dates."],
+  ["visas", "Visa matters", "Lodgements, decisions, outcomes and information requests."],
+  ["finance", "Finance", "Invoices with paid and outstanding amounts (management only)."],
+  ["staff", "Staff performance", "Enquiries, conversions, open and overdue work per person."],
+  ["patterns", "Patterns", "The same enquiries grouped by month, source, office, target, nationality, status and staff."],
+];
+function reportPreset(preset: string): { from: string; to: string } {
+  const today = new Date();
+  const iso = (date: Date) => date.toISOString().slice(0, 10);
+  const startOfMonth = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  if (preset === "this_month") return { from: iso(startOfMonth(today)), to: iso(today) };
+  if (preset === "last_month") {
+    const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+    const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0));
+    return { from: iso(start), to: iso(end) };
+  }
+  if (preset === "last_90") { const start = new Date(today); start.setUTCDate(start.getUTCDate() - 90); return { from: iso(start), to: iso(today) }; }
+  if (preset === "this_quarter") { const q = Math.floor(today.getUTCMonth() / 3) * 3; return { from: iso(new Date(Date.UTC(today.getUTCFullYear(), q, 1))), to: iso(today) }; }
+  if (preset === "financial_year") {
+    // The Australian financial year runs July to June.
+    const year = today.getUTCMonth() >= 6 ? today.getUTCFullYear() : today.getUTCFullYear() - 1;
+    return { from: `${year}-07-01`, to: iso(today) };
+  }
+  if (preset === "this_year") return { from: `${today.getUTCFullYear()}-01-01`, to: iso(today) };
+  return { from: "", to: "" };
+}
+function ReportBuilder({ serviceMode, canSeeFinance, offices, staff, sources, statuses, exportedBy }: {
+  serviceMode: ServiceMode; canSeeFinance: boolean; offices: { id: string; name: string }[]; staff: { id: string; name: string }[];
+  sources: string[]; statuses: string[]; exportedBy: string;
+}) {
+  const [preset, setPreset] = useState("last_90");
+  const [range, setRange] = useState(() => reportPreset("last_90"));
+  const [branchId, setBranchId] = useState("");
+  const [stream, setStream] = useState<"current" | "both">("current");
+  const [ownerId, setOwnerId] = useState("");
+  const [stage, setStage] = useState("");
+  const [source, setSource] = useState("");
+  const [status, setStatus] = useState("");
+  const [datasets, setDatasets] = useState<string[]>(REPORT_DATASETS.map(([key]) => key).filter((key) => key !== "finance" || canSeeFinance));
+  const [result, setResult] = useState<ReportExportResult | null>(null);
+  const [breakdown, setBreakdown] = useState("Lead source");
+  const [busy, setBusy] = useState<"" | "preview" | "export">("");
+  const [error, setError] = useState("");
+  const choosePreset = (value: string) => { setPreset(value); if (value !== "custom") setRange(reportPreset(value)); };
+  const params = () => {
+    const query = new URLSearchParams({ export: "true", datasets: datasets.join(",") });
+    if (range.from) query.set("from", range.from);
+    if (range.to) query.set("to", range.to);
+    if (branchId) query.set("branchId", branchId);
+    if (stream === "current") query.set("stream", serviceMode === "direct_visa" ? "direct_visa" : "study_abroad");
+    if (ownerId) query.set("ownerId", ownerId);
+    if (stage) query.set("stage", stage);
+    if (source) query.set("source", source);
+    if (status) query.set("status", status);
+    return query;
+  };
+  const load = async (): Promise<ReportExportResult | null> => {
+    const response = await fetch(`/api/crm/reports?${params()}`, { cache: "no-store" });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || "The report could not be built.");
+    return body as ReportExportResult;
+  };
+  const preview = async () => {
+    setBusy("preview"); setError("");
+    try { setResult(await load()); } catch (reason) { setError(reason instanceof Error ? reason.message : "The report could not be built."); } finally { setBusy(""); }
+  };
+  const exportExcel = async () => {
+    setBusy("export"); setError("");
+    try {
+      const built = await load();
+      if (!built) return;
+      setResult(built);
+      const blob = await buildWorkbook(built.sheets, { title: "Maximus CRM report", exportedBy, filters: built.filtersApplied, generatedAt: new Date() });
+      saveDownload(blob, workbookFileName(`maximus-report-${serviceMode === "direct_visa" ? "direct-visa" : "study-abroad"}`));
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "The report could not be exported."); } finally { setBusy(""); }
+  };
+  const patterns = (result?.sheets.find((sheet) => sheet.name === "Patterns")?.rows ?? []) as { breakdown: string; value: string; enquiries: number; converted: number; conversionRate: number; lost: number; averageScore: number; averageDaysToConvert: number | null }[];
+  const breakdowns = Array.from(new Set(patterns.map((row) => row.breakdown)));
+  const shown = patterns.filter((row) => row.breakdown === (breakdowns.includes(breakdown) ? breakdown : breakdowns[0]));
+  const staffRows = (result?.sheets.find((sheet) => sheet.name === "Staff performance")?.rows ?? []) as Record<string, unknown>[];
+  const leadsSheet = result?.sheets.find((sheet) => sheet.name === "Enquiries & leads");
+  const leadsTotal = leadsSheet?.rows.length ?? 0;
+  const leadsConverted = leadsSheet?.rows.filter((row) => row.converted === "Yes").length ?? 0;
+  return (
+    <article className="panel listPanel reportBuilder">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">REPORT BUILDER</span>
+          <h2>Analyse and export by date range</h2>
+          <p className="reportBuilderIntro">Pick the period and filters, preview the leads and patterns on screen, then export the matching records to Excel. Every sheet carries the filters you chose.</p>
+        </div>
+        <div className="titleActions">
+          <button className="ghostButton" disabled={busy !== ""} onClick={() => void preview()}><BarChart3 size={15} /> {busy === "preview" ? "Building…" : "Preview analysis"}</button>
+          <button className="primaryButton" disabled={busy !== "" || !datasets.length} onClick={() => void exportExcel()}><Download size={15} /> {busy === "export" ? "Preparing Excel…" : "Export to Excel"}</button>
+        </div>
+      </div>
+      <div className="reportBuilderGrid">
+        <label>Period<select value={preset} onChange={(event) => choosePreset(event.target.value)}>
+          <option value="this_month">This month</option><option value="last_month">Last month</option><option value="last_90">Last 90 days</option>
+          <option value="this_quarter">This quarter</option><option value="financial_year">This financial year (Jul–Jun)</option><option value="this_year">This calendar year</option>
+          <option value="all">All time</option><option value="custom">Custom dates</option></select></label>
+        <label>From<input type="date" value={range.from} max={range.to || undefined} onChange={(event) => { setPreset("custom"); setRange({ ...range, from: event.target.value }); }} /></label>
+        <label>To<input type="date" value={range.to} min={range.from || undefined} onChange={(event) => { setPreset("custom"); setRange({ ...range, to: event.target.value }); }} /></label>
+        <label>Office<select value={branchId} onChange={(event) => setBranchId(event.target.value)}><option value="">All offices</option>{offices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}</select></label>
+        <label>Service stream<select value={stream} onChange={(event) => setStream(event.target.value as "current" | "both")}><option value="current">{serviceMode === "direct_visa" ? "Direct Visa" : "Study Abroad"} (this workspace)</option><option value="both">Both streams</option></select></label>
+        <label>Assigned staff<select value={ownerId} onChange={(event) => setOwnerId(event.target.value)}><option value="">Everyone</option>{staff.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+        <label>Stage<select value={stage} onChange={(event) => setStage(event.target.value)}><option value="">Any stage</option><option value="enquiry">Enquiry</option><option value="student">{serviceMode === "direct_visa" ? "Client" : "Student"}</option><option value="application">Application</option><option value="visa">Visa</option><option value="deferred">Deferred</option><option value="completed">Completed</option></select></label>
+        <label>Lead source<input list="report-sources" value={source} onChange={(event) => setSource(event.target.value)} placeholder="Any source" /><datalist id="report-sources">{sources.map((value) => <option key={value} value={value} />)}</datalist></label>
+        <label>Lead status<input list="report-statuses" value={status} onChange={(event) => setStatus(event.target.value)} placeholder="Any status" /><datalist id="report-statuses">{statuses.map((value) => <option key={value} value={value} />)}</datalist></label>
+      </div>
+      <div className="datasetChips" role="group" aria-label="Sheets to export">
+        {REPORT_DATASETS.filter(([key]) => key !== "finance" || canSeeFinance).map(([key, label, detail]) => (
+          <label key={key} title={detail}><input type="checkbox" checked={datasets.includes(key)} onChange={(event) => setDatasets(event.target.checked ? [...datasets, key] : datasets.filter((d) => d !== key))} /> {label}</label>
+        ))}
+      </div>
+      {error ? <p className="formError" role="alert">{error}</p> : null}
+      {result ? (
+        <div className="reportPreview">
+          <div className="miniStats">
+            <article><span>Enquiries in range</span><strong>{leadsTotal}</strong><small>{result.filtersApplied.length ? result.filtersApplied.map(([label, value]) => `${label}: ${value}`).join(" · ") : "No filters"}</small></article>
+            <article><span>Converted</span><strong>{leadsTotal ? Math.round((leadsConverted / leadsTotal) * 1000) / 10 : 0}%</strong><small>{leadsConverted} moved past enquiry</small></article>
+            {result.sheets.filter((sheet) => !["Enquiries & leads", "Patterns"].includes(sheet.name)).map((sheet) => (
+              <article key={sheet.name}><span>{sheet.name}</span><strong>{sheet.rows.length}</strong><small>rows in the export</small></article>
+            ))}
+          </div>
+          {patterns.length ? (
+            <>
+              <div className="panelHead reportPreviewHead">
+                <div><span className="kicker">PATTERNS</span><h3>Where enquiries come from and what converts</h3></div>
+                <label className="reportBreakdownPick">Group by<select value={breakdowns.includes(breakdown) ? breakdown : breakdowns[0]} onChange={(event) => setBreakdown(event.target.value)}>{breakdowns.map((value) => <option key={value}>{value}</option>)}</select></label>
+              </div>
+              <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>{breakdowns.includes(breakdown) ? breakdown : breakdowns[0]}</th><th>Enquiries</th><th>Converted</th><th>Conversion</th><th>Lost</th><th>Avg lead score</th><th>Avg days to convert</th></tr></thead>
+                <tbody>{shown.map((row) => <tr key={row.value}><td>{row.value}</td><td>{row.enquiries}</td><td>{row.converted}</td><td>{row.conversionRate}%</td><td>{row.lost}</td><td>{row.averageScore}</td><td>{row.averageDaysToConvert ?? "—"}</td></tr>)}</tbody></table></div>
+            </>
+          ) : null}
+          {staffRows.length ? (
+            <>
+              <div className="panelHead reportPreviewHead"><div><span className="kicker">STAFF PERFORMANCE</span><h3>Who is carrying the work</h3></div></div>
+              <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Staff</th><th>Office</th><th>Enquiries</th><th>Converted</th><th>Conversion</th><th>Open cases</th><th>Open tasks</th><th>Overdue tasks</th><th>Notes</th></tr></thead>
+                <tbody>{staffRows.map((row) => <tr key={String(row.staff)}><td>{String(row.staff)}</td><td>{String(row.office)}</td><td>{String(row.enquiries)}</td><td>{String(row.converted)}</td><td>{String(row.conversionRate)}%</td><td>{String(row.openCases)}</td><td>{String(row.tasksOpen)}</td><td>{String(row.tasksOverdue)}</td><td>{String(row.notes)}</td></tr>)}</tbody></table></div>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 function ReportsView({
-  exportData,
+  exportedBy,
   canSeeFinance,
   serviceMode,
 }: {
-  exportData: () => void;
+  exportedBy: string;
   canSeeFinance: boolean;
   serviceMode: ServiceMode;
 }) {
@@ -5936,8 +6145,37 @@ function ReportsView({
   const money = (value: number) =>
     `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
+  const exportAttention = () => {
+    const rows = [
+      { item: "Requests for further information overdue", count: deadlines.informationOverdue, detail: "A s56 request left unanswered can end the application" },
+      { item: "Visas already expired", count: deadlines.visaExpiry.expired, detail: "Open cases whose recorded visa expiry has passed" },
+      { item: "Visas expiring within 30 days", count: deadlines.visaExpiry.in30, detail: "Lodge or arrange a bridging visa" },
+      { item: "Visas expiring in 31 to 60 days", count: deadlines.visaExpiry.in60, detail: "" },
+      { item: "Visas expiring in 61 to 90 days", count: deadlines.visaExpiry.in90, detail: "" },
+      { item: "Cases past their next action date", count: deadlines.casesPastDue, detail: "The follow-up date has gone by" },
+      { item: "Overdue tasks", count: deadlines.overdueTasks, detail: "Assigned work past its due date" },
+      { item: "Documents still outstanding", count: deadlines.documentsOutstanding, detail: "Requested from clients and not yet provided" },
+      { item: "Application deadlines within 30 days", count: deadlines.applicationDeadlines, detail: "Institution closing dates approaching" },
+    ];
+    void downloadWorkbook("What falls due next", [
+      { name: "Needs attention", columns: [{ key: "item", header: "Item" }, { key: "count", header: "Count", type: "number" }, { key: "detail", header: "Why it matters" }], rows },
+      { name: "Information requests", columns: [{ key: "caseNumber", header: "Case number" }, { key: "dueAt", header: "Due", type: "date" }, { key: "daysRemaining", header: "Days remaining", type: "number" }], rows: deadlines.informationRequests.map((entry) => ({ caseNumber: entry.caseNumber ?? entry.caseId, dueAt: entry.dueAt, daysRemaining: entry.daysRemaining })) },
+      { name: "Staff workload", columns: [{ key: "name", header: "Staff" }, { key: "branch", header: "Office" }, { key: "openCases", header: "Open cases", type: "number" }, { key: "needingAttention", header: "Needing attention", type: "number" }, { key: "openTasks", header: "Open tasks", type: "number" }, { key: "overdueTasks", header: "Overdue tasks", type: "number" }], rows: workload as unknown as Record<string, unknown>[] },
+      { name: "Offices", columns: [{ key: "name", header: "Office" }, { key: "cases", header: "Cases", type: "number" }, { key: "open", header: "Open", type: "number" }, { key: "completed", header: "Completed", type: "number" }], rows: branches as unknown as Record<string, unknown>[] },
+    ], [["Service stream", serviceMode === "direct_visa" ? "Direct Visa" : "Study Abroad"]]);
+  };
+
   return (
     <>
+      <ReportBuilder
+        serviceMode={serviceMode}
+        canSeeFinance={canSeeFinance}
+        offices={branches.map((row) => ({ id: row.branchId, name: row.name }))}
+        staff={workload.map((row) => ({ id: row.staffId, name: row.name }))}
+        sources={Object.keys(leads.bySource).filter((key) => key !== "unset")}
+        statuses={Object.keys(leads.byStatus).filter((key) => key !== "unset")}
+        exportedBy={exportedBy}
+      />
       <div className="miniStats">
         <article>
           <span>Open cases</span>
@@ -5973,9 +6211,9 @@ function ReportsView({
             <span className="kicker">NEEDS ATTENTION</span>
             <h2>What falls due next</h2>
           </div>
-          <button className="ghostButton" onClick={exportData}>
+          <button className="ghostButton" onClick={exportAttention}>
             <Download size={15} />
-            Export
+            Export to Excel
           </button>
         </div>
         <Attention
@@ -7915,7 +8153,7 @@ function CaseDrawerBody({
   remove,
   moveStage,
   refresh,
-  canModify,
+  canModify: canModifyCase,
   canArchive,
   canTransferBranch,
   branches,
@@ -7967,6 +8205,7 @@ function CaseDrawerBody({
     visaExpiry: String(current.visa_expiry_on || "").slice(0, 10),
   } : providedItem;
   const allowed = useFunctionAccess();
+  const editable = useFunctionEdit();
   const drawerRef = useRef<HTMLElement | null>(null);
   const copilot = useCopilot();
   const setCopilotContext = copilot.setContext;
@@ -8016,7 +8255,11 @@ function CaseDrawerBody({
   } | null>(null);
   const caseId = item.dbId;
   const stage = item.lifecycleStage;
-  const moves = allowedStageMoves(stage).filter(next=>allowed(stageFunction(next)));
+  // A view-only account can see where a case may go but cannot move it, and
+  // every control that changes the case follows the same rule.
+  const viewOnly = !editable(stageFunction(stage));
+  const canModify = canModifyCase && !viewOnly;
+  const moves = allowedStageMoves(stage).filter(next=>allowed(stageFunction(next)) && !viewOnly && editable(stageFunction(next)));
   const needsExpiry = !(item.visaExpiry || recordedExpiry);
   const direct = item.serviceType === "direct_visa";
   // A migration matter has no institution applications -- that tab describes
@@ -8400,9 +8643,10 @@ function CaseDrawerBody({
                 <p className="caseSectionDescription">{caseTabDescriptions[tab]}</p>
               </div>
               <div className="caseQuickActions">
-                <button className="ghostButton" onClick={() => edit({ ...item, email: String(client.email ?? item.email), phone: String(client.mobile ?? item.phone), dob: String(client.date_of_birth ?? item.dob ?? ""), nationality: String(client.nationality ?? item.nationality ?? "") })} disabled={caseLoading || !canModify || !allowed(stageFunction(stage))}>
+                {viewOnly && <span className="viewOnlyBadge" title="Your account can read this case but not change it">View only</span>}
+                {!viewOnly && <button className="ghostButton" onClick={() => edit({ ...item, email: String(client.email ?? item.email), phone: String(client.mobile ?? item.phone), dob: String(client.date_of_birth ?? item.dob ?? ""), nationality: String(client.nationality ?? item.nationality ?? "") })} disabled={caseLoading || !canModify || !allowed(stageFunction(stage))}>
                   <Pencil size={14} /> Edit case
-                </button>
+                </button>}
               </div>
             </header>
 
@@ -8540,7 +8784,7 @@ function CaseDrawerBody({
                   <h3>Notes & activity</h3>
                 </div>
               </div>
-              <form
+              {canModify && <form
                 className="caseQuickNote"
                 onSubmit={async (event) => {
                   event.preventDefault();
@@ -8564,7 +8808,7 @@ function CaseDrawerBody({
                 <button className="primaryButton" disabled={working || !newNote.trim()}>
                   Save note
                 </button>
-              </form>
+              </form>}
               {latestNote && (
                 <div className="caseLastNote">
                   <span>LAST NOTE</span>
@@ -8736,9 +8980,9 @@ function CaseDrawerBody({
                     <span className="kicker">ADMISSIONS</span>
                     <h3>Applications in progress</h3>
                   </div>
-                  <button className="primaryButton compactButton" onClick={() => setTab("applications")}>
+                  {canModify && <button className="primaryButton compactButton" onClick={() => setTab("applications")}>
                     <Plus size={13} /> Add application
-                  </button>
+                  </button>}
                 </div>
                 <div className="agentSummaryRows">
                   {overviewApplications.length ? overviewApplications.map((application) => (
@@ -12030,6 +12274,29 @@ function HomeWorkspace() {
     setEnquiryPage(1);
     setEnquiriesLoaded(false);
   }, []);
+  // Every enquiry matching the current filters and dates, not only the page
+  // on screen: the directory is server-paged, so the export asks the server
+  // for the whole result under the same filters.
+  const exportEnquiries = async () => {
+    const params = new URLSearchParams({ offset: "0", limit: "5000", export: "true" });
+    if (query.trim()) params.set("q", query.trim());
+    for (const [key, value] of Object.entries(enquiryFilters)) if (value) params.set(key, value);
+    try {
+      const response = await fetch(`/api/crm/enquiries?${params.toString()}`, { cache: "no-store", signal: AbortSignal.timeout(60_000) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "The enquiries could not be exported.");
+      const records = (body.records ?? []) as CaseRecord[];
+      const labels: Record<string, string> = { branchId: "Office", destination: "Destination", service: "Service", priority: "Priority", documents: "Documents", followUp: "Follow-up", ownerId: "Assigned staff", status: "Status", source: "Source", intake: "Intake", qualification: "Qualification", testGiven: "English test", spouse: "Spouse / dependant", createdFrom: "Created from", createdTo: "Created to", updatedFrom: "Updated from", updatedTo: "Updated to" };
+      const filters: [string, string][] = Object.entries(enquiryFilters).filter(([, value]) => value).map(([key, value]) => [labels[key] ?? key,
+        key === "branchId" ? branches.find((b) => b.id === value)?.name ?? value : key === "ownerId" ? staff.find((p) => p.id === value)?.display_name ?? value : value]);
+      if (query.trim()) filters.unshift(["Search", query.trim()]);
+      filters.push(["Service stream", serviceMode === "direct_visa" ? "Direct Visa" : "Study Abroad"]);
+      const done = await downloadWorkbook("Enquiries", [{ name: "Enquiries", columns: caseExportColumns, rows: caseExportRows(records) }], filters);
+      if (done) say(`Exported ${records.length} enquiries to Excel. The export is on the audit trail.`);
+    } catch (reason) {
+      say(reason instanceof Error ? reason.message : "The enquiries could not be exported.");
+    }
+  };
   const changeEnquiryQuery = useCallback((value: string) => {
     setQuery(value);
     setEnquiryPage(1);
@@ -12508,59 +12775,25 @@ function HomeWorkspace() {
       // the same visible branch boundary and remain fully auditable.
       const mine = cases;
       const ids = new Set(mine.map((c) => c.dbId || c.id));
-      const scope =
-        role === "staff"
-          ? "branch"
-          : role === "admin"
-            ? "branch"
-            : "organisation";
-      void fetch("/api/crm/operations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "record_export",
-          scope,
-          count: mine.length,
-        }),
-      }).catch(() => undefined);
-      const blob = new Blob(
-          [
-            JSON.stringify(
-              {
-                exportedBy: identity?.email ?? "",
-                scope,
-                cases: mine,
-                tasks: tasks.filter((t) => !t.caseId || ids.has(t.caseId)),
-                appointments,
-                documents,
-                messages: messages.filter(
-                  (m) => !m.caseId || ids.has(m.caseId),
-                ),
-                // Commission claims and partner invoices are management
-                // finance; a case officer's export carries neither.
-                invoices:
-                  role === "staff"
-                    ? invoices.filter((i) =>
-                        mine.some((c) => c.name === i.client),
-                      )
-                    : invoices,
-                templates,
-                workflows,
-                roles: role === "staff" ? [] : roles,
-                audits: role === "staff" ? [] : audits,
-              },
-              null,
-              2,
-            ),
-          ],
-          { type: "application/json" },
-        );
-      saveDownload(blob, "maximus-crm-export.json");
-      say(
-        role === "staff"
-          ? `Exported ${mine.length} branch cases. The export is on the audit trail.`
-          : "Live data exported. The export is on the audit trail.",
-      );
+      const all: SheetSpec[] = [
+        { name: "Cases", columns: caseExportColumns, rows: caseExportRows(mine) },
+        { name: "Tasks", columns: columnsFromRows(tasks as unknown as Record<string, unknown>[]), rows: tasks.filter((t) => !t.caseId || ids.has(t.caseId)) as unknown as Record<string, unknown>[] },
+        { name: "Appointments", columns: columnsFromRows(appointments as unknown as Record<string, unknown>[]), rows: appointments as unknown as Record<string, unknown>[] },
+        { name: "Documents", columns: columnsFromRows(documents as unknown as Record<string, unknown>[]), rows: documents as unknown as Record<string, unknown>[] },
+        { name: "Messages", columns: columnsFromRows(messages as unknown as Record<string, unknown>[]), rows: messages.filter((m) => !m.caseId || ids.has(m.caseId)) as unknown as Record<string, unknown>[] },
+        // Commission claims and partner invoices are management finance; a
+        // case officer's export carries neither.
+        { name: "Invoices", columns: columnsFromRows(invoices as unknown as Record<string, unknown>[]), rows: (role === "staff" ? invoices.filter((i) => mine.some((c) => c.name === i.client)) : invoices) as unknown as Record<string, unknown>[] },
+        { name: "Audit trail", columns: [{ key: "at", header: "When", type: "date" }, { key: "text", header: "Recorded action" }], rows: role === "staff" ? [] : (audits as unknown as Record<string, unknown>[]) },
+      ];
+      const chosen = active === "finance" ? all.filter((s) => s.name === "Invoices")
+        : active === "documents" ? all.filter((s) => s.name === "Documents")
+        : active === "compliance" ? all.filter((s) => s.name === "Audit trail")
+        : all;
+      const label = active === "finance" ? "Accounts" : active === "documents" ? "File manager" : active === "compliance" ? "Activity and compliance" : "Maximus CRM export";
+      void downloadWorkbook(label, chosen, [["Scope", role === "super_admin" ? "Organisation" : "Branch"]]).then((done) => {
+        if (done) say(role === "staff" ? `Exported ${mine.length} branch cases to Excel. The export is on the audit trail.` : "Live data exported to Excel. The export is on the audit trail.");
+      });
     };
   const moveCaseStage = async (
     record: CaseRecord,
@@ -13113,7 +13346,7 @@ function HomeWorkspace() {
   else if (active === "reports")
     content = (
       <ReportsView
-        exportData={exportData}
+        exportedBy={identity?.email ?? ""}
         canSeeFinance={canManageCaseFinance}
         serviceMode={serviceMode}
       />
@@ -13278,6 +13511,7 @@ function HomeWorkspace() {
         totalRecords={active === "enquiries" ? enquiriesTotal : undefined}
         error={active === "enquiries" ? enquiriesError : ""}
         onRetry={() => void loadEnquiryDirectory(true)}
+        onExport={active === "enquiries" ? exportEnquiries : undefined}
         openModal={open}
         onSelect={openCasePreview}
         onQuickAction={openCasePreview}
@@ -13637,10 +13871,11 @@ function HomeWorkspace() {
               </h1>
               <p>{active === "dashboard" ? "Here is the work that needs your attention today." : screenMeta[2]}</p>
             </div>
-            {role !== "client" && (["enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete", "reports", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) ? (
+            {role !== "client" && (["enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) ? (
               <div className="titleActions">
-                {(["reports", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) && <button className="ghostButton" onClick={exportData}><Download size={16} />Export</button>}
-                {(["enquiries", "students", "direct_visas", "defer", "case_complete"] as ModuleKey[]).includes(active) && <button className="primaryButton" onClick={() => open("case")}><Plus size={16} />{serviceMode === "study" ? "New enquiry" : "New client"}</button>}
+                {!canEdit(accessIdentity, active) && <span className="viewOnlyBadge" title="Your account can read this section but not change it. Ask your Super Admin for edit access.">View only</span>}
+                {(["compliance", "documents", "finance"] as ModuleKey[]).includes(active) && <button className="ghostButton" onClick={exportData}><Download size={16} />Export to Excel</button>}
+                {(["enquiries", "students", "direct_visas", "defer", "case_complete"] as ModuleKey[]).includes(active) && canEdit(accessIdentity, active) && <button className="primaryButton" onClick={() => open("case")}><Plus size={16} />{serviceMode === "study" ? "New enquiry" : "New client"}</button>}
               </div>
             ) : null}
           </div>

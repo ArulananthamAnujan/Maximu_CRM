@@ -23,6 +23,9 @@ A local-first, case-centric CRM foundation for education and migration agencies.
 - Course Finder: a searchable institution and course catalogue, importable from a legacy export
 - Editable email templates and automatic client notices for document/invoice requests and new portal logins
 - Client portal self-service: request access with a secure setup link, confirm a document or invoice request was received
+- Report builder: choose a period (month, quarter, financial year or any dates), office, service stream, staff, stage, lead source and status; preview leads, conversion and patterns on screen; export every matching enquiry, case, application, visa matter, invoice and staff figure to one Excel workbook
+- Every export is an Excel workbook: the enquiries register (all records under the current filters and dates), each register and selection, accounts, the file manager and the audit trail
+- View and Edit are separate permissions for each section a staff account can use, in each workspace; a view-only section can be read and exported but every write is refused in the database and at the API
 
 New Enquiry is deliberately short: who the client is, the matter, the branch and
 the staff member who will own it. Academic history, employment, English tests,

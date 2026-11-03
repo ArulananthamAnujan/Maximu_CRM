@@ -1,4 +1,10 @@
-import {canUse,canUseAny,caseFunctions,stageFunction,type AccessIdentity} from "@/lib/function-access";
+import {canUse,canUseAny,canEditAny,caseFunctions,stageFunction,type AccessIdentity} from "@/lib/function-access";
+// Routes and actions that write only the caller's own working state (a saved
+// view, a drafted email, a mailbox connection) rather than a client record, so
+// a view-only section still allows them.
+const ownStateRoutes=["saved-views","ai","copilot","search","health","reports","workspace-connection","calendar-connection","mailbox"];
+const readActions=["read_notification","record_export","reveal_passport","notify"];
+export class ViewOnlyError extends Error {}
 export async function deniedFunction(request:Request,identity:AccessIdentity):Promise<boolean> {
  if(identity.role==="super_admin"||identity.role==="client")return false;
  const url=new URL(request.url),path=url.pathname;
@@ -22,6 +28,7 @@ export async function deniedFunction(request:Request,identity:AccessIdentity):Pr
  if(channel && (!canUse(identity,`action_send_${channel}`) || (channel==="whatsapp" && !canUse(identity,"whatsapp"))))return true;
  const route=path.slice(9).split("/")[0],common=[...caseFunctions,"work","documents","finance","communications","calendar"];
  let required:string[]=[];
+ const writing=!["GET","HEAD"].includes(request.method) && !ownStateRoutes.includes(route) && !readActions.includes(action);
  if(["workspace","casefile","operations"].includes(route)) {
   if(request.method==="GET") {
    if(route==="workspace")return false;
@@ -43,5 +50,8 @@ export async function deniedFunction(request:Request,identity:AccessIdentity):Pr
  } else {
   const routes:Record<string,string[]>={admin:["administration"],tasks:["work"],ai:["ai"],copilot:["ai"],"calendar-connection":["calendar"],campaigns:["communications"],"course-finder":["courseFinder"],"document-checklist-templates":["templates","documents"],documents:["documents"],duplicates:["enquiries"],"email-templates":["templates"],enquiries:url.searchParams.has("caseId")?common:["enquiries"],health:["compliance"],import:["administration"],"intake-links":["enquiries"],intake:caseFunctions,integrations:["integrations"],mailbox:["communications"],reports:["reports"],"saved-views":common,search:common,sms:["communications"],whatsapp:["communications"],"workspace-connection":["communications","calendar"]};required=routes[route]??[];
  }
- return !canUseAny(identity,required);
+ if(!canUseAny(identity,required))return true;
+ // Viewing a section is not the same as changing its records.
+ if(writing && required.length && !canEditAny(identity,required))throw new ViewOnlyError("This section is view-only for your account. Ask your Super Admin for edit access.");
+ return false;
 }

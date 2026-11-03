@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
-import { accessGroups, actionPermissions, modulePermissions, permissionKeys, canUse, roleForLevel, type FunctionAccess, type PermissionKey, type ServiceMode } from "@/lib/function-access";
+import { accessGroups, actionPermissions, modulePermissions, permissionKeys, canUse, canEdit, isEditable, roleForLevel, type FunctionAccess, type PermissionKey, type ServiceMode } from "@/lib/function-access";
 import {staffTimezones,type StaffDetails} from "@/lib/staff-details";
 import { useOverlayFocus } from "./use-overlay-focus";
 import styles from "./staff-function-access.module.css";
@@ -31,13 +31,33 @@ export function FunctionAccessFields({ level, value, onChange, disabled = false 
         disabled={disabled || locked || !eligible} onChange={event => set(key, event.target.checked)} />
     </label>;
   };
+  // One row per section: a View switch, and an Edit switch where the section
+  // has records to change. Edit needs View, so it follows View off.
+  const section = (mode: ServiceMode, key: PermissionKey, label: string, locked: boolean) => {
+    const viewKey = `${mode}.${key}` as PermissionKey;
+    const eligible = canUse({ role }, key);
+    const viewing = canUse(identity, viewKey);
+    const editable = isEditable(key);
+    const editKey = `${mode}.edit.${key}` as PermissionKey;
+    return <div className={`${styles.toggle} ${styles.sectionRow}`} key={key}>
+      <span>{label}{!eligible && <small>{key.endsWith("integrations") ? "Super Admin only" : "Admin accounts only"}</small>}{eligible && !editable && <small>View only by nature</small>}</span>
+      <span className={styles.switches}>
+        <label><input type="checkbox" role="switch" aria-label={label} checked={viewing}
+          disabled={disabled || locked || !eligible} onChange={event => set(viewKey, event.target.checked)} /><small>View</small></label>
+        {editable && <label><input type="checkbox" role="switch" aria-label={`Edit ${label}`} checked={viewing && canEdit(identity, key, mode)}
+          disabled={disabled || locked || !eligible || !viewing} onChange={event => set(editKey, event.target.checked)} /><small>Edit</small></label>}
+      </span>
+    </div>;
+  };
   const group = (mode: ServiceMode, title: string, master: "study_access" | "direct_visa_access") => {
     const entries = modulePermissions.filter(([key]) => mode === "study" ? key !== "direct_visas" : !["students", "applications", "view_applications", "all_applications", "courseFinder"].includes(key));
     const enabled = entries.filter(([key]) => canUse(identity, key, mode)).length;
+    const editing = entries.filter(([key]) => isEditable(key) && canUse(identity, key, mode) && canEdit(identity, key, mode)).length;
+    const locked = !canUse(identity, master);
     return <fieldset className={styles.group} aria-label={title}>
-      <legend>{title}<span>{enabled} enabled</span></legend>
-      <p>Choose the sections this account can use in {mode === "study" ? "Study Abroad" : "Direct Visa"}.</p>
-      <div className={styles.grid}>{entries.map(([key, label]) => toggle(`${mode}.${key}`, label, !canUse(identity, master)))}</div>
+      <legend>{title}<span>{enabled} visible · {editing} editable</span></legend>
+      <p>Choose the sections this account can open in {mode === "study" ? "Study Abroad" : "Direct Visa"}, and which of them it may change. View lets a person read and export; Edit lets them add, update and move records.</p>
+      <div className={styles.grid}>{entries.map(([key, label]) => section(mode, key, label, locked))}</div>
     </fieldset>;
   };
   return <div className={styles.permissions}>

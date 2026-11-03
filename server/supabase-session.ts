@@ -1,4 +1,4 @@
-import { deniedFunction } from "@/server/function-access";
+import { deniedFunction, ViewOnlyError } from "@/server/function-access";
 import type { FunctionAccess } from "@/lib/function-access";
 import {
   ACCESS_COOKIE,
@@ -92,7 +92,12 @@ export async function liveSession(
       "This Maximus CRM account has been deactivated. Ask an administrator to reactivate it.",
     );
   const identity = mapIdentity(profile);
-  if (await deniedFunction(request, identity)) throw new LiveAccessError(403, "You do not have access to this function. Ask your Super Admin to enable it.");
+  try {
+    if (await deniedFunction(request, identity)) throw new LiveAccessError(403, "You do not have access to this function. Ask your Super Admin to enable it.");
+  } catch (error) {
+    if (error instanceof ViewOnlyError) throw new LiveAccessError(403, error.message);
+    throw error;
+  }
   return { accessToken, identity, refreshed };
 }
 

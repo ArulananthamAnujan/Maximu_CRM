@@ -4,6 +4,7 @@ import {
   liveSession,
 } from "@/server/supabase-session";
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
+import { buildReportExport, parseExportFilters } from "@/server/report-export";
 
 export const dynamic = "force-dynamic";
 type Row = Record<string, unknown>;
@@ -23,11 +24,28 @@ export async function GET(request: Request) {
     if (session.identity.role === "client")
       throw new LiveAccessError(403, "Reporting is available to staff only.");
     const token = session.accessToken;
+    const params = new URL(request.url).searchParams;
+    if (params.get("export") === "true") {
+      // The report builder: filtered datasets for an Excel workbook. Exporting
+      // client records is a disclosure, so it is written to the audit trail
+      // against the person before the data leaves.
+      const filters = parseExportFilters(params);
+      const built = await buildReportExport(token, filters, { includeFinance: session.identity.role !== "staff" });
+      const count = built.sheets.reduce((total, sheet) => total + sheet.rows.length, 0);
+      await supabaseRequest("/rest/v1/audit_events", {
+        method: "POST", headers: { Prefer: "return=minimal" },
+        body: JSON.stringify({ organisation_id: session.identity.organisationId, actor_id: session.identity.profileId, action: "records.exported", resource_type: "export", resource_id: "report-builder", summary: `Exported ${count} report rows (${built.sheets.map((sheet) => sheet.name).join(", ")})`, after_data: { scope: "report-builder", count, filters: built.filtersApplied } }),
+      }, token);
+      return appendRefreshCookies(
+        Response.json({ ok: true, ...built, generatedAt: new Date().toISOString() }, { headers: { "Cache-Control": "no-store" } }),
+        session.refreshed, request,
+      );
+    }
     // The report is opened from one workspace toggle or the other, and each
     // must show only its own cases -- a case at the same pipeline stage in
     // the other stream is not this report's business, whatever it shares a
     // stage with.
-    const streamParam = new URL(request.url).searchParams.get("stream");
+    const streamParam = params.get("stream");
     const stream =
       streamParam === "study_abroad" || streamParam === "direct_visa"
         ? streamParam

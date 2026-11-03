@@ -24,10 +24,21 @@ export const accessGroups = [
   ["study_access", "Study Abroad permission"], ["direct_visa_access", "Direct Visa permission"],
   ["special_access", "Special permission"],
 ] as const;
+// Sections where "view" and "edit" are separate permissions. The rest are
+// read-only by nature (a dashboard, a report, an audit trail) or already an
+// action of their own.
+export const editableFunctions = [
+  "enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete",
+  "finance", "documents", "templates", "administration", "work", "calendar", "communications",
+  "workflows", "courseFinder",
+] as const;
 export type ServiceMode = "study" | "direct_visa";
 export type FunctionKey = typeof functions[number][0];
+export type EditableKey = typeof editableFunctions[number];
 export type ModulePermission = FunctionKey | typeof detailFunctions[number][0];
+export type EditKey = `edit.${EditableKey}`;
 export type PermissionKey = ModulePermission | `${ServiceMode}.${ModulePermission}`
+  | EditKey | `${ServiceMode}.${EditKey}`
   | typeof actionPermissions[number][0] | typeof accessGroups[number][0];
 export type FunctionAccess = Partial<Record<PermissionKey, boolean>>;
 export type AccessIdentity = { role: string; functionAccess?: FunctionAccess | null; serviceMode?: ServiceMode };
@@ -36,13 +47,17 @@ export const modulePermissions = [...functions, ...detailFunctions];
 export const permissionKeys: PermissionKey[] = [
   ...modulePermissions.map(([key]) => key), ...actionPermissions.map(([key]) => key), ...accessGroups.map(([key]) => key),
   ...(["study", "direct_visa"] as const).flatMap(mode => modulePermissions.map(([key]) => `${mode}.${key}` as PermissionKey)),
+  ...editableFunctions.map(key => `edit.${key}` as PermissionKey),
+  ...(["study", "direct_visa"] as const).flatMap(mode => editableFunctions.map(key => `${mode}.edit.${key}` as PermissionKey)),
 ];
+export const isEditable = (key: string): key is EditableKey => (editableFunctions as readonly string[]).includes(key);
 const dependencies: Partial<Record<ModulePermission, ModulePermission>> = {
   view_applications: "applications", all_applications: "view_applications", partner_access: "administration",
   student_documents: "documents", whatsapp: "communications",
 };
 export function canUse(identity: AccessIdentity | null | undefined, key: string, mode = identity?.serviceMode): boolean {
   if (!identity) return false;
+  if (key.startsWith("edit.")) return canEdit(identity, key.slice(5), mode);
   if (key === "action_transfer_branch") return identity.role === "super_admin" ||
     (["admin", "staff"].includes(identity.role) && identity.functionAccess?.special_access !== false && identity.functionAccess?.action_transfer_branch === true);
   if (identity.role === "super_admin" || identity.role === "client") return true;
@@ -64,6 +79,26 @@ export function canUse(identity: AccessIdentity | null | undefined, key: string,
   return !dependency || canUse(identity, dependency, mode);
 }
 export const canUseAny = (identity: AccessIdentity, keys: readonly string[]) => keys.some(key => canUse(identity, key));
+/**
+ * Whether this account may change records in a section, not only read them.
+ * Viewing is a precondition: nobody edits what they cannot see. A section
+ * without a separate edit permission is editable whenever it is visible.
+ */
+export function canEdit(identity: AccessIdentity | null | undefined, key: string, mode = identity?.serviceMode): boolean {
+  if (!identity) return false;
+  if (identity.role === "super_admin" || identity.role === "client") return true;
+  const scoped = /^(study|direct_visa)\.(.+)$/.exec(key);
+  if (scoped) return canEdit(identity, scoped[2], scoped[1] as ServiceMode);
+  if (!canUse(identity, key, mode)) return false;
+  const base = (dependencies[key as ModulePermission] ?? key) as string;
+  const target = (dependencies[base as ModulePermission] ?? base) as string;
+  if (!isEditable(target)) return true;
+  const access = identity.functionAccess;
+  if (access?.[`edit.${target}`] === false) return false;
+  if (!mode) return canEdit(identity, target, "study") || canEdit(identity, target, "direct_visa");
+  return access?.[`${mode}.edit.${target}`] !== false;
+}
+export const canEditAny = (identity: AccessIdentity, keys: readonly string[]) => keys.some(key => canEdit(identity, key));
 export function stageFunction(stage: unknown): FunctionKey {
   return ({ enquiry: "enquiries", student: "students", application: "applications", visa: "visas", deferred: "defer", completed: "case_complete" } as Record<string, FunctionKey>)[String(stage)] ?? "enquiries";
 }

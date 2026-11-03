@@ -108,6 +108,7 @@ probe 11_probe_branch_work.sql
 probe 12_probe_branch_transfer.sql
 probe 14_probe_delegated_transfer.sql
 probe 15_probe_course_masters.sql
+probe 16_probe_view_only.sql
 pg_run "${work}/sql/13_probe_staff_removal.sql"
 
 echo "== Duplicate clients are found before a second record is made =="
