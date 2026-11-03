@@ -351,8 +351,10 @@ const server = http.createServer((req, res) => {
         const args = JSON.parse(raw || "{}");
         const argList = Object.entries(args)
           .map(([k, v]) => `${ident(k)} => ${toSql(v)}`).join(", ");
+        // The service-role key runs a function as service_role in Supabase,
+        // outside row-level security, the same as it does on every table path.
         const out = await sql(
-          `select coalesce(json_agg(t)::text,'[]') from (select * from public.${ident(fn)}(${argList}) ) t`, uid);
+          `select coalesce(json_agg(t)::text,'[]') from (select * from public.${ident(fn)}(${argList}) ) t`, uid, !isServiceRole);
         const rows = JSON.parse(out || "[]");
         // PostgREST returns a bare value for a function returning a scalar.
         if (rows.length === 1 && Object.keys(rows[0]).length === 1 && Object.keys(rows[0])[0] === fn)

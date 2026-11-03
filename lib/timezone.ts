@@ -56,3 +56,13 @@ export function orgDateTime(value: unknown): string {
     timeStyle: "short",
   }).format(parsed);
 }
+
+/** "Good morning", "Good afternoon" or "Good evening" by the organisation's clock. */
+export function orgGreeting(now: Date = new Date()): string {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: ORG_TIMEZONE, hour: "2-digit", hour12: false }).format(now),
+  );
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}

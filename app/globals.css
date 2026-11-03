@@ -2993,8 +2993,14 @@ body {
   .pageTitle h1 {
     font-size: 23px;
   }
+  /* The register's primary action (New enquiry / New client) stays reachable
+     on a phone: full width under the title rather than hidden outright. */
   .titleActions {
-    display: none;
+    width: 100%;
+  }
+  .titleActions .primaryButton {
+    width: 100%;
+    justify-content: center;
   }
   .topActions .iconButton {
     display: none;
@@ -4991,10 +4997,15 @@ body {
   top: 0;
   z-index: 3;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* The label, then one equal card per stream, on a single row. */
+  grid-template-columns: auto 1fr 1fr;
   gap: 8px;
   padding: 12px 0;
   background: white;
+}
+@media (max-width: 640px) {
+  .intakeMode { grid-template-columns: 1fr 1fr; }
+  .intakeMode .intakeModeLabel { grid-column: 1 / -1; }
 }
 .intakeMode label {
   display: flex;
@@ -5005,8 +5016,10 @@ body {
   border-radius: 11px;
   padding: 12px;
   color: #315b7c;
-  font-size: 9px;
-  font-weight: 850;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
   cursor: pointer;
 }
 .intakeMode label:has(input:checked) {
@@ -8525,6 +8538,10 @@ body {
 .integrationState.not_configured {
   background: #fff4e5;
   color: #7c4a03;
+}
+.integrationState.attention {
+  background: #fdecec;
+  color: #9f1d1d;
 }
 .integrationState.not_built {
   background: color-mix(in srgb, var(--line) 45%, #fff);

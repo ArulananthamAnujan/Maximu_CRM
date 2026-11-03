@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   title: "Maximus CRM | Education & Migration Operations",
   description: "Case-centred education and migration operations for the Maximus team and its clients.",
   other: { "codex-preview": "development" },
+  icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

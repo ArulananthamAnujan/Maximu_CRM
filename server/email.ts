@@ -39,6 +39,11 @@ function fromAddress(): string {
   );
 }
 
+/** The resolved sender settings, for callers that deliver through another path. */
+export function emailSettings(): { apiKey: string; apiBase: string; from: string; configured: boolean } {
+  return { apiKey: apiKey(), apiBase: apiBase(), from: fromAddress(), configured: emailConfigured() };
+}
+
 export function emailConfigured(): boolean {
   // An API key alone is not enough to actually deliver anything: Resend
   // requires a verified sending address, and the fallback above is a

@@ -11,7 +11,7 @@ import {canUse,stageFunction,type FunctionAccess} from "@/lib/function-access";
 import { MobileNavigation } from "./mobile-navigation";
 import { browserWorkspaceReturn, connectGoogleWorkspace, isNativeApp, reportMobileError, saveDownload } from "@/lib/mobile-platform";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { orgDate, orgDateTime } from "@/lib/timezone";
+import { orgDate, orgDateTime, orgGreeting } from "@/lib/timezone";
 import { ClientProfileEditor } from "./client-profile-editor";
 import { useOverlayFocus } from "./use-overlay-focus";
 import { AgreementsPanel } from "./agreements-panel";
@@ -6265,13 +6265,14 @@ type IntegrationStatus = {
   key: string;
   name: string;
   purpose: string;
-  state: "connected" | "not_configured" | "not_built";
+  state: "connected" | "attention" | "not_configured" | "not_built";
   detail: string;
   setup: string[];
 };
 
 const integrationLabels: Record<IntegrationStatus["state"], string> = {
   connected: "Connected",
+  attention: "Needs attention",
   not_configured: "Not configured",
   not_built: "Not built",
 };
@@ -12065,12 +12066,26 @@ function HomeWorkspace() {
       }
       if (event.key === "Escape" && !event.defaultPrevented && !selected && !menuOpen && !modal) {
         setGlobalSearchOpen(false);
+        setQuickOpen(false);
+        setNotifications(false);
         searchRef.current?.blur();
       }
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [active, query, selected, menuOpen, modal]);
+  // A header popover (quick create, notifications) closes when the pointer
+  // goes anywhere else, the way the global search already does.
+  useEffect(() => {
+    if (!quickOpen && !notifications) return;
+    const closePopovers = (event: PointerEvent) => {
+      if ((event.target as Element | null)?.closest?.(".popoverWrap")) return;
+      setQuickOpen(false);
+      setNotifications(false);
+    };
+    window.addEventListener("pointerdown", closePopovers);
+    return () => window.removeEventListener("pointerdown", closePopovers);
+  }, [quickOpen, notifications]);
   useEffect(() => {
     const closeSearch = (event: PointerEvent) => {
       if (!searchWrapRef.current?.contains(event.target as Node)) setGlobalSearchOpen(false);
@@ -12206,7 +12221,7 @@ function HomeWorkspace() {
     }
     setActive(result.stage === "enquiry" ? "enquiries" : "students");
     setQuery(result.title);
-  }, [cases, enquiryPageRecords, openCasePreview, setActive]);
+  }, [cases, openCasePreview, setActive]);
   useEffect(() => {
     if (!signedIn || role === "client") { resetCopilot(); return; }
     if (new URL(window.location.href).searchParams.get("copilot") === "1") openCopilot();
@@ -13617,7 +13632,7 @@ function HomeWorkspace() {
               </span>
               <h1>
                 {active === "dashboard"
-                  ? `Good afternoon, ${(identity?.displayName || roleConfig[role].label).split(" ")[0]}`
+                  ? `${orgGreeting()}, ${(identity?.displayName || roleConfig[role].label).split(" ")[0]}`
                   : screenMeta[0]}
               </h1>
               <p>{active === "dashboard" ? "Here is the work that needs your attention today." : screenMeta[2]}</p>

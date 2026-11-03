@@ -1,5 +1,7 @@
 import { appendRefreshCookies, liveSession, LiveAccessError } from "@/server/supabase-session";
 import { supabaseRequest, SupabaseError } from "@/server/supabase";
+import { drainClientNotices } from "@/server/client-notices";
+import { publicOrigin } from "@/server/public-origin";
 export const dynamic = "force-dynamic";
 const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
 function fail(error: unknown) {
@@ -25,6 +27,7 @@ export async function POST(request: Request) {
     if (b.action === "retry_notice") {
       if (s.identity.role === "client" || !uuid(b.id)) throw new LiveAccessError(403, "Staff access is required.");
       await supabaseRequest("/rest/v1/rpc/retry_client_notice", { method: "POST", body: JSON.stringify({p_id:b.id}) }, s.accessToken);
+      await drainClientNotices(publicOrigin(request));
       return appendRefreshCookies(Response.json({ok:true}),s.refreshed,request);
     }
     if (!["create","send","view","accept","decline","withdraw"].includes(b.action)) throw new Error("Unknown agreement action.");
@@ -34,6 +37,9 @@ export async function POST(request: Request) {
       p_terms:typeof b.terms==='string'?b.terms:null,p_version:typeof b.version==='string'?b.version:null,
       p_name:typeof b.name==='string'?b.name:null,p_consent:b.consent===true,p_hash:typeof b.hash==='string'?b.hash:null,p_note:typeof b.note==='string'?b.note:null,
     }) }, s.accessToken);
+    // Sending, accepting or declining queued a client notice; deliver it now
+    // rather than on the next scheduled attempt.
+    if (["send","accept","decline"].includes(b.action)) await drainClientNotices(publicOrigin(request));
     return appendRefreshCookies(Response.json({ok:true,agreement}),s.refreshed,request);
   } catch(e) { return fail(e); }
 }

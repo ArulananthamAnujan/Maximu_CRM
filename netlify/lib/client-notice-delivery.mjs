@@ -1,8 +1,17 @@
-export async function deliverClientNotices({env, fetchImpl=fetch}) {
+// Delivers queued client notices (document requests and agreement events)
+// from public.client_notice_outbox. Used two ways: the scheduled Netlify
+// function drains the outbox every minute as the retry path, and the CRM
+// itself calls this straight after queuing a notice so a client hears about
+// a request within seconds rather than on the next tick. Both paths claim a
+// row with a lock token, so a notice is never sent twice.
+const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+export async function deliverClientNotices({env, fetchImpl=fetch, origin: originOverride}) {
   const base=(env('SUPABASE_URL')||'').replace(/\/$/,'');
   const key=env('SUPABASE_SERVICE_ROLE_KEY'), apiKey=env('RESEND_API_KEY'), from=env('RESEND_FROM_EMAIL');
-  const origin=(env('PRODUCTION_URL')||env('URL')||'').replace(/\/$/,'');
-  if(!base||!key||!apiKey||!from||from.includes('example.invalid')||!/^https:\/\/[^/]+$/.test(origin)) return {configured:false,claimed:0,sent:0};
+  const providerBase=(env('RESEND_API_BASE')||'https://api.resend.com').replace(/\/$/,'');
+  const origin=(originOverride||env('PRODUCTION_URL')||env('URL')||'').replace(/\/$/,'');
+  const originOk=/^https:\/\/[^/]+$/.test(origin)||LOCAL_ORIGIN.test(origin);
+  if(!base||!key||!apiKey||!from||from.includes('example.invalid')||!originOk) return {configured:false,claimed:0,sent:0};
   async function rpc(name,body) {
     const r=await fetchImpl(`${base}/rest/v1/rpc/${name}`,{method:'POST',signal:AbortSignal.timeout(2000),headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!r.ok) throw new Error(`Client notice ${name} failed (${r.status}).`);
@@ -12,7 +21,7 @@ export async function deliverClientNotices({env, fetchImpl=fetch}) {
   for(const row of rows){
     let status='queued', providerId=null, error=null;
     try {
-      const r=await fetchImpl('https://api.resend.com/emails',{method:'POST',signal:AbortSignal.timeout(2000),headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json','Idempotency-Key':`client-notice/${row.id}`},body:JSON.stringify(row.payload)});
+      const r=await fetchImpl(`${providerBase}/emails`,{method:'POST',signal:AbortSignal.timeout(2000),headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json','Idempotency-Key':`client-notice/${row.id}`},body:JSON.stringify(row.payload)});
       if(r.ok){const result=await r.json();if(!result.id)throw new Error('No receipt');status='sent';providerId=result.id;sent++;}
       else {
         error=`Email provider returned HTTP ${r.status}.`;

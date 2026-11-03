@@ -204,11 +204,14 @@ export async function GET(request: Request) {
         key: "email",
         name: "Automatic email notices",
         purpose: "Staff task assignment and completion emails, plus client document, invoice and portal-access notices.",
-        state: emailConfigured() && emailAccepted ? "connected" : "not_configured",
+        // Configured credentials are "connected"; a provider that has
+        // rejected the latest email needs attention, which is neither
+        // connected nor unconfigured and must not read as either.
+        state: !emailConfigured() ? "not_configured" : emailFailed ? "attention" : "connected",
         detail: emailConfigured()
           ? emailFailed ? `Task email delivery failed: ${emailEvidence[0].last_error || "Check the sender domain and email provider permissions."} ${senderDiagnostic}`
             : emailAccepted ? "The email provider accepted the latest task notification. Recipient inbox delivery is not independently verified."
-            : "Email credentials are configured, but no successful task email submission has been recorded yet."
+            : "Email credentials are configured. No email has been submitted yet; the first task notice or client request will confirm the provider accepts them."
           : "RESEND_API_KEY and RESEND_FROM_EMAIL are not set, so these emails are not sent -- the underlying request or invoice is still recorded either way.",
         setup: ["RESEND_API_KEY", "RESEND_FROM_EMAIL"],
       },

@@ -958,7 +958,8 @@ for (const [label, body] of [
   ["study preferences", { action: "study_preferences", clientId, destinationCountries: ["AU"], studyLevels: ["Masters"], annualBudget: 42000 }],
   ["visa history", { action: "visa_history", clientId, countryCode: "AU", visaType: "500", status: "granted", grantedOn: "2024-02-01" }],
   ["a declaration", { action: "declaration", clientId, declarationType: "character", response: true }],
-  ["a service agreement", { action: "agreement", clientId, agreementType: "representation", version: "v1" }],
+  ["a service agreement", { action: "agreement", clientId, caseId: newCaseId, agreementType: "representation", version: "v1",
+    terms: "Maximus will represent the client for this matter under the agreed fee schedule." }],
 ]) {
   const r = await call("/api/crm/intake", { method: "POST", cookie: officer.cookie, body });
   expect(`intake accepts ${label}`, r.status === 200, `${r.status} ${JSON.stringify(r.json)}`);
@@ -2052,7 +2053,7 @@ section("Requesting a document or raising an invoice emails the client");
 const sentBeforeRequests = await (await fetch(`${RESEND_STUB}/__sent`)).json();
 const emailCase = await call("/api/crm/workspace", { method: "POST", cookie: officer.cookie,
   body: { action: "case", name: "Email Notice Case", phone: "+61400000098",
-          email: "email.notice@example.test", visaExpiry: "2028-06-30",
+          email: "email.notice@example.com", visaExpiry: "2028-06-30",
           workspace: "Direct Visa", matterType: "Partner visa 820/801" } });
 expect("a case exists to raise document and invoice requests against",
   emailCase.status === 200, JSON.stringify(emailCase.json));
@@ -2067,7 +2068,7 @@ expect("the invoice itself is raised", raisedInvoice.status === 200, JSON.string
 const sentAfterRequests = await (await fetch(`${RESEND_STUB}/__sent`)).json();
 const newlySent = sentAfterRequests.slice(sentBeforeRequests.length);
 expect("both the document request and the invoice emailed the client",
-  newlySent.filter((m) => (m.to ?? []).includes("email.notice@example.test")).length === 2,
+  newlySent.filter((m) => (m.to ?? []).includes("email.notice@example.com")).length === 2,
   JSON.stringify(newlySent.map((m) => ({ to: m.to, subject: m.subject }))));
 expect("the document request email uses the edited wording, tokens filled in",
   newlySent.some((m) => m.subject === "We need a document from you, Email Notice Case"),
@@ -2099,12 +2100,12 @@ const sentAfterPortal = await (await fetch(`${RESEND_STUB}/__sent`)).json();
 const portalEmail = sentAfterPortal[sentAfterPortal.length - 1];
 expect("the portal welcome email went to the client, not a password in plain text",
   sentAfterPortal.length === sentBeforePortal.length + 1 &&
-    (portalEmail?.to ?? []).includes("email.notice@example.test") &&
+    (portalEmail?.to ?? []).includes("email.notice@example.com") &&
     /http/.test(portalEmail?.text ?? "") &&
     !/temporaryPassword|password:\s*\S/i.test(portalEmail?.text ?? ""),
   JSON.stringify(portalEmail));
 
-const portalLogin = await login("email.notice@example.test");
+const portalLogin = await login("email.notice@example.com");
 expect("the client can sign in through the login portal access just created",
   portalLogin.ok, JSON.stringify(portalLogin.body));
 const portalLoginWorkspace = await loadWorkspace({ cookie: portalLogin.cookie });

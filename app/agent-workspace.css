@@ -59,6 +59,10 @@
 .appShell .caseWindowTopbar img { width: 116px; height: 32px; object-fit: contain; }
 .appShell .caseWindowTopbar :is(button, b, span) { font-size: .8125rem; font-weight: 500; text-transform: none; letter-spacing: 0; }
 .appShell .caseWindowTopbar button { min-height: 32px; }
+/* The Copilot trigger inherits the white ghost-button surface; on the dark bar
+   that left its label white on white. Match the bar's other controls. */
+.appShell .caseWindowTopbar .copilotTrigger { background: transparent; border-color: #67808d; color: #fff; }
+.appShell .caseWindowTopbar .copilotTrigger:hover { background: rgba(255, 255, 255, 0.08); }
 .appShell .drawerHead { margin: 0; padding: 18px 24px 14px; background: #fff; border-bottom: 1px solid #e0e7eb; }
 .appShell .drawerHead > div { min-width: 0; }
 .appShell .drawerHead > div > span { font-size: .8125rem; color: #637887; font-weight: 500; }

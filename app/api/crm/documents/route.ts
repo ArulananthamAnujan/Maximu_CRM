@@ -165,17 +165,18 @@ export async function POST(request: Request) {
           String(client.crm_id ?? ""),
         ),
       );
-      // A portal account cannot write to the client row, so this may not
-      // persist. The folder lookup is idempotent, so the next staff upload
-      // stores it; nothing is lost either way.
-      await patch(
-        "clients",
-        String(client.id),
-        { drive_folder_id: rootId, drive_sync_state: "ready" },
-        token,
-      ).catch((error) =>
-        console.error("Could not store the client's Drive folder", error),
-      );
+      // A portal account cannot write to the client row, so do not try: the
+      // folder lookup is idempotent and the next staff upload stores it.
+      // Nothing is lost either way.
+      if (session.identity.role !== "client")
+        await patch(
+          "clients",
+          String(client.id),
+          { drive_folder_id: rootId, drive_sync_state: "ready" },
+          token,
+        ).catch((error) =>
+          console.error("Could not store the client's Drive folder", error),
+        );
     }
     // File it under the matching folder from the plan, or at the client's root
     // when the type matches nothing recognisable.

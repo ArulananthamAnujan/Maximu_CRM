@@ -17,6 +17,8 @@ import { protectionConfigured, protect, reveal } from "@/server/protected-fields
 import { calendarRefreshAccessToken, createCalendarEvent, deleteCalendarEvent } from "@/server/google-calendar";
 import { orgDate, orgTime } from "@/lib/timezone";
 import { emailConfigured, renderTemplate, sendEmail } from "@/server/email";
+import { drainClientNotices } from "@/server/client-notices";
+import { publicOrigin } from "@/server/public-origin";
 import { findAccountByEmail, sendAccountSetup } from "@/server/account-access";
 
 export const dynamic = "force-dynamic";
@@ -1468,14 +1470,9 @@ export async function POST(request: Request) {
         `clients?select=email,first_name,last_name&id=eq.${encodeURIComponent(clientId)}&limit=1`,
         token,
       );
-      if (client && body.uploading !== true)
-        await notifyClient(org, token, "document_request", String(client.email ?? ""), {
-          client_name: fullClientName(client),
-          document_title: title,
-          note: nullable(body.documentNote) ?? "",
-          portal_link: publicOrigin(request),
-          sender_name: session.identity.displayName,
-        });
+      // The request itself queued the client's notice (documents trigger);
+      // deliver it now rather than on the next scheduled attempt.
+      if (client && body.uploading !== true) await drainClientNotices(publicOrigin(request));
       return Response.json({ ok: true, documentId: id });
     }
 
@@ -1585,20 +1582,9 @@ export async function POST(request: Request) {
         `Updated visa document checklist (${selected.size} requested)`,
         token,
       );
-      if (newlyRequested.length) {
-        const [client] = await rest<Json[]>(
-          `clients?select=email,first_name,last_name&id=eq.${encodeURIComponent(String(caseRow.client_id))}&limit=1`,
-          token,
-        );
-        if (client)
-          await notifyClient(org, token, "document_request", String(client.email ?? ""), {
-            client_name: fullClientName(client),
-            document_title: newlyRequested.join(", "),
-            note: nullable(body.documentNote) ?? "",
-            portal_link: publicOrigin(request),
-            sender_name: session.identity.displayName,
-          });
-      }
+      // Each newly requested document queued its own client notice; send
+      // them now rather than waiting for the scheduled attempt.
+      if (newlyRequested.length) await drainClientNotices(publicOrigin(request));
       return Response.json({ ok: true, requested: selected.size });
     }
 
@@ -2496,11 +2482,12 @@ async function emailTemplateFor(
 async function notifyClient(
   org: string,
   token: string,
-  kind: "document_request" | "invoice_request" | "portal_welcome",
+  kind: "invoice_request" | "portal_welcome",
   to: string | null | undefined,
   values: Record<string, string>,
 ): Promise<void> {
-  if (kind === "document_request") return; // Transactional client_notice_outbox owns delivery.
+  // A document request is not sent from here: the documents trigger queues
+  // it in client_notice_outbox and drainClientNotices delivers it.
   if (!to || !emailConfigured()) return;
   try {
     const template = await emailTemplateFor(org, kind, token);
@@ -3169,24 +3156,6 @@ function fullClientName(value?: Json): string {
     : "";
 }
 
-// Some server adapters expose the internal worker URL as localhost even when
-// the browser is on the public Netlify site. Client emails and Supabase action
-// links must always return to the address the client can actually open.
-function publicOrigin(request: Request): string {
-  for (const configured of [process.env.NEXT_PUBLIC_APP_URL, process.env.URL]) {
-    if (!configured) continue;
-    try {
-      return new URL(configured).origin;
-    } catch {
-      // Continue to the proxy headers when an optional value is malformed.
-    }
-  }
-  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const host = forwardedHost || request.headers.get("host")?.trim();
-  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-  if (host) return `${forwardedProtocol || "https"}://${host}`;
-  return new URL(request.url).origin;
-}
 // invoices, content_templates and workflow_templates are all writable only by
 // manager level and above (migration 0005). Check it here so the CRM can say
 // so plainly instead of surfacing a row-level security rejection.
