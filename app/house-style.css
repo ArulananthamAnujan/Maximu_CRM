@@ -1,0 +1,204 @@
+/* House style for the working screens, from the dealt app sheet
+   (.agents/skills/design-taste-frontend, style "accent-ladder", shell
+   "open plane", seed 366011953; the brand's own navy stands in for the dealt
+   hue, with --keep palette,type).
+
+   Loaded last, so it decides what reaches the screen:
+   - the sidebar sits on the page ground; the brand hue is kept for small
+     marks (the mark, the active item's ink and pale tint), never for areas;
+   - surfaces are flat: no gradients, no glass, no resting shadows; one
+     whisper border or one tone step, radius chosen once (8px cards, 6px
+     controls, pills fully round);
+   - labels are sentence case at 12px; nothing on the screen is under 11px;
+   - KPIs are a label and a number in one divided strip, with no icons;
+   - table headers are 12px grey sentence case; numbers are tabular. */
+
+:root {
+  --hs-ground: #f7f8fa;
+  --hs-surface: #ffffff;
+  --hs-raised: #f1f3f5;
+  --hs-border: #e6e9ec;
+  --hs-rule: #eff1f3;
+  --hs-control: #cfd5db;
+  --hs-text: #15202b;
+  --hs-muted: #5d6b78;
+  --hs-faint: #6b7884;
+  --hs-brand: #102f40;          /* Maximus navy: the one hue, on small marks */
+  --hs-brand-ink: #0d2432;
+  --hs-tint: #e7eef3;           /* the hue's pale tint, for the active row and badges */
+  --hs-tint-strong: #d3e0e8;
+  --hs-positive: #247b50;
+  --hs-negative: #c4242a;
+  --hs-warning: #92400e;
+  --hs-radius-card: 8px;
+  --hs-radius-control: 6px;
+}
+
+/* ---------- ground and shell ---------- */
+.appShell, .appShell > .mainArea, .mainArea, .appShell.gmailMode { background: var(--hs-ground); background-image: none; }
+.appShell .content { background: transparent; }
+.appShell .sidebar, .appShell.mode-direct_visa .sidebar, .sidebar, .mode-direct_visa .sidebar {
+  background: var(--hs-surface); background-image: none;
+  color: var(--hs-text);
+  border-right: 1px solid var(--hs-border);
+  box-shadow: none;
+}
+.sidebar::before, .sidebar::after { display: none; }
+.appShell.staffFullMode > .sidebar.open { box-shadow: 0 16px 40px rgba(21, 32, 43, 0.14); } /* the folded nav floats as a sheet */
+.sidebar .brand { border-bottom: 1px solid var(--hs-border); }
+/* The complete mark, in its dark-on-light drawing now that the sidebar is light. */
+.sidebar .brandHome .brandMark { width: 190px; height: 38px; flex-basis: 190px; border-radius: 0; background: transparent url("/maximus-logo-dark.svg") left center / contain no-repeat; box-shadow: none; font-size: 0; }
+.sidebar .brandWords { display: none; }
+.sidebar .brand strong { color: var(--hs-text); font-family: inherit; font-size: 15px; letter-spacing: 0; font-weight: 700; }
+.sidebar .brand span { color: var(--hs-muted); font-size: 11px; letter-spacing: 0; }
+.sidebar .mobileClose { color: var(--hs-text); }
+.sidebarContext { background: transparent; border: 0; border-bottom: 1px solid var(--hs-border); border-radius: 0; padding: 12px 8px 14px; margin: 4px 0 6px; min-height: 0; }
+.sidebarContext span { color: var(--hs-muted); font-size: 12px; letter-spacing: 0; font-weight: 500; text-transform: none; }
+.sidebarContext strong { color: var(--hs-text); font-size: 14px; font-weight: 600; margin-top: 2px; }
+.sidebar .navGroup p, .navGroup p { color: var(--hs-faint); font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; margin: 0 8px 4px; }
+.sidebar .navGroup p svg { vertical-align: middle; }
+.sidebar .navGroup button, .navGroup button { color: var(--hs-muted); font-size: 14px; font-weight: 500; min-height: 34px; padding: 6px 10px; border-radius: var(--hs-radius-control); background: transparent; box-shadow: none; }
+.sidebar .navGroup button svg, .navGroup button svg { color: var(--hs-muted); stroke-width: 1.75; }
+.sidebar .navGroup button:hover, .navGroup button:hover { background: var(--hs-raised); color: var(--hs-text); }
+.sidebar .navGroup button.active, .appShell.mode-direct_visa .sidebar .navGroup button.active, .navGroup button.active { background: var(--hs-tint); background-image: none; color: var(--hs-brand-ink); box-shadow: none; font-weight: 600; }
+.sidebar .navGroup button.active svg, .navGroup button.active svg { color: var(--hs-brand); }
+.navGroup button em, .navGroup button i { background: var(--hs-tint); color: var(--hs-brand-ink); font-size: 11px; }
+.sidebarFooter { background: transparent; border-top: 1px solid var(--hs-border); border-radius: 0; }
+.sidebarFooter strong { color: var(--hs-text); }
+.sidebarFooter span, .sidebarFooter small { color: var(--hs-muted); font-size: 12px; }
+.sidebarFooter .avatar, .sidebar .avatar { background: var(--hs-tint); color: var(--hs-brand-ink); box-shadow: none; }
+
+/* ---------- top bar ---------- */
+.topbar, .topbar.clientOnly { background: var(--hs-surface); backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; border-bottom: 1px solid var(--hs-border); }
+.topbarSecondary { background: var(--hs-ground); border-top: 1px solid var(--hs-rule); }
+.topbarPrimary .searchWrap { background: var(--hs-raised); border: 1px solid transparent; box-shadow: none; border-radius: var(--hs-radius-control); }
+.profileServiceSwitch button { border-radius: var(--hs-radius-control); border-color: var(--hs-control); background: var(--hs-surface); color: var(--hs-text); box-shadow: none; }
+.profileServiceSwitch button.active, .mode-direct_visa .profileServiceSwitch button.active { background: var(--hs-brand); border-color: var(--hs-brand); color: #fff; }
+.courseFinderSwitchButton, .messageShortcut, .copilotTrigger, .iconButton { background: var(--hs-surface); background-image: none; border: 1px solid var(--hs-control); border-radius: var(--hs-radius-control); color: var(--hs-text); box-shadow: none; }
+.quickButton { background: var(--hs-brand); background-image: none; border: 0; color: #fff; box-shadow: none; border-radius: var(--hs-radius-control); }
+.quickButton:hover { background: var(--hs-brand-ink); }
+.quickMenu, .popover, .notificationsPopover { box-shadow: 0 12px 32px rgba(21, 32, 43, 0.12); border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); } /* a menu floats */
+
+/* ---------- page title and labels ---------- */
+.pageTitle h1, .appShell .pageTitle h1 { color: var(--hs-text); font-size: 24px; letter-spacing: -0.01em; font-weight: 650; }
+.pageTitle p { color: var(--hs-muted); font-size: 14px; }
+.kicker, .appShell .kicker { font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--hs-muted); }
+.panelHead h2, .appShell .panelHead h2 { font-size: 16px; font-weight: 600; color: var(--hs-text); }
+.caseTableHeader, .dashboardMode .caseTableHeader, .recordTable th, .appShell th { font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--hs-muted); background: transparent; }
+.recordTable th, .appShell th { border-bottom: 1px solid var(--hs-border); }
+.recordTable td, .appShell td { border-bottom: 1px solid var(--hs-rule); font-variant-numeric: tabular-nums; }
+.recordTable tbody tr:nth-child(even) td, .appShell tbody tr:nth-child(even) td { background: transparent; }
+.intakeModeLabel, .reportBuilderGrid label, .signal span, .miniStats span, .journeyListIntro .kicker, .dashboardFilters label, .enquiryScopeLabel small, .enquiryDirectorySummary span { text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 500; color: var(--hs-muted); }
+.journeyRecordSummary small, .signal small, .miniStats small, .attentionRow small, .caseRow small, .journeyDataRow small { font-size: 12px; color: var(--hs-muted); }
+
+/* ---------- surfaces: flat, one whisper border, one radius ---------- */
+.panel, .appShell .panel, .listPanel, .miniStats article, .signal, .signalGrid article, .journeyListPanel, .caseWorkPanel, .agentClientPanel, .dashboardFilters, .workspaceConnection, .caseAtGlance, .radarItem.actionRow, .recordTableWrap, .enquiryScopeLabel, .enquiryDirectorySummary, .integrationRow, .staffCard, .attentionPanel, .pipelinePanel, .reportBuilder, .personalFilters, .journeyFlow, .caseQuickNote, .caseLastNote, .notice, .intakeMode label, .datasetChips label, .workspaceHero, .googleHero, .controlCentre, .caseDocumentRequests, .copilotPanel, .gmailWorkspace, .gmailFolderList, .taskCard, .staffRow {
+  background-image: none;
+  box-shadow: none;
+}
+.panel, .appShell .panel, .listPanel, .miniStats article, .signal, .signalGrid article, .journeyListPanel, .caseWorkPanel, .agentClientPanel, .dashboardFilters, .workspaceConnection, .recordTableWrap, .enquiryScopeLabel, .enquiryDirectorySummary, .attentionPanel, .pipelinePanel, .reportBuilder, .personalFilters, .journeyFlow, .caseDocumentRequests, .taskCard {
+  border: 1px solid var(--hs-border);
+  border-radius: var(--hs-radius-card);
+  background-color: var(--hs-surface);
+}
+.signal:hover, .miniStats article:hover, .panel:hover { transform: none; box-shadow: none; border-color: var(--hs-border); }
+.workspaceHero, .googleHero, .controlCentre, .heroPanel { background: var(--hs-tint); background-image: none; border: 1px solid var(--hs-tint-strong); border-radius: var(--hs-radius-card); box-shadow: none; }
+.workspaceHero::before, .workspaceHero::after, .googleHero::before, .googleHero::after, .controlCentre::before, .controlCentre::after { display: none; }
+.workspaceHero h2, .googleHero h2, .controlCentre h2 { color: var(--hs-brand-ink); }
+.enquiryScopeLabel { background-color: var(--hs-tint); border-color: var(--hs-tint-strong); }
+.enquiryScopeLabel strong { color: var(--hs-brand-ink); }
+.radarItem.actionRow, .caseQuickNote, .caseLastNote, .notice { background-color: var(--hs-raised); border: 0; border-radius: var(--hs-radius-card); }
+.recordModal, .modalCard, .staffDialog, .dialog { box-shadow: 0 24px 64px rgba(21, 32, 43, 0.18); border-radius: 12px; } /* a dialog floats */
+
+/* ---------- KPIs: one container split by rules, label over number, no icons ---------- */
+.signalGrid, .appShell .signalGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin: 0 0 20px; background: var(--hs-surface); border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); overflow: hidden; }
+.signal, .signalGrid article, .appShell .signal { border: 0; border-radius: 0; min-height: 0; padding: 16px 20px; border-top: 0 !important; }
+.signal + .signal, .signalGrid article + article { border-left: 1px solid var(--hs-border); }
+.signalIcon, .signal .signalIcon, .signalGrid article svg, .miniStats article svg { display: none; }
+.signal > div:first-child > strong, .signal strong, .appShell .signal strong { font-family: inherit; font-size: 26px; font-weight: 500; letter-spacing: -0.01em; color: var(--hs-text); font-variant-numeric: tabular-nums; margin: 6px 0 4px; }
+.signal.primary { background: var(--hs-surface); color: var(--hs-text); }
+.signal.primary span, .signal.primary small { color: var(--hs-muted); }
+.signal small b, .signal.primary small b { color: var(--hs-positive); }
+.miniStats { gap: 0; background: var(--hs-surface); border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); overflow: hidden; }
+.miniStats article { border: 0; border-radius: 0; }
+.miniStats article + article { border-left: 1px solid var(--hs-border); }
+.miniStats strong { font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--hs-text); }
+@media (max-width: 1080px) { .signalGrid, .appShell .signalGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .signal:nth-child(odd), .signalGrid article:nth-child(odd) { border-left: 0; } .signal:nth-child(n + 3), .signalGrid article:nth-child(n + 3) { border-top: 1px solid var(--hs-border) !important; } }
+@media (max-width: 700px) { .miniStats { grid-template-columns: 1fr 1fr; } .miniStats article:nth-child(odd) { border-left: 0; } .miniStats article:nth-child(n + 3) { border-top: 1px solid var(--hs-border); } }
+@media (max-width: 440px) { .signalGrid, .appShell .signalGrid { grid-template-columns: 1fr; } .signal + .signal, .signalGrid article + article { border-left: 0; border-top: 1px solid var(--hs-border) !important; } }
+
+/* ---------- buttons: one filled style in the brand hue, flat ---------- */
+.primaryButton, .appShell .primaryButton { background: var(--hs-brand); background-image: none; border: 1px solid var(--hs-brand); color: #fff; box-shadow: none; border-radius: var(--hs-radius-control); font-weight: 600; }
+.primaryButton:hover, .appShell .primaryButton:hover { background: var(--hs-brand-ink); box-shadow: none; transform: none; }
+.ghostButton, .appShell .ghostButton, .textButton { background: var(--hs-surface); background-image: none; border: 1px solid var(--hs-control); color: var(--hs-text); box-shadow: none; border-radius: var(--hs-radius-control); }
+.ghostButton:hover, .appShell .ghostButton:hover { background: var(--hs-raised); }
+.appShell :is(.primaryButton, .ghostButton) { font-size: 13px; letter-spacing: 0; text-transform: none; }
+input, select, textarea, .appShell input, .appShell select, .appShell textarea { border-radius: var(--hs-radius-control); box-shadow: none; }
+
+/* ---------- status marks: pale tint, dark ink of the same hue ---------- */
+.caseStageBadge, .viewOnlyBadge, .statusPill, .status, .pill { border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; box-shadow: none; }
+.caseStageBadge { background: var(--hs-tint); color: var(--hs-brand-ink); }
+
+/* ---------- the case window ---------- */
+.appShell .caseWindowTopbar, .caseWindow .caseWindowTopbar { background: var(--hs-surface); background-image: none; color: var(--hs-text); border-bottom: 1px solid var(--hs-border); }
+.caseWindow .caseWindowTopbar button, .appShell .caseWindowTopbar button { color: var(--hs-text); border: 1px solid var(--hs-control); background: var(--hs-surface); border-radius: var(--hs-radius-control); font-size: 13px; }
+.caseWindow .caseWindowTopbar > span, .caseWindow .caseWindowTopbar > b, .appShell .caseWindowTopbar > span, .appShell .caseWindowTopbar > b { color: var(--hs-muted); font-size: 13px; }
+.appShell .caseWindowTopbar .copilotTrigger { color: var(--hs-text); border-color: var(--hs-control); background: var(--hs-surface); }
+.appShell .caseTabs button[aria-selected="true"], .appShell .caseTabs button.active { background: transparent; color: var(--hs-text); box-shadow: inset 0 -2px 0 var(--hs-text); border-radius: 0; }
+.appShell .caseTabs button { color: var(--hs-muted); border-radius: 0; }
+.appShell .caseLeftRail { box-shadow: none; border-bottom: 1px solid var(--hs-border); }
+.appShell .drawerHead { border-bottom: 1px solid var(--hs-border); }
+
+/* ---------- type floor and figures ---------- */
+.appShell small, .appShell .meta, .appShell time { font-size: 12px; }
+.appShell :is(td, .amount, .money, .figure, .count) { font-variant-numeric: tabular-nums; }
+.sidebar .navDropdownGroup { border: 0; background: transparent; padding: 0; margin-top: 10px; }
+
+/* ---------- the last measured tells ---------- */
+/* Icons in the action centre and admin tools sit plain, in the text colour; no tinted square. */
+.radarIcon, .radarIcon.red, .radarIcon.amber, .radarIcon.blue, .radarIcon.violet, .adminToolIcon, .workspaceIcon { background: transparent; background-image: none; color: var(--hs-muted); box-shadow: none; }
+/* No button carries a shadow or a gradient at rest; the one filled style is flat. */
+.appShell button, .appShell .heroPrimary, .appShell .enquirySearchButton, .appShell .profileServiceSwitch button.active, .caseWindow button { box-shadow: none; background-image: none; text-shadow: none; }
+.appShell .heroPrimary { background-color: var(--hs-brand); color: #fff; border-radius: var(--hs-radius-control); }
+.appShell .enquirySearchButton { background-color: var(--hs-brand); color: #fff; border-radius: var(--hs-radius-control); }
+.attentionPanel, .appShell .attentionPanel, .panel.attentionPanel { background: var(--hs-surface); background-image: none; }
+/* The folded navigation carries no shadow while it is off screen; open, it floats as a sheet. */
+.appShell.staffFullMode > .sidebar { box-shadow: none; }
+.appShell.staffFullMode > .sidebar.open { box-shadow: 0 16px 40px rgba(21, 32, 43, 0.14); }
+/* Secondary text holds 4.5:1 on white; row sublines read at 13px. */
+.appShell small, .appShell .journeyDataHeader span, .appShell .journeyPrimaryCell span, .appShell .journeyPrimaryCell small, .appShell .caseTableHeader, .appShell .clientCell small, .appShell .caseRow small, .appShell .signal small, .appShell .radarItem span { color: var(--hs-muted); }
+.appShell .journeyDataRow small, .appShell .journeyPrimaryCell small, .appShell .journeyDataRow span.muted { font-size: 13px; }
+
+/* ---------- case file ---------- */
+.appShell .caseLeftRail nav.caseTabs button, .appShell nav.caseTabs button { color: var(--hs-muted); box-shadow: none !important; border-radius: 0; background: transparent; }
+.appShell .caseLeftRail nav.caseTabs button:hover, .appShell nav.caseTabs button:hover { color: var(--hs-text); background: transparent; }
+.appShell .caseLeftRail nav.caseTabs button.active, .appShell nav.caseTabs button.active { color: var(--hs-text); background: transparent; box-shadow: inset 0 -2px 0 var(--hs-text) !important; font-weight: 600; }
+.appShell .caseNavGroup > span { text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--hs-faint); }
+.appShell .drawerHead h1 { margin: 3px 0 7px; font-size: 1.5rem; line-height: 1.3; font-weight: 650; letter-spacing: -0.025em; overflow-wrap: anywhere; color: var(--hs-text); }
+.appShell .drawerHead .caseIdentityMeta > span, .appShell .drawerHead > div > span { color: var(--hs-muted); }
+.appShell .caseIdentityMeta .caseStageBadge { background: var(--hs-tint); color: var(--hs-brand-ink); }
+.appShell .caseWorkspaceContent > div, .appShell .agentOverviewGrid, .appShell .caseOverviewGrid { align-items: start; }
+.appShell .pageTitle > div:first-child > span { text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--hs-muted); }
+
+/* ---------- accounts, staff, reports ---------- */
+.appShell .invoiceFacts small { text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--hs-muted); font-weight: 500; }
+.appShell .invoiceFacts b, .appShell .invoiceFacts strong { font-size: 13px; font-variant-numeric: tabular-nums; }
+.appShell .listFilterBar, .listFilterBar { background: var(--hs-surface) !important; background-image: none !important; }
+.appShell .emptyState p, .appShell .caseWorkEmpty, .appShell .reportFooter { color: var(--hs-muted); font-size: 12px; }
+.appShell .linkButton { color: var(--hs-brand-ink); text-decoration: underline; text-underline-offset: 3px; }
+.appShell .linkButton:hover { color: var(--hs-text); }
+.appShell .pipelineLabel, .appShell .reportPipelineLabel { text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--hs-muted); }
+.recordTable th.num, .recordTable td.num, .appShell th.num, .appShell td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.attentionPanel, .appShell .attentionPanel, .appShell .panel.attentionPanel, .dashboardGrid .attentionPanel { background: var(--hs-surface) !important; background-image: none !important; }
+.appShell .dashboardMode .caseRow small, .appShell .caseRow.compactRecord small, .appShell .clientCell small, .appShell .dashboardMode .caseRow .clientCell small { color: var(--hs-muted) !important; }
+.appShell .topbarSecondary button { color: var(--hs-text); }
+.appShell .avatar.small, .appShell .signedAccount .avatar { background: var(--hs-tint); background-image: none; color: var(--hs-brand-ink); box-shadow: none; }
+.appShell .miniStats small, .appShell .attentionRow small, .appShell .signal small { font-size: 13px; }
+.reportBuilderGrid { gap: 10px; }
+.datasetChips { margin: 10px 0 2px; }
+.datasetChips label { padding: 5px 10px; font-size: 12px; }
+.appShell .dashboardAdminTools small, .appShell .filterResultCount, .appShell .listFilterBar label, .appShell .listFilterBar label span, .appShell .staffAccountHint, .appShell .panelHead p, .appShell .sectionIntro p { color: var(--hs-muted); }
+.appShell.caseWindow :is(.panel, .caseWorkPanel, .agentClientPanel, .caseAtGlance, .caseQuickNote, .caseLastNote, .radarItem, .summaryRows, .drawerHealth, .casePriorityBar) { border-radius: var(--hs-radius-card); }
+@media (max-width: 760px) {
+  .appShell.caseWindow .drawerHead, .appShell.caseWindow .caseWorkspaceContent, .appShell.caseWindow .caseLeftRail, .appShell.caseWindow .caseWindowTopbar { padding-inline: 16px; }
+}

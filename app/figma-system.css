@@ -1,9 +1,9 @@
 /* Approved Maximus CRM Figma system. Loaded after the historical stylesheet so
    the production shell has one explicit, reviewable visual contract. */
-.sidebar,.mode-direct_visa .sidebar{width:232px;padding:0 16px 18px;background:#11263d;box-shadow:none}.mainArea{width:calc(100% - 232px);margin-left:232px}.sidebar .brand{height:72px}.sidebar .brandHome .brandMark{width:32px;height:32px;flex-basis:32px;border-radius:8px;background:#3fa7c4}.sidebarContext{min-height:70px;margin:4px 0 8px;padding:10px 12px;border:0;border-radius:10px;background:#18344f}.sidebarContext span{color:#89a7bb;font-size:9px}.sidebarContext strong{margin-top:8px;font-size:13px}.sidebar .navGroup{margin-top:10px}.sidebar .navGroup p{margin-bottom:4px;padding:0 8px;color:#7897ad;font-size:9px}.sidebar .navGroup button{min-height:38px;margin:1px 0;padding:7px 9px;border-radius:8px;color:#c0d0dc;font-size:12px}.sidebar .navGroup button.active,.mode-direct_visa .sidebar .navGroup button.active{color:#fff;background:#214765;box-shadow:none}.sidebarFooter{min-height:58px;padding:10px;border-radius:10px;background:#18344f}
+.sidebar,.mode-direct_visa .sidebar{width:232px;padding:0 16px 18px;background:#11263d;box-shadow:none}.mainArea{width:calc(100% - 232px);margin-left:232px}.sidebar .brand{height:72px}.sidebar .brandHome .brandMark{width:32px;height:32px;flex-basis:32px;border-radius:8px;background:#3fa7c4}.sidebarContext{min-height:70px;margin:4px 0 8px;padding:10px 12px;border:0;border-radius:10px;background:#18344f}.sidebarContext span{color:#89a7bb;font-size: 11px}.sidebarContext strong{margin-top:8px;font-size:13px}.sidebar .navGroup{margin-top:10px}.sidebar .navGroup p{margin-bottom:4px;padding:0 8px;color:#7897ad;font-size: 11px}.sidebar .navGroup button{min-height:38px;margin:1px 0;padding:7px 9px;border-radius:8px;color:#c0d0dc;font-size:12px}.sidebar .navGroup button.active,.mode-direct_visa .sidebar .navGroup button.active{color:#fff;background:#214765;box-shadow:none}.sidebarFooter{min-height:58px;padding:10px;border-radius:10px;background:#18344f}
 .topbar,.topbar.clientOnly{height:120px;min-height:120px;border-bottom:1px solid #dce4ea;background:#fff;box-shadow:none}.topbar.clientOnly{height:72px;min-height:72px}.topbarPrimary{height:72px;padding:0 24px}.topbarPrimary .searchWrap{width:min(500px,46vw);max-width:500px;min-height:40px;flex:1 1 500px;border-color:transparent;border-radius:8px;background:#f6f8fa;box-shadow:none}.profileServiceSwitch{padding:0;gap:8px;border:0;background:transparent}.profileServiceSwitch button{height:38px;padding:0 13px;border:1px solid #dce4ea;border-radius:8px;color:#142536;background:#fff;box-shadow:none}.profileServiceSwitch button.active,.mode-direct_visa .profileServiceSwitch button.active{color:#fff;border-color:#1e6f9f;background:#1e6f9f;box-shadow:none}.topbarSecondary{height:48px;min-height:48px;padding:4px 24px;border-top:1px solid #edf1f4;background:#f8fafb}
 .content{width:100%;max-width:1600px;padding:28px}.pageTitle{min-height:66px;margin:0 0 18px;align-items:center}.pageTitle>div:first-child>span{display:none}.pageTitle h1{margin:0;color:#142536;font-size:clamp(23px,2vw,28px);letter-spacing:-.035em}.pageTitle p{margin-top:4px;color:#687887;font-size:13px}.pageTitle+.workspaceHero{display:none}.workspaceHero+.dashboardFilters{margin-top:0}.operationsBrief,.dashboardBreakdowns{display:none}
-.dashboardFilters{grid-template-columns:minmax(230px,1.6fr) repeat(4,minmax(130px,.85fr)) repeat(2,minmax(128px,.7fr)) auto auto;gap:10px;margin:0 0 20px;padding:12px;border:1px solid #dce4ea;border-radius:10px;background:#fff;box-shadow:none}.dashboardFilterSearch,.dashboardFilters input,.dashboardFilters select{min-height:38px;border-color:transparent;border-radius:7px;background:#f7f9fb}.dashboardFilterSearch input{background:transparent}.signalGrid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:0 0 20px}.signal{min-height:118px;padding:16px;border:1px solid #dce4ea;border-radius:12px;background:#fff!important;box-shadow:none}.signal:hover{transform:translateY(-1px);border-color:#b8ccd8;box-shadow:0 8px 18px rgba(17,38,61,.05)}.signal span{color:#687887;font-size:12px}.signal strong{color:#142536;font-size:27px}.signal small{color:#687887;font-size:10px}
+.dashboardFilters{grid-template-columns:minmax(230px,1.6fr) repeat(4,minmax(130px,.85fr)) repeat(2,minmax(128px,.7fr)) auto auto;gap:10px;margin:0 0 20px;padding:12px;border:1px solid #dce4ea;border-radius:10px;background:#fff;box-shadow:none}.dashboardFilterSearch,.dashboardFilters input,.dashboardFilters select{min-height:38px;border-color:transparent;border-radius:7px;background:#f7f9fb}.dashboardFilterSearch input{background:transparent}.signalGrid{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:0 0 20px}.signal{min-height:118px;padding:16px;border:1px solid #dce4ea;border-radius:12px;background:#fff!important;box-shadow:none}.signal:hover{transform:translateY(-1px);border-color:#b8ccd8;box-shadow:0 8px 18px rgba(17,38,61,.05)}.signal span{color:#687887;font-size:12px}.signal strong{color:#142536;font-size:27px}.signal small{color:#687887;font-size: 12px}
 .dashboardGrid{grid-template-columns:minmax(0,2.1fr) minmax(300px,.95fr);gap:18px;align-items:stretch}.panel{border:1px solid #dce4ea;border-radius:12px;background:#fff;box-shadow:none}.pipelinePanel{min-height:500px}.caseRow.compactRecord{min-height:72px;border-bottom:1px solid #dce4ea}.attentionPanel{min-height:100%}.radarItem.actionRow{min-height:56px;border:0;border-radius:8px;background:#f7f9fb;box-shadow:none}
 @media(max-width:1280px){.dashboardFilters{grid-template-columns:repeat(4,minmax(0,1fr))}.dashboardFilterSearch{grid-column:span 2}.dashboardFilters>span{grid-column:span 2}}
 @media(max-width:1080px){.sidebar{width:220px}.mainArea{width:calc(100% - 220px);margin-left:220px}.signalGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboardGrid{grid-template-columns:1fr}}
@@ -29,9 +29,7 @@
 
 body {
   color: var(--crm-ink);
-  background:
-    radial-gradient(circle at 92% 2%, rgba(44, 157, 204, .055), transparent 28rem),
-    var(--crm-soft);
+  background: var(--crm-soft);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -121,7 +119,7 @@ body {
   position: relative;
   z-index: 1;
   color: #f7a95b;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: .16em;
 }
 .loginStory h1 {
@@ -187,7 +185,7 @@ body {
   box-shadow: 0 5px 15px rgba(20, 70, 98, .09);
 }
 .portalSwitch b { font-size: 13px; }
-.portalSwitch small { overflow-wrap: anywhere; font-size: 10px; }
+.portalSwitch small { overflow-wrap: anywhere; font-size: 12px; }
 .loginCardTitle { padding: 25px 2px 10px; }
 .loginCardTitle > span { color: #cf672d; }
 .loginCardTitle h2 {
@@ -228,7 +226,7 @@ body {
 .unifiedLoginCard > footer {
   padding-top: 15px;
   color: #738693;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 /* Preserve the complete official mark throughout the CRM. */
@@ -244,17 +242,8 @@ body {
 .sidebar .brandWords { display: none; }
 .sidebar,
 .mode-direct_visa .sidebar {
-  background:
-    radial-gradient(circle at 15% -2%, rgba(51, 151, 197, .22), transparent 15rem),
-    linear-gradient(180deg, var(--crm-navy) 0%, var(--crm-navy-deep) 100%);
-  box-shadow: 8px 0 30px rgba(9, 37, 54, .08);
-}
-.sidebar::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  height: 3px;
-  background: linear-gradient(90deg, var(--crm-blue-bright), var(--crm-orange));
+  background: var(--crm-navy);
+  box-shadow: none;
 }
 .sidebarContext {
   border: 1px solid rgba(255, 255, 255, .06);
@@ -270,8 +259,8 @@ body {
 }
 .sidebar .navGroup button.active,
 .mode-direct_visa .sidebar .navGroup button.active {
-  background: linear-gradient(90deg, rgba(45, 134, 177, .34), rgba(255, 255, 255, .07));
-  box-shadow: inset 3px 0 0 var(--crm-orange);
+  background: rgba(255, 255, 255, .1);
+  box-shadow: none;
 }
 .sidebar .navGroup button.active svg { color: #72c6e8; }
 .sidebarFooter {
@@ -443,7 +432,7 @@ body {
 .recordTable th {
   color: #617685;
   background: #f6f9fa;
-  font-size: 9px;
+  font-size: 11px;
 }
 .recordTable tbody tr { transition: background .14s ease; }
 .recordTable tbody tr:hover { background: #f3f8fa; }
@@ -480,12 +469,12 @@ body {
 .caseNotePreview b,
 .caseNotePreview small { display: block; }
 .caseRowOpen b,
-.caseNotePreview b { font-size: 10px; }
+.caseNotePreview b { font-size: 12px; }
 .caseRowOpen small,
 .caseNotePreview small {
   margin-top: 3px;
   color: #7c8f9d;
-  font-size: 8.5px;
+  font-size: 11px;
 }
 .caseNotePreview { width: 100%; }
 .caseNotePreview b {
@@ -503,7 +492,7 @@ body {
   padding: 0;
   background: transparent;
   color: var(--crm-blue);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -517,7 +506,7 @@ body {
   padding: 0 28px 0 10px;
   background: #fff;
   color: var(--crm-ink);
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
 }
 .caseMoveCell select:hover { border-color: var(--crm-blue); }
@@ -553,7 +542,7 @@ body {
   .loginStory h1,
   .loginStory > p { margin-left: 0; margin-right: 0; }
   .loginBenefits { grid-template-columns: 1fr; }
-  .recordTable { font-size: 10px; }
+  .recordTable { font-size: 12px; }
   .recordTable th,
   .recordTable td { padding: 8px 5px; }
 }
@@ -587,7 +576,7 @@ body {
     width: auto;
     max-height: calc(100vh - 90px);
   }
-  .recordTable { font-size: 9px; }
+  .recordTable { font-size: 11px; }
   .recordTable th,
   .recordTable td { padding: 7px 3px; }
 }
@@ -665,7 +654,7 @@ body {
 .gmailAccount strong,
 .gmailAccount small { display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gmailAccount strong { font-size: 12px; }
-.gmailAccount small { margin-top: 2px; color: #5f6368; font-size: 10px; }
+.gmailAccount small { margin-top: 2px; color: #5f6368; font-size: 12px; }
 .gmailAccount > div,
 .gmailSenderLine > div { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: #e88b2b; font-size: 12px; font-weight: 800; }
 .gmailWorkspaceBody { min-height: 0; display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 8px; padding: 0 8px 8px 0; }
@@ -707,9 +696,9 @@ body {
 .gmailFolderRail nav button:hover { background: #e8eaed; }
 .gmailFolderRail nav button.active { color: #001d35; background: #d3e3fd; font-weight: 700; }
 .gmailFolderRail nav button b { font-size: 11px; }
-.gmailCaseNote { margin: auto 8px 10px; padding: 12px; border-radius: 12px; display: flex; gap: 8px; color: #5f6368; background: #edf3fa; font-size: 10px; line-height: 1.45; }
+.gmailCaseNote { margin: auto 8px 10px; padding: 12px; border-radius: 12px; display: flex; gap: 8px; color: #5f6368; background: #edf3fa; font-size: 12px; line-height: 1.45; }
 .gmailCaseNote svg { flex: 0 0 auto; color: #0b57d0; }
-.gmailDisconnect { margin: 0 8px; padding: 8px; border: 0; color: #5f6368; background: transparent; font-size: 10px; cursor: pointer; }
+.gmailDisconnect { margin: 0 8px; padding: 8px; border: 0; color: #5f6368; background: transparent; font-size: 12px; cursor: pointer; }
 .gmailDisconnect:hover { color: #b3261e; }
 .gmailMailboxPane { min-width: 0; min-height: 0; overflow: hidden; border-radius: 16px; background: #fff; box-shadow: 0 1px 2px rgba(60,64,67,.08); }
 .gmailMailboxToolbar { min-height: 48px; padding: 0 16px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid #eef0f2; color: #5f6368; }
@@ -734,7 +723,7 @@ body {
 .gmailMailOpen > span { display: block; font-size: 12px; }
 .gmailMailOpen b { color: #202124; font-weight: 700; }
 .gmailMailOpen em { color: #5f6368; font-style: normal; }
-.gmailMailOpen time { justify-self: end; font-size: 10px; font-weight: 600; }
+.gmailMailOpen time { justify-self: end; font-size: 12px; font-weight: 600; }
 .gmailMailRow.unread .gmailMailOpen > strong,
 .gmailMailRow.unread .gmailMailOpen time { font-weight: 800; }
 .gmailEmptyFolder,
@@ -758,7 +747,7 @@ body {
 .gmailSenderLine span small { display: block; }
 .gmailSenderLine span strong { font-size: 13px; }
 .gmailSenderLine span small,
-.gmailSenderLine time { margin-top: 3px; color: #5f6368; font-size: 10px; }
+.gmailSenderLine time { margin-top: 3px; color: #5f6368; font-size: 12px; }
 .gmailReaderContent pre { margin: 28px 48px 32px; white-space: pre-wrap; color: #202124; font: 13px/1.65 Arial, Helvetica, sans-serif; }
 .gmailReplyActions { display: flex; gap: 10px; margin-left: 48px; }
 .gmailReplyActions button { min-height: 38px; padding: 0 16px; border: 1px solid #dadce0; border-radius: 19px; display: flex; align-items: center; gap: 7px; color: #3c4043; background: #fff; font-size: 12px; font-weight: 600; cursor: pointer; }
@@ -873,7 +862,7 @@ body {
   place-items: center;
   color: #fff;
   background: #e88b2b;
-  font-size: 9px;
+  font-size: 11px;
 }
 .signedAccount { max-width: 235px; }
 .signedAccount > span { min-width: 0; }
@@ -895,7 +884,7 @@ body {
 .caseTableHeader {
   padding: 12px 9px 9px;
   color: #6f8290;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -929,7 +918,7 @@ body {
 .dashboardAdminTools span strong,
 .dashboardAdminTools span small { display: block; }
 .dashboardAdminTools span strong { font-size: 11px; }
-.dashboardAdminTools span small { margin-top: 3px; color: #738794; font-size: 9px; }
+.dashboardAdminTools span small { margin-top: 3px; color: #738794; font-size: 11px; }
 
 @media (max-width: 1380px) {
   .signedAccount > .avatar,

@@ -1795,10 +1795,10 @@ function Sidebar({
       <div className="sidebarContext">
         <span>
           {role === "client"
-            ? "MY JOURNEY"
+            ? "My journey"
             : serviceMode === "study"
-              ? "STUDY ABROAD"
-              : "DIRECT VISA"}
+              ? "Study Abroad"
+              : "Direct Visa"}
         </span>
         <strong>{role === "client" ? "Client portal" : config.label}</strong>
       </div>
@@ -2073,7 +2073,7 @@ function WorkspaceDashboard({
       <section className="operationsBrief" aria-label="Today's priorities">
         <div className="sectionIntro">
           <div>
-            <span className="kicker">TODAY</span>
+            <span className="kicker">Today</span>
             <h2>What needs your team&apos;s attention</h2>
           </div>
           <p>Open the queue and continue the work without searching across modules.</p>
@@ -2101,13 +2101,13 @@ function WorkspaceDashboard({
       </section>
       <section className="dashboardBreakdowns" aria-label="Operational breakdowns">
         <article className="panel">
-          <div className="panelHead"><div><span className="kicker">WORKLOAD MIX</span><h2>{direct ? "Visa category summary" : "Journey stage summary"}</h2></div></div>
+          <div className="panelHead"><div><span className="kicker">Workload mix</span><h2>{direct ? "Visa category summary" : "Journey stage summary"}</h2></div></div>
           <div className="summaryRows">
             {categoryCounts.length ? categoryCounts.map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>) : <p>No categorised records yet.</p>}
           </div>
         </article>
         <article className="panel">
-          <div className="panelHead"><div><span className="kicker">STATUS VISIBILITY</span><h2>{direct ? "Client status summary" : "Application status summary"}</h2></div></div>
+          <div className="panelHead"><div><span className="kicker">Status visibility</span><h2>{direct ? "Client status summary" : "Application status summary"}</h2></div></div>
           <div className="summaryRows">
             {statusCounts.length ? statusCounts.map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>) : <p>No status updates recorded yet.</p>}
           </div>
@@ -2163,7 +2163,7 @@ function WorkspaceDashboard({
         <article className="panel pipelinePanel">
           <div className="panelHead">
             <div>
-              <span className="kicker">LIVE WORKSPACE</span>
+              <span className="kicker">Live workspace</span>
               <h2>Priority cases</h2>
             </div>
             <button className="ghostButton" onClick={() => setActive(openList)}>
@@ -2225,7 +2225,7 @@ function WorkspaceDashboard({
           <article className="panel attentionPanel">
             <div className="panelHead">
               <div>
-                <span className="kicker">ACTION CENTRE</span>
+                <span className="kicker">Action centre</span>
                 <h2>Today&apos;s workload</h2>
               </div>
               <Activity size={19} />
@@ -2260,7 +2260,7 @@ function WorkspaceDashboard({
             </button>
             {nextAppointments.length > 0 ? (
               <div className="dashboardAppointments">
-                <span className="kicker">NEXT APPOINTMENTS</span>
+                <span className="kicker">Next appointments</span>
                 {nextAppointments.map((appointment) => (
                   <button key={appointment.id} onClick={() => setActive("calendar")}>
                     <CalendarDays size={15} />
@@ -2275,7 +2275,7 @@ function WorkspaceDashboard({
             ) : null}
             {(role === "admin" || role === "super_admin") ? (
               <div className="dashboardAdminTools">
-                <span className="kicker">ADMIN TOOLS</span>
+                <span className="kicker">Admin tools</span>
                 <button onClick={() => setActive("administration")}><UserCog size={16} /><span><strong>Invite staff</strong><small>Add a team member</small></span><ArrowRight size={14} /></button>
                 <button onClick={() => setActive("administration")}><Settings size={16} /><span><strong>Staff &amp; Masters</strong><small>Roles, branches and master data</small></span><ArrowRight size={14} /></button>
                 <button onClick={() => setActive("workflows")}><Workflow size={16} /><span><strong>Workflow Templates</strong><small>Manage repeatable processes</small></span><ArrowRight size={14} /></button>
@@ -2626,7 +2626,7 @@ function CaseWorkspace({
       {module !== "enquiries" ? (
         <div className="journeyListIntro">
           <div>
-            <span className="kicker">FULL {title.toUpperCase()} VIEW</span>
+            <span className="kicker">Full {title.toLowerCase()} view</span>
             <h2>{title}</h2>
             <p>Everything the branch needs for the next action, without opening each case.</p>
           </div>
@@ -2957,7 +2957,7 @@ function ApplicationsBoard({
     <article className="panel detailedRecordsPanel">
       <div className="detailedRecordsHead">
         <div>
-          <span className="kicker">EVERY APPLICATION</span>
+          <span className="kicker">Every application</span>
           <h2>Institution applications</h2>
           <p>Course, institution, references and important dates in one complete view.</p>
         </div>
@@ -3057,7 +3057,7 @@ function VisaMattersBoard({
     <article className="panel detailedRecordsPanel">
       <div className="detailedRecordsHead">
         <div>
-          <span className="kicker">EVERY VISA MATTER</span>
+          <span className="kicker">Every visa matter</span>
           <h2>Visa matters</h2>
           <p>Visa identity, lodgement, compliance dates and outcome together.</p>
         </div>
@@ -3270,7 +3270,7 @@ function CalendarView({
         <article className="panel calendarBoard">
           <div className="panelHead">
             <div>
-              <span className="kicker">TEAM WEEK</span>
+              <span className="kicker">Team week</span>
               <h2>Appointments and CRM deadlines</h2>
             </div>
             <div className="calendarActions">
@@ -3335,7 +3335,7 @@ function CalendarView({
         <aside className="panel calendarAgenda">
           <div className="panelHead">
             <div>
-              <span className="kicker">UPCOMING</span>
+              <span className="kicker">Upcoming</span>
               <h2>Team agenda</h2>
             </div>
             <CalendarCheck2 size={19} />
@@ -3446,7 +3446,7 @@ function DocumentsView({
       <article className="panel widePanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">DOCUMENT INDEX</span>
+            <span className="kicker">Document index</span>
             <h2>Documents</h2>
           </div>
           <div className="panelHeadActions">
@@ -3882,7 +3882,7 @@ function FinanceView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">INVOICES</span>
+            <span className="kicker">Invoices</span>
             <h2>Financial records</h2>
           </div>
           {canManage && (
@@ -4027,7 +4027,7 @@ function CommissionClaimsPanel({
     <article className="panel listPanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">COMMISSIONS</span>
+          <span className="kicker">Commissions</span>
           <h2>Partner and institution claims</h2>
         </div>
         <button className="primaryButton" onClick={() => setAdding(!adding)}>
@@ -4168,7 +4168,7 @@ function TemplatesView({
     <article className="panel listPanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">APPROVED CONTENT</span>
+          <span className="kicker">Approved content</span>
           <h2>Templates</h2>
         </div>
         {canManage && (
@@ -4268,7 +4268,7 @@ function TemplatesWorkspace({
     <section className="templateWorkspace">
       <div className="templateWorkspaceIntro">
         <div>
-          <span className="kicker">CONTROL CENTRE</span>
+          <span className="kicker">Control centre</span>
           <h2>Standardise every client interaction</h2>
           <p>Maintain the approved requests and messages your team uses every day, without making staff search through one long settings page.</p>
         </div>
@@ -4309,7 +4309,7 @@ function WorkflowView({
     <article className="panel listPanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">CASE WORKFLOWS</span>
+          <span className="kicker">Case workflows</span>
           <h2>Stage templates</h2>
         </div>
         {canManage && (
@@ -4460,7 +4460,7 @@ function DocumentChecklistTemplatesPanel({
     <article className="panel listPanel checklistTemplatesPanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">DOCUMENT REQUESTS</span>
+          <span className="kicker">Document requests</span>
           <h2>Document checklist</h2>
         </div>
         {canManage && (
@@ -4680,7 +4680,7 @@ function EmailTemplatesPanel({
     <article className="panel listPanel checklistTemplatesPanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">CLIENT NOTICES</span>
+          <span className="kicker">Client notices</span>
           <h2>Email templates</h2>
         </div>
       </div>
@@ -4852,7 +4852,7 @@ function PortalView({
       <article className="panel listPanel clientNextSteps" id="student-actions">
         <div className="panelHead">
           <div>
-            <span className="kicker">TO DO</span>
+            <span className="kicker">To do</span>
             <h2>Your next steps</h2>
           </div>
         </div>
@@ -4892,7 +4892,7 @@ function PortalView({
       <article className="panel clientJourney">
         <div className="panelHead">
           <div>
-            <span className="kicker">YOUR JOURNEY</span>
+            <span className="kicker">Your journey</span>
             <h2>{c.target || c.type}</h2>
           </div>
           <Status value={c.status} />
@@ -4917,7 +4917,7 @@ function PortalView({
         </div>
         {milestones.length > 0 && (
           <div className="journeyTimeline">
-            <span className="kicker">HOW YOU GOT HERE</span>
+            <span className="kicker">How you got here</span>
             {milestones.map((m, index) => (
               <div className="journeyStep" key={`${m.at}-${index}`}>
                 <div className="journeyDot" />
@@ -4937,7 +4937,7 @@ function PortalView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">MY DETAILS</span>
+            <span className="kicker">My details</span>
             <h2>Contact information</h2>
           </div>
           <button className="ghostButton" onClick={() => setEditingContact(!editingContact)}>
@@ -5005,7 +5005,7 @@ function PortalView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">CONSENT</span>
+            <span className="kicker">Consent</span>
             <h2>Privacy and data acknowledgements</h2>
           </div>
         </div>
@@ -5161,7 +5161,7 @@ function ClientModuleView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">MY FILES</span>
+            <span className="kicker">My files</span>
             <h2>Documents Maximus has asked for</h2>
           </div>
         </div>
@@ -5244,7 +5244,7 @@ function ClientModuleView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">MY APPOINTMENTS</span>
+            <span className="kicker">My appointments</span>
             <h2>Consultations and reviews</h2>
           </div>
           <button
@@ -5295,7 +5295,7 @@ function ClientModuleView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">MY MESSAGES</span>
+            <span className="kicker">My messages</span>
             <h2>Contact your case team</h2>
           </div>
           <button
@@ -5375,7 +5375,7 @@ function ClientModuleView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">MY ACCOUNT</span>
+            <span className="kicker">My account</span>
             <h2>Invoices and receipts</h2>
           </div>
           <LockKeyhole size={18} />
@@ -5752,7 +5752,7 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
     <article className="panel listPanel courseFinderPanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">GLOBAL COURSE CATALOGUE</span>
+          <span className="kicker">Global course catalogue</span>
           <h2>Find the right study option</h2>
           <p className="courseFinderIntro">Compare institutions, entry requirements, intakes and fees without leaving the client conversation.</p>
         </div>
@@ -5980,7 +5980,7 @@ function ReportBuilder({ serviceMode, canSeeFinance, offices, staff, sources, st
     <article className="panel listPanel reportBuilder">
       <div className="panelHead">
         <div>
-          <span className="kicker">REPORT BUILDER</span>
+          <span className="kicker">Report builder</span>
           <h2>Analyse and export by date range</h2>
           <p className="reportBuilderIntro">Pick the period and filters, preview the leads and patterns on screen, then export the matching records to Excel. Every sheet carries the filters you chose.</p>
         </div>
@@ -6021,18 +6021,18 @@ function ReportBuilder({ serviceMode, canSeeFinance, offices, staff, sources, st
           {patterns.length ? (
             <>
               <div className="panelHead reportPreviewHead">
-                <div><span className="kicker">PATTERNS</span><h3>Where enquiries come from and what converts</h3></div>
+                <div><span className="kicker">Patterns</span><h3>Where enquiries come from and what converts</h3></div>
                 <label className="reportBreakdownPick">Group by<select value={breakdowns.includes(breakdown) ? breakdown : breakdowns[0]} onChange={(event) => setBreakdown(event.target.value)}>{breakdowns.map((value) => <option key={value}>{value}</option>)}</select></label>
               </div>
-              <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>{breakdowns.includes(breakdown) ? breakdown : breakdowns[0]}</th><th>Enquiries</th><th>Converted</th><th>Conversion</th><th>Lost</th><th>Avg lead score</th><th>Avg days to convert</th></tr></thead>
-                <tbody>{shown.map((row) => <tr key={row.value}><td>{row.value}</td><td>{row.enquiries}</td><td>{row.converted}</td><td>{row.conversionRate}%</td><td>{row.lost}</td><td>{row.averageScore}</td><td>{row.averageDaysToConvert ?? "—"}</td></tr>)}</tbody></table></div>
+              <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>{breakdowns.includes(breakdown) ? breakdown : breakdowns[0]}</th><th className="num">Enquiries</th><th className="num">Converted</th><th className="num">Conversion</th><th className="num">Lost</th><th className="num">Avg lead score</th><th className="num">Avg days to convert</th></tr></thead>
+                <tbody>{shown.map((row) => <tr key={row.value}><td>{row.value}</td><td className="num">{row.enquiries}</td><td className="num">{row.converted}</td><td className="num">{row.conversionRate}%</td><td className="num">{row.lost}</td><td className="num">{row.averageScore}</td><td className="num">{row.averageDaysToConvert ?? "—"}</td></tr>)}</tbody></table></div>
             </>
           ) : null}
           {staffRows.length ? (
             <>
-              <div className="panelHead reportPreviewHead"><div><span className="kicker">STAFF PERFORMANCE</span><h3>Who is carrying the work</h3></div></div>
-              <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Staff</th><th>Office</th><th>Enquiries</th><th>Converted</th><th>Conversion</th><th>Open cases</th><th>Open tasks</th><th>Overdue tasks</th><th>Notes</th></tr></thead>
-                <tbody>{staffRows.map((row) => <tr key={String(row.staff)}><td>{String(row.staff)}</td><td>{String(row.office)}</td><td>{String(row.enquiries)}</td><td>{String(row.converted)}</td><td>{String(row.conversionRate)}%</td><td>{String(row.openCases)}</td><td>{String(row.tasksOpen)}</td><td>{String(row.tasksOverdue)}</td><td>{String(row.notes)}</td></tr>)}</tbody></table></div>
+              <div className="panelHead reportPreviewHead"><div><span className="kicker">Staff performance</span><h3>Who is carrying the work</h3></div></div>
+              <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Staff</th><th>Office</th><th className="num">Enquiries</th><th className="num">Converted</th><th className="num">Conversion</th><th className="num">Open cases</th><th className="num">Open tasks</th><th className="num">Overdue tasks</th><th className="num">Notes</th></tr></thead>
+                <tbody>{staffRows.map((row) => <tr key={String(row.staff)}><td>{String(row.staff)}</td><td>{String(row.office)}</td><td className="num">{String(row.enquiries)}</td><td className="num">{String(row.converted)}</td><td className="num">{String(row.conversionRate)}%</td><td className="num">{String(row.openCases)}</td><td className="num">{String(row.tasksOpen)}</td><td className="num">{String(row.tasksOverdue)}</td><td className="num">{String(row.notes)}</td></tr>)}</tbody></table></div>
             </>
           ) : null}
         </div>
@@ -6112,7 +6112,7 @@ function ReportsView({
         <article className="panel listPanel" aria-busy="true">
           <div className="panelHead">
             <div>
-              <span className="kicker">NEEDS ATTENTION</span>
+              <span className="kicker">Needs attention</span>
               <h2>Building the report</h2>
             </div>
           </div>
@@ -6208,7 +6208,7 @@ function ReportsView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">NEEDS ATTENTION</span>
+            <span className="kicker">Needs attention</span>
             <h2>What falls due next</h2>
           </div>
           <button className="ghostButton" onClick={exportAttention}>
@@ -6265,7 +6265,7 @@ function ReportsView({
                 <tr>
                   <th>Request for further information</th>
                   <th>Due</th>
-                  <th>Days left</th>
+                  <th className="num">Days left</th>
                 </tr>
               </thead>
               <tbody>
@@ -6273,7 +6273,7 @@ function ReportsView({
                   <tr key={entry.caseId}>
                     <td>{entry.caseNumber || `Case ${String(entry.caseId).slice(0, 8)}`}</td>
                     <td>{String(entry.dueAt).slice(0, 10)}</td>
-                    <td>
+                    <td className="num">
                       {entry.daysRemaining === null
                         ? "—"
                         : entry.daysRemaining < 0
@@ -6289,25 +6289,25 @@ function ReportsView({
       </article>
 
       <article className="panel listPanel">
-        <div className="panelHead"><div><span className="kicker">LEADS & FOLLOW-UP</span><h2>Enquiry operations</h2></div></div>
+        <div className="panelHead"><div><span className="kicker">Leads &amp; follow-up</span><h2>Enquiry operations</h2></div></div>
         <div className="miniStats inline">
           <article><span>Enquiries recorded</span><strong>{leads.total}</strong><small>Lead records</small></article>
           <article><span>Average lead score</span><strong>{leads.averageScore}</strong><small>Out of 100</small></article>
           <article><span>Missed follow-ups</span><strong>{leads.missedFollowUps}</strong><small>Past SLA date and not converted</small></article>
         </div>
-        <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>{Object.entries(leads.byStatus).map(([label, count]) => <tr key={label}><td>{humanise(label)}</td><td>{count}</td></tr>)}</tbody></table></div>
+        <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Status</th><th className="num">Count</th></tr></thead><tbody>{Object.entries(leads.byStatus).map(([label, count]) => <tr key={label}><td>{humanise(label)}</td><td className="num">{count}</td></tr>)}</tbody></table></div>
       </article>
 
       <article className="panel listPanel">
-        <div className="panelHead"><div><span className="kicker">CAMPAIGN PERFORMANCE</span><h2>Email and WhatsApp delivery</h2></div></div>
-        {campaignPerformance.length === 0 ? <p className="caseWorkEmpty">No campaigns have been launched yet.</p> : <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Campaign</th><th>Channel</th><th>Recipients</th><th>Sent</th><th>Failed</th><th>Delivery</th><th>Status</th></tr></thead><tbody>{campaignPerformance.map((item) => <tr key={item.id}><td>{item.name}</td><td>{humanise(item.channel)}</td><td>{item.recipients}</td><td>{item.sent}</td><td>{item.failed}</td><td>{item.deliveryRate}%</td><td><Status value={item.status} /></td></tr>)}</tbody></table></div>}
+        <div className="panelHead"><div><span className="kicker">Campaign performance</span><h2>Email and WhatsApp delivery</h2></div></div>
+        {campaignPerformance.length === 0 ? <p className="caseWorkEmpty">No campaigns have been launched yet.</p> : <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Campaign</th><th>Channel</th><th className="num">Recipients</th><th className="num">Sent</th><th className="num">Failed</th><th className="num">Delivery</th><th>Status</th></tr></thead><tbody>{campaignPerformance.map((item) => <tr key={item.id}><td>{item.name}</td><td>{humanise(item.channel)}</td><td className="num">{item.recipients}</td><td className="num">{item.sent}</td><td className="num">{item.failed}</td><td className="num">{item.deliveryRate}%</td><td><Status value={item.status} /></td></tr>)}</tbody></table></div>}
       </article>
 
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
             <span className="kicker">
-              {serviceMode === "direct_visa" ? "MIGRATION PIPELINE" : "EDUCATION PIPELINE"}
+              {serviceMode === "direct_visa" ? "Migration pipeline" : "Education pipeline"}
             </span>
             <h2>
               {serviceMode === "direct_visa"
@@ -6373,7 +6373,7 @@ function ReportsView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">VISA MATTERS</span>
+            <span className="kicker">Visa matters</span>
             <h2>Lodgement and decisions</h2>
           </div>
         </div>
@@ -6404,7 +6404,7 @@ function ReportsView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">TEAM</span>
+            <span className="kicker">Team</span>
             <h2>Workload</h2>
           </div>
         </div>
@@ -6417,10 +6417,10 @@ function ReportsView({
                 <tr>
                   <th>Staff</th>
                   <th>Branch</th>
-                  <th>Open cases</th>
-                  <th>Follow-ups overdue</th>
-                  <th>Open tasks</th>
-                  <th>Overdue</th>
+                  <th className="num">Open cases</th>
+                  <th className="num">Follow-ups overdue</th>
+                  <th className="num">Open tasks</th>
+                  <th className="num">Overdue</th>
                 </tr>
               </thead>
               <tbody>
@@ -6428,10 +6428,10 @@ function ReportsView({
                   <tr key={person.staffId}>
                     <td>{person.name || "—"}</td>
                     <td>{person.branch || "—"}</td>
-                    <td>{person.openCases}</td>
-                    <td>{person.needingAttention}</td>
-                    <td>{person.openTasks}</td>
-                    <td>{person.overdueTasks}</td>
+                    <td className="num">{person.openCases}</td>
+                    <td className="num">{person.needingAttention}</td>
+                    <td className="num">{person.openTasks}</td>
+                    <td className="num">{person.overdueTasks}</td>
                   </tr>
                 ))}
               </tbody>
@@ -6443,7 +6443,7 @@ function ReportsView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">BRANCHES</span>
+            <span className="kicker">Branches</span>
             <h2>Performance</h2>
           </div>
         </div>
@@ -6455,18 +6455,18 @@ function ReportsView({
               <thead>
                 <tr>
                   <th>Branch</th>
-                  <th>Cases</th>
-                  <th>Open</th>
-                  <th>Completed</th>
+                  <th className="num">Cases</th>
+                  <th className="num">Open</th>
+                  <th className="num">Completed</th>
                 </tr>
               </thead>
               <tbody>
                 {branches.map((branch) => (
                   <tr key={branch.branchId}>
                     <td>{branch.name || "—"}</td>
-                    <td>{branch.cases}</td>
-                    <td>{branch.open}</td>
-                    <td>{branch.completed}</td>
+                    <td className="num">{branch.cases}</td>
+                    <td className="num">{branch.open}</td>
+                    <td className="num">{branch.completed}</td>
                   </tr>
                 ))}
               </tbody>
@@ -6479,13 +6479,13 @@ function ReportsView({
         <article className="panel listPanel">
           <div className="panelHead">
             <div>
-              <span className="kicker">FINANCE</span>
+              <span className="kicker">Finance</span>
               <h2>Fees</h2>
             </div>
           </div>
           {finance.byCurrency?.length ? <div className="recordTableWrap"><table className="recordTable">
-            <thead><tr><th>Currency</th><th>Invoiced</th><th>Collected</th><th>Outstanding</th></tr></thead>
-            <tbody>{finance.byCurrency.map(bucket => <tr key={bucket.currency}><td>{bucket.currency}</td><td>{money(bucket.invoiced)}</td><td>{money(bucket.collected)}</td><td>{money(bucket.outstanding)}</td></tr>)}</tbody>
+            <thead><tr><th>Currency</th><th className="num">Invoiced</th><th className="num">Collected</th><th className="num">Outstanding</th></tr></thead>
+            <tbody>{finance.byCurrency.map(bucket => <tr key={bucket.currency}><td>{bucket.currency}</td><td className="num">{money(bucket.invoiced)}</td><td className="num">{money(bucket.collected)}</td><td className="num">{money(bucket.outstanding)}</td></tr>)}</tbody>
           </table></div> : <p className="caseWorkEmpty">No active invoices recorded.</p>}
           <p className="caseWorkEmpty">{finance.overdueInvoices} overdue invoices. Outstanding balances include credit notes. Covers all invoices permitted for your account.</p>
         </article>
@@ -6598,7 +6598,7 @@ function GoogleWorkspaceView() {
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">CHECKED, NOT ASSUMED</span>
+            <span className="kicker">Checked, not assumed</span>
             <h2>Integration status</h2>
           </div>
           <button
@@ -6666,7 +6666,7 @@ function FeatureCoverage() {
     <article className="panel coveragePanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">EARLIER CRM + UPLIFT</span>
+          <span className="kicker">Earlier CRM + uplift</span>
           <h2>Functional coverage and connection status</h2>
         </div>
         <Status value="No placeholder claims" />
@@ -6732,7 +6732,7 @@ function ReadinessPanel() {
     <article className="panel listPanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">PRODUCTION READINESS</span>
+          <span className="kicker">Production readiness</span>
           <h2>Live service check</h2>
         </div>
         {state?.status && (
@@ -6956,7 +6956,7 @@ function MergeClientsPanel() {
     <article className="panel listPanel">
       <div className="panelHead">
         <div>
-          <span className="kicker">DATA QUALITY</span>
+          <span className="kicker">Data quality</span>
           <h2>Merge duplicate clients</h2>
         </div>
       </div>
@@ -7104,7 +7104,7 @@ function LegacyImportPanel({ branches }: { branches: AdminBranch[] }) {
   };
   return (
     <article className="panel listPanel">
-      <div className="panelHead"><div><span className="kicker">OLD CRM MIGRATION</span><h2>Import legacy Excel or CSV exports</h2></div></div>
+      <div className="panelHead"><div><span className="kicker">Old CRM migration</span><h2>Import legacy Excel or CSV exports</h2></div></div>
       <p className="coverageIntro">Use either automatic mode for the original combined Enquiry, Student or Client Excel export. The detailed modes support separate module exports. Stable old CRM IDs reconnect every row instead of restarting client progress.</p>
       <div className="stackedForm">
         <label>Export type<select value={entityType} onChange={(event) => { setEntityType(event.target.value); setBatchId(""); setSummary(""); setErrors([]); }}>{LEGACY_IMPORT_TYPES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
@@ -7315,7 +7315,7 @@ function AdminView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">YOUR TEAM</span>
+            <span className="kicker">Your team</span>
             <h2>Staff accounts</h2>
           </div>
           <div className="panelHeadActions">
@@ -7614,7 +7614,7 @@ function AdminView({
         <article className="panel listPanel">
           <div className="panelHead">
             <div>
-              <span className="kicker">WAITING TO SIGN IN</span>
+              <span className="kicker">Waiting to sign in</span>
               <h2>Invitations</h2>
             </div>
           </div>
@@ -7695,7 +7695,7 @@ function AdminView({
           <details className="staffSettingsGroup"><summary>Organisation defaults</summary>
       {isOwner && settings ? (
         <article className="panel listPanel">
-          <div className="panelHead"><div><span className="kicker">MASTER CONFIGURATION</span><h2>Organisation defaults</h2></div></div>
+          <div className="panelHead"><div><span className="kicker">Master configuration</span><h2>Organisation defaults</h2></div></div>
           <p className="coverageIntro">These values control new invoices, receipts, reminders and appointments across every branch.</p>
           <form className="stackedForm" onSubmit={async (event) => {
             event.preventDefault();
@@ -7738,7 +7738,7 @@ function AdminView({
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">MASTERS</span>
+            <span className="kicker">Masters</span>
             <h2>Branches</h2>
           </div>
           {isOwner && (
@@ -7838,7 +7838,7 @@ function AdminView({
       <article className="panel permissionPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">PERMISSION MAP</span>
+            <span className="kicker">Permission map</span>
             <h2>What each account can access</h2>
           </div>
         </div>
@@ -7869,7 +7869,7 @@ function AdminView({
         </div>
         {roles.length > 0 && (
           <div className="customRoles">
-            <span className="kicker">CUSTOM STAFF ROLES</span>
+            <span className="kicker">Custom staff roles</span>
             {roles.map((r) => (
               <div className="functionalRow" key={r.id}>
                 <UserCog size={18} />
@@ -8102,7 +8102,7 @@ function FactList({
   const filled = rows.filter(([, value]) => text(value));
   return (
     <section className={`caseWorkPanel${className ? ` ${className}` : ""}`}>
-      <span className="kicker">{title.toUpperCase()}</span>
+      <span className="kicker">{title}</span>
       {filled.length === 0 ? (
         <p className="caseWorkEmpty">{empty ?? "Nothing recorded yet."}</p>
       ) : (
@@ -8528,7 +8528,7 @@ function CaseDrawerBody({
     <div className={`drawerBackdrop${preview ? " recordPreviewBackdrop" : ""}`} onClick={close}>
       <aside ref={drawerRef} className={`caseDrawer wide${preview ? " recordPreview" : ""}`} role={preview ? "dialog" : undefined} aria-modal={preview && !copilot.isOpen ? true : undefined} aria-label={`${item.name} case preview`} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <div className="caseWindowTopbar">
-          <Image src="/maximus-logo.svg" alt="Maximus Education and Migration" width={126} height={36} unoptimized />
+          <Image src="/maximus-logo-dark.svg" alt="Maximus Education and Migration" width={126} height={36} unoptimized />
           <span>
             {direct ? "Migration" : "Study abroad"}
           </span>
@@ -8542,7 +8542,7 @@ function CaseDrawerBody({
         <div className="drawerHead">
           <div>
             <span>{item.id}</span>
-            <h2>{item.name}</h2>
+            {preview ? <h2>{item.name}</h2> : <h1>{item.name}</h1>}
             <div className="caseContactLine">
               {(text(client.email) || item.email) && <button type="button" onClick={() => onCaseAction(caseId ?? "", "message")}><Mail size={14} />{text(client.email) || item.email}</button>}
               {(text(client.mobile) || item.phone) && <a href={`tel:${text(client.mobile) || item.phone}`}>{text(client.mobile) || item.phone}</a>}
@@ -8663,7 +8663,7 @@ function CaseDrawerBody({
         {tab === "overview" && (
           <div className={`caseHome${direct ? " directCase" : ""}`}>
             <section className="caseWorkPanel agentClientPanel">
-              <span className="kicker">CLIENT PROFILE</span>
+              <span className="kicker">Client profile</span>
               <h3>Client details</h3>
               <dl>
                 <div><dt>Email</dt><dd>{text(client.email) || item.email || "Not recorded"}</dd></div>
@@ -8855,7 +8855,7 @@ function CaseDrawerBody({
               </button>
             </section>
             <section className="lifecyclePanel">
-              <span className="kicker">CASE PIPELINE</span>
+              <span className="kicker">Case pipeline</span>
               <ol className="lifecycleTrack">
                 {LIFECYCLE_STAGES.map((step) => (
                   <li
@@ -8977,7 +8977,7 @@ function CaseDrawerBody({
               <section className="caseWorkPanel agentApplicationsPanel">
                 <div className="caseWorkPanelHead">
                   <div>
-                    <span className="kicker">ADMISSIONS</span>
+                    <span className="kicker">Admissions</span>
                     <h3>Applications in progress</h3>
                   </div>
                   {canModify && <button className="primaryButton compactButton" onClick={() => setTab("applications")}>
@@ -9006,7 +9006,7 @@ function CaseDrawerBody({
             {allowed("documents")&&<section className="caseWorkPanel agentDocumentsPanel">
               <div className="caseWorkPanelHead">
                 <div>
-                  <span className="kicker">DOCUMENTS</span>
+                  <span className="kicker">Documents</span>
                   <h3>{activeCaseDocuments.length ? `${completedDocuments} received · ${activeCaseDocuments.length - completedDocuments} requested` : "Documents & checklist"}</h3>
                 </div>
                 <button className="primaryButton compactButton" onClick={() => setTab("documents")}>
@@ -9027,7 +9027,7 @@ function CaseDrawerBody({
             {allowed("communications")&&<section className="caseWorkPanel agentCommunicationPanel">
               <div className="caseWorkPanelHead">
                 <div>
-                  <span className="kicker">COMMUNICATION</span>
+                  <span className="kicker">Communication</span>
                   <h3>Latest student conversation</h3>
                 </div>
                 <button className="ghostButton" onClick={() => setTab("communication")}>Open inbox</button>
@@ -9048,7 +9048,7 @@ function CaseDrawerBody({
             </section>}
             <div className="agentBottomSummary">
               {(allowed("visas")||allowed("direct_visas"))&&<section className="caseWorkPanel">
-                <span className="kicker">VISA &amp; COMPLIANCE</span>
+                <span className="kicker">Visa &amp; compliance</span>
                 <h3>Visa details</h3>
                 <div className={`agentAlert ${item.visaExpiry ? "ready" : ""}`}>
                   <strong>{item.visaExpiry ? `Visa expiry ${item.visaExpiry}` : "Visa type and expiry are not recorded."}</strong>
@@ -9057,7 +9057,7 @@ function CaseDrawerBody({
                 <button className="primaryButton compactButton" onClick={() => setTab("visa")}>Record visa details</button>
               </section>}
               {(allowed("finance"))&&<section className="caseWorkPanel">
-                <span className="kicker">FINANCE</span>
+                <span className="kicker">Finance</span>
                 <h3>Account position</h3>
                 <div className="agentFinanceFacts">
                   <span><small>Invoices</small><strong>{file?.invoices.length ?? 0}</strong></span>
@@ -9349,7 +9349,7 @@ function CaseDrawerBody({
             />
             <section className="caseWorkPanel">
               <div className="caseWorkPanelHead">
-                <span className="kicker">CASE REQUIREMENTS</span>
+                <span className="kicker">Case requirements</span>
 
               </div>
               {checklist.length === 0 ? (
@@ -9453,7 +9453,7 @@ function CaseDrawerBody({
           <section className="caseWorkPanel">
             <div className="caseWorkPanelHead">
               <div>
-                <span className="kicker">SHARED CLIENT CONVERSATION</span>
+                <span className="kicker">Shared client conversation</span>
                 <h3>Email and messages</h3>
               </div>
               <div className="caseWorkPanelActions">
@@ -9485,7 +9485,7 @@ function CaseDrawerBody({
 
         {tab === "timeline" && (
           <section className="caseWorkPanel">
-            <div className="caseNotesHeading"><div><span className="kicker">CLIENT HISTORY</span><h3>Notes & activity</h3><p>Keep the conversation, decisions and next steps together.</p></div><span className="caseNotesCount">{file?.notes.length ?? 0} notes</span></div>
+            <div className="caseNotesHeading"><div><span className="kicker">Client history</span><h3>Notes & activity</h3><p>Keep the conversation, decisions and next steps together.</p></div><span className="caseNotesCount">{file?.notes.length ?? 0} notes</span></div>
             <form
               className="caseNoteComposer"
               onSubmit={async (event) => {
@@ -9626,7 +9626,7 @@ function HistorySection({
   };
   return (
     <section className="caseWorkPanel">
-      <span className="kicker">{title.toUpperCase()}</span>
+      <span className="kicker">{title}</span>
       {rows.length === 0 ? (
         <p className="caseWorkEmpty">Nothing recorded yet.</p>
       ) : (
@@ -9772,7 +9772,7 @@ function CaseInvoices({
 
   return (
     <section className="caseWorkPanel">
-      <span className="kicker">INVOICES</span>
+      <span className="kicker">Invoices</span>
       {invoices.length === 0 ? (
         <p className="caseWorkEmpty">No invoices raised for this case.</p>
       ) : (
@@ -9874,7 +9874,7 @@ function DocumentsPanel({
   return (
     <section className="caseWorkPanel">
       <div className="caseWorkPanelHead">
-        <div><span className="kicker">DOCUMENTS</span><h3>Files & requests <span className="documentCount">{documents.length}</span></h3></div>
+        <div><span className="kicker">Documents</span><h3>Files & requests <span className="documentCount">{documents.length}</span></h3></div>
         {caseId && clientId && <label className={`ghostButton fileButton${storageConnected ? "" : " disabled"}`}>
           <Plus size={15} /> {busy === "new" ? "Preparing…" : "Upload document"}
           <input type="file" disabled={!storageConnected || Boolean(busy)} onChange={async event => {
@@ -10113,7 +10113,7 @@ function ApplicationsTab({
   const [archiving, setArchiving] = useState("");
   return (
     <section className="caseWorkPanel">
-      <span className="kicker">EDUCATION APPLICATIONS</span>
+      <span className="kicker">Education applications</span>
       <p className="caseWorkEmpty">
         A student can hold several applications at once. Each carries its own
         institution, course, intake and status.
@@ -10306,7 +10306,7 @@ function VisaMatterTab({
   const value = matter ?? {};
   return (
     <section className="caseWorkPanel">
-      <span className="kicker">VISA MATTER</span>
+      <span className="kicker">Visa matter</span>
       <form
         className="stackedForm"
         onSubmit={async (event) => {
@@ -10523,7 +10523,7 @@ function FamilyTab({
   const [archiving, setArchiving] = useState("");
   return (
     <section className="caseWorkPanel">
-      <span className="kicker">FAMILY AND DEPENDANTS</span>
+      <span className="kicker">Family and dependants</span>
       <p className="caseWorkEmpty">
         Add a spouse, partner, children or other dependants. There is no limit,
         and each is a record of its own rather than a note on the client.
@@ -11912,6 +11912,9 @@ function HomeWorkspace() {
     const mode = canUse(next,"study_access") ? serviceMode === "direct_visa" && canUse(next,"direct_visa_access") ? "direct_visa" : "study" : "direct_visa";
     setServiceMode(mode);
     if(nextRole === "client" && new URLSearchParams(window.location.search).get("portal") === "documents") { setActiveModule("documents"); return; }
+    // A deep link (/?module=reports) opens that section when the account may use it.
+    const requested = new URLSearchParams(window.location.search).get("module");
+    if (requested && (roleConfig[nextRole].modules as readonly string[]).includes(requested) && canUse(next, requested, mode)) { setActiveModule(requested as ModuleKey); return; }
     setActiveModule(roleConfig[nextRole].modules.find(key=>canUse(next,key,mode))??roleConfig[nextRole].modules[0]);
   };
   const [identity, setIdentity] = useState<LiveIdentity | null>(null),
@@ -13356,7 +13359,7 @@ function HomeWorkspace() {
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
-            <span className="kicker">SECURE AUDIT TRAIL</span>
+            <span className="kicker">Secure audit trail</span>
             <h2>Recorded actions</h2>
           </div>
           <button className="ghostButton" onClick={exportData}>
@@ -13864,11 +13867,16 @@ function HomeWorkspace() {
                     : "Direct Visa"
                   : screenMeta[1]}
               </span>
-              <h1>
-                {active === "dashboard"
-                  ? `${orgGreeting()}, ${(identity?.displayName || roleConfig[role].label).split(" ")[0]}`
-                  : screenMeta[0]}
-              </h1>
+              {/* While a case window is open the case's own name is the screen's h1; the hidden page title steps down. */}
+              {caseWindowId ? (
+                <h2 className="pageTitleHeading">{screenMeta[0]}</h2>
+              ) : (
+                <h1>
+                  {active === "dashboard"
+                    ? `${orgGreeting()}, ${(identity?.displayName || roleConfig[role].label).split(" ")[0]}`
+                    : screenMeta[0]}
+                </h1>
+              )}
               <p>{active === "dashboard" ? "Here is the work that needs your attention today." : screenMeta[2]}</p>
             </div>
             {role !== "client" && (["enquiries", "students", "applications", "visas", "direct_visas", "defer", "case_complete", "compliance", "documents", "finance"] as ModuleKey[]).includes(active) ? (

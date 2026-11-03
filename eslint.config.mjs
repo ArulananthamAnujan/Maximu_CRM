@@ -15,6 +15,10 @@ const eslintConfig = defineConfig([
     "mobile/android/**",
     "mobile/ios/**",
     "mobile/dist/**",
+    // Installed agent skills are third-party tooling, not application code.
+    ".agents/**",
+    ".claude/**",
+    ".taste-skill/**",
   ]),
 ]);
 

@@ -71,3 +71,8 @@ tsconfig.tsbuildinfo
 *.mobileprovision
 
 /supabase/.temp/
+
+# Working files of the design skill (inspections, screenshots); the dealt sheet is kept.
+.taste-skill/*
+!.taste-skill/direction.json
+!.taste-skill/notes.md

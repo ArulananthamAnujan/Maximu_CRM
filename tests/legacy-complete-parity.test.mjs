@@ -98,7 +98,7 @@ test("legacy enquiry scoring, follow-up, loss and performance summaries are oper
   assert.match(reports, /missedFollowUps/);
   assert.match(reports, /campaignPerformance/);
   assert.match(page, /Lost \/ cancelled reason/);
-  assert.match(page, /CAMPAIGN PERFORMANCE/);
+  assert.match(page, /Campaign performance/);
   assert.match(page, /First appointment date/);
   assert.match(page, /Follow-up remarks/);
   assert.match(workspace, /Initial consultation with/);
