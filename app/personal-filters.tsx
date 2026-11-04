@@ -15,13 +15,16 @@ type Values = Record<string, string>;
 type SavedView = { id: string; name: string; filters: { values?: Values; visible?: string[]; query?: string } };
 
 /** Filters are always applied by the existing, permission-scoped register. */
-export function PersonalFilters({ module, label, fields, values, query, onChange, onApply }: {
+export function PersonalFilters({ module, label, fields, values, query, onChange, onApply, standard = [] }: {
   module: string; label: string; fields: PersonalFilterField[]; values: Values; query: string;
   onChange: (key: string, value: string) => void;
   onApply: (values: Values, query: string) => void;
+  /** Filters that are always on screen, in this order; everything else is added from the list. */
+  standard?: string[];
 }) {
   const id = useId();
   const [visible, setVisible] = useState<string[]>([]);
+  const isStandard = (key: string) => standard.includes(key);
   const [views, setViews] = useState<SavedView[]>([]);
   const [selected, setSelected] = useState("");
   const [name, setName] = useState("");
@@ -31,7 +34,8 @@ export function PersonalFilters({ module, label, fields, values, query, onChange
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
-  const shown = fields.filter(field => visible.includes(field.key) || values[field.key]);
+  const ordered = [...standard.map(key => fields.find(field => field.key === key)).filter((field): field is PersonalFilterField => Boolean(field)), ...fields.filter(field => !isStandard(field.key))];
+  const shown = ordered.filter(field => isStandard(field.key) || visible.includes(field.key) || values[field.key]);
   const remaining = fields.filter(field => !shown.includes(field));
   const activeCount = fields.filter(field => Boolean(values[field.key])).length;
 
@@ -98,7 +102,7 @@ export function PersonalFilters({ module, label, fields, values, query, onChange
       </label>
       <button type="button" disabled={busy || loading} onClick={() => { setSaving(!saving); setName(selected ? views.find(view => view.id === selected)?.name || "" : ""); }}><Save size={15} /> Save view</button>
       {selected && <button type="button" disabled={busy} aria-label="Delete selected saved view" onClick={() => { if (window.confirm("Delete this saved view?")) void mutate("delete"); }}><Trash2 size={15} /></button>}
-      <button type="button" disabled={busy || !(shown.length || query)} onClick={() => { setVisible([]); onApply({}, ""); edited(); setSaving(false); }}><X size={15} /> Clear filters</button>
+      <button type="button" disabled={busy || !(activeCount || query || shown.some(field => !isStandard(field.key)))} onClick={() => { setVisible([]); onApply({}, ""); edited(); setSaving(false); }}><X size={15} /> Clear filters</button>
     </div>
     {saving && <form className={styles.save} onSubmit={event => { event.preventDefault(); void mutate("create"); }}>
       <label htmlFor={id + "-name"}>View name</label>
@@ -111,7 +115,7 @@ export function PersonalFilters({ module, label, fields, values, query, onChange
       const value = values[field.key] || "";
       return <div key={field.key} className={styles.field}>
         <label htmlFor={id + "-" + field.key}>{field.label}</label>
-        <button type="button" className={styles.remove} aria-label={"Remove " + field.label + " filter"} onClick={() => { setVisible(shown.filter(item => item.key !== field.key).map(item => item.key)); onChange(field.key, ""); edited(); }}><X size={14} /></button>
+        {isStandard(field.key) ? <span className={styles.spacer} /> : <button type="button" className={styles.remove} aria-label={"Remove " + field.label + " filter"} onClick={() => { setVisible(shown.filter(item => item.key !== field.key).map(item => item.key)); onChange(field.key, ""); edited(); }}><X size={14} /></button>}
         {field.options ? <select id={id + "-" + field.key} value={value} onChange={event => { onChange(field.key, event.target.value); edited(); }}>
           <option value="">All</option>
           {value && !field.options.some(option => option.value === value) && <option value={value}>{value} (not in current options)</option>}
@@ -119,7 +123,7 @@ export function PersonalFilters({ module, label, fields, values, query, onChange
         </select> : <input id={id + "-" + field.key} type={field.type || "text"} value={value} placeholder={field.placeholder} onChange={event => { onChange(field.key, event.target.value); edited(); }} />}
       </div>;
     })}</div> : <p className={styles.hint}>Choose “Add filter” to narrow this list. Combine as many fields as you need.</p>}
-    {shown.length > 1 && <p className={styles.hint}>Results must match all selected filters.</p>}
+    {shown.length > 1 && !standard.length && <p className={styles.hint}>Results must match all selected filters.</p>}
     {error && <p className={styles.error} role="alert">{error} <button type="button" disabled={busy || loading} onClick={() => { setLoading(true); setReload(value => value + 1); }}>Reload saved views</button></p>}
     {notice && <p className={styles.hint} role="status">{notice}</p>}
   </section>;

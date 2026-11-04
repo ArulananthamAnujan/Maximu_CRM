@@ -274,3 +274,34 @@ inspector reads the top bar's bordered icon buttons as tinted squares. Two
 contrast rules were tightened on the way: amber ink on amber tint is #7f4a0e
 (5.3:1) and secondary text on the tinted ground is #3f4c56 (7.7:1). The
 sign-in page keeps its original design.
+
+## The accepted design: the sign-in's language across the product
+
+The owner rejected both the flat house style and the first navy-frame draft
+("no one will say wow") and approved the sign-in page's own language carried
+through every screen. `app/brand-theme.css`, loaded after the house style,
+now holds it:
+
+- every page opens with the sign-in's dark gradient panel (its radial sky and
+  amber glow, its faint circle): orange tracked kicker, white title, the
+  page's main action in amber on the panel;
+- the sidebar is the same dark panel with the full logo in its own colours
+  (the light-text drawing on dark, never a white filter), the active item lit
+  in amber; the case window bar and the Gmail header match;
+- the ground is the sign-in page's pale gradient; cards are white with 18px
+  corners on a soft shadow; the figures have the original coloured gradient
+  icon squares and a coloured left edge; the task board's counts match;
+- status reads by colour; the current lifecycle stage is amber; primary
+  buttons are the sign-in's blue gradient with its glow; ghost buttons white;
+- menus, popovers and the notifications panel are white cards with a caret,
+  14px rows and blue icons; the dashboard filter panel is a card that
+  unfolds; filter bars are sky-tinted with labelled fields.
+
+With it, the Enquiries register got a standard filter set that is always on
+screen (office, enquiry status, assigned staff, service, source, created
+from/to) with "Add filter" for the rest, and the task dialog's options read
+as words. The inspector's flat-surface rules (gradient, shadow, button-fx,
+micro-label, colour-sprawl, icon-chips) fail on these screens by the
+owner's decision; its legibility rules (contrast, tiny text, edge text)
+were kept and re-checked on the dashboard, Enquiries, Tasks, the case file,
+the portal, Gmail and Accounts.

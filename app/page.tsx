@@ -2747,6 +2747,7 @@ function CaseWorkspace({
           </div>
           {canExport ? <button type="button" className="ghostButton registerExport" onClick={() => void exportRegister()} title="Every enquiry matching the filters and dates above, as an Excel workbook"><Download size={15} /> Export to Excel</button> : null}
           <PersonalFilters key={module} module={module} label={title} query={query}
+            standard={module === "enquiries" ? ["branchId", "status", "ownerId", "service", "source", "createdFrom", "createdTo"] : undefined}
             values={{ branchId: officeFilter, destination: destinationFilter, service: serviceFilter, priority: priorityFilter,
               documents: documentFilter, followUp: followUpFilter, ownerId: assignedStaffFilter, status: statusFilter,
               source: sourceFilter, intake: intakeFilter, qualification: qualificationFilter, testGiven: testFilter,
@@ -3755,7 +3756,7 @@ function MessagesView({
       <header className="gmailWorkspaceHeader">
         <button className="gmailBackToCrm" onClick={onClose} title="Back to CRM dashboard">
           <ChevronLeft size={20} />
-          <Image src="/maximus-logo-dark.svg" alt="Maximus Education and Migration" width={150} height={40} unoptimized />
+          <Image src="/maximus-logo.svg" alt="Maximus Education and Migration" width={150} height={40} unoptimized />
         </button>
         <h1 className="gmailBrand"><Mail size={25} /><span>Gmail</span></h1>
         <form className="gmailSearchBar" onSubmit={(event) => { event.preventDefault(); void loadGmailInbox(gmailSearch, mailFolder); }}>
@@ -5223,7 +5224,7 @@ function ClientTeamRail({ client, documents, invoices, openModal }: { client: Ca
       <h3 className="railHeading">Your case team</h3>
       <article className="panel listPanel clientTeamCard">
         <div className="clientTeamFacts">
-          <div><span>Case officer</span><strong>{client.owner || "Being assigned"}</strong></div>
+          <div><span>Case officer</span><strong>{client.owner || "Your Maximus case team"}</strong></div>
           <div><span>Office</span><strong>{client.branch || "Maximus"}</strong></div>
           <div><span>Service</span><strong>{humanise(client.type)}</strong></div>
           <div><span>Stage</span><strong>{client.stage}</strong></div>
@@ -8855,7 +8856,7 @@ function CaseDrawerBody({
     <div className={`drawerBackdrop${preview ? " recordPreviewBackdrop" : ""}`} onClick={close}>
       <aside ref={drawerRef} className={`caseDrawer wide${preview ? " recordPreview" : ""}`} role={preview ? "dialog" : undefined} aria-modal={preview && !copilot.isOpen ? true : undefined} aria-label={`${item.name} case preview`} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
         <div className="caseWindowTopbar">
-          <Image src="/maximus-logo-dark.svg" alt="Maximus Education and Migration" width={126} height={36} unoptimized />
+          <Image src="/maximus-logo.svg" alt="Maximus Education and Migration" width={126} height={36} unoptimized />
           <span>
             {direct ? "Migration" : "Study abroad"}
           </span>

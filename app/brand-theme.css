@@ -133,11 +133,11 @@
 .appShell .panel:hover, .panel:hover { box-shadow: var(--bt-card-shadow); border-color: var(--bt-card-border); }
 .appShell.caseWindow :is(.panel, .caseWorkPanel, .agentClientPanel, .caseAtGlance, .caseQuickNote, .caseLastNote, .radarItem, .summaryRows, .drawerHealth, .casePriorityBar) { border-radius: var(--bt-radius-card); }
 .panel > .panelHead, .appShell .panel > .panelHead, .panelHead, .appShell .panelHead { background: transparent; margin: 0 0 14px; padding: 0 0 12px; border-bottom: 1px solid var(--hs-rule); border-radius: 0; }
-.kicker, .appShell .kicker, .journeyListIntro .kicker, .dashboardAdminTools > .kicker, .railHeading { color: #cf672d; font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+.kicker, .appShell .kicker, .journeyListIntro .kicker, .dashboardAdminTools > .kicker, .railHeading { color: #b3521d; font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
 .railHeading { font-size: 12px; }
 .panelHead h2, .appShell .panelHead h2, .journeyListIntro h2, .detailedRecordsHead h2, .templateWorkspaceIntro h2 { color: var(--bt-navy); font-size: 18px; font-weight: 700; }
 .journeyListIntro, .detailedRecordsHead, .templateWorkspaceIntro { background: linear-gradient(110deg, #fff 0%, #f7fbfd 72%, #fff8ef 100%); border-bottom: 1px solid var(--hs-rule); border-radius: var(--bt-radius-card) var(--bt-radius-card) 0 0; }
-.templateWorkspaceSummary strong, .journeyRecordCount strong, .detailedRecordsSummary strong { color: #cf672d; }
+.templateWorkspaceSummary strong, .journeyRecordCount strong, .detailedRecordsSummary strong { color: #b3521d; }
 .appShell .listFilterBar, .listFilterBar, .courseFinderFilters.courseFinderFilterGrid, .templateFilters, .caseFilterPanel { background: var(--bt-sky-tint) !important; border: 1px solid var(--bt-sky-line) !important; border-radius: 14px; }
 .appShell .listFilterBar input, .appShell .listFilterBar select, .courseFinderFilters input, .courseFinderFilters select, .templateFilters input, .templateFilters select { background: #fff; border-radius: var(--bt-radius-control); }
 .radarItem.actionRow, .dashboardMode .actionRow, .caseQuickNote, .caseLastNote, .notice { background-color: var(--bt-sky-tint); border: 1px solid var(--bt-sky-line); border-radius: 14px; }
@@ -223,7 +223,7 @@
 
 /* ---------- the case window and the Gmail workspace share the dark bar ---------- */
 .appShell .caseWindowTopbar, .caseWindow .caseWindowTopbar, .gmailWorkspaceHeader { background: var(--bt-panel-glow), var(--bt-panel-gradient); color: var(--bt-on-dark); border-bottom: 0; box-shadow: 0 10px 30px rgba(11, 35, 54, 0.22); }
-.appShell .caseWindowTopbar img, .appShell .caseWindowTopbar .brandMark, .gmailWorkspaceHeader img { filter: brightness(0) invert(1); }
+/* The logo keeps its own colours on the dark bars: the light-text drawing of the mark is used there, never a white filter. */
 .caseWindow .caseWindowTopbar button, .appShell .caseWindowTopbar button, .appShell .caseWindowTopbar .copilotTrigger, .gmailCopilotTrigger, .gmailWorkspaceHeader .copilotTrigger { color: var(--bt-on-dark); border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.1); border-radius: 999px; }
 .caseWindow .caseWindowTopbar > span, .caseWindow .caseWindowTopbar > b, .appShell .caseWindowTopbar > span, .appShell .caseWindowTopbar > b { color: var(--bt-on-dark-muted); }
 .appShell.caseWindow .drawerHead { background: var(--bt-panel-glow), var(--bt-panel-gradient); color: var(--bt-on-dark); margin: 16px 24px 0; border-radius: 22px; padding: 22px 26px; box-shadow: 0 22px 50px rgba(11, 35, 54, 0.22); }
@@ -282,3 +282,39 @@
 .appShell .panel.clientWelcome h2, .appShell .panel.clientWelcome p, .appShell .panel.clientWelcome span { color: var(--bt-on-dark) !important; }
 .appShell .panel.clientWelcome span { color: var(--bt-amber) !important; }
 .appShell .panel.clientWelcome p { color: var(--bt-on-dark-muted) !important; }
+
+/* ---------- what unfolds: menus, popovers, notifications, filter panels ---------- */
+.quickMenu, .smallPopover, .notificationPopover { top: 50px; min-width: 260px; padding: 10px; border: 1px solid var(--bt-card-border); border-radius: 16px; background: #fff; box-shadow: 0 30px 80px rgba(26, 78, 115, 0.22); }
+.quickMenu::before, .notificationPopover::before { content: ""; position: absolute; top: -7px; right: 22px; width: 12px; height: 12px; background: #fff; border-left: 1px solid var(--bt-card-border); border-top: 1px solid var(--bt-card-border); transform: rotate(45deg); }
+.quickMenu button { padding: 11px 12px; border-radius: 10px; font-size: 14px; font-weight: 600; color: var(--bt-navy); gap: 12px; }
+.quickMenu button svg { width: 18px; height: 18px; color: var(--bt-blue); }
+.quickMenu button:hover { background: var(--bt-sky-tint); }
+.smallPopover { padding: 14px; }
+.smallPopover strong { font-size: 15px; color: var(--bt-navy); }
+.smallPopover > span { font-size: 13px; color: var(--bt-muted); margin: 6px 0 12px; }
+.smallPopover > button, .notificationPopover > button, .smallPopover > div > button { border: 1px solid var(--bt-card-border); background: #fff; color: var(--bt-blue); border-radius: 10px; padding: 9px 12px; font-size: 13px; font-weight: 600; }
+.smallPopover > button:hover, .notificationPopover > button:hover { background: var(--bt-sky-tint); }
+.notificationPopover { min-width: 360px; max-width: min(420px, calc(100vw - 32px)); }
+.alertList { list-style: none; margin: 8px 0 10px; padding: 0; display: grid; gap: 6px; max-height: 360px; overflow: auto; }
+.alertList li button { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--hs-rule); border-radius: 12px; background: var(--bt-sky-tint); color: var(--bt-text); text-align: left; cursor: pointer; }
+.alertList li button:hover { background: #daeef7; border-color: var(--bt-sky-line); }
+.alertList li button span { display: grid; gap: 2px; min-width: 0; }
+.alertList li button b { font-size: 14px; font-weight: 600; color: var(--bt-navy); }
+.alertList li button small { font-size: 13px; color: var(--bt-muted); white-space: normal; }
+.alertList li button svg { color: var(--bt-blue); }
+.topbar .iconButton.alert i { background: var(--bt-amber-strong); border: 2px solid #fff; width: 10px; height: 10px; }
+.dashboardFilterPanel { border: 1px solid var(--bt-card-border); border-radius: 16px; background: rgba(255, 255, 255, 0.96); box-shadow: var(--bt-card-shadow); padding: 0; margin-bottom: 18px; }
+.dashboardFilterPanel > summary { padding: 14px 18px; font-size: 14px; font-weight: 600; color: var(--bt-blue); cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+.dashboardFilterPanel > summary::-webkit-details-marker { display: none; }
+.dashboardFilterPanel > summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); transition: transform 120ms ease; }
+.dashboardFilterPanel[open] > summary::before { transform: rotate(45deg); }
+.dashboardFilterPanel[open] > summary { border-bottom: 1px solid var(--hs-rule); }
+.appShell .dashboardFilters, .dashboardFilters { background: transparent !important; border: 0 !important; box-shadow: none; border-radius: 0 !important; padding: 14px 18px 18px; gap: 12px; }
+.dashboardFilters label { font-size: 13px; font-weight: 600; color: var(--bt-navy); }
+.dashboardFilters input, .dashboardFilters select, .dashboardFilterSearch { min-height: 40px; border-radius: 10px; background: #fff; }
+.dashboardFilters > span { color: var(--bt-muted); font-size: 13px; align-self: center; }
+.appShell .journeyActionsCell select, .appShell select.moveTo, .journeyActionsCell select { min-height: 38px; border: 1px solid var(--bt-card-border); border-radius: 10px; background: #fff; color: var(--bt-navy); font-weight: 600; padding: 6px 10px; box-shadow: 0 6px 16px rgba(15, 55, 79, 0.05); }
+.appShell .iconButton:not(.topbar .iconButton), .journeyActionsCell .iconButton { border: 1px solid var(--bt-card-border); border-radius: 10px; color: var(--bt-blue); background: #fff; box-shadow: 0 6px 16px rgba(15, 55, 79, 0.05); }
+.appShell .iconButton:hover { background: var(--bt-sky-tint); }
+.staffFilters input, .staffFilters select, .appShell .staffFilters input, .appShell .staffFilters select { min-height: 40px; border: 1px solid #cddde5; border-radius: var(--bt-radius-control); background: #fff; padding: 8px 12px; font-size: 14px; }
+.staffFilters label { font-size: 13px; font-weight: 600; color: var(--bt-navy); }
