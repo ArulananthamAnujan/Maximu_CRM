@@ -1,5 +1,5 @@
 import { operationsSecret } from "../lib/operations-auth.mjs";
-const env = (name) => globalThis.Netlify?.env?.get(name) ?? "";
+import { runtimeEnv as env } from "../lib/runtime-env.mjs";
 
 export default async function handler() {
   const site = env("URL") || env("PRODUCTION_URL");

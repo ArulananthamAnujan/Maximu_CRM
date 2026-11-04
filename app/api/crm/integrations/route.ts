@@ -260,6 +260,10 @@ export async function POST(request: Request) {
     const key = serviceRoleKey();
     const secret = process.env.OPERATIONS_JOB_SECRET || (key ? createHmac("sha256", key).update("maximus-production-operations-v1").digest("hex") : "");
     if (!site || !secret) return Response.json({ error: "Backup runtime is not configured." }, { status: 503 });
+    const preflight = await fetch(`${site.replace(/\/$/, "")}/.netlify/functions/production-operations-preflight`, {
+      method: "POST", headers: { "x-operations-secret": secret }, signal: AbortSignal.timeout(15000),
+    });
+    if (!preflight.ok) return Response.json({ error: "Operations worker configuration could not be verified. Check matching Functions-scoped credentials and redeploy." }, { status: 503 });
     const response = await fetch(`${site.replace(/\/$/, "")}/.netlify/functions/production-operations-background`, {
       method: "POST", headers: { "x-operations-secret": secret, "Content-Type": "application/json" },
       body: JSON.stringify({ organisationId: session.identity.organisationId, backupOnly: true }),

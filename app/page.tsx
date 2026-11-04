@@ -6769,6 +6769,23 @@ const integrationLabels: Record<IntegrationStatus["state"], string> = {
 };
 
 function GoogleWorkspaceView() {
+  const [verifyingFiles, setVerifyingFiles] = useState(false);
+  const [fileNotice, setFileNotice] = useState("");
+  const verifyLegacyFiles = async () => {
+    setVerifyingFiles(true);
+    let count = 0;
+    try {
+      for (;;) {
+        setFileNotice(`Verifying stored legacy files: ${count} checked…`);
+        const response = await fetch("/api/crm/import/verify-files", { method: "POST" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "File verification failed.");
+        if (result.done) { setFileNotice(`All legacy files verified. ${count} checked in this run.`); break; }
+        count += result.verified;
+      }
+    } catch (error) { setFileNotice(`${count} files verified. ${error instanceof Error ? error.message : "Verification stopped."}`); }
+    finally { setVerifyingFiles(false); }
+  };
   const [backupNotice, setBackupNotice] = useState("");
   const [backupStarting, setBackupStarting] = useState(false);
   const startBackup = async () => {
@@ -6864,6 +6881,8 @@ function GoogleWorkspaceView() {
           </button>
         </div>
         <button className="ghostButton" disabled={backupStarting} onClick={() => void startBackup()}>{backupStarting ? "Starting backup…" : "Run backup verification"}</button>
+        <button className="ghostButton" disabled={verifyingFiles} onClick={() => void verifyLegacyFiles()}>{verifyingFiles ? "Verifying legacy files…" : "Verify imported files"}</button>
+        {fileNotice && <p role="status">{fileNotice}</p>}
         {backupNotice && <p role="status">{backupNotice}</p>}
         {error && <p className="caseWorkError">{error}</p>}
         {!integrations && !error ? (
