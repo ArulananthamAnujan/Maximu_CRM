@@ -1,4 +1,3 @@
-import { googleOAuthConfigured } from "@/server/google-oauth-client";
 import {
   isSecureRequest,
   jsonWithCookies,
@@ -70,7 +69,7 @@ export async function POST(request: Request) {
       user,
     };
     return jsonWithCookies(
-      { ok: true, next: profile.level !== "student" && googleOAuthConfigured() ? "/api/auth/gmail/start?workspace=1&auto=1" : "/" },
+      { ok: true, next: "/" },
       200,
       sessionCookieHeaders(session, isSecureRequest(request)),
     );

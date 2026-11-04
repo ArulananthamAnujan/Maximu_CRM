@@ -1576,7 +1576,6 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
       if (!response.ok) throw new Error(result.error || "Sign-in failed.");
       const workspaceReturn = browserWorkspaceReturn();
       if (workspaceReturn) { window.location.assign(workspaceReturn); return; }
-      if (!isNativeApp() && result.next === "/api/auth/gmail/start?workspace=1&auto=1") { window.location.assign(result.next); return; }
       await onLogin();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Sign-in failed.");
