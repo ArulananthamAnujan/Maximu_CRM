@@ -1,0 +1,229 @@
+/* Brand theme: the Maximus colours as the environment, layered over the
+   readable base in house-style.css. The frame (sidebar, top bar, case window
+   bar, Gmail header) is navy; the page ground is the logo's sky blue, pale;
+   panel heads, table heads, KPI tiles and status carry the brand tints; amber
+   marks what is current or needs attention. No gradients, no glows: colour
+   as flat fields, type at the sizes the base sets. */
+
+:root {
+  --bt-navy: #102f40;
+  --bt-navy-2: #163d54;
+  --bt-navy-3: #1d4a66;
+  --bt-blue: #145a8c;
+  --bt-sky: #309ad4;
+  --bt-sky-tint: #e4f2f9;
+  --bt-sky-tint-2: #c9e3f1;
+  --bt-amber: #e48e24;
+  --bt-amber-ink: #9d5d12;
+  --bt-amber-tint: #fbead3;
+  --bt-green: #1f7a4d;
+  --bt-green-tint: #dff2e7;
+  --bt-red: #b42318;
+  --bt-red-tint: #fbe4e1;
+  --bt-ground: #e8f1f7;
+  --bt-text: #15202b;
+  --bt-muted: #46545f;
+  --bt-on-navy: #ffffff;
+  --bt-on-navy-muted: #b9cedb;
+  --bt-on-navy-faint: rgba(255, 255, 255, 0.14);
+  --bt-on-navy-line: rgba(255, 255, 255, 0.16);
+  --hs-ground: var(--bt-ground);
+  --hs-border: var(--bt-sky-tint-2);
+  --hs-rule: #d9e8f1;
+  --hs-tint: var(--bt-sky-tint);
+  --hs-tint-strong: var(--bt-sky-tint-2);
+  --hs-brand: var(--bt-blue);
+  --hs-brand-ink: var(--bt-navy);
+}
+
+/* ---------- the ground and the frame ---------- */
+.appShell, .appShell > .mainArea, .mainArea, .appShell.gmailMode, .demoLogin .appShell { background: var(--bt-ground); }
+.appShell .sidebar, .appShell.mode-direct_visa .sidebar, .sidebar, .mode-direct_visa .sidebar { background: var(--bt-navy); color: var(--bt-on-navy); border-right: 0; }
+.sidebar .brand { border-bottom: 1px solid var(--bt-on-navy-line); }
+.sidebar .brandHome .brandMark { background-image: url("/maximus-logo.svg"); }
+.sidebar .brand strong, .sidebarContext strong, .sidebarFooter strong { color: var(--bt-on-navy); }
+.sidebar .brand span, .sidebarContext span, .sidebarFooter span, .sidebarFooter small { color: var(--bt-on-navy-muted); }
+.sidebarContext { border-bottom: 1px solid var(--bt-on-navy-line); }
+.sidebar .mobileClose { color: var(--bt-on-navy); }
+.sidebar .navGroup p, .navGroup p { color: var(--bt-on-navy-muted); }
+.sidebar .navGroup button, .navGroup button { color: #e3edf3; }
+.sidebar .navGroup button svg, .navGroup button svg { color: #9cc4dc; }
+.sidebar .navGroup button:hover, .navGroup button:hover { background: var(--bt-on-navy-faint); color: var(--bt-on-navy); }
+.sidebar .navGroup button.active, .appShell.mode-direct_visa .sidebar .navGroup button.active, .navGroup button.active { background: rgba(255, 255, 255, 0.16); color: var(--bt-on-navy); border-left-color: var(--bt-amber); }
+.sidebar .navGroup button.active svg, .navGroup button.active svg { color: var(--bt-amber); }
+.navGroup button em, .navGroup button i { background: var(--bt-amber); color: var(--bt-navy); }
+.sidebarFooter { border-top: 1px solid var(--bt-on-navy-line); }
+.sidebarFooter .avatar, .sidebar .avatar { background: var(--bt-sky-tint); color: var(--bt-navy); }
+.appShell.staffFullMode > .sidebar.open, .appShell:not(.staffFullMode) > .sidebar.open { box-shadow: 0 16px 40px rgba(16, 47, 64, 0.35); }
+
+.topbar, .topbar.clientOnly { background: var(--bt-navy-2); border-bottom: 0; color: var(--bt-on-navy); }
+.topbar .menuButton, .appShell .menuButton { color: var(--bt-on-navy); border-color: var(--bt-on-navy-line); background: transparent; }
+.topbarPrimary .searchWrap { background: rgba(255, 255, 255, 0.12); border-color: transparent; }
+.topbarPrimary .searchWrap:focus-within { background: rgba(255, 255, 255, 0.2); border-color: var(--bt-sky); }
+.topbarPrimary .searchWrap svg { color: var(--bt-on-navy-muted); }
+.topbarPrimary .searchWrap input { color: var(--bt-on-navy); background: transparent; }
+.topbarPrimary .searchWrap input::placeholder { color: var(--bt-on-navy-muted); }
+.topbarPrimary .searchWrap kbd { color: var(--bt-on-navy-muted); border-color: var(--bt-on-navy-line); background: transparent; }
+.profileServiceSwitch button { background: rgba(255, 255, 255, 0.1); border-color: transparent; color: var(--bt-on-navy); }
+.profileServiceSwitch button.active, .mode-direct_visa .profileServiceSwitch button.active { background: var(--bt-amber); border-color: var(--bt-amber); color: var(--bt-navy); }
+.topbar .courseFinderSwitchButton, .topbar .messageShortcut, .topbar .copilotTrigger, .topbar .iconButton, .topbarPrimary .iconButton { background: rgba(255, 255, 255, 0.1); border-color: transparent; color: var(--bt-on-navy); }
+.topbar .courseFinderSwitchButton:hover, .topbar .messageShortcut:hover, .topbar .copilotTrigger:hover, .topbar .iconButton:hover { background: rgba(255, 255, 255, 0.2); }
+.topbar .courseFinderSwitchButton svg, .topbar .messageShortcut svg, .topbar .copilotTrigger svg, .topbar .iconButton svg { color: var(--bt-on-navy); }
+.topbar .quickButton, .appShell .quickButton { background: var(--bt-amber); color: var(--bt-navy); }
+.topbar .quickButton:hover, .appShell .quickButton:hover { background: #d9801a; }
+.topbar .avatar.small, .appShell .signedAccount .avatar, .topbar .signedAccount { background: var(--bt-sky-tint); color: var(--bt-navy); }
+.topbar .signedAccount { border-radius: 8px; }
+.topbar .signedAccount strong { color: var(--bt-navy); }
+.topbar .signedAccount small, .topbar .signedAccount span { color: var(--bt-muted); }
+.topbar .privateBadge, .topbar.clientOnly > div > span { color: var(--bt-on-navy); }
+.topbarSecondary { background: var(--bt-sky-tint); border-top: 0; border-bottom: 1px solid var(--bt-sky-tint-2); }
+.appShell .topbarSecondary button { color: var(--bt-navy); }
+.appShell .topbarSecondary button svg { color: var(--bt-blue); }
+
+/* the case window and the Gmail workspace share the navy bar */
+.appShell .caseWindowTopbar, .caseWindow .caseWindowTopbar { background: var(--bt-navy-2); color: var(--bt-on-navy); border-bottom: 0; }
+.caseWindow .caseWindowTopbar button, .appShell .caseWindowTopbar button, .appShell .caseWindowTopbar .copilotTrigger { color: var(--bt-on-navy); border-color: var(--bt-on-navy-line); background: rgba(255, 255, 255, 0.1); }
+.caseWindow .caseWindowTopbar > span, .caseWindow .caseWindowTopbar > b, .appShell .caseWindowTopbar > span, .appShell .caseWindowTopbar > b { color: var(--bt-on-navy-muted); }
+.appShell .caseWindowTopbar img, .appShell .caseWindowTopbar .brandMark { filter: brightness(0) invert(1); }
+.gmailWorkspaceHeader { background: var(--bt-navy-2); border-bottom: 0; color: var(--bt-on-navy); }
+.gmailWorkspaceHeader img { filter: brightness(0) invert(1); }
+.gmailBrand, .gmailBrand span { color: var(--bt-on-navy); }
+.gmailBrand svg { color: var(--bt-amber); }
+.gmailBackToCrm { color: var(--bt-on-navy); }
+.gmailSearchBar { background: rgba(255, 255, 255, 0.12); border-color: transparent; }
+.gmailSearchBar input { color: var(--bt-on-navy); }
+.gmailSearchBar input::placeholder, .gmailSearchBar svg { color: var(--bt-on-navy-muted); }
+.gmailSearchBar button { color: var(--bt-on-navy); }
+.gmailSearchBar:focus-within { background: rgba(255, 255, 255, 0.2); border-color: var(--bt-sky); }
+.gmailCopilotTrigger, .gmailWorkspaceHeader .copilotTrigger { background: rgba(255, 255, 255, 0.1); color: var(--bt-on-navy); border-color: transparent; }
+.gmailAccount strong { color: var(--bt-on-navy); }
+.gmailAccount small { color: var(--bt-on-navy-muted); }
+.gmailFolderRail nav button { color: var(--bt-navy); }
+.gmailCaseNote { background: var(--bt-sky-tint); color: var(--bt-navy); }
+
+/* ---------- titles, panels and their heads ---------- */
+.pageTitle h1, .appShell .pageTitle h1, .appShell .drawerHead h1 { color: var(--bt-navy); }
+.kicker, .appShell .kicker, .journeyListIntro .kicker, .dashboardAdminTools > .kicker { color: var(--bt-blue); }
+.railHeading { color: var(--bt-navy); }
+.panel, .appShell .panel, .listPanel, .journeyListPanel, .caseWorkPanel, .agentClientPanel, .recordTableWrap, .dashboardFilters, .caseAtGlance, .summaryRows, .drawerHealth { border-color: var(--bt-sky-tint-2); }
+.panel, .appShell .panel { --panel-pad: 18px; padding: var(--panel-pad); }
+.listPanel, .appShell .listPanel { --panel-pad: 17px; padding: var(--panel-pad); }
+.panel > .panelHead, .appShell .panel > .panelHead { margin: calc(-1 * var(--panel-pad)) calc(-1 * var(--panel-pad)) 14px; padding: 12px var(--panel-pad); background: var(--bt-sky-tint); border-bottom: 1px solid var(--bt-sky-tint-2); border-radius: 9px 9px 0 0; }
+.panel > .panelHead h2, .appShell .panel > .panelHead h2 { color: var(--bt-navy); }
+.panel > .panelHead .kicker { color: var(--bt-blue); }
+.journeyListIntro, .detailedRecordsHead, .templateWorkspaceIntro { background: var(--bt-sky-tint); border-bottom: 1px solid var(--bt-sky-tint-2); }
+.journeyListIntro h2, .detailedRecordsHead h2, .templateWorkspaceIntro h2 { color: var(--bt-navy); }
+.templateWorkspaceSummary strong, .journeyRecordCount strong, .detailedRecordsSummary strong { color: var(--bt-blue); }
+.workspaceHero, .googleHero, .controlCentre, .heroPanel, .workspaceConnection, .appShell .workspaceConnection { background: var(--bt-navy); border-color: var(--bt-navy); color: var(--bt-on-navy); }
+.workspaceHero h2, .googleHero h2, .controlCentre h2, .appShell .workspaceConnection strong { color: var(--bt-on-navy); }
+.appShell .workspaceConnection span, .appShell .workspaceConnection p, .appShell .workspaceConnection small { color: var(--bt-on-navy-muted); }
+.appShell .workspaceConnection b { color: var(--bt-amber); }
+.appShell .dashboardFilters, .appShell .listFilterBar, .listFilterBar, .courseFinderFilters.courseFinderFilterGrid, .templateFilters, .caseFilterPanel { background: var(--bt-sky-tint) !important; border-color: var(--bt-sky-tint-2); }
+.appShell .listFilterBar input, .appShell .listFilterBar select, .courseFinderFilters input, .courseFinderFilters select, .templateFilters input, .templateFilters select { background: #fff; }
+.enquiryScopeLabel { background-color: var(--bt-navy); border-color: var(--bt-navy); }
+.enquiryScopeLabel strong, .enquiryScopeLabel small, .enquiryScopeLabel svg { color: var(--bt-on-navy) !important; }
+.enquiryScopeLabel small { color: var(--bt-on-navy-muted) !important; }
+
+/* ---------- the figures: tinted tiles, the brand on the number ---------- */
+.signalGrid, .appShell .signalGrid { gap: 14px; background: transparent; border: 0; overflow: visible; }
+.signal, .appShell .signal, .signalGrid article { border: 1px solid var(--bt-sky-tint-2) !important; border-radius: 10px; background: var(--bt-sky-tint); }
+.signal + .signal, .signalGrid article + article { border-left: 1px solid var(--bt-sky-tint-2); }
+.signal:nth-child(2), .appShell .signal:nth-child(2) { background: var(--bt-amber-tint); border-color: #f2d3a8 !important; }
+.signal:nth-child(3), .appShell .signal:nth-child(3) { background: var(--bt-green-tint); border-color: #bfe3cf !important; }
+.signal:nth-child(4), .appShell .signal:nth-child(4) { background: var(--bt-red-tint); border-color: #f1c3bd !important; }
+.signal span, .appShell .signal span { color: var(--bt-navy); }
+.signal strong, .appShell .signal strong, .signal > div:first-child > strong { color: var(--bt-navy); }
+.signal strong.attention, .appShell .signal strong.attention { color: var(--bt-amber-ink); }
+.signal:nth-child(4) strong.attention, .appShell .signal:nth-child(4) strong.attention { color: var(--bt-red); }
+.signal small, .appShell .signal small { color: var(--bt-muted); }
+.miniStats, .appShell .miniStats { border-color: var(--bt-sky-tint-2); }
+.miniStats article, .appShell .miniStats article { background: var(--bt-sky-tint); }
+.miniStats article + article { border-left-color: #fff; }
+.miniStats strong, .appShell .miniStats strong { color: var(--bt-navy); }
+.miniStats span, .appShell .miniStats span { color: var(--bt-navy); }
+
+/* ---------- tables, rows and status ---------- */
+.caseTableHeader, .dashboardMode .caseTableHeader, .journeyDataHeader { background: var(--bt-sky-tint); color: var(--bt-navy); border-radius: 8px; }
+.recordTable th, .appShell th { background: var(--bt-sky-tint); color: var(--bt-navy); border-bottom: 1px solid var(--bt-sky-tint-2); }
+.recordTable td, .appShell td { border-bottom-color: var(--hs-rule); }
+.recordTable tbody tr:hover td, .appShell tbody tr:hover td, .appShell .caseRow:hover, .appShell .journeyDataRow:hover, .appShell .functionalRow:hover { background: #f1f8fc; }
+.status.success, .appShell .status.success { background: var(--bt-green-tint); color: var(--bt-green); }
+.status.warning, .appShell .status.warning { background: var(--bt-amber-tint); color: var(--bt-amber-ink); }
+.status.danger, .appShell .status.danger { background: var(--bt-red-tint); color: var(--bt-red); }
+.caseStageBadge, .appShell .caseIdentityMeta .caseStageBadge { background: var(--bt-navy); color: var(--bt-on-navy); }
+.viewOnlyBadge { background: var(--bt-amber-tint); color: var(--bt-amber-ink); }
+.integrationState.connected { background: var(--bt-green-tint); color: var(--bt-green); }
+.integrationState.not_configured, .integrationState.attention { background: var(--bt-amber-tint); color: var(--bt-amber-ink); }
+.lifecycleTrack li.done { background: var(--bt-sky-tint); color: var(--bt-blue); border-color: var(--bt-sky-tint-2); }
+.lifecycleTrack li.current, .lifecycleTrack li.parked.current { background: var(--bt-amber); border-color: var(--bt-amber); color: var(--bt-navy); }
+.pipelineStages li { border-top-color: var(--bt-sky-tint-2); }
+.pipelineStages li:first-child { border-top-color: var(--bt-amber); }
+.pipelineStages strong, .checklistSummary span, .checklistSummary strong { color: var(--bt-navy); }
+.radarItem.actionRow, .dashboardMode .actionRow, .caseQuickNote, .caseLastNote, .notice { background-color: var(--bt-sky-tint); }
+.radarItem.actionRow:hover { background-color: var(--bt-sky-tint-2); }
+.radarIcon, .radarItem .radarIcon { color: var(--bt-blue); }
+.dashboardAdminTools > button { background: #fff; border: 1px solid var(--bt-sky-tint-2); }
+.dashboardAdminTools > button:hover { background: var(--bt-sky-tint); }
+.dashboardAdminTools > button > svg:first-child { color: var(--bt-blue); }
+.clientNext { background: var(--bt-amber-tint); border-color: #f2d3a8; }
+.clientNext span, .clientNext .nextIcon, .nextIcon { color: var(--bt-amber-ink); }
+.nextIcon { background: #fff; }
+.clientWelcome, .clientTeamCard { background: var(--bt-sky-tint); border-color: var(--bt-sky-tint-2); }
+.clientAvatar { background: var(--bt-navy); color: var(--bt-on-navy); }
+.weekGrid > div { background: #fff; border-color: var(--bt-sky-tint-2); }
+.weekGrid > div.today { background: var(--bt-sky-tint); border-color: var(--bt-sky); }
+.calendarConnectBar { background: var(--bt-sky-tint); border-color: var(--bt-sky-tint-2); }
+.appShell .emptyState > div, .appShell .docIcon { color: var(--bt-blue); }
+.gmailMailboxToolbar { background: var(--bt-sky-tint); color: var(--bt-navy); border-bottom-color: var(--bt-sky-tint-2); }
+.gmailMailboxToolbar strong { color: var(--bt-navy); }
+.gmailOffline .gmailConnectState { background: #fff; }
+.auditScope, .controlRow { border-color: var(--hs-rule); }
+
+/* ---------- buttons and controls ---------- */
+.appShell .primaryButton, .primaryButton, .appShell .heroPrimary, .singleLoginButton.theme, .appShell button.primary { background: var(--bt-blue); border-color: var(--bt-blue); color: #fff; }
+.appShell .primaryButton:hover, .primaryButton:hover, .appShell .heroPrimary:hover { background: var(--bt-navy); border-color: var(--bt-navy); }
+.appShell .ghostButton, .ghostButton { background: #fff; color: var(--bt-blue); border-color: var(--bt-sky-tint-2); }
+.appShell .ghostButton:hover, .ghostButton:hover { background: var(--bt-sky-tint); color: var(--bt-navy); }
+.appShell .ghostButton svg, .ghostButton svg { color: var(--bt-blue); }
+.appShell .linkButton { color: var(--bt-blue); }
+.appShell .iconButton:not(.topbar .iconButton), .appShell .content .iconButton { border-color: var(--bt-sky-tint-2); color: var(--bt-blue); }
+.appShell input:focus, .appShell select:focus, .appShell textarea:focus { border-color: var(--bt-sky); box-shadow: 0 0 0 3px var(--bt-sky-tint); outline: none; }
+.caseTabs button.active, .appShell .caseTabs button.active { color: var(--bt-navy); border-bottom-color: var(--bt-amber); }
+.caseTabs button.active em, .caseTabs button.active i { background: var(--bt-amber); color: var(--bt-navy); }
+.templateWorkspaceTabs { background: var(--bt-sky-tint); border-color: var(--bt-sky-tint-2); }
+.templateWorkspaceTabs button.active { background: var(--bt-navy); color: var(--bt-on-navy); border-color: var(--bt-navy); }
+.templateWorkspaceTabs button.active b { background: var(--bt-amber); color: var(--bt-navy); }
+.templateWorkspaceTabs button.active svg { color: var(--bt-amber); }
+.reportBuilderMore summary { color: var(--bt-blue); }
+.datasetChips label { background: #fff; border-color: var(--bt-sky-tint-2); }
+.datasetChips label:has(input:checked) { background: var(--bt-navy); color: var(--bt-on-navy); border-color: var(--bt-navy); }
+.schemaBanner { background: var(--bt-amber-tint); color: var(--bt-amber-ink); border-bottom: 1px solid #f2d3a8; }
+
+/* The top bar's inner rows paint over the bar; the tiles must outrank the old gradient rule. */
+.topbarPrimary, .topbar .topbarPrimary, .topbar .topActions, .topbar .serviceAndFinder { background: transparent !important; }
+.topbarSecondary, .topbar .topbarSecondary { background: var(--bt-sky-tint) !important; }
+.signal, .appShell .signal, .signalGrid article, .signal.ocean, .signal.sunshine, .signal.coral, .signal.primary, .signal.mint, .signal.violet { background: var(--bt-sky-tint) !important; background-image: none !important; }
+.signal:nth-child(2), .appShell .signal:nth-child(2) { background: var(--bt-amber-tint) !important; }
+.signal:nth-child(3), .appShell .signal:nth-child(3) { background: var(--bt-green-tint) !important; }
+.signal:nth-child(4), .appShell .signal:nth-child(4) { background: var(--bt-red-tint) !important; }
+.miniStats, .appShell .miniStats { background: transparent !important; border: 0; gap: 14px; overflow: visible; }
+.miniStats article, .appShell .miniStats article { background: var(--bt-sky-tint) !important; border: 1px solid var(--bt-sky-tint-2) !important; border-radius: 10px; }
+.miniStats article + article, .appShell .miniStats article + article { border-left: 1px solid var(--bt-sky-tint-2) !important; border-top: 0 !important; }
+.appShell .panel, .panel, .listPanel, .journeyListPanel, .caseWorkPanel, .agentClientPanel, .recordTableWrap { background: #fff !important; }
+.attentionPanel, .appShell .attentionPanel, .appShell .panel.attentionPanel { background: #fff !important; }
+.appShell .dashboardFilters, .appShell .listFilterBar, .listFilterBar { background: var(--bt-sky-tint) !important; }
+
+/* Second look: text on the navy bars, amber ink on amber tints, icon buttons on the bar without a tinted square. */
+.signal::before, .signal::after, .appShell .signal::before, .appShell .signal::after { display: none !important; }
+.gmailAccount small, .topbar small, .caseWindowTopbar small, .topbar .signedAccount small { color: var(--bt-on-navy-muted) !important; }
+.topbar .signedAccount small, .topbar .signedAccount span { color: var(--bt-muted) !important; }
+.caseStageBadge, .appShell .caseIdentityMeta .caseStageBadge, .caseStageBadge * { color: var(--bt-on-navy) !important; }
+.clientTopLabel, .topbar .clientTopLabel, .topbar .clientTopLabel span, .topbar .clientTopLabel svg { color: var(--bt-on-navy) !important; }
+:root { --bt-amber-ink: #7f4a0e; }
+.status.warning, .appShell .status.warning, .viewOnlyBadge, .clientNext span, .clientNext .nextIcon, .nextIcon, .integrationState.not_configured, .integrationState.attention, .schemaBanner { color: #7f4a0e; }
+.signal strong.attention, .appShell .signal strong.attention { color: #7f4a0e; }
+.topbar .courseFinderSwitchButton, .topbar .messageShortcut, .topbar .copilotTrigger, .topbar .iconButton, .topbarPrimary .iconButton, .topbar .menuButton, .appShell .menuButton { background: transparent; border: 1px solid rgba(255, 255, 255, 0.28); }
+.topbar .courseFinderSwitchButton:hover, .topbar .messageShortcut:hover, .topbar .copilotTrigger:hover, .topbar .iconButton:hover, .topbar .menuButton:hover { background: rgba(255, 255, 255, 0.14); }
+.caseWindow .caseWindowTopbar button, .appShell .caseWindowTopbar button, .appShell .caseWindowTopbar .copilotTrigger, .gmailCopilotTrigger, .gmailWorkspaceHeader .copilotTrigger { background: transparent; border: 1px solid rgba(255, 255, 255, 0.28); }
+.topbar .avatar.small, .appShell .signedAccount .avatar { background: var(--bt-amber); color: var(--bt-navy); }
+:root { --bt-muted: #3f4c56; --hs-muted: #3f4c56; --hs-faint: #46545f; }

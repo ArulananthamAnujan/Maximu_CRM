@@ -245,3 +245,32 @@ today, awaiting documents, visa deadlines above zero); action rows with a
 plain blue icon and 14px text; navigation at 14px in the ink. All 28 working
 screens re-measured 0 FAIL, 0 WARN afterwards; the sign-in page keeps its
 original design by decision.
+
+## Brand theme: colour as the environment
+
+The owner asked, more than once, for the brand as the environment rather
+than as marks on white: "remove the white colour, I want the colourful
+environment". `app/brand-theme.css`, loaded after the house style, is that
+layer. It keeps the house style's type sizes, contrast floor and flat
+surfaces, and changes what carries colour:
+
+- the frame is navy: the sidebar (#102f40, with the light logo), the top
+  bar, the case window bar and the Gmail header (#163d54), with white text,
+  an amber active-item bar, an amber Study/Direct switch and amber avatar;
+- the page ground is the logo's sky blue, pale (#e8f1f7); panels stay white
+  with a sky-tint head band, sky-tint table heads and filter bars;
+- KPI tiles are tinted by meaning: sky for totals, amber for what is due,
+  green for progress, red for deadlines; the task board's four counts the
+  same; figures in navy, attention figures in the tint's own ink;
+- status reads by colour again (green, amber, red tints with their inks);
+  the stage badge is navy; the current lifecycle stage is amber;
+- primary buttons are the logo's deep blue, ghost buttons white with blue
+  text.
+
+Measured on every working screen afterwards: 0 FAIL, with two warnings
+accepted by decision: `colour-sprawl` (the navy frame alone is about 16% of
+a 1440px screen, above the inspector's 12%) and `icon-chips` where the
+inspector reads the top bar's bordered icon buttons as tinted squares. Two
+contrast rules were tightened on the way: amber ink on amber tint is #7f4a0e
+(5.3:1) and secondary text on the tinted ground is #3f4c56 (7.7:1). The
+sign-in page keeps its original design.

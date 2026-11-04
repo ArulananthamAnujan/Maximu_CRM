@@ -4,6 +4,7 @@ import "./figma-system.css";
 import "./agent-workspace.css";
 import "./copilot.css";
 import "./house-style.css";
+import "./brand-theme.css";
 
 export const metadata: Metadata = {
   title: "Maximus CRM | Education & Migration Operations",
