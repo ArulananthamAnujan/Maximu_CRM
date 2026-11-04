@@ -658,6 +658,7 @@ const studyNavGroups = [
     items: [
       ["enquiries", "Enquiries", Users],
       ["students", "Students", GraduationCap],
+      ["courseFinder", "Course Finder", School],
       ["applications", "Applications", BookOpen],
       ["visas", "Visa", BriefcaseBusiness],
       ["defer", "Defer", Clock3],

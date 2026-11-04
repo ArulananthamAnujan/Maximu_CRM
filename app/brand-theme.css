@@ -318,3 +318,17 @@
 .appShell .iconButton:hover { background: var(--bt-sky-tint); }
 .staffFilters input, .staffFilters select, .appShell .staffFilters input, .appShell .staffFilters select { min-height: 40px; border: 1px solid #cddde5; border-radius: var(--bt-radius-control); background: #fff; padding: 8px 12px; font-size: 14px; }
 .staffFilters label { font-size: 13px; font-weight: 600; color: var(--bt-navy); }
+
+/* The search pill holds one field: no inner box. */
+.searchWrap input, .topbarPrimary .searchWrap input, .searchWrap input:focus, .topbarPrimary .searchWrap input:focus { border: 0 !important; background: transparent !important; box-shadow: none !important; border-radius: 0; outline: none; padding: 10px 58px 10px 0; font-size: 14px; }
+.searchWrap kbd, .topbarPrimary .searchWrap kbd { right: 10px; padding: 3px 7px; border: 1px solid var(--bt-card-border); border-radius: 8px; background: #fff; color: var(--bt-muted); font-size: 11px; }
+/* The workspace switch and Course Finder stay on every staff screen, not only the dashboard. */
+.topbar.moduleFocused .serviceAndFinder { display: flex; }
+.topbar.moduleFocused .topbarPrimary .searchWrap { width: min(520px, 40vw); }
+.topbar .profileServiceSwitch button.active, .topbar.moduleFocused .profileServiceSwitch button.active, .mode-direct_visa .topbar .profileServiceSwitch button.active { background: var(--bt-button-gradient) !important; background-image: var(--bt-button-gradient) !important; color: #fff !important; border-color: transparent !important; box-shadow: var(--bt-button-shadow) !important; }
+.topbar .profileServiceSwitch button.active svg { color: #fff !important; }
+/* The folded sidebar's close button sits beside the mark, not on it. */
+.sidebar .brand { position: relative; padding-right: 48px; }
+.sidebar .mobileClose, .appShell .sidebar .mobileClose { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.1); color: var(--bt-on-dark); display: none; place-items: center; }
+.appShell.staffFullMode .sidebar .mobileClose, .appShell:not(.staffFullMode) .sidebar.open .mobileClose { display: grid; }
+@media (min-width: 901px) { .appShell:not(.staffFullMode) .sidebar .mobileClose { display: none; } }
