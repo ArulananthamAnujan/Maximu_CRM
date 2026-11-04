@@ -1,229 +1,284 @@
-/* Brand theme: the Maximus colours as the environment, layered over the
-   readable base in house-style.css. The frame (sidebar, top bar, case window
-   bar, Gmail header) is navy; the page ground is the logo's sky blue, pale;
-   panel heads, table heads, KPI tiles and status carry the brand tints; amber
-   marks what is current or needs attention. No gradients, no glows: colour
-   as flat fields, type at the sizes the base sets. */
+/* Brand theme: the sign-in page's language carried through the product.
+   Dark navy gradient panels with a soft sky and amber glow, a pale
+   gradient ground with faint circles, white cards with large corners that
+   lift on a soft shadow, orange tracked kickers, gradient primary buttons,
+   light-blue accents. Loaded last; the readable base (type sizes, contrast)
+   stays underneath. */
 
 :root {
-  --bt-navy: #102f40;
-  --bt-navy-2: #163d54;
-  --bt-navy-3: #1d4a66;
-  --bt-blue: #145a8c;
-  --bt-sky: #309ad4;
-  --bt-sky-tint: #e4f2f9;
-  --bt-sky-tint-2: #c9e3f1;
-  --bt-amber: #e48e24;
-  --bt-amber-ink: #9d5d12;
-  --bt-amber-tint: #fbead3;
+  --bt-navy-deep: #0b2336;
+  --bt-navy: #0c293f;
+  --bt-navy-light: #123b57;
+  --bt-blue: #145f88;
+  --bt-blue-2: #258eb9;
+  --bt-sky: #61c2e7;
+  --bt-sky-ink: #1b6f8a;
+  --bt-sky-tint: #e8f5fb;
+  --bt-sky-line: #cfe3ee;
+  --bt-amber: #f7a95b;
+  --bt-amber-strong: #e48e24;
+  --bt-amber-ink: #8a4f10;
+  --bt-amber-tint: #fdf0e1;
   --bt-green: #1f7a4d;
-  --bt-green-tint: #dff2e7;
+  --bt-green-tint: #e1f3ea;
   --bt-red: #b42318;
-  --bt-red-tint: #fbe4e1;
-  --bt-ground: #e8f1f7;
+  --bt-red-tint: #fbe6e3;
   --bt-text: #15202b;
   --bt-muted: #46545f;
-  --bt-on-navy: #ffffff;
-  --bt-on-navy-muted: #b9cedb;
-  --bt-on-navy-faint: rgba(255, 255, 255, 0.14);
-  --bt-on-navy-line: rgba(255, 255, 255, 0.16);
-  --hs-ground: var(--bt-ground);
-  --hs-border: var(--bt-sky-tint-2);
-  --hs-rule: #d9e8f1;
+  --bt-on-dark: #ffffff;
+  --bt-on-dark-muted: #c5d5df;
+  --bt-on-dark-faint: #a9bfcc;
+  --bt-panel-gradient: linear-gradient(145deg, #123b57, #0c293f 68%, #0b2336);
+  --bt-panel-glow: radial-gradient(circle at 100% 0, rgba(69, 181, 220, 0.3), transparent 19rem), radial-gradient(circle at 0 100%, rgba(232, 139, 43, 0.22), transparent 18rem);
+  --bt-ground: radial-gradient(circle at 12% 12%, rgba(232, 139, 43, 0.14), transparent 25rem), radial-gradient(circle at 88% 14%, rgba(44, 157, 204, 0.17), transparent 29rem), linear-gradient(145deg, #fbfcfc 0%, #f3f8fa 52%, #edf6f9 100%);
+  --bt-card-shadow: 0 18px 44px rgba(15, 55, 79, 0.08);
+  --bt-card-shadow-hover: 0 24px 54px rgba(15, 55, 79, 0.12);
+  --bt-card-border: rgba(189, 210, 221, 0.7);
+  --bt-button-gradient: linear-gradient(135deg, #145f88, #258eb9);
+  --bt-button-shadow: 0 10px 22px rgba(22, 106, 151, 0.2);
+  --bt-radius-card: 18px;
+  --bt-radius-control: 10px;
   --hs-tint: var(--bt-sky-tint);
-  --hs-tint-strong: var(--bt-sky-tint-2);
+  --hs-tint-strong: var(--bt-sky-line);
+  --hs-border: var(--bt-sky-line);
+  --hs-rule: #e2eef5;
   --hs-brand: var(--bt-blue);
   --hs-brand-ink: var(--bt-navy);
+  --hs-muted: var(--bt-muted);
 }
 
-/* ---------- the ground and the frame ---------- */
-.appShell, .appShell > .mainArea, .mainArea, .appShell.gmailMode, .demoLogin .appShell { background: var(--bt-ground); }
-.appShell .sidebar, .appShell.mode-direct_visa .sidebar, .sidebar, .mode-direct_visa .sidebar { background: var(--bt-navy); color: var(--bt-on-navy); border-right: 0; }
-.sidebar .brand { border-bottom: 1px solid var(--bt-on-navy-line); }
+/* ---------- the ground: the sign-in page's own, with its faint circles ---------- */
+.appShell, .appShell > .mainArea, .mainArea, .appShell.gmailMode { background: var(--bt-ground); background-attachment: fixed; }
+.appShell > .mainArea { position: relative; }
+.appShell .content { background: transparent; }
+
+/* ---------- the sidebar: the sign-in's dark story panel ---------- */
+.appShell .sidebar, .appShell.mode-direct_visa .sidebar, .sidebar, .mode-direct_visa .sidebar {
+  background: var(--bt-panel-glow), var(--bt-panel-gradient);
+  color: var(--bt-on-dark); border-right: 0; box-shadow: 12px 0 40px rgba(11, 35, 54, 0.18);
+}
+.sidebar::after { content: ""; display: block; position: absolute; right: -82px; bottom: -108px; width: 250px; height: 250px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 50%; pointer-events: none; }
+.sidebar .brand { border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
 .sidebar .brandHome .brandMark { background-image: url("/maximus-logo.svg"); }
-.sidebar .brand strong, .sidebarContext strong, .sidebarFooter strong { color: var(--bt-on-navy); }
-.sidebar .brand span, .sidebarContext span, .sidebarFooter span, .sidebarFooter small { color: var(--bt-on-navy-muted); }
-.sidebarContext { border-bottom: 1px solid var(--bt-on-navy-line); }
-.sidebar .mobileClose { color: var(--bt-on-navy); }
-.sidebar .navGroup p, .navGroup p { color: var(--bt-on-navy-muted); }
-.sidebar .navGroup button, .navGroup button { color: #e3edf3; }
-.sidebar .navGroup button svg, .navGroup button svg { color: #9cc4dc; }
-.sidebar .navGroup button:hover, .navGroup button:hover { background: var(--bt-on-navy-faint); color: var(--bt-on-navy); }
-.sidebar .navGroup button.active, .appShell.mode-direct_visa .sidebar .navGroup button.active, .navGroup button.active { background: rgba(255, 255, 255, 0.16); color: var(--bt-on-navy); border-left-color: var(--bt-amber); }
+.sidebar .brand strong, .sidebarContext strong, .sidebarFooter strong { color: var(--bt-on-dark); }
+.sidebar .brand span, .sidebarContext span, .sidebarFooter span, .sidebarFooter small { color: var(--bt-on-dark-faint); }
+.sidebarContext { border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 12px 14px; margin: 10px 0 12px; }
+.sidebarContext span { color: #d8f3ff; font-size: 12px; }
+.sidebar .mobileClose { color: var(--bt-on-dark); }
+.sidebar .navGroup p, .navGroup p { color: var(--bt-amber); font-size: 11px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; margin: 14px 10px 6px; }
+.sidebar .navGroup button, .navGroup button { color: #dbe8f0; border-left: 0; padding-left: 10px; border-radius: 10px; min-height: 38px; }
+.sidebar .navGroup button svg, .navGroup button svg { color: var(--bt-sky); }
+.sidebar .navGroup button:hover, .navGroup button:hover { background: rgba(255, 255, 255, 0.08); color: var(--bt-on-dark); }
+.sidebar .navGroup button.active, .appShell.mode-direct_visa .sidebar .navGroup button.active, .navGroup button.active { background: rgba(255, 255, 255, 0.14); color: var(--bt-on-dark); border-left: 0; box-shadow: inset 3px 0 0 var(--bt-amber); }
 .sidebar .navGroup button.active svg, .navGroup button.active svg { color: var(--bt-amber); }
 .navGroup button em, .navGroup button i { background: var(--bt-amber); color: var(--bt-navy); }
-.sidebarFooter { border-top: 1px solid var(--bt-on-navy-line); }
-.sidebarFooter .avatar, .sidebar .avatar { background: var(--bt-sky-tint); color: var(--bt-navy); }
-.appShell.staffFullMode > .sidebar.open, .appShell:not(.staffFullMode) > .sidebar.open { box-shadow: 0 16px 40px rgba(16, 47, 64, 0.35); }
+.sidebarFooter { border-top: 1px solid rgba(255, 255, 255, 0.12); background: rgba(255, 255, 255, 0.06); border-radius: 12px; padding: 10px; }
+.sidebarFooter .avatar, .sidebar .avatar { background: var(--bt-amber); color: var(--bt-navy); }
+.appShell.staffFullMode > .sidebar.open, .appShell:not(.staffFullMode) > .sidebar.open { box-shadow: 20px 0 60px rgba(11, 35, 54, 0.4); }
 
-.topbar, .topbar.clientOnly { background: var(--bt-navy-2); border-bottom: 0; color: var(--bt-on-navy); }
-.topbar .menuButton, .appShell .menuButton { color: var(--bt-on-navy); border-color: var(--bt-on-navy-line); background: transparent; }
-.topbarPrimary .searchWrap { background: rgba(255, 255, 255, 0.12); border-color: transparent; }
-.topbarPrimary .searchWrap:focus-within { background: rgba(255, 255, 255, 0.2); border-color: var(--bt-sky); }
-.topbarPrimary .searchWrap svg { color: var(--bt-on-navy-muted); }
-.topbarPrimary .searchWrap input { color: var(--bt-on-navy); background: transparent; }
-.topbarPrimary .searchWrap input::placeholder { color: var(--bt-on-navy-muted); }
-.topbarPrimary .searchWrap kbd { color: var(--bt-on-navy-muted); border-color: var(--bt-on-navy-line); background: transparent; }
-.profileServiceSwitch button { background: rgba(255, 255, 255, 0.1); border-color: transparent; color: var(--bt-on-navy); }
-.profileServiceSwitch button.active, .mode-direct_visa .profileServiceSwitch button.active { background: var(--bt-amber); border-color: var(--bt-amber); color: var(--bt-navy); }
-.topbar .courseFinderSwitchButton, .topbar .messageShortcut, .topbar .copilotTrigger, .topbar .iconButton, .topbarPrimary .iconButton { background: rgba(255, 255, 255, 0.1); border-color: transparent; color: var(--bt-on-navy); }
-.topbar .courseFinderSwitchButton:hover, .topbar .messageShortcut:hover, .topbar .copilotTrigger:hover, .topbar .iconButton:hover { background: rgba(255, 255, 255, 0.2); }
-.topbar .courseFinderSwitchButton svg, .topbar .messageShortcut svg, .topbar .copilotTrigger svg, .topbar .iconButton svg { color: var(--bt-on-navy); }
-.topbar .quickButton, .appShell .quickButton { background: var(--bt-amber); color: var(--bt-navy); }
-.topbar .quickButton:hover, .appShell .quickButton:hover { background: #d9801a; }
-.topbar .avatar.small, .appShell .signedAccount .avatar, .topbar .signedAccount { background: var(--bt-sky-tint); color: var(--bt-navy); }
-.topbar .signedAccount { border-radius: 8px; }
+/* ---------- the top bar: white glass on the ground ---------- */
+.topbar, .topbar.clientOnly { background: rgba(255, 255, 255, 0.82); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom: 1px solid var(--bt-card-border); box-shadow: 0 10px 30px rgba(15, 55, 79, 0.06); }
+.topbarPrimary, .topbar .topbarPrimary { background: transparent !important; }
+.topbarSecondary, .topbar .topbarSecondary { background: rgba(255, 255, 255, 0.5) !important; border-top: 1px solid rgba(189, 210, 221, 0.5); }
+.topbar .menuButton, .appShell .menuButton { background: #fff; border: 1px solid var(--bt-card-border); border-radius: var(--bt-radius-control); color: var(--bt-navy); }
+.topbarPrimary .searchWrap { background: #fff; border: 1px solid var(--bt-card-border); border-radius: 999px; box-shadow: inset 0 1px 2px rgba(15, 55, 79, 0.04); }
+.topbarPrimary .searchWrap:focus-within { border-color: var(--bt-blue-2); box-shadow: 0 0 0 4px rgba(37, 142, 185, 0.14); }
+.topbarPrimary .searchWrap svg { color: var(--bt-blue); }
+.topbarPrimary .searchWrap input { color: var(--bt-text); }
+.profileServiceSwitch button { background: #fff; border: 1px solid var(--bt-card-border); color: var(--bt-navy); border-radius: 999px; }
+.profileServiceSwitch button.active, .mode-direct_visa .profileServiceSwitch button.active { background: var(--bt-button-gradient); border-color: transparent; color: #fff; box-shadow: var(--bt-button-shadow); }
+.topbar .courseFinderSwitchButton, .topbar .messageShortcut, .topbar .copilotTrigger, .topbar .iconButton, .topbarPrimary .iconButton { background: #fff; border: 1px solid var(--bt-card-border); border-radius: 999px; color: var(--bt-navy); }
+.topbar .courseFinderSwitchButton:hover, .topbar .messageShortcut:hover, .topbar .copilotTrigger:hover, .topbar .iconButton:hover { background: var(--bt-sky-tint); border-color: var(--bt-sky-line); }
+.topbar .courseFinderSwitchButton svg, .topbar .messageShortcut svg, .topbar .copilotTrigger svg, .topbar .iconButton svg { color: var(--bt-blue); }
+.topbar .quickButton, .appShell .quickButton { background: var(--bt-button-gradient); color: #fff; border-radius: 999px; box-shadow: var(--bt-button-shadow); }
+.topbar .avatar.small, .appShell .signedAccount .avatar, .topbar .signedAccount { background: var(--bt-sky-tint); color: var(--bt-navy); border-radius: 999px; }
 .topbar .signedAccount strong { color: var(--bt-navy); }
-.topbar .signedAccount small, .topbar .signedAccount span { color: var(--bt-muted); }
-.topbar .privateBadge, .topbar.clientOnly > div > span { color: var(--bt-on-navy); }
-.topbarSecondary { background: var(--bt-sky-tint); border-top: 0; border-bottom: 1px solid var(--bt-sky-tint-2); }
+.clientTopLabel, .topbar .clientTopLabel span, .topbar .clientTopLabel svg { color: var(--bt-blue); }
 .appShell .topbarSecondary button { color: var(--bt-navy); }
 .appShell .topbarSecondary button svg { color: var(--bt-blue); }
 
-/* the case window and the Gmail workspace share the navy bar */
-.appShell .caseWindowTopbar, .caseWindow .caseWindowTopbar { background: var(--bt-navy-2); color: var(--bt-on-navy); border-bottom: 0; }
-.caseWindow .caseWindowTopbar button, .appShell .caseWindowTopbar button, .appShell .caseWindowTopbar .copilotTrigger { color: var(--bt-on-navy); border-color: var(--bt-on-navy-line); background: rgba(255, 255, 255, 0.1); }
-.caseWindow .caseWindowTopbar > span, .caseWindow .caseWindowTopbar > b, .appShell .caseWindowTopbar > span, .appShell .caseWindowTopbar > b { color: var(--bt-on-navy-muted); }
-.appShell .caseWindowTopbar img, .appShell .caseWindowTopbar .brandMark { filter: brightness(0) invert(1); }
-.gmailWorkspaceHeader { background: var(--bt-navy-2); border-bottom: 0; color: var(--bt-on-navy); }
-.gmailWorkspaceHeader img { filter: brightness(0) invert(1); }
-.gmailBrand, .gmailBrand span { color: var(--bt-on-navy); }
-.gmailBrand svg { color: var(--bt-amber); }
-.gmailBackToCrm { color: var(--bt-on-navy); }
-.gmailSearchBar { background: rgba(255, 255, 255, 0.12); border-color: transparent; }
-.gmailSearchBar input { color: var(--bt-on-navy); }
-.gmailSearchBar input::placeholder, .gmailSearchBar svg { color: var(--bt-on-navy-muted); }
-.gmailSearchBar button { color: var(--bt-on-navy); }
-.gmailSearchBar:focus-within { background: rgba(255, 255, 255, 0.2); border-color: var(--bt-sky); }
-.gmailCopilotTrigger, .gmailWorkspaceHeader .copilotTrigger { background: rgba(255, 255, 255, 0.1); color: var(--bt-on-navy); border-color: transparent; }
-.gmailAccount strong { color: var(--bt-on-navy); }
-.gmailAccount small { color: var(--bt-on-navy-muted); }
-.gmailFolderRail nav button { color: var(--bt-navy); }
-.gmailCaseNote { background: var(--bt-sky-tint); color: var(--bt-navy); }
+/* ---------- every page opens with the dark story panel ---------- */
+.appShell .pageTitle, .pageTitle {
+  position: relative; overflow: hidden; align-items: center;
+  margin: 0 0 22px; padding: 24px 28px; border-radius: 22px;
+  background: var(--bt-panel-glow), var(--bt-panel-gradient);
+  color: var(--bt-on-dark); box-shadow: 0 22px 50px rgba(11, 35, 54, 0.22);
+}
+.appShell .pageTitle::after, .pageTitle::after { content: ""; position: absolute; right: -70px; top: -120px; width: 240px; height: 240px; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 50%; pointer-events: none; }
+.appShell .pageTitle > div:first-child { position: relative; z-index: 1; }
+.appShell .pageTitle > div:first-child > span { display: inline-block !important; color: var(--bt-amber); font-size: 12px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 6px; }
+.pageTitle h1, .appShell .pageTitle h1, .appShell .pageTitle .pageTitleHeading { color: var(--bt-on-dark); font-size: 30px; font-weight: 650; letter-spacing: -0.02em; margin: 0 0 6px; }
+.pageTitle p, .appShell .pageTitle p { color: var(--bt-on-dark-muted); font-size: 15px; }
+.appShell .pageTitle .titleActions, .titleActions { position: relative; z-index: 1; }
+.appShell .pageTitle .primaryButton, .appShell .pageTitle .ghostButton { box-shadow: none; }
+.appShell .pageTitle .ghostButton { background: rgba(255, 255, 255, 0.1); border-color: rgba(255, 255, 255, 0.22); color: #fff; }
+.appShell .pageTitle .ghostButton svg { color: #fff; }
+.appShell .pageTitle .primaryButton { background: var(--bt-amber-strong); border-color: var(--bt-amber-strong); color: var(--bt-navy); }
+.appShell .pageTitle .primaryButton:hover { background: var(--bt-amber); }
+.appShell .pageTitle .primaryButton svg { color: var(--bt-navy); }
 
-/* ---------- titles, panels and their heads ---------- */
-.pageTitle h1, .appShell .pageTitle h1, .appShell .drawerHead h1 { color: var(--bt-navy); }
-.kicker, .appShell .kicker, .journeyListIntro .kicker, .dashboardAdminTools > .kicker { color: var(--bt-blue); }
-.railHeading { color: var(--bt-navy); }
-.panel, .appShell .panel, .listPanel, .journeyListPanel, .caseWorkPanel, .agentClientPanel, .recordTableWrap, .dashboardFilters, .caseAtGlance, .summaryRows, .drawerHealth { border-color: var(--bt-sky-tint-2); }
-.panel, .appShell .panel { --panel-pad: 18px; padding: var(--panel-pad); }
-.listPanel, .appShell .listPanel { --panel-pad: 17px; padding: var(--panel-pad); }
-.panel > .panelHead, .appShell .panel > .panelHead { margin: calc(-1 * var(--panel-pad)) calc(-1 * var(--panel-pad)) 14px; padding: 12px var(--panel-pad); background: var(--bt-sky-tint); border-bottom: 1px solid var(--bt-sky-tint-2); border-radius: 9px 9px 0 0; }
-.panel > .panelHead h2, .appShell .panel > .panelHead h2 { color: var(--bt-navy); }
-.panel > .panelHead .kicker { color: var(--bt-blue); }
-.journeyListIntro, .detailedRecordsHead, .templateWorkspaceIntro { background: var(--bt-sky-tint); border-bottom: 1px solid var(--bt-sky-tint-2); }
-.journeyListIntro h2, .detailedRecordsHead h2, .templateWorkspaceIntro h2 { color: var(--bt-navy); }
-.templateWorkspaceSummary strong, .journeyRecordCount strong, .detailedRecordsSummary strong { color: var(--bt-blue); }
-.workspaceHero, .googleHero, .controlCentre, .heroPanel, .workspaceConnection, .appShell .workspaceConnection { background: var(--bt-navy); border-color: var(--bt-navy); color: var(--bt-on-navy); }
-.workspaceHero h2, .googleHero h2, .controlCentre h2, .appShell .workspaceConnection strong { color: var(--bt-on-navy); }
-.appShell .workspaceConnection span, .appShell .workspaceConnection p, .appShell .workspaceConnection small { color: var(--bt-on-navy-muted); }
+/* the dashboard's connection card and the hero strips share the panel */
+.workspaceHero, .googleHero, .controlCentre, .heroPanel, .workspaceConnection, .appShell .workspaceConnection, .enquiryScopeLabel {
+  background: var(--bt-panel-glow), var(--bt-panel-gradient) !important; border: 0; border-radius: 18px; color: var(--bt-on-dark); box-shadow: 0 18px 44px rgba(11, 35, 54, 0.18);
+}
+.workspaceHero h2, .googleHero h2, .controlCentre h2, .appShell .workspaceConnection strong, .enquiryScopeLabel strong { color: var(--bt-on-dark) !important; }
+.appShell .workspaceConnection span, .appShell .workspaceConnection p, .appShell .workspaceConnection small, .enquiryScopeLabel small, .enquiryScopeLabel span { color: var(--bt-on-dark-muted) !important; }
+.enquiryScopeLabel svg { color: var(--bt-sky) !important; }
 .appShell .workspaceConnection b { color: var(--bt-amber); }
-.appShell .dashboardFilters, .appShell .listFilterBar, .listFilterBar, .courseFinderFilters.courseFinderFilterGrid, .templateFilters, .caseFilterPanel { background: var(--bt-sky-tint) !important; border-color: var(--bt-sky-tint-2); }
-.appShell .listFilterBar input, .appShell .listFilterBar select, .courseFinderFilters input, .courseFinderFilters select, .templateFilters input, .templateFilters select { background: #fff; }
-.enquiryScopeLabel { background-color: var(--bt-navy); border-color: var(--bt-navy); }
-.enquiryScopeLabel strong, .enquiryScopeLabel small, .enquiryScopeLabel svg { color: var(--bt-on-navy) !important; }
-.enquiryScopeLabel small { color: var(--bt-on-navy-muted) !important; }
 
-/* ---------- the figures: tinted tiles, the brand on the number ---------- */
-.signalGrid, .appShell .signalGrid { gap: 14px; background: transparent; border: 0; overflow: visible; }
-.signal, .appShell .signal, .signalGrid article { border: 1px solid var(--bt-sky-tint-2) !important; border-radius: 10px; background: var(--bt-sky-tint); }
-.signal + .signal, .signalGrid article + article { border-left: 1px solid var(--bt-sky-tint-2); }
-.signal:nth-child(2), .appShell .signal:nth-child(2) { background: var(--bt-amber-tint); border-color: #f2d3a8 !important; }
-.signal:nth-child(3), .appShell .signal:nth-child(3) { background: var(--bt-green-tint); border-color: #bfe3cf !important; }
-.signal:nth-child(4), .appShell .signal:nth-child(4) { background: var(--bt-red-tint); border-color: #f1c3bd !important; }
-.signal span, .appShell .signal span { color: var(--bt-navy); }
-.signal strong, .appShell .signal strong, .signal > div:first-child > strong { color: var(--bt-navy); }
+/* ---------- cards: white, large corners, lifted ---------- */
+.panel, .appShell .panel, .listPanel, .journeyListPanel, .caseWorkPanel, .agentClientPanel, .recordTableWrap, .caseAtGlance, .summaryRows, .drawerHealth, .casePriorityBar, .reportBuilder, .gmailMailboxPane, .dashboardFilters, .appShell .dashboardFilters {
+  background: rgba(255, 255, 255, 0.96) !important; border: 1px solid var(--bt-card-border) !important; border-radius: var(--bt-radius-card) !important; box-shadow: var(--bt-card-shadow);
+}
+.appShell .panel:hover, .panel:hover { box-shadow: var(--bt-card-shadow); border-color: var(--bt-card-border); }
+.appShell.caseWindow :is(.panel, .caseWorkPanel, .agentClientPanel, .caseAtGlance, .caseQuickNote, .caseLastNote, .radarItem, .summaryRows, .drawerHealth, .casePriorityBar) { border-radius: var(--bt-radius-card); }
+.panel > .panelHead, .appShell .panel > .panelHead, .panelHead, .appShell .panelHead { background: transparent; margin: 0 0 14px; padding: 0 0 12px; border-bottom: 1px solid var(--hs-rule); border-radius: 0; }
+.kicker, .appShell .kicker, .journeyListIntro .kicker, .dashboardAdminTools > .kicker, .railHeading { color: #cf672d; font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
+.railHeading { font-size: 12px; }
+.panelHead h2, .appShell .panelHead h2, .journeyListIntro h2, .detailedRecordsHead h2, .templateWorkspaceIntro h2 { color: var(--bt-navy); font-size: 18px; font-weight: 700; }
+.journeyListIntro, .detailedRecordsHead, .templateWorkspaceIntro { background: linear-gradient(110deg, #fff 0%, #f7fbfd 72%, #fff8ef 100%); border-bottom: 1px solid var(--hs-rule); border-radius: var(--bt-radius-card) var(--bt-radius-card) 0 0; }
+.templateWorkspaceSummary strong, .journeyRecordCount strong, .detailedRecordsSummary strong { color: #cf672d; }
+.appShell .listFilterBar, .listFilterBar, .courseFinderFilters.courseFinderFilterGrid, .templateFilters, .caseFilterPanel { background: var(--bt-sky-tint) !important; border: 1px solid var(--bt-sky-line) !important; border-radius: 14px; }
+.appShell .listFilterBar input, .appShell .listFilterBar select, .courseFinderFilters input, .courseFinderFilters select, .templateFilters input, .templateFilters select { background: #fff; border-radius: var(--bt-radius-control); }
+.radarItem.actionRow, .dashboardMode .actionRow, .caseQuickNote, .caseLastNote, .notice { background-color: var(--bt-sky-tint); border: 1px solid var(--bt-sky-line); border-radius: 14px; }
+.radarItem.actionRow:hover { background-color: #daeef7; }
+.radarIcon, .radarItem .radarIcon, .radarIcon.amber, .radarIcon.blue { width: 34px; height: 34px; border-radius: 10px; background: var(--bt-button-gradient); color: #fff; display: grid; place-items: center; box-shadow: var(--bt-button-shadow); }
+.radarItem.actionRow, .dashboardMode .actionRow { grid-template-columns: 34px minmax(0, 1fr) 16px; }
+.dashboardAdminTools > button { background: #fff; border: 1px solid var(--bt-card-border); border-radius: 14px; box-shadow: 0 8px 20px rgba(15, 55, 79, 0.05); }
+.dashboardAdminTools > button:hover { background: var(--bt-sky-tint); }
+.dashboardAdminTools > button > svg:first-child { color: var(--bt-blue); }
+
+/* ---------- the figures: the original tiles, with their coloured icon squares ---------- */
+.signalGrid, .appShell .signalGrid { gap: 16px; background: transparent; border: 0; overflow: visible; }
+.signal, .appShell .signal, .signalGrid article, .signal.ocean, .signal.sunshine, .signal.coral, .signal.primary, .signal.mint {
+  background: #fff !important; background-image: none !important; border: 1px solid var(--bt-card-border) !important; border-radius: var(--bt-radius-card); box-shadow: var(--bt-card-shadow);
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 20px 22px; min-height: 0; position: relative; overflow: hidden; transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.signal:hover, .appShell .signal:hover { transform: translateY(-2px); box-shadow: var(--bt-card-shadow-hover); border-color: var(--bt-card-border); }
+.signal::before, .appShell .signal::before { content: "" !important; display: block !important; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--bt-blue-2); }
+.signal:nth-child(2)::before { background: var(--bt-amber-strong); }
+.signal:nth-child(3)::before { background: #279477; }
+.signal:nth-child(4)::before { background: #d96956; }
+.signal::after, .appShell .signal::after { display: none !important; }
+.signal span, .appShell .signal span { color: var(--bt-muted); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.signal strong, .appShell .signal strong, .signal > div:first-child > strong { color: var(--bt-navy); font-size: 34px; font-weight: 700; margin: 8px 0 4px; }
 .signal strong.attention, .appShell .signal strong.attention { color: var(--bt-amber-ink); }
-.signal:nth-child(4) strong.attention, .appShell .signal:nth-child(4) strong.attention { color: var(--bt-red); }
-.signal small, .appShell .signal small { color: var(--bt-muted); }
-.miniStats, .appShell .miniStats { border-color: var(--bt-sky-tint-2); }
-.miniStats article, .appShell .miniStats article { background: var(--bt-sky-tint); }
-.miniStats article + article { border-left-color: #fff; }
-.miniStats strong, .appShell .miniStats strong { color: var(--bt-navy); }
-.miniStats span, .appShell .miniStats span { color: var(--bt-navy); }
+.signal:nth-child(4) strong.attention { color: var(--bt-red); }
+.signal small, .appShell .signal small { color: var(--bt-muted); font-size: 13px; }
+.signalIcon, .signal .signalIcon { display: grid !important; place-items: center; width: 46px; height: 46px; flex: 0 0 46px; border-radius: 14px; color: #fff; background: var(--bt-button-gradient); box-shadow: var(--bt-button-shadow); }
+.signalIcon.amber { background: linear-gradient(135deg, #e48e24, #f7a95b); box-shadow: 0 10px 22px rgba(228, 142, 36, 0.25); }
+.signalIcon.coral, .signal.coral .signalIcon { background: linear-gradient(135deg, #279477, #3fb391); box-shadow: 0 10px 22px rgba(39, 148, 119, 0.25); }
+.signal:nth-child(4) .signalIcon { background: linear-gradient(135deg, #c4524a, #d96956); box-shadow: 0 10px 22px rgba(217, 105, 86, 0.25); }
+.signalIcon svg { width: 22px; height: 22px; }
+.miniStats, .appShell .miniStats { background: transparent !important; border: 0 !important; gap: 16px; overflow: visible; box-shadow: none; }
+.miniStats article, .appShell .miniStats article { background: #fff !important; border: 1px solid var(--bt-card-border) !important; border-radius: var(--bt-radius-card); box-shadow: var(--bt-card-shadow); padding: 18px 20px; border-left: 4px solid var(--bt-blue-2) !important; }
+.miniStats article:nth-child(2) { border-left-color: var(--bt-amber-strong) !important; }
+.miniStats article:nth-child(3) { border-left-color: #279477 !important; }
+.miniStats article:nth-child(4) { border-left-color: #d96956 !important; }
+.miniStats strong, .appShell .miniStats strong { color: var(--bt-navy); font-size: 28px; font-weight: 700; }
+.miniStats span, .appShell .miniStats span { color: var(--bt-muted); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
 
 /* ---------- tables, rows and status ---------- */
-.caseTableHeader, .dashboardMode .caseTableHeader, .journeyDataHeader { background: var(--bt-sky-tint); color: var(--bt-navy); border-radius: 8px; }
-.recordTable th, .appShell th { background: var(--bt-sky-tint); color: var(--bt-navy); border-bottom: 1px solid var(--bt-sky-tint-2); }
-.recordTable td, .appShell td { border-bottom-color: var(--hs-rule); }
-.recordTable tbody tr:hover td, .appShell tbody tr:hover td, .appShell .caseRow:hover, .appShell .journeyDataRow:hover, .appShell .functionalRow:hover { background: #f1f8fc; }
+.caseTableHeader, .dashboardMode .caseTableHeader, .journeyDataHeader { background: var(--bt-sky-tint); color: var(--bt-navy); border-radius: 12px; }
+.recordTable th, .appShell th { background: var(--bt-sky-tint); color: var(--bt-navy); border-bottom: 1px solid var(--bt-sky-line); }
+.recordTable th:first-child { border-radius: 12px 0 0 12px; } .recordTable th:last-child { border-radius: 0 12px 12px 0; }
+.recordTable tbody tr:hover td, .appShell tbody tr:hover td, .appShell .caseRow:hover, .appShell .journeyDataRow:hover, .appShell .functionalRow:hover { background: #f4f9fc; }
 .status.success, .appShell .status.success { background: var(--bt-green-tint); color: var(--bt-green); }
 .status.warning, .appShell .status.warning { background: var(--bt-amber-tint); color: var(--bt-amber-ink); }
 .status.danger, .appShell .status.danger { background: var(--bt-red-tint); color: var(--bt-red); }
-.caseStageBadge, .appShell .caseIdentityMeta .caseStageBadge { background: var(--bt-navy); color: var(--bt-on-navy); }
-.viewOnlyBadge { background: var(--bt-amber-tint); color: var(--bt-amber-ink); }
+.caseStageBadge, .appShell .caseIdentityMeta .caseStageBadge, .caseStageBadge * { background: var(--bt-amber-strong); color: var(--bt-navy) !important; }
+.viewOnlyBadge, .integrationState.not_configured, .integrationState.attention { background: var(--bt-amber-tint); color: var(--bt-amber-ink); }
 .integrationState.connected { background: var(--bt-green-tint); color: var(--bt-green); }
-.integrationState.not_configured, .integrationState.attention { background: var(--bt-amber-tint); color: var(--bt-amber-ink); }
-.lifecycleTrack li.done { background: var(--bt-sky-tint); color: var(--bt-blue); border-color: var(--bt-sky-tint-2); }
-.lifecycleTrack li.current, .lifecycleTrack li.parked.current { background: var(--bt-amber); border-color: var(--bt-amber); color: var(--bt-navy); }
-.pipelineStages li { border-top-color: var(--bt-sky-tint-2); }
-.pipelineStages li:first-child { border-top-color: var(--bt-amber); }
-.pipelineStages strong, .checklistSummary span, .checklistSummary strong { color: var(--bt-navy); }
-.radarItem.actionRow, .dashboardMode .actionRow, .caseQuickNote, .caseLastNote, .notice { background-color: var(--bt-sky-tint); }
-.radarItem.actionRow:hover { background-color: var(--bt-sky-tint-2); }
-.radarIcon, .radarItem .radarIcon { color: var(--bt-blue); }
-.dashboardAdminTools > button { background: #fff; border: 1px solid var(--bt-sky-tint-2); }
-.dashboardAdminTools > button:hover { background: var(--bt-sky-tint); }
-.dashboardAdminTools > button > svg:first-child { color: var(--bt-blue); }
-.clientNext { background: var(--bt-amber-tint); border-color: #f2d3a8; }
+.lifecycleTrack li { border-radius: 10px; }
+.lifecycleTrack li.done { background: var(--bt-sky-tint); color: var(--bt-sky-ink); border-color: var(--bt-sky-line); }
+.lifecycleTrack li.current, .lifecycleTrack li.parked.current { background: var(--bt-amber-strong); border-color: var(--bt-amber-strong); color: var(--bt-navy); box-shadow: 0 8px 20px rgba(228, 142, 36, 0.3); }
+.pipelineStages li:first-child { border-top-color: var(--bt-amber-strong); }
+.clientNext { background: var(--bt-amber-tint); border-color: #f2d3a8; border-radius: 14px; }
 .clientNext span, .clientNext .nextIcon, .nextIcon { color: var(--bt-amber-ink); }
-.nextIcon { background: #fff; }
-.clientWelcome, .clientTeamCard { background: var(--bt-sky-tint); border-color: var(--bt-sky-tint-2); }
-.clientAvatar { background: var(--bt-navy); color: var(--bt-on-navy); }
-.weekGrid > div { background: #fff; border-color: var(--bt-sky-tint-2); }
-.weekGrid > div.today { background: var(--bt-sky-tint); border-color: var(--bt-sky); }
-.calendarConnectBar { background: var(--bt-sky-tint); border-color: var(--bt-sky-tint-2); }
-.appShell .emptyState > div, .appShell .docIcon { color: var(--bt-blue); }
-.gmailMailboxToolbar { background: var(--bt-sky-tint); color: var(--bt-navy); border-bottom-color: var(--bt-sky-tint-2); }
-.gmailMailboxToolbar strong { color: var(--bt-navy); }
-.gmailOffline .gmailConnectState { background: #fff; }
-.auditScope, .controlRow { border-color: var(--hs-rule); }
+.nextIcon { background: #fff; box-shadow: 0 6px 16px rgba(228, 142, 36, 0.2); }
+.clientWelcome { background: var(--bt-panel-glow), var(--bt-panel-gradient) !important; border: 0 !important; color: var(--bt-on-dark); box-shadow: 0 18px 44px rgba(11, 35, 54, 0.18); }
+.clientWelcome h2, .clientWelcome span { color: var(--bt-on-dark); }
+.clientWelcome span { color: var(--bt-amber); }
+.clientWelcome p { color: var(--bt-on-dark-muted); }
+.clientAvatar { background: var(--bt-amber); color: var(--bt-navy); box-shadow: 0 10px 24px rgba(228, 142, 36, 0.3); }
+.weekGrid > div { background: #fff; border-color: var(--bt-card-border); border-radius: 14px; }
+.weekGrid > div.today { background: var(--bt-sky-tint); border-color: var(--bt-sky); box-shadow: 0 12px 28px rgba(44, 157, 204, 0.14); }
+.calendarConnectBar { background: #fff; border-color: var(--bt-card-border); border-radius: var(--bt-radius-card); box-shadow: var(--bt-card-shadow); }
+.appShell .emptyState > div, .appShell .docIcon { width: 52px; height: 52px; border-radius: 16px; background: var(--bt-sky-tint); color: var(--bt-blue); display: grid; place-items: center; }
+.appShell .docIcon { width: 36px; height: 36px; border-radius: 10px; }
 
-/* ---------- buttons and controls ---------- */
-.appShell .primaryButton, .primaryButton, .appShell .heroPrimary, .singleLoginButton.theme, .appShell button.primary { background: var(--bt-blue); border-color: var(--bt-blue); color: #fff; }
-.appShell .primaryButton:hover, .primaryButton:hover, .appShell .heroPrimary:hover { background: var(--bt-navy); border-color: var(--bt-navy); }
-.appShell .ghostButton, .ghostButton { background: #fff; color: var(--bt-blue); border-color: var(--bt-sky-tint-2); }
-.appShell .ghostButton:hover, .ghostButton:hover { background: var(--bt-sky-tint); color: var(--bt-navy); }
+/* ---------- buttons: the sign-in's gradient button, everywhere it matters ---------- */
+.appShell .primaryButton, .primaryButton, .appShell .heroPrimary, .appShell .enquirySearchButton, .appShell button.primary, .gmailConnectState button {
+  background: var(--bt-button-gradient) !important; background-image: var(--bt-button-gradient) !important; border: 0; color: #fff; border-radius: var(--bt-radius-control); box-shadow: var(--bt-button-shadow) !important; transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+.appShell .primaryButton:hover:not(:disabled), .primaryButton:hover:not(:disabled), .appShell .heroPrimary:hover { transform: translateY(-1px); filter: saturate(1.08); box-shadow: 0 14px 27px rgba(22, 106, 151, 0.25) !important; }
+.appShell .ghostButton, .ghostButton { background: #fff; color: var(--bt-blue); border: 1px solid var(--bt-card-border); border-radius: var(--bt-radius-control); box-shadow: 0 6px 16px rgba(15, 55, 79, 0.05); }
+.appShell .ghostButton:hover, .ghostButton:hover { background: var(--bt-sky-tint); border-color: var(--bt-sky-line); color: var(--bt-navy); }
 .appShell .ghostButton svg, .ghostButton svg { color: var(--bt-blue); }
 .appShell .linkButton { color: var(--bt-blue); }
-.appShell .iconButton:not(.topbar .iconButton), .appShell .content .iconButton { border-color: var(--bt-sky-tint-2); color: var(--bt-blue); }
-.appShell input:focus, .appShell select:focus, .appShell textarea:focus { border-color: var(--bt-sky); box-shadow: 0 0 0 3px var(--bt-sky-tint); outline: none; }
-.caseTabs button.active, .appShell .caseTabs button.active { color: var(--bt-navy); border-bottom-color: var(--bt-amber); }
-.caseTabs button.active em, .caseTabs button.active i { background: var(--bt-amber); color: var(--bt-navy); }
-.templateWorkspaceTabs { background: var(--bt-sky-tint); border-color: var(--bt-sky-tint-2); }
-.templateWorkspaceTabs button.active { background: var(--bt-navy); color: var(--bt-on-navy); border-color: var(--bt-navy); }
-.templateWorkspaceTabs button.active b { background: var(--bt-amber); color: var(--bt-navy); }
-.templateWorkspaceTabs button.active svg { color: var(--bt-amber); }
-.reportBuilderMore summary { color: var(--bt-blue); }
-.datasetChips label { background: #fff; border-color: var(--bt-sky-tint-2); }
-.datasetChips label:has(input:checked) { background: var(--bt-navy); color: var(--bt-on-navy); border-color: var(--bt-navy); }
+.appShell input:focus, .appShell select:focus, .appShell textarea:focus { border-color: var(--bt-blue-2); box-shadow: 0 0 0 4px rgba(25, 122, 168, 0.11); outline: none; }
+.appShell input, .appShell select, .appShell textarea { border-radius: var(--bt-radius-control); border-color: #cddde5; }
+.gmailCompose { background: linear-gradient(135deg, #e48e24, #f7a95b); color: var(--bt-navy); box-shadow: 0 10px 22px rgba(228, 142, 36, 0.28); border-radius: 16px; }
+.gmailCompose:hover { filter: saturate(1.08); box-shadow: 0 14px 27px rgba(228, 142, 36, 0.32); }
+
+/* ---------- the case window and the Gmail workspace share the dark bar ---------- */
+.appShell .caseWindowTopbar, .caseWindow .caseWindowTopbar, .gmailWorkspaceHeader { background: var(--bt-panel-glow), var(--bt-panel-gradient); color: var(--bt-on-dark); border-bottom: 0; box-shadow: 0 10px 30px rgba(11, 35, 54, 0.22); }
+.appShell .caseWindowTopbar img, .appShell .caseWindowTopbar .brandMark, .gmailWorkspaceHeader img { filter: brightness(0) invert(1); }
+.caseWindow .caseWindowTopbar button, .appShell .caseWindowTopbar button, .appShell .caseWindowTopbar .copilotTrigger, .gmailCopilotTrigger, .gmailWorkspaceHeader .copilotTrigger { color: var(--bt-on-dark); border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.1); border-radius: 999px; }
+.caseWindow .caseWindowTopbar > span, .caseWindow .caseWindowTopbar > b, .appShell .caseWindowTopbar > span, .appShell .caseWindowTopbar > b { color: var(--bt-on-dark-muted); }
+.appShell.caseWindow .drawerHead { background: var(--bt-panel-glow), var(--bt-panel-gradient); color: var(--bt-on-dark); margin: 16px 24px 0; border-radius: 22px; padding: 22px 26px; box-shadow: 0 22px 50px rgba(11, 35, 54, 0.22); }
+.appShell.caseWindow .drawerHead h1, .appShell.caseWindow .drawerHead h2 { color: var(--bt-on-dark); }
+.appShell.caseWindow .drawerHead > span, .appShell.caseWindow .drawerHead .caseNumber, .appShell.caseWindow .drawerHead small { color: var(--bt-amber); font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; font-size: 12px; }
+.appShell.caseWindow .drawerHead a, .appShell.caseWindow .drawerHead .caseIdentityMeta, .appShell.caseWindow .drawerHead .caseIdentityMeta span { color: var(--bt-on-dark-muted); }
+.appShell.caseWindow .drawerHead a svg { color: var(--bt-sky); }
+.appShell .caseBranchTransfer { background: var(--bt-sky-tint); border-color: var(--bt-sky-line); margin: 12px 24px 0; border-radius: 14px; }
+.appShell .caseLeftRail nav.caseTabs, .appShell nav.caseTabs { background: transparent; border-bottom: 1px solid var(--bt-card-border); }
+.caseTabs button.active, .appShell .caseTabs button.active, .appShell nav.caseTabs button.active { color: var(--bt-navy); border-bottom: 3px solid var(--bt-amber-strong); }
+.caseTabs button.active em, .caseTabs button.active i { background: var(--bt-amber-strong); color: var(--bt-navy); }
+.gmailBrand, .gmailBrand span, .gmailBackToCrm, .gmailAccount strong { color: var(--bt-on-dark); }
+.gmailBrand svg { color: var(--bt-amber); }
+.gmailAccount small { color: var(--bt-on-dark-muted) !important; }
+.gmailAccount > div { background: var(--bt-amber); color: var(--bt-navy); }
+.gmailSearchBar { background: rgba(255, 255, 255, 0.12); border-color: transparent; border-radius: 999px; }
+.gmailSearchBar input { color: var(--bt-on-dark); }
+.gmailSearchBar input::placeholder, .gmailSearchBar svg { color: var(--bt-on-dark-muted); }
+.gmailSearchBar button { color: var(--bt-on-dark); }
+.gmailFolderRail nav button { color: var(--bt-navy); border-radius: 0 16px 16px 0; }
+.gmailFolderRail nav button.active { background: var(--bt-sky-tint); color: var(--bt-sky-ink); }
+.gmailCaseNote { background: #fff; border: 1px solid var(--bt-card-border); border-radius: 14px; box-shadow: var(--bt-card-shadow); color: var(--bt-muted); }
+.gmailMailboxToolbar { background: var(--bt-sky-tint); color: var(--bt-navy); }
+.gmailMailboxToolbar strong { color: var(--bt-navy); }
+.templateWorkspaceTabs { background: #fff; border: 1px solid var(--bt-card-border); border-radius: 14px; box-shadow: var(--bt-card-shadow); }
+.templateWorkspaceTabs button.active { background: var(--bt-button-gradient); color: #fff; border-color: transparent; box-shadow: var(--bt-button-shadow); }
+.templateWorkspaceTabs button.active b { background: var(--bt-amber-strong); color: var(--bt-navy); }
+.templateWorkspaceTabs button.active svg { color: #fff; }
+.datasetChips label { background: #fff; border-color: var(--bt-card-border); border-radius: 999px; }
+.datasetChips label:has(input:checked) { background: var(--bt-button-gradient); color: #fff; border-color: transparent; }
 .schemaBanner { background: var(--bt-amber-tint); color: var(--bt-amber-ink); border-bottom: 1px solid #f2d3a8; }
+.quickMenu, .popover, .notificationsPopover, .recordModal, .modalCard, .staffDialog, .dialog { border-radius: 18px; box-shadow: 0 30px 80px rgba(26, 78, 115, 0.2); }
 
-/* The top bar's inner rows paint over the bar; the tiles must outrank the old gradient rule. */
-.topbarPrimary, .topbar .topbarPrimary, .topbar .topActions, .topbar .serviceAndFinder { background: transparent !important; }
-.topbarSecondary, .topbar .topbarSecondary { background: var(--bt-sky-tint) !important; }
-.signal, .appShell .signal, .signalGrid article, .signal.ocean, .signal.sunshine, .signal.coral, .signal.primary, .signal.mint, .signal.violet { background: var(--bt-sky-tint) !important; background-image: none !important; }
-.signal:nth-child(2), .appShell .signal:nth-child(2) { background: var(--bt-amber-tint) !important; }
-.signal:nth-child(3), .appShell .signal:nth-child(3) { background: var(--bt-green-tint) !important; }
-.signal:nth-child(4), .appShell .signal:nth-child(4) { background: var(--bt-red-tint) !important; }
-.miniStats, .appShell .miniStats { background: transparent !important; border: 0; gap: 14px; overflow: visible; }
-.miniStats article, .appShell .miniStats article { background: var(--bt-sky-tint) !important; border: 1px solid var(--bt-sky-tint-2) !important; border-radius: 10px; }
-.miniStats article + article, .appShell .miniStats article + article { border-left: 1px solid var(--bt-sky-tint-2) !important; border-top: 0 !important; }
-.appShell .panel, .panel, .listPanel, .journeyListPanel, .caseWorkPanel, .agentClientPanel, .recordTableWrap { background: #fff !important; }
-.attentionPanel, .appShell .attentionPanel, .appShell .panel.attentionPanel { background: #fff !important; }
-.appShell .dashboardFilters, .appShell .listFilterBar, .listFilterBar { background: var(--bt-sky-tint) !important; }
+@media (max-width: 760px) {
+  .appShell .pageTitle, .pageTitle { padding: 18px 18px; border-radius: 16px; }
+  .pageTitle h1, .appShell .pageTitle h1 { font-size: 24px; }
+  .appShell.caseWindow .drawerHead { margin: 12px 16px 0; padding: 18px; border-radius: 16px; }
+}
 
-/* Second look: text on the navy bars, amber ink on amber tints, icon buttons on the bar without a tinted square. */
-.signal::before, .signal::after, .appShell .signal::before, .appShell .signal::after { display: none !important; }
-.gmailAccount small, .topbar small, .caseWindowTopbar small, .topbar .signedAccount small { color: var(--bt-on-navy-muted) !important; }
-.topbar .signedAccount small, .topbar .signedAccount span { color: var(--bt-muted) !important; }
-.caseStageBadge, .appShell .caseIdentityMeta .caseStageBadge, .caseStageBadge * { color: var(--bt-on-navy) !important; }
-.clientTopLabel, .topbar .clientTopLabel, .topbar .clientTopLabel span, .topbar .clientTopLabel svg { color: var(--bt-on-navy) !important; }
-:root { --bt-amber-ink: #7f4a0e; }
-.status.warning, .appShell .status.warning, .viewOnlyBadge, .clientNext span, .clientNext .nextIcon, .nextIcon, .integrationState.not_configured, .integrationState.attention, .schemaBanner { color: #7f4a0e; }
-.signal strong.attention, .appShell .signal strong.attention { color: #7f4a0e; }
-.topbar .courseFinderSwitchButton, .topbar .messageShortcut, .topbar .copilotTrigger, .topbar .iconButton, .topbarPrimary .iconButton, .topbar .menuButton, .appShell .menuButton { background: transparent; border: 1px solid rgba(255, 255, 255, 0.28); }
-.topbar .courseFinderSwitchButton:hover, .topbar .messageShortcut:hover, .topbar .copilotTrigger:hover, .topbar .iconButton:hover, .topbar .menuButton:hover { background: rgba(255, 255, 255, 0.14); }
-.caseWindow .caseWindowTopbar button, .appShell .caseWindowTopbar button, .appShell .caseWindowTopbar .copilotTrigger, .gmailCopilotTrigger, .gmailWorkspaceHeader .copilotTrigger { background: transparent; border: 1px solid rgba(255, 255, 255, 0.28); }
-.topbar .avatar.small, .appShell .signedAccount .avatar { background: var(--bt-amber); color: var(--bt-navy); }
-:root { --bt-muted: #3f4c56; --hs-muted: #3f4c56; --hs-faint: #46545f; }
+/* Second look. */
+.appShell.dashboardMode .pageTitle, .dashboardMode .pageTitle, .appShell .pageTitle, .pageTitle { background: var(--bt-panel-glow), var(--bt-panel-gradient) !important; }
+.appShell .pageTitle .primaryButton, .appShell .pageTitle .titleActions .primaryButton { background: linear-gradient(135deg, #e48e24, #f7a95b) !important; background-image: linear-gradient(135deg, #e48e24, #f7a95b) !important; color: var(--bt-navy) !important; box-shadow: 0 10px 22px rgba(228, 142, 36, 0.28) !important; }
+.appShell .pageTitle .primaryButton svg { color: var(--bt-navy); }
+.signalIcon, .signal .signalIcon, .signalIcon.blue, .signalIcon.amber, .signalIcon.green, .signalIcon.red, .signalIcon.coral { background: var(--bt-button-gradient) !important; color: #fff !important; }
+.signal:nth-child(2) .signalIcon { background: linear-gradient(135deg, #e48e24, #f7a95b) !important; box-shadow: 0 10px 22px rgba(228, 142, 36, 0.25); }
+.signal:nth-child(3) .signalIcon { background: linear-gradient(135deg, #279477, #3fb391) !important; box-shadow: 0 10px 22px rgba(39, 148, 119, 0.25); }
+.signal:nth-child(4) .signalIcon { background: linear-gradient(135deg, #c4524a, #d96956) !important; box-shadow: 0 10px 22px rgba(217, 105, 86, 0.25); }
+.appShell.caseWindow .drawerHead, .appShell.caseWindow .drawerHead * { color: var(--bt-on-dark); }
+.appShell.caseWindow .drawerHead a, .appShell.caseWindow .drawerHead a * { color: #d8f3ff !important; }
+.appShell.caseWindow .drawerHead a svg { color: var(--bt-sky) !important; }
+.appShell.caseWindow .drawerHead > span:first-child, .appShell.caseWindow .drawerHead .caseNumber, .appShell.caseWindow .drawerHead > div:first-child > span:first-child { color: var(--bt-amber) !important; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; font-size: 12px; }
+.appShell.caseWindow .drawerHead .caseStageBadge, .appShell.caseWindow .drawerHead .caseStageBadge * { color: var(--bt-navy) !important; }
+.appShell.caseWindow .drawerHead small, .appShell.caseWindow .drawerHead .caseIdentityMeta span { color: var(--bt-on-dark-muted) !important; }
+.appShell.dashboardMode .pageTitle, .dashboardMode .pageTitle { padding: 24px 28px !important; margin-bottom: 22px !important; }
+.appShell .panel.clientWelcome, .panel.clientWelcome, .clientWelcome { background: var(--bt-panel-glow), var(--bt-panel-gradient) !important; border: 0 !important; }
+.appShell .panel.clientWelcome h2, .appShell .panel.clientWelcome p, .appShell .panel.clientWelcome span { color: var(--bt-on-dark) !important; }
+.appShell .panel.clientWelcome span { color: var(--bt-amber) !important; }
+.appShell .panel.clientWelcome p { color: var(--bt-on-dark-muted) !important; }
