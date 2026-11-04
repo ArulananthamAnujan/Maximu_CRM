@@ -341,57 +341,10 @@ input, select, textarea, .appShell input, .appShell select, .appShell textarea {
   .courseFinderFilters.courseFinderFilterGrid { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* ---------- the sign-in page: the two-panel shell, flat, in the logo's colours ---------- */
-.demoLogin.unifiedLogin { background: var(--hs-ground); background-image: none; padding: 28px clamp(16px, 5vw, 72px) 40px; color: var(--hs-text); }
-.unifiedLogin::before, .unifiedLogin::after { display: none; }
-.unifiedLoginShell { max-width: 1040px; width: 100%; margin: 40px auto 0; grid-template-columns: minmax(300px, .9fr) minmax(380px, 1.1fr); gap: 0; align-items: stretch; border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); background: var(--hs-surface); box-shadow: none; overflow: hidden; }
-.loginStory { padding: clamp(28px, 4vw, 44px); justify-content: center; color: #fff; background: var(--hs-brand); background-image: none; overflow: hidden; }
-.loginStory::after { display: none; }
-.unifiedLogin .loginGlow { display: inline-flex; align-items: center; gap: 8px; width: max-content; margin: 0 0 22px; padding: 0; border: 0; background: transparent; box-shadow: none; color: #bfe0f0; font-size: 13px; font-weight: 500; }
-.unifiedLogin .loginGlow svg { color: var(--hs-sky); }
-.loginStory > span { color: var(--hs-accent); font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
-.loginStory h1 { margin: 10px 0 12px; color: #fff; font-size: 32px; line-height: 1.2; letter-spacing: -0.02em; max-width: 380px; }
-.loginStory > p { color: #c9d6df; font-size: 15px; line-height: 1.6; max-width: 400px; }
-.loginBenefits { margin-top: 28px; gap: 14px; }
-.loginBenefits > div { color: var(--hs-sky); align-items: flex-start; }
-.loginBenefits b { color: #fff; font-size: 14px; }
-.loginBenefits small { color: #b4c3cf; font-size: 13px; }
-.unifiedLoginCard { padding: clamp(24px, 3vw, 36px); border: 0; border-radius: 0; background: var(--hs-surface); box-shadow: none; backdrop-filter: none; justify-content: center; }
-.portalSwitch { padding: 4px; gap: 4px; border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); background: var(--hs-ground); }
-.portalSwitch button { border: 1px solid transparent; border-radius: var(--hs-radius-control); min-height: 56px; color: var(--hs-muted); transition: none; }
-.portalSwitch button.active { color: var(--hs-brand-ink); background: var(--hs-surface); box-shadow: none; border-color: var(--hs-border); }
-.portalSwitch button.active svg { color: var(--hs-sky-ink); }
-.portalSwitch b { font-size: 13px; color: inherit; }
-.portalSwitch small { font-size: 13px; color: var(--hs-muted); }
-.loginCardTitle { padding: 22px 0 8px; }
-.loginCardTitle > span { color: var(--hs-accent-ink); font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
-.loginCardTitle h2 { margin: 4px 0 6px; color: var(--hs-text); font-size: 22px; letter-spacing: -0.01em; }
-.loginCardTitle p { font-size: 13px; color: var(--hs-muted); }
-.loginFields { gap: 12px; margin: 12px 0 16px; }
-.loginFields label { font-size: 13px; color: var(--hs-text); font-weight: 500; }
-.loginFields input { min-height: 44px; border-radius: var(--hs-radius-control); border-color: var(--hs-control); background: var(--hs-surface); font-size: 14px; transition: none; }
-.loginFields input:hover { border-color: var(--hs-control); background: var(--hs-surface); }
-.loginFields input:focus { border-color: var(--hs-sky-ink); background: var(--hs-surface); box-shadow: 0 0 0 3px var(--hs-tint); }
-.singleLoginButton { min-height: 44px; border-radius: var(--hs-radius-control); background: var(--hs-brand); background-image: none; box-shadow: none; transition: background 120ms ease; }
-.singleLoginButton:hover:not(:disabled) { transform: none; filter: none; box-shadow: none; background: var(--hs-brand-ink); }
-.unifiedLoginCard > footer { padding-top: 14px; color: var(--hs-muted); font-size: 13px; }
-.unifiedLoginCard > footer svg { color: var(--hs-sky-ink); }
-.loginError { font-size: 13px; }
-@media (max-width: 980px) {
-  .unifiedLoginShell { grid-template-columns: minmax(0, 1fr); margin-top: 16px; }
-  .loginStory { padding: 24px 22px; text-align: left; }
-  .loginStory h1, .loginStory > p { margin-left: 0; margin-right: 0; }
-  .loginStory h1 { font-size: 28px; }
-  .unifiedLoginCard { padding: 22px 18px; }
-}
-@media (max-width: 760px) {
-  /* On a phone the navy panel is a short band: the name, the title and one line. */
-  .unifiedLogin { padding: 20px 16px 28px; }
-  .loginStory { padding: 20px 18px; }
-  .loginStory h1 { font-size: 24px; margin: 6px 0 8px; }
-  .loginStory > p { font-size: 14px; }
-  .unifiedLogin .loginGlow, .loginBenefits { display: none; }
-}
+/* ---------- the sign-in page keeps its original design, at the owner's request:
+   the gradient navy story panel, the glow pill, the tracked kickers, the large
+   title and the blue gradient button from app/figma-system.css. Nothing here
+   overrides it. ---------- */
 
 /* ---------- the Gmail workspace in the house style: the product's own type, flat, navy on small marks ---------- */
 .gmailWorkspace { font-family: inherit; color: var(--hs-text); background: var(--hs-ground); }

@@ -1599,8 +1599,8 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
             <Sparkles size={17} />
             Secure Maximus workspace
           </div>
-          <span>Maximus Education &amp; Migration</span>
-          <h1>Welcome back</h1>
+          <span>MAXIMUS EDUCATION & MIGRATION</span>
+          <h1>Welcome back to Maximus.</h1>
           <p>
             One secure place for your education and migration work. Sign in and
             we will open the right workspace for your account.
@@ -1660,7 +1660,7 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
           </div>
           <div className="loginCardTitle">
             <span>
-              {portal === "staff" ? "Staff access" : "Student & client access"}
+              {portal === "staff" ? "STAFF ACCESS" : "STUDENT & CLIENT ACCESS"}
             </span>
             <h2>
               {portal === "staff"

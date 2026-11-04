@@ -97,7 +97,7 @@ on the seeded two-office agency, before and after.
 
 | Screen | Before | After |
 | --- | --- | --- |
-| Sign-in | 4 FAIL, 5 WARN | 0 FAIL, 0 WARN |
+| Sign-in | 4 FAIL, 5 WARN | 0 FAIL, 0 WARN, then restored to the original by request (see below) |
 | Students | 1 FAIL, 0 WARN | 0 FAIL, 0 WARN |
 | Applications | 2 FAIL, 0 WARN | 0 FAIL, 0 WARN |
 | Visa applications | 2 FAIL, 0 WARN | 0 FAIL, 0 WARN |
@@ -211,3 +211,16 @@ rows) in the agency's colours and typeface instead of Google's.
 
 All 29 screens were re-measured on this build and read 0 FAIL, 0 WARN; the
 colour share stayed under the inspector's 12% on every first screen.
+
+## Sign-in: restored to the original at the owner's request
+
+After the colour pass the owner asked for the sign-in page exactly as it was
+first designed: the gradient navy story panel with its glow pill, the orange
+tracked kickers, "Welcome back to Maximus." at 46px, the floating 28px shell
+and the blue gradient Sign in button. The house-style overrides for that page
+were removed and the original copy put back, so `app/figma-system.css` draws
+it again. The inspector's first measurement of that design (4 FAIL, 5 WARN:
+gradients, the floating shadow, the button glow, a three-line title at 768px,
+the tracked labels, 46px title, 19% colour on a phone) therefore stands for
+the sign-in page by decision, not by oversight. Every working screen keeps
+the house style and its 0 FAIL, 0 WARN measurement.
