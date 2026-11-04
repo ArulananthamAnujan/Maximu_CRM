@@ -557,3 +557,68 @@ input, select, textarea, .appShell input, .appShell select, .appShell textarea {
 .gmailConnectState button { background: var(--hs-accent); color: var(--hs-brand-ink); }
 .gmailConnectState button:hover { background: #d9801a; }
 .gmailOffline .gmailClientRow .ghostButton svg { color: var(--hs-sky-ink); }
+
+/* ======================================================================
+   Clarity pass: a professional CRM that is read all day on a laptop.
+   Type floor 13px, data at 14px, secondary text at 7:1, the brand on the
+   titles and figures, and the dashboard rail that never collapses.
+   ====================================================================== */
+:root { --hs-muted: #46545f; --hs-faint: #5d6b78; --hs-border: #d9dfe5; --hs-rule: #e8ecf0; --hs-control: #c5ccd3; }
+.appShell { font-size: 14px; color: var(--hs-text); }
+.appShell small, .appShell .caseRow small, .appShell .clientCell small, .appShell .dashboardMode .caseRow small, .appShell .dashboardMode .caseRow .clientCell small { font-size: 13px; color: var(--hs-muted) !important; }
+.pageTitle h1, .appShell .pageTitle h1 { font-size: 26px; font-weight: 650; }
+.pageTitle p { font-size: 14px; color: var(--hs-muted); }
+.kicker, .appShell .kicker, .journeyListIntro .kicker { font-size: 13px; font-weight: 600; color: var(--hs-sky-ink); }
+.panelHead h2, .appShell .panelHead h2, .journeyListIntro h2, .detailedRecordsHead h2 { font-size: 17px; font-weight: 650; color: var(--hs-text); }
+.panelHead, .appShell .panelHead { border-bottom: 1px solid var(--hs-border); }
+.railHeading { font-size: 15px; }
+.appShell .sectionIntro p, .appShell .panelHead p, .coverageIntro, .appShell .emptyState p, .restrictedEmpty, .gmailOfflineEmpty { font-size: 14px; color: var(--hs-muted); }
+/* tables and record rows */
+.caseTableHeader, .dashboardMode .caseTableHeader, .recordTable th, .appShell th, .journeyDataHeader { font-size: 13px; font-weight: 600; color: var(--hs-muted); }
+.recordTable td, .appShell td, .appShell .caseRow, .appShell .journeyDataRow, .appShell .functionalRow, .appShell .detailedRecordCard { font-size: 14px; color: var(--hs-text); }
+.appShell .caseRow strong, .appShell .clientCell strong, .appShell .journeyDataRow strong, .appShell .functionalRow strong, .appShell .detailedRecordFacts strong { font-size: 14px; font-weight: 600; color: var(--hs-text); }
+.appShell .caseRow > div > span:first-child, .appShell .clientCell > span:first-child { font-size: 15px; font-weight: 600; }
+.appShell .detailedRecordFacts small, .appShell .journeyDataRow small, .appShell .functionalRow span, .appShell .functionalRow small { font-size: 13px; }
+.appShell .linkButton { font-size: 14px; }
+/* KPIs: the label in ink, the figure in the brand, attention in amber */
+.signal span, .miniStats span, .appShell .signal span, .appShell .miniStats span { font-size: 14px; font-weight: 600; color: var(--hs-text); }
+.signal strong, .appShell .signal strong, .signal > div:first-child > strong { font-size: 32px; font-weight: 650; color: var(--hs-brand); margin: 8px 0 6px; }
+.signal strong.attention, .appShell .signal strong.attention { color: var(--hs-accent-ink); }
+.signal small, .miniStats small, .appShell .signal small, .appShell .miniStats small { font-size: 13px; color: var(--hs-muted); }
+.signal, .appShell .signal { padding: 18px 22px; }
+.miniStats strong, .appShell .miniStats strong { font-size: 26px; font-weight: 650; color: var(--hs-brand); }
+.appShell .signal:first-child strong, .appShell .miniStats article:first-child strong { color: var(--hs-brand); }
+/* the dashboard: main column and a rail that keeps its width, stacking only on a narrow screen */
+.dashboardMode .dashboardGrid, .appShell.dashboardMode .dashboardGrid { grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+.dashboardMode .rightRail, .appShell.dashboardMode .rightRail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; }
+.radarItem.actionRow, .dashboardMode .actionRow { display: grid; grid-template-columns: 24px minmax(0, 1fr) 16px; gap: 12px; align-items: center; padding: 12px 14px; min-height: 60px; text-align: left; }
+.radarItem.actionRow strong { display: block; font-size: 14px; font-weight: 600; color: var(--hs-text); }
+.radarItem.actionRow span { display: block; font-size: 13px; color: var(--hs-muted); }
+.radarIcon, .radarItem .radarIcon, .radarIcon.amber, .radarIcon.blue { width: 24px; height: 24px; min-width: 0; background: transparent; color: var(--hs-sky-ink); display: grid; place-items: center; border-radius: 0; }
+.dashboardAdminTools > .kicker { color: var(--hs-sky-ink); font-size: 13px; }
+.dashboardAdminTools > button { font-size: 14px; color: var(--hs-text); }
+.dashboardAdminTools > button strong { font-size: 14px; font-weight: 600; }
+.dashboardAdminTools > button span, .dashboardAdminTools > button small { font-size: 13px; color: var(--hs-muted); }
+.dashboardAdminTools > button > svg:first-child { color: var(--hs-sky-ink); }
+.dashboardAppointments .kicker { font-size: 13px; }
+@media (max-width: 1200px) {
+  .dashboardMode .dashboardGrid, .appShell.dashboardMode .dashboardGrid { grid-template-columns: minmax(0, 1fr); }
+  .dashboardMode .rightRail, .appShell.dashboardMode .rightRail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .dashboardMode .rightRail, .appShell.dashboardMode .rightRail { grid-template-columns: minmax(0, 1fr); }
+}
+/* navigation, controls and pills */
+.sidebar .navGroup button, .navGroup button { font-size: 14px; color: var(--hs-text); }
+.sidebar .navGroup button svg, .navGroup button svg { color: var(--hs-muted); }
+.sidebar .navGroup p, .navGroup p { font-size: 13px; color: var(--hs-muted); }
+.sidebarContext span { font-size: 13px; }
+.sidebarFooter span, .sidebarFooter small { font-size: 13px; }
+.appShell :is(.primaryButton, .ghostButton) { font-size: 14px; min-height: 38px; }
+.appShell input, .appShell select, .appShell textarea, .appShell .listFilterBar input { font-size: 14px; }
+.appShell .listFilterBar label, .appShell .listFilterBar label span, .appShell .filterResultCount, .appShell .listSelectionTools span, .appShell .bulkSelectAll span { font-size: 13px; color: var(--hs-muted); }
+.caseStageBadge, .viewOnlyBadge, .statusPill, .status, .pill, .appShell .status, .appShell .statusPill { font-size: 12px; font-weight: 600; }
+.appShell .topbarSecondary button { font-size: 14px; }
+.appShell .caseNavGroup > span, .appShell .pageTitle > div:first-child > span { font-size: 13px; }
+.appShell .workspaceConnection strong { font-size: 15px; }
+.appShell .workspaceConnection span, .appShell .workspaceConnection p { font-size: 14px; color: var(--hs-muted); }

@@ -224,3 +224,24 @@ gradients, the floating shadow, the button glow, a three-line title at 768px,
 the tracked labels, 46px title, 19% colour on a phone) therefore stands for
 the sign-in page by decision, not by oversight. Every working screen keeps
 the house style and its 0 FAIL, 0 WARN measurement.
+
+## Clarity pass
+
+The owner's production dashboard, seen on a laptop, read too light and too
+small, and its Action centre rail had collapsed to a sliver so every label
+wrapped word by word. The cause of the sliver was a tablet rule in
+`globals.css` that splits the rail into two columns below 1380px while a
+later rule kept the two-column page grid, so the split happened inside a
+narrow column. The house style now owns the dashboard layout: a 360px rail
+beside the main column, stacking below it (as two columns, then one) only
+under 1200px.
+
+The type and colour floor moved up for every working screen: the shell at
+14px, data and row text at 14px, labels and secondary lines at 13px, nothing
+under 12px; secondary text at #46545f (7:1), borders one step darker; page
+titles 26px, panel titles 17px, kickers 13px in the logo's deep blue; KPI
+figures 32px in navy, turning amber when the figure needs attention (due
+today, awaiting documents, visa deadlines above zero); action rows with a
+plain blue icon and 14px text; navigation at 14px in the ink. All 28 working
+screens re-measured 0 FAIL, 0 WARN afterwards; the sign-in page keeps its
+original design by decision.

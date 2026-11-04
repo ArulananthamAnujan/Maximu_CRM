@@ -2131,7 +2131,7 @@ function WorkspaceDashboard({
         <button className="signal sunshine" onClick={() => setActive("work")}>
           <div>
             <span>Due today</span>
-            <strong>{dueToday.length}</strong>
+            <strong className={dueToday.length ? "attention" : ""}>{dueToday.length}</strong>
             <small>Open tasks requiring action</small>
           </div>
           <div className="signalIcon amber">
@@ -2141,7 +2141,7 @@ function WorkspaceDashboard({
         <button className="signal coral" onClick={() => setActive("documents")}>
           <div>
             <span>Awaiting documents</span>
-            <strong>{pendingDocuments.length}</strong>
+            <strong className={pendingDocuments.length ? "attention" : ""}>{pendingDocuments.length}</strong>
             <small>Document requests still open</small>
           </div>
           <div className="signalIcon">
@@ -2151,7 +2151,7 @@ function WorkspaceDashboard({
         <button className="signal mint" onClick={() => setActive("visas")}>
           <div>
             <span>Visa deadlines</span>
-            <strong>{visaDeadlines.length}</strong>
+            <strong className={visaDeadlines.length ? "attention" : ""}>{visaDeadlines.length}</strong>
             <small>Expired or expiring within 30 days</small>
           </div>
           <div className="signalIcon green">
