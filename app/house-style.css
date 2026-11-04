@@ -92,11 +92,11 @@
 .journeyRecordSummary small, .signal small, .miniStats small, .attentionRow small, .caseRow small, .journeyDataRow small { font-size: 12px; color: var(--hs-muted); }
 
 /* ---------- surfaces: flat, one whisper border, one radius ---------- */
-.panel, .appShell .panel, .listPanel, .miniStats article, .signal, .signalGrid article, .journeyListPanel, .caseWorkPanel, .agentClientPanel, .dashboardFilters, .workspaceConnection, .caseAtGlance, .radarItem.actionRow, .recordTableWrap, .enquiryScopeLabel, .enquiryDirectorySummary, .integrationRow, .staffCard, .attentionPanel, .pipelinePanel, .reportBuilder, .personalFilters, .journeyFlow, .caseQuickNote, .caseLastNote, .notice, .intakeMode label, .datasetChips label, .workspaceHero, .googleHero, .controlCentre, .caseDocumentRequests, .copilotPanel, .gmailWorkspace, .gmailFolderList, .taskCard, .staffRow {
+.panel, .appShell .panel, .listPanel, .miniStats article, .signal, .signalGrid article, .journeyListPanel, .caseWorkPanel, .agentClientPanel, .dashboardFilters, .workspaceConnection, .caseAtGlance, .radarItem.actionRow, .recordTableWrap, .enquiryScopeLabel, .enquiryDirectorySummary, .integrationRow, .staffCard, .attentionPanel, .pipelineStagesPanel, .reportBuilder, .personalFilters, .journeyFlow, .caseQuickNote, .caseLastNote, .notice, .intakeMode label, .datasetChips label, .workspaceHero, .googleHero, .controlCentre, .caseDocumentRequests, .copilotPanel, .gmailWorkspace, .gmailFolderList, .taskCard, .staffRow {
   background-image: none;
   box-shadow: none;
 }
-.panel, .appShell .panel, .listPanel, .miniStats article, .signal, .signalGrid article, .journeyListPanel, .caseWorkPanel, .agentClientPanel, .dashboardFilters, .workspaceConnection, .recordTableWrap, .enquiryScopeLabel, .enquiryDirectorySummary, .attentionPanel, .pipelinePanel, .reportBuilder, .personalFilters, .journeyFlow, .caseDocumentRequests, .taskCard {
+.panel, .appShell .panel, .listPanel, .miniStats article, .signal, .signalGrid article, .journeyListPanel, .caseWorkPanel, .agentClientPanel, .dashboardFilters, .workspaceConnection, .recordTableWrap, .enquiryScopeLabel, .enquiryDirectorySummary, .attentionPanel, .pipelineStagesPanel, .reportBuilder, .personalFilters, .journeyFlow, .caseDocumentRequests, .taskCard {
   border: 1px solid var(--hs-border);
   border-radius: var(--hs-radius-card);
   background-color: var(--hs-surface);
@@ -281,3 +281,266 @@ input, select, textarea, .appShell input, .appShell select, .appShell textarea {
 /* The rail heading names these cards; their own title block steps aside. */
 .appShell .caseHome > .caseAuditPanel .caseWorkPanelHead > div:first-child, .appShell .caseHome > .agentCommunicationPanel .caseWorkPanelHead > div:first-child { display: none; }
 .appShell .caseHome > .caseAuditPanel .caseWorkPanelHead:not(:has(> :not(div:first-child))), .appShell .caseHome > .agentCommunicationPanel .caseWorkPanelHead:not(:has(> :not(div:first-child))) { display: none; }
+
+/* ======================================================================
+   Second app-screen run: the sign-in page, the client portal, the Gmail
+   workspace and the secondary staff screens (calendar, tasks, templates,
+   workflows, compliance, integrations, course finder, copilot, registers).
+   ====================================================================== */
+
+/* ---------- flat surfaces where the old theme kept a gradient or a resting shadow ---------- */
+.journeyListIntro, .detailedRecordsHead, .templateWorkspaceIntro, .calendarConnectBar, .weekGrid > div, .weekGrid > div.today, .courseFinderFilters.courseFinderFilterGrid, .clientWelcome, .clientNext, .supportCard { background: var(--hs-surface); background-image: none; box-shadow: none; }
+.calendarConnectBar { border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); }
+.calendarConnectBar > div > span { font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--hs-muted); text-transform: none; }
+.calendarConnectBar strong { font-size: 14px; color: var(--hs-text); }
+.calendarConnectBar small { font-size: 13px; color: var(--hs-muted); }
+.weekGrid > div { border-radius: var(--hs-radius-card); border-color: var(--hs-border); background: var(--hs-ground); }
+.weekGrid > div.today { background: var(--hs-tint); border-color: var(--hs-tint-strong); }
+.weekGrid header span { font-size: 12px; font-weight: 500; letter-spacing: 0; color: var(--hs-muted); text-transform: none; }
+.weekGrid header b { color: var(--hs-text); }
+.freeDay { font-size: 13px; color: var(--hs-muted); }
+.courseFinderFilters.courseFinderFilterGrid { background: var(--hs-ground); border-color: var(--hs-border); border-radius: var(--hs-radius-card); }
+.courseFinderFilters label { color: var(--hs-text); font-size: 13px; font-weight: 500; }
+.courseFinderFilters input, .courseFinderFilters select { border-radius: var(--hs-radius-control); border-color: var(--hs-control); }
+.catalogueAdminNote { font-size: 13px; color: var(--hs-muted); }
+.journeyRecordCount strong, .detailedRecordsSummary strong, .templateWorkspaceSummary strong { color: var(--hs-text); font-variant-numeric: tabular-nums; }
+.journeyRecordCount, .detailedRecordsSummary, .templateWorkspaceSummary span, .templateResultCount, .journeyRecordSummary > small { font-size: 13px; color: var(--hs-muted); font-weight: 500; }
+.templateWorkspaceSummary { border-left-color: var(--hs-brand); }
+.templateWorkspaceTabs { background: var(--hs-ground); border-color: var(--hs-border); border-radius: var(--hs-radius-card); }
+.templateWorkspaceTabs button { border: 1px solid transparent; border-radius: var(--hs-radius-control); color: var(--hs-muted); font-weight: 600; box-shadow: none; }
+.templateWorkspaceTabs button.active { background: var(--hs-surface); color: var(--hs-brand-ink); box-shadow: none; border-color: var(--hs-border); }
+.templateWorkspaceTabs b, .templateWorkspaceTabs button.active b { background: var(--hs-tint); color: var(--hs-brand-ink); }
+.appShell .docIcon, .appShell .emptyState > div { width: auto; height: auto; min-width: 0; background: transparent; color: var(--hs-muted); border-radius: 0; }
+.appShell .emptyState > div { margin-bottom: 4px; }
+.appShell .emptyState h3 { margin: 0 0 6px; }
+.restrictedEmpty, .drivePanel p, .drivePanelHint, .coverageIntro, .coverageTable span, .templateRow span, .integrationRow span, .integrationRow small, .clientNextStepsGrid p, .consentRow span, .functionalRow span, .functionalRow small, .journeyStep small, .checklistTemplatesPanel .functionalRow span, .gmailConnectState p { color: var(--hs-muted); }
+.restrictedEmpty, .drivePanel p, .drivePanelHint, .coverageTable b, .coverageTable span, .coverageTable strong, .templateRow span, .integrationRow span, .integrationRow small, .integrationRow strong, .functionalRow span, .functionalRow small, .consentRow span, .clientNext small, .journeyStep small, .listFilterBar span, .appShell .listFilterBar label, .appShell .listFilterBar label span { font-size: 13px; }
+.restrictedEmpty { padding: 28px 16px; }
+.coverageTable b { font-weight: 500; color: var(--hs-muted); }
+.appShell .documentClientGroupHead { font-size: 13px; font-weight: 600; color: var(--hs-text); }
+
+/* ---------- labels that were still tracked uppercase, now sentence case ---------- */
+.appShell :is(.workspaceChip small, .caseHeader, .richHeader, .composePanel label, .permissionHeader, .documentClientGroupHead, .courseDestination, .courseDetails dt, .legacyCourseHead, .legacyCourseDetails dt, .courseCardTitle > span, .courseQuickFacts span, .formGrid label, .permissionHead b, .rolePreview span, .accountCard small, .coverageTable b, .repeatableIntakeRow legend, .workspaceService > span, .lifecycleBlockerRow label, .lifecycleReason, .factField small, .aiCasePicker label, .stackedForm label, .compactFilter, .recordStatusPill, .detailedRecordFacts small, .taskDueBlock small, .emailTemplatePreview b, .caseFilterPanel label > span, .caseRailSummary > b, .agentSummaryRows b, .globalSearchHeading span, .clientWelcome span, .clientNext span, .legacyCourseRow span::before) { text-transform: none; letter-spacing: 0; }
+.appShell :is(.detailedRecordFacts small, .courseQuickFacts span, .courseDetails dt, .legacyCourseDetails dt, .compactFilter, .taskDueBlock small, .emailTemplatePreview b, .caseFilterPanel label > span, .agentSummaryRows b, .factField small, .accountCard small, .courseDestination, .courseCardTitle > span, .rolePreview span, .workspaceChip small) { font-size: 12px; font-weight: 500; color: var(--hs-muted); }
+.appShell :is(.formGrid label, .stackedForm label, .composePanel label, .aiCasePicker label, .lifecycleBlockerRow label) { font-size: 13px; font-weight: 500; color: var(--hs-text); }
+.appShell .legacyCourseHead { background: var(--hs-tint); color: var(--hs-brand-ink); font-size: 13px; font-weight: 600; }
+
+/* ---------- course finder on a tablet: the filter grid wraps instead of running off the edge ---------- */
+@media (max-width: 1000px) {
+  .courseFinderFilters.courseFinderFilterGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .courseFinderFilters.courseFinderFilterGrid > :first-child { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  .courseFinderFilters.courseFinderFilterGrid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------- the sign-in page: the same ground and one card, no gradients, no floating shell ---------- */
+.demoLogin.unifiedLogin { background: var(--hs-ground); background-image: none; padding: 28px clamp(16px, 5vw, 72px) 40px; color: var(--hs-text); }
+.unifiedLogin::before, .unifiedLogin::after { display: none; }
+.unifiedLoginShell { max-width: 1040px; width: 100%; margin: 48px auto 0; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px); gap: 56px; align-items: start; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible; }
+.loginStory { padding: 8px 0 0; color: var(--hs-text); background: none; background-image: none; overflow: visible; justify-content: flex-start; }
+.loginStory::after, .unifiedLogin .loginGlow { display: none; }
+.loginStory > span { color: var(--hs-muted); font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.loginStory h1 { margin: 10px 0 12px; color: var(--hs-text); font-size: 32px; line-height: 1.2; letter-spacing: -0.02em; max-width: 420px; }
+.loginStory > p { color: var(--hs-muted); font-size: 15px; line-height: 1.6; max-width: 440px; }
+.loginBenefits { margin-top: 28px; gap: 14px; }
+.loginBenefits > div { color: var(--hs-brand); align-items: flex-start; }
+.loginBenefits b { color: var(--hs-text); font-size: 14px; }
+.loginBenefits small { color: var(--hs-muted); font-size: 13px; }
+.unifiedLoginCard { padding: 28px; border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); background: var(--hs-surface); box-shadow: none; backdrop-filter: none; justify-content: flex-start; }
+.portalSwitch { padding: 4px; gap: 4px; border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); background: var(--hs-ground); }
+.portalSwitch button { border: 1px solid transparent; border-radius: var(--hs-radius-control); min-height: 56px; color: var(--hs-muted); transition: none; }
+.portalSwitch button.active { color: var(--hs-brand-ink); background: var(--hs-surface); box-shadow: none; border-color: var(--hs-border); }
+.portalSwitch b { font-size: 13px; color: inherit; }
+.portalSwitch small { font-size: 13px; color: var(--hs-muted); }
+.loginCardTitle { padding: 22px 0 8px; }
+.loginCardTitle > span { color: var(--hs-muted); font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.loginCardTitle h2 { margin: 4px 0 6px; color: var(--hs-text); font-size: 22px; letter-spacing: -0.01em; }
+.loginCardTitle p { font-size: 13px; color: var(--hs-muted); }
+.loginFields { gap: 12px; margin: 12px 0 16px; }
+.loginFields label { font-size: 13px; color: var(--hs-text); font-weight: 500; }
+.loginFields input { min-height: 44px; border-radius: var(--hs-radius-control); border-color: var(--hs-control); background: var(--hs-surface); font-size: 14px; transition: none; }
+.loginFields input:hover { border-color: var(--hs-control); background: var(--hs-surface); }
+.loginFields input:focus { border-color: var(--hs-brand); background: var(--hs-surface); box-shadow: 0 0 0 3px var(--hs-tint); }
+.singleLoginButton { min-height: 44px; border-radius: var(--hs-radius-control); background: var(--hs-brand); background-image: none; box-shadow: none; transition: background 120ms ease; }
+.singleLoginButton:hover:not(:disabled) { transform: none; filter: none; box-shadow: none; background: var(--hs-brand-ink); }
+.unifiedLoginCard > footer { padding-top: 14px; color: var(--hs-muted); font-size: 13px; }
+.loginError { font-size: 13px; }
+@media (max-width: 980px) {
+  .unifiedLoginShell { grid-template-columns: minmax(0, 1fr); gap: 24px; margin-top: 16px; }
+  .loginStory { padding: 0; text-align: left; }
+  .loginStory h1, .loginStory > p { margin-left: 0; margin-right: 0; }
+  .loginStory h1 { font-size: 28px; }
+  .unifiedLoginCard { padding: 22px 18px; }
+}
+@media (max-width: 760px) {
+  .unifiedLogin { padding: 20px 16px 28px; }
+  .loginStory h1 { font-size: 26px; }
+  .loginBenefits { display: none; }
+}
+
+/* ---------- the Gmail workspace in the house style: the product's own type, flat, navy on small marks ---------- */
+.gmailWorkspace { font-family: inherit; color: var(--hs-text); background: var(--hs-ground); }
+.gmailWorkspaceHeader { background: var(--hs-surface); border-bottom: 1px solid var(--hs-border); }
+.gmailBrand { margin: 0; color: var(--hs-text); }
+.gmailBrand span { font-size: 18px; font-weight: 600; }
+.gmailBrand svg, .gmailConnectState > svg, .gmailCaseNote svg { color: var(--hs-brand); }
+.gmailSearchBar { background: var(--hs-ground); border: 1px solid var(--hs-border); border-radius: var(--hs-radius-control); box-shadow: none; }
+.gmailSearchBar:focus-within { background: var(--hs-surface); box-shadow: none; border-color: var(--hs-brand); }
+.gmailSearchBar svg { color: var(--hs-muted); }
+.gmailSearchBar input { color: var(--hs-text); font-size: 14px; }
+.gmailSearchBar button { color: var(--hs-brand-ink); font-size: 13px; font-weight: 600; border-radius: var(--hs-radius-control); }
+.gmailSearchBar button:hover { background: var(--hs-tint); }
+.gmailAccount strong { font-size: 13px; color: var(--hs-text); }
+.gmailAccount small { font-size: 13px; color: var(--hs-muted); }
+.gmailAccount > div { background: var(--hs-tint); background-image: none; color: var(--hs-brand-ink); box-shadow: none; }
+.gmailCompose { color: #fff; background: var(--hs-brand); background-image: none; box-shadow: none; border-radius: var(--hs-radius-control); }
+.gmailCompose:hover { box-shadow: none; background: var(--hs-brand-ink); }
+.gmailFolderRail nav button { border-radius: var(--hs-radius-control); color: var(--hs-text); font-size: 13px; }
+.gmailFolderRail nav button:hover { background: var(--hs-raised); }
+.gmailFolderRail nav button.active { background: var(--hs-tint); color: var(--hs-brand-ink); font-weight: 600; }
+.gmailFolderRail nav button b { font-size: 12px; color: var(--hs-muted); }
+.gmailCaseNote { background: var(--hs-tint); color: var(--hs-muted); border-radius: var(--hs-radius-card); font-size: 13px; }
+.gmailDisconnect { font-size: 13px; }
+.gmailMailboxPane { border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); box-shadow: none; background: var(--hs-surface); }
+.gmailMailboxToolbar { color: var(--hs-muted); border-bottom-color: var(--hs-border); }
+.gmailMailboxToolbar strong { color: var(--hs-text); font-size: 14px; text-transform: none; }
+.gmailMailboxToolbar > span { font-size: 13px; }
+.gmailMailboxToolbar button:hover { background: var(--hs-raised); }
+.gmailMailRow { background: var(--hs-ground); box-shadow: none; border-bottom-color: var(--hs-rule); color: var(--hs-muted); }
+.gmailMailRow.unread { background: var(--hs-surface); color: var(--hs-text); }
+.gmailMailRow:hover { box-shadow: none; background: var(--hs-raised); }
+.gmailMailOpen > strong, .gmailMailOpen > span, .gmailMailOpen time { font-size: 13px; }
+.gmailMailOpen b { color: var(--hs-text); }
+.gmailMailOpen em { color: var(--hs-muted); }
+.gmailStar.starred { color: var(--hs-warning); }
+.gmailEmptyFolder, .gmailLoading { color: var(--hs-muted); font-size: 13px; }
+.gmailConnectState button { background: var(--hs-brand); border-radius: var(--hs-radius-control); font-weight: 600; }
+.gmailConnectState button:hover { background: var(--hs-brand-ink); }
+.gmailConnectState h2 { margin: 12px 0 8px; font-size: 20px; font-weight: 600; color: var(--hs-text); }
+.gmailConnectState p { font-size: 14px; margin: 0 0 14px; }
+.gmailConnectState ul { margin: 0 0 18px; padding-left: 18px; color: var(--hs-text); font-size: 14px; line-height: 1.6; display: grid; gap: 6px; text-align: left; }
+.gmailConnectState span, .gmailConnectState em { font-size: 13px; color: var(--hs-muted); margin-top: 8px; line-height: 1.5; }
+.gmailConnectState em { color: var(--hs-negative); }
+.gmailOffline { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 1.5fr); align-items: start; }
+.gmailOffline .gmailConnectState { height: auto; max-width: none; margin: 0; padding: 24px; align-items: flex-start; text-align: left; border-right: 1px solid var(--hs-border); }
+.gmailOffline .gmailMailList { height: auto; }
+.gmailOfflineEmpty { margin: 0; padding: 14px 16px; color: var(--hs-muted); font-size: 13px; line-height: 1.5; border-bottom: 1px solid var(--hs-rule); }
+.gmailOffline .gmailMailRow { grid-template-columns: minmax(0, 1fr); padding: 0 16px; background: var(--hs-surface); color: var(--hs-text); }
+.gmailOffline .gmailMailOpen { height: auto; min-height: 44px; padding: 8px 0; grid-template-columns: minmax(140px, .7fr) minmax(0, 2fr) auto; }
+@media (max-width: 900px) {
+  .gmailOffline { grid-template-columns: minmax(0, 1fr); }
+  .gmailOffline .gmailConnectState { border-right: 0; border-bottom: 1px solid var(--hs-border); }
+  .gmailOffline .gmailMailOpen { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .gmailOffline .gmailMailOpen time { justify-self: start; }
+}
+
+/* ---------- the client portal: a main column and a headed rail, the shell folding like the staff shell ---------- */
+.clientPortal, .clientModule { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+.clientPortalMain, .clientPortalRail, .clientModuleMain { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.clientPortalRail .railHeading { margin-bottom: -8px; }
+.clientPortalRail .panelHead .kicker { display: none; }
+.clientWelcome { min-height: 0; padding: 18px; display: flex; gap: 14px; align-items: flex-start; justify-content: flex-start; border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); overflow: visible; }
+.clientWelcome::after { display: none; }
+.clientWelcome span { font-size: 12px; font-weight: 500; color: var(--hs-muted); }
+.clientWelcome h2 { font-size: 18px; letter-spacing: -0.01em; color: var(--hs-text); margin: 2px 0 6px; }
+.clientWelcome p { font-size: 13px; color: var(--hs-muted); margin: 0; line-height: 1.5; }
+.clientAvatar { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 50%; background: var(--hs-tint); background-image: none; color: var(--hs-brand-ink); font-size: 15px; font-weight: 600; box-shadow: none; margin: 0; }
+.clientNext { background: var(--hs-tint); border: 1px solid var(--hs-tint-strong); border-radius: var(--hs-radius-card); }
+.clientNext span { font-size: 12px; font-weight: 500; color: var(--hs-muted); }
+.clientNext strong { color: var(--hs-text); }
+.nextIcon { background: var(--hs-surface); color: var(--hs-brand); border-radius: 50%; }
+.clientNextStepsGrid > div { border-radius: var(--hs-radius-card); }
+.clientTeamFacts { display: grid; }
+.clientTeamFacts > div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--hs-rule); }
+.clientTeamFacts > div:last-child { border-bottom: 0; }
+.clientTeamFacts span { font-size: 13px; color: var(--hs-muted); }
+.clientTeamFacts strong { font-size: 14px; color: var(--hs-text); text-align: right; }
+.clientTeamActions { display: grid; gap: 8px; margin-top: 12px; }
+.clientTeamActions button { justify-content: center; }
+.clientPortalRail .coverageIntro { margin: 12px 0 0; }
+@media (max-width: 1100px) {
+  .clientPortal, .clientModule { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 900px) {
+  .appShell:not(.staffFullMode) > .sidebar { z-index: 120; transform: translateX(-102%); transition: transform .18s ease; box-shadow: none; }
+  .appShell:not(.staffFullMode) > .sidebar.open { transform: translateX(0); box-shadow: 0 16px 40px rgba(21, 32, 43, 0.14); }
+  .appShell:not(.staffFullMode) .sidebarBackdrop { z-index: 119; }
+  .appShell:not(.staffFullMode) .menuButton, .appShell:not(.staffFullMode) .mobileClose { display: inline-grid; place-items: center; width: 38px; height: 38px; flex: 0 0 auto; }
+  .appShell:not(.staffFullMode) > .mainArea { margin-left: 0; width: 100%; }
+}
+@media (max-width: 700px) {
+  .appShell:not(.staffFullMode) .content { padding: 18px 16px 28px; }
+}
+
+/* ---------- File Manager: the agency's standard documents under the client files ---------- */
+.standardDocumentGroups { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0 24px; }
+.standardDocumentGroup ul { list-style: none; margin: 0; padding: 0; display: grid; }
+.standardDocumentGroup li { display: grid; gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--hs-rule); }
+.standardDocumentGroup strong { font-size: 13px; font-weight: 600; color: var(--hs-text); }
+.standardDocumentGroup span { font-size: 13px; color: var(--hs-muted); line-height: 1.45; }
+.appShell .standardDocumentGroup h3 { margin: 14px 0 2px; }
+
+/* ---------- Workflows: the fixed pipeline first, stage templates beside the checklist summary ---------- */
+.workflowScreen { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+.workflowScreen > .pipelineStagesPanel { grid-column: 1 / -1; }
+.workflowRail, .complianceRail { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.workflowRail .railHeading, .complianceRail .railHeading { margin-bottom: -8px; }
+.workflowRail .panelHead .kicker, .complianceRail .panelHead .kicker { display: none; }
+.pipelineStages { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0 16px; counter-reset: stage; }
+.pipelineStages li { display: grid; gap: 6px; align-content: start; padding: 12px 0 8px; border-top: 2px solid var(--hs-tint-strong); counter-increment: stage; }
+.pipelineStages li:first-child { border-top-color: var(--hs-brand); }
+.pipelineStages strong { font-size: 14px; color: var(--hs-text); }
+.pipelineStages strong::before { content: counter(stage) " · "; color: var(--hs-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.pipelineStages span { font-size: 13px; color: var(--hs-muted); line-height: 1.45; }
+.pipelineStagesPanel .coverageIntro { margin: 12px 0 0; }
+.checklistSummary { display: grid; }
+.checklistSummary > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--hs-rule); font-size: 13px; }
+.checklistSummary strong { order: 2; font-variant-numeric: tabular-nums; color: var(--hs-text); }
+.checklistSummary span { color: var(--hs-text); }
+.workflowRail .coverageIntro { margin: 12px 0 0; }
+@media (max-width: 1100px) {
+  .workflowScreen { grid-template-columns: minmax(0, 1fr); }
+  .pipelineStages { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) { .pipelineStages { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- Activity & compliance: the audit trail beside the controls that protect it ---------- */
+.complianceColumns { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+.controlRow { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hs-rule); }
+.controlRow > div { min-width: 0; }
+.controlRow strong { display: block; font-size: 13px; font-weight: 600; color: var(--hs-text); }
+.controlRow span { font-size: 13px; color: var(--hs-muted); }
+.controlRow .integrationState { flex: 0 0 auto; font-size: 12px; }
+.complianceRail .coverageIntro { margin: 12px 0 0; }
+@media (max-width: 1100px) { .complianceColumns { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- second round of the second run ---------- */
+.agendaEmpty p, .appShell .consentRow > div span { color: var(--hs-muted); }
+.appShell .consentRow > div span { font-size: 13px; }
+.appShell .emptyState { min-height: 0; padding: 24px 16px 12px; }
+.gmailMailboxPane.offline { align-self: start; }
+.gmailOffline .gmailClientRow .ghostButton { justify-self: end; min-height: 32px; padding: 0 10px; font-size: 13px; }
+.auditScope { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hs-rule); }
+.auditScope > div { display: grid; gap: 4px; }
+.auditScope strong { font-size: 13px; font-weight: 600; color: var(--hs-text); }
+.auditScope span { font-size: 13px; color: var(--hs-muted); line-height: 1.45; }
+@media (max-width: 760px) { .auditScope { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) {
+  /* On a phone each integration stacks: name and detail, then its state, nothing past the edge. */
+  .integrationRow { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+  .integrationRow > * { max-width: 100%; }
+  .integrationRow > .integrationState { justify-self: start; }
+}
+
+@media (max-width: 900px) {
+  /* The product name stays the screen's h1 on a phone or tablet; only its word is tucked away. */
+  .gmailBrand { display: inline-flex; }
+  .gmailBrand span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+.appShell .courseFinderFilters.courseFinderFilterGrid { margin-bottom: 8px; }
+@media (max-width: 700px) {
+  /* The coverage register stacks on a phone instead of running its third column off the edge. */
+  .coverageTable > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .coverageTable > div:first-child { display: none; }
+}

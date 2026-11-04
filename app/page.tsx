@@ -1599,8 +1599,8 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
             <Sparkles size={17} />
             Secure Maximus workspace
           </div>
-          <span>MAXIMUS EDUCATION & MIGRATION</span>
-          <h1>Welcome back to Maximus.</h1>
+          <span>Maximus Education &amp; Migration</span>
+          <h1>Welcome back</h1>
           <p>
             One secure place for your education and migration work. Sign in and
             we will open the right workspace for your account.
@@ -1660,7 +1660,7 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
           </div>
           <div className="loginCardTitle">
             <span>
-              {portal === "staff" ? "STAFF ACCESS" : "STUDENT & CLIENT ACCESS"}
+              {portal === "staff" ? "Staff access" : "Student & client access"}
             </span>
             <h2>
               {portal === "staff"
@@ -3204,13 +3204,13 @@ function CalendarView({
         <div className="googleG">G</div>
         {!connection ? (
           <div>
-            <span>GOOGLE CALENDAR</span>
+            <span>Google Calendar</span>
             <strong>Checking your connection…</strong>
           </div>
         ) : !connection.oauthConfigured ? (
           <>
             <div>
-              <span>GOOGLE CALENDAR</span>
+              <span>Google Calendar</span>
               <strong>Calendar sync is ready for administrator setup</strong>
               <small>
                 Once configured, a new appointment is created on the calendar
@@ -3231,7 +3231,7 @@ function CalendarView({
         ) : connection.connected ? (
           <>
             <div>
-              <span>GOOGLE CALENDAR</span>
+              <span>Google Calendar</span>
               <strong>Connected as {connection.email}</strong>
               <small>
                 New appointments you own are created on this calendar.
@@ -3246,7 +3246,7 @@ function CalendarView({
         ) : (
           <>
             <div>
-              <span>GOOGLE CALENDAR</span>
+              <span>Google Calendar</span>
               <strong>Your calendar is not connected</strong>
               <small>
                 Connect your own Google Calendar so appointments assigned to
@@ -3413,11 +3413,13 @@ function DocumentsView({
   setItems,
   storageConnected,
   onBulkAction,
+  checklistTemplates = [],
 }: {
   items: DocumentRecord[];
   setItems: (x: DocumentRecord[]) => void;
   storageConnected: boolean;
   onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
+  checklistTemplates?: ChecklistTemplateRecord[];
 }) {
   // An archived document is kept for the retention period but is not part of
   // the working file, so it is out of the way until it is asked for.
@@ -3546,7 +3548,45 @@ function DocumentsView({
             : "An administrator connects it under Integrations."}
         </p>
       </aside>
+      <StandardDocumentsPanel templates={checklistTemplates} />
     </section>
+  );
+}
+
+/** The agency's own document checklist, grouped the way a request form shows it. */
+function StandardDocumentsPanel({ templates }: { templates: ChecklistTemplateRecord[] }) {
+  const active = templates.filter((item) => item.active);
+  const groups = new Map<string, ChecklistTemplateRecord[]>();
+  for (const item of active) groups.set(item.category, [...(groups.get(item.category) ?? []), item]);
+  return (
+    <article className="panel listPanel standardDocumentsPanel">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">Standard documents</span>
+          <h2>What Maximus asks clients for</h2>
+        </div>
+        <span className="templateResultCount">{active.length} active item{active.length === 1 ? "" : "s"}</span>
+      </div>
+      {active.length === 0 ? (
+        <p className="restrictedEmpty">No document checklist is set up yet. Add the items under Templates.</p>
+      ) : (
+        <div className="standardDocumentGroups">
+          {[...groups.entries()].map(([category, items]) => (
+            <div className="standardDocumentGroup" key={category}>
+              <h3 className="documentClientGroupHead">{category}</h3>
+              <ul>
+                {items.map((item) => (
+                  <li key={item.key}>
+                    <strong>{item.title}</strong>
+                    {item.guidance ? <span>{item.guidance}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </article>
   );
 }
 /** A draft has never been sent, so it is dated by when it was written. */
@@ -3566,13 +3606,16 @@ type MailboxStatus = {
 
 function MessagesView({
   items,
+  campaigns,
   cases,
   openModal,
   canSend,
   onClose,
+  emailTemplates = [],
 }: {
   items: MessageRecord[];
   campaigns: CampaignRecord[];
+  emailTemplates?: EmailTemplateRecord[];
   cases: CaseRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: MessageRecord[]) => void;
@@ -3687,6 +3730,9 @@ function MessagesView({
   const draftMessages = items.filter((message) =>
     message.channel === "email" && !discarded(message) && message.status.toLowerCase() !== "sent",
   );
+  const sentMessages = items.filter((message) => message.channel === "email" && message.status.toLowerCase() === "sent");
+  // Who can be written to from here while Gmail is not connected: each client with an email on file, once.
+  const clientsToWrite = cases.filter((item) => item.email).filter((item, index, all) => all.findIndex((other) => other.email === item.email) === index).slice(0, 12);
   const openedGmail = gmailMessages.find((message) => message.id === openGmailId) ?? null;
   const copilot = useCopilot();
   const setCopilotContext = copilot.setContext;
@@ -3712,7 +3758,7 @@ function MessagesView({
           <ChevronLeft size={20} />
           <Image src="/maximus-logo-dark.svg" alt="Maximus Education and Migration" width={150} height={40} unoptimized />
         </button>
-        <div className="gmailBrand"><Mail size={25} /><strong>Gmail</strong></div>
+        <h1 className="gmailBrand"><Mail size={25} /><span>Gmail</span></h1>
         <form className="gmailSearchBar" onSubmit={(event) => { event.preventDefault(); void loadGmailInbox(gmailSearch, mailFolder); }}>
           <Search size={20} />
           <input value={gmailSearch} onChange={(event) => setGmailSearch(event.target.value)} placeholder="Search Gmail exactly as you would in Gmail" />
@@ -3736,20 +3782,97 @@ function MessagesView({
           <div className="gmailCaseNote"><Link2 size={15} /><span>Messages sent here remain linked to the client case.</span></div>
           {mailbox?.connected ? <button className="gmailDisconnect" onClick={() => void disconnectMailbox()}>Disconnect Gmail</button> : null}
         </aside>
-        <main className="gmailMailboxPane">
+        <main className={`gmailMailboxPane${!mailbox || !mailbox.oauthConfigured || !mailbox.connected ? " offline" : ""}`}>
           {!mailbox ? (
             <div className="gmailConnectState" role="status">
               <Mail size={42} />
-              <h1>{mailboxError ? "Gmail status could not be loaded" : "Checking your Gmail connection…"}</h1>
+              <h2>{mailboxError ? "Gmail status could not be loaded" : "Checking your Gmail connection…"}</h2>
               {mailboxError ? <><p>{mailboxError}</p><button onClick={() => void loadMailbox()}>Try again</button></> : <p>Your mailbox will appear here when the connection check finishes.</p>}
             </div>
           ) : !mailbox.oauthConfigured || !mailbox.connected ? (
-            <div className="gmailConnectState">
-              <Mail size={42} />
-              <h1>Connect your Gmail inbox</h1>
-              <p>Open your complete Maximus mailbox here and keep every client conversation connected to the correct case.</p>
-              {mailbox?.oauthConfigured ? <button onClick={connectGoogleWorkspace}><Link2 size={17} />Connect Gmail</button> : <span>Gmail OAuth must be configured for this deployment.</span>}
-              {mailboxError ? <em>{mailboxError}</em> : null}
+            <div className="gmailOffline">
+              <div className="gmailConnectState">
+                <Mail size={28} />
+                <h2>Connect your Gmail inbox</h2>
+                <p>Open your complete Maximus mailbox here and keep every client conversation connected to the correct case.</p>
+                <ul>
+                  <li>Your inbox, starred and sent mail appear in the folders on the left.</li>
+                  <li>Replies written here are sent from your own Gmail address.</li>
+                  <li>Every message stays linked to the client&apos;s case file.</li>
+                </ul>
+                {mailbox?.oauthConfigured ? <button onClick={connectGoogleWorkspace}><Link2 size={17} />Connect Gmail</button> : <span>Gmail OAuth is not configured for this deployment. An administrator connects it under Integrations.</span>}
+                {mailboxError ? <em>{mailboxError}</em> : null}
+              </div>
+              <div className="gmailOfflineLog">
+                <div className="gmailMailboxToolbar"><strong>Sent from the CRM</strong><span>{sentMessages.length} messages</span></div>
+                {sentMessages.length === 0 ? <p className="gmailOfflineEmpty">Nothing has been sent from the CRM yet. Compose a message to a client and it is recorded here against their case.</p> : (
+                  <div className="gmailMailList">
+                    {sentMessages.map((message) => (
+                      <div className="gmailMailRow" key={message.id}>
+                        <div className="gmailMailOpen">
+                          <strong>To: {message.to}</strong>
+                          <span><b>{message.subject}</b><em> — {message.body}</em></span>
+                          <time>{messageWhen(message).replace("Sent ", "")}</time>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="gmailMailboxToolbar"><strong>Drafts</strong><span>{draftMessages.length} drafts</span></div>
+                {draftMessages.length === 0 ? <p className="gmailOfflineEmpty">No saved drafts.</p> : (
+                  <div className="gmailMailList">
+                    {draftMessages.map((message) => (
+                      <div className="gmailMailRow" key={message.id}>
+                        <button className="gmailMailOpen" onClick={() => openModal("message")}>
+                          <strong>{cases.find((item) => (item.dbId || item.id) === message.caseId)?.name || "Linked case"}</strong>
+                          <span><b>{message.subject}</b><em> — {message.body}</em></span>
+                          <time>{messageWhen(message).replace("Drafted ", "")}</time>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="gmailMailboxToolbar"><strong>Client email templates</strong><span>{emailTemplates.length} ready to send</span></div>
+                {emailTemplates.length === 0 ? <p className="gmailOfflineEmpty">No templates yet. Approved wording is kept under Templates.</p> : (
+                  <div className="gmailMailList">
+                    {emailTemplates.map((template) => (
+                      <div className="gmailMailRow" key={template.id}>
+                        <div className="gmailMailOpen">
+                          <strong>{humanise(template.kind)}</strong>
+                          <span><b>{template.subject}</b><em> — {template.body}</em></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="gmailMailboxToolbar"><strong>Campaigns</strong><span>{campaigns.length} campaign{campaigns.length === 1 ? "" : "s"}</span></div>
+                {campaigns.length === 0 ? <p className="gmailOfflineEmpty">No campaigns yet. A campaign sends one approved message to a list of clients and records who received it.</p> : (
+                  <div className="gmailMailList">
+                    {campaigns.map((campaign) => (
+                      <div className="gmailMailRow" key={campaign.id}>
+                        <div className="gmailMailOpen">
+                          <strong>{campaign.name}</strong>
+                          <span><b>{campaign.subject || humanise(campaign.channel)}</b><em> — {humanise(campaign.status)} · {campaign.sentCount} of {campaign.recipientCount} sent</em></span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="gmailMailboxToolbar"><strong>Write to a client</strong><span>{clientsToWrite.length} with an email on file</span></div>
+                {clientsToWrite.length === 0 ? <p className="gmailOfflineEmpty">No client has an email address on file yet.</p> : (
+                  <div className="gmailMailList">
+                    {clientsToWrite.map((item) => (
+                      <div className="gmailMailRow" key={item.dbId || item.id}>
+                        <div className="gmailMailOpen gmailClientRow">
+                          <strong>{item.name}</strong>
+                          <span><b>{item.email}</b><em> — {item.id} · {item.stage}</em></span>
+                          <button className="ghostButton" onClick={() => openModal("message")}><Mail size={14} /> Compose</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           ) : openedGmail ? (
             <article className="gmailReader">
@@ -4297,15 +4420,38 @@ function WorkflowView({
   setItems,
   canManage,
   onBulkAction,
+  checklistTemplates = [],
+  onOpenTemplates,
 }: {
   items: WorkflowRecord[];
   openModal: (x: ModalType) => void;
   setItems: (x: WorkflowRecord[]) => void;
   canManage: boolean;
   onBulkAction: (resource: string, operation: string, ids: string[], extra?: Record<string, unknown>) => Promise<void>;
+  checklistTemplates?: ChecklistTemplateRecord[];
+  onOpenTemplates?: () => void;
 }) {
   const selection = useBulkSelection(items);
+  const checklistByCategory = new Map<string, number>();
+  for (const item of checklistTemplates) if (item.active) checklistByCategory.set(item.category, (checklistByCategory.get(item.category) ?? 0) + 1);
   return (
+    <div className="workflowScreen">
+    <article className="panel listPanel pipelineStagesPanel">
+      <div className="panelHead">
+        <div>
+          <span className="kicker">Fixed pipeline</span>
+          <h2>The stages every case passes through</h2>
+        </div>
+      </div>
+      <ol className="pipelineStages">
+        <li><strong>Enquiry</strong><span>A new lead: who they are, the course or visa in mind, and who follows up.</span></li>
+        <li><strong>Student</strong><span>The client has engaged Maximus; the profile, qualifications and documents are collected.</span></li>
+        <li><strong>Application</strong><span>Institution applications are lodged and offers, deferrals and CoEs recorded.</span></li>
+        <li><strong>Visa</strong><span>The visa matter is lodged, information requests answered and the decision recorded.</span></li>
+        <li><strong>Completed</strong><span>The matter is closed and the file kept for the retention period.</span></li>
+      </ol>
+      <p className="coverageIntro">Study-abroad cases pass through all five; a direct visa matter goes from enquiry to visa.</p>
+    </article>
     <article className="panel listPanel">
       <div className="panelHead">
         <div>
@@ -4385,6 +4531,29 @@ function WorkflowView({
         </>
       )}
     </article>
+    <aside className="workflowRail">
+      <h3 className="railHeading">Document checklists</h3>
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">Document checklists</span>
+            <h2>What a request draws from</h2>
+          </div>
+          {onOpenTemplates ? <button className="ghostButton" onClick={onOpenTemplates}>Open Templates</button> : null}
+        </div>
+        {checklistByCategory.size === 0 ? (
+          <p className="restrictedEmpty">No checklist items are active yet.</p>
+        ) : (
+          <div className="checklistSummary">
+            {[...checklistByCategory.entries()].map(([category, count]) => (
+              <div key={category}><strong className="num">{count}</strong><span>{category}</span></div>
+            ))}
+          </div>
+        )}
+        <p className="coverageIntro">Requesting a document from a case picks from these items, so the wording a client sees is the same on every file.</p>
+      </article>
+    </aside>
+    </div>
   );
 }
 
@@ -4849,6 +5018,7 @@ function PortalView({
 
   return (
     <section className="clientPortal">
+      <div className="clientPortalMain">
       <article className="panel listPanel clientNextSteps" id="student-actions">
         <div className="panelHead">
           <div>
@@ -4872,23 +5042,6 @@ function PortalView({
           </div>
         </div>
       </article>
-      <AgreementsPanel student/>
-      <article className="clientWelcome">
-        <div>
-          <span>PRIVATE CLIENT PORTAL</span>
-          <h2>Welcome, {c.name}.</h2>
-          <p>
-            Your {humanise(c.type).toLowerCase()} journey is currently at {c.stage}.
-          </p>
-        </div>
-        <div className="clientAvatar">
-          {c.name
-            .split(" ")
-            .map((x) => x[0])
-            .slice(0, 2)
-            .join("")}
-        </div>
-      </article>
       <article className="panel clientJourney">
         <div className="panelHead">
           <div>
@@ -4902,7 +5055,7 @@ function PortalView({
             <Check size={20} />
           </div>
           <div>
-            <span>CURRENT STAGE</span>
+            <span>Current stage</span>
             <strong>{c.stage}</strong>
             <small>{c.due ? `Due ${c.due}` : "No deadline set"}</small>
           </div>
@@ -4933,7 +5086,27 @@ function PortalView({
           </div>
         )}
       </article>
-
+      <AgreementsPanel student/>
+      </div>
+      <aside className="clientPortalRail">
+      <h3 className="railHeading">Your account</h3>
+      <article className="panel clientWelcome">
+        <div className="clientAvatar">
+          {c.name
+            .split(" ")
+            .map((x) => x[0])
+            .slice(0, 2)
+            .join("")}
+        </div>
+        <div>
+          <span>Private client portal</span>
+          <h2>{c.name}</h2>
+          <p>
+            Your {humanise(c.type).toLowerCase()} journey is at {c.stage}. Your case officer is {c.owner || "being assigned"}{c.branch ? ` at the ${c.branch} office` : ""}.
+          </p>
+        </div>
+      </article>
+      <h3 className="railHeading">Your details</h3>
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
@@ -5002,6 +5175,7 @@ function PortalView({
         )}
       </article>
 
+      <h3 className="railHeading">Consent</h3>
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
@@ -5035,11 +5209,64 @@ function PortalView({
           );
         })}
       </article>
+      </aside>
     </section>
   );
 }
 
-function ClientModuleView({
+/** The case team and what is still wanted from the client, beside every portal screen. */
+function ClientTeamRail({ client, documents, invoices, openModal }: { client: CaseRecord; documents: DocumentRecord[]; invoices: InvoiceRecord[]; openModal: (x: ModalType) => void }) {
+  const requested = documents.filter((d) => d.clientVisible !== false && /request|reject/i.test(d.status)).length;
+  const outstanding = invoices.reduce((sum, i) => sum + i.balance, 0);
+  const currency = invoices[0]?.currency || "AUD";
+  return (
+    <aside className="clientPortalRail">
+      <h3 className="railHeading">Your case team</h3>
+      <article className="panel listPanel clientTeamCard">
+        <div className="clientTeamFacts">
+          <div><span>Case officer</span><strong>{client.owner || "Being assigned"}</strong></div>
+          <div><span>Office</span><strong>{client.branch || "Maximus"}</strong></div>
+          <div><span>Service</span><strong>{humanise(client.type)}</strong></div>
+          <div><span>Stage</span><strong>{client.stage}</strong></div>
+        </div>
+        <div className="clientTeamActions">
+          <button className="primaryButton" onClick={() => openModal("message")}><Mail size={15} /> Send a message</button>
+          <button className="ghostButton" onClick={() => openModal("appointment")}><CalendarDays size={15} /> Request an appointment</button>
+        </div>
+      </article>
+      <h3 className="railHeading">Still wanted from you</h3>
+      <article className="panel listPanel">
+        <div className="clientTeamFacts">
+          <div><span>Documents to upload</span><strong className="num">{requested}</strong></div>
+          <div><span>Amount outstanding</span><strong className="num">{currency} {outstanding.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+        </div>
+        <p className="coverageIntro">{requested > 0 ? "Upload what has been asked for from the Documents page; your case officer is told as soon as it arrives." : "Nothing is waiting on you right now. We will message you when the next step needs something."}</p>
+      </article>
+    </aside>
+  );
+}
+
+function ClientModuleView(props: {
+  module: ModuleKey;
+  client: CaseRecord | undefined;
+  appointments: AppointmentRecord[];
+  documents: DocumentRecord[];
+  storageConnected: boolean;
+  messages: MessageRecord[];
+  invoices: InvoiceRecord[];
+  openModal: (x: ModalType) => void;
+}) {
+  const body = <ClientModuleBody {...props} />;
+  if (!props.client) return body;
+  return (
+    <section className="clientModule">
+      <div className="clientModuleMain">{body}</div>
+      <ClientTeamRail client={props.client} documents={props.documents} invoices={props.invoices} openModal={props.openModal} />
+    </section>
+  );
+}
+
+function ClientModuleBody({
   module,
   client,
   appointments,
@@ -5230,9 +5457,11 @@ function ClientModuleView({
           ))}
           </>
         ) : (
-          <p className="restrictedEmpty">
-            No documents are linked to this client account.
-          </p>
+          <EmptyState
+            icon={FolderOpen}
+            title="Nothing has been asked for yet"
+            copy="When your case officer requests a document it appears here with what is needed and when. You upload it from this page and we confirm once it is checked."
+          />
         )}
         {portalError && <p className="caseWorkError">{portalError}</p>}
       </article>
@@ -5247,13 +5476,16 @@ function ClientModuleView({
             <span className="kicker">My appointments</span>
             <h2>Consultations and reviews</h2>
           </div>
-          <button
-            className="primaryButton"
-            onClick={() => openModal("appointment")}
-          >
-            <Plus size={16} />
-            Request appointment
-          </button>
+          {/* While nothing is booked the empty state carries the one action, so the screen offers it once. */}
+          {own.length > 0 && (
+            <button
+              className="primaryButton"
+              onClick={() => openModal("appointment")}
+            >
+              <Plus size={16} />
+              Request appointment
+            </button>
+          )}
         </div>
         <ListFilterBar query={appointmentQuery} onQuery={setAppointmentQuery} placeholder="Search my appointments" resultCount={own.length} />
         {own.length ? (
@@ -5284,7 +5516,13 @@ function ClientModuleView({
           ))}
           </>
         ) : (
-          <p className="restrictedEmpty">No appointments are scheduled.</p>
+          <EmptyState
+            icon={CalendarDays}
+            title="No appointments are booked"
+            copy="Request a consultation or a review and your case team will confirm a time. Confirmed appointments appear here and can be added to your own calendar."
+            action="Request appointment"
+            onAction={() => openModal("appointment")}
+          />
         )}
       </article>
     );
@@ -5298,13 +5536,15 @@ function ClientModuleView({
             <span className="kicker">My messages</span>
             <h2>Contact your case team</h2>
           </div>
-          <button
-            className="primaryButton"
-            onClick={() => openModal("message")}
-          >
-            <Mail size={16} />
-            New message
-          </button>
+          {own.length > 0 && (
+            <button
+              className="primaryButton"
+              onClick={() => openModal("message")}
+            >
+              <Mail size={16} />
+              New message
+            </button>
+          )}
         </div>
         <ListFilterBar query={messageQuery} onQuery={setMessageQuery} placeholder="Search my messages" resultCount={own.length} />
         {own.length ? (
@@ -5333,9 +5573,13 @@ function ClientModuleView({
           ))}
           </>
         ) : (
-          <p className="restrictedEmpty">
-            No messages are linked to your case.
-          </p>
+          <EmptyState
+            icon={Mail}
+            title="No messages yet"
+            copy="Messages between you and your case team are kept here against your case, so nothing is lost in an inbox. Send one whenever you have a question."
+            action="New message"
+            onAction={() => openModal("message")}
+          />
         )}
       </article>
     );
@@ -6668,6 +6912,53 @@ function GoogleWorkspaceView() {
         )}
       </article>
     </section>
+  );
+}
+
+/** The controls that protect the record, read from the same checks Integrations runs. */
+function ComplianceControls() {
+  const [rows, setRows] = useState<Array<{ key: string; name: string; purpose: string; state: string; detail: string }> | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/crm/integrations", { cache: "no-store" });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "The controls could not be checked.");
+        const wanted = ["field_encryption", "retention", "backup_restore", "monitoring", "security_headers", "staff_logins"];
+        if (!cancelled) setRows((result.integrations ?? []).filter((row: { key: string }) => wanted.includes(row.key)));
+      } catch (reason) {
+        if (!cancelled) setError(reason instanceof Error ? reason.message : "The controls could not be checked.");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const labels: Record<string, string> = { connected: "In force", attention: "Needs attention", not_configured: "Not configured", not_built: "Not built" };
+  return (
+    <aside className="complianceRail">
+      <h3 className="railHeading">Controls in force</h3>
+      <article className="panel listPanel">
+        <div className="panelHead">
+          <div>
+            <span className="kicker">Checked, not assumed</span>
+            <h2>How the record is protected</h2>
+          </div>
+        </div>
+        {error ? <p className="caseWorkError">{error}</p> : null}
+        {!rows && !error ? <p className="restrictedEmpty">Checking the controls…</p> : null}
+        {rows?.map((row) => (
+          <div className="controlRow" key={row.key}>
+            <div>
+              <strong>{row.name}</strong>
+              <span>{row.purpose}</span>
+            </div>
+            <span className={`integrationState ${row.state}`}>{labels[row.state] ?? humanise(row.state)}</span>
+          </div>
+        ))}
+        <p className="coverageIntro">Exports, access changes and every edit to a client record are written to the audit trail, which staff cannot alter.</p>
+      </article>
+    </aside>
   );
 }
 
@@ -13221,6 +13512,7 @@ function HomeWorkspace() {
         setItems={syncDocuments}
         storageConnected={storageConnected}
         onBulkAction={bulkMutateRemote}
+        checklistTemplates={checklistTemplates}
       />
     );
   else if (active === "communications")
@@ -13228,6 +13520,7 @@ function HomeWorkspace() {
       <MessagesView
         items={messages}
         campaigns={campaigns}
+        emailTemplates={emailTemplates}
         cases={cases}
         openModal={open}
         setItems={syncMessages}
@@ -13358,6 +13651,8 @@ function HomeWorkspace() {
         setItems={syncWorkflows}
         canManage={canManageBranch}
         onBulkAction={bulkMutateRemote}
+        checklistTemplates={checklistTemplates}
+        onOpenTemplates={() => setActive("templates")}
       />
     );
   else if (active === "reports")
@@ -13370,6 +13665,7 @@ function HomeWorkspace() {
     );
   else if (active === "compliance")
     content = (
+      <div className="complianceColumns">
       <article className="panel listPanel">
         <div className="panelHead">
           <div>
@@ -13402,7 +13698,14 @@ function HomeWorkspace() {
             </div>
           ))
         )}
+        <div className="auditScope">
+          <div><strong>Record changes</strong><span>Every create, edit, stage move and archive on a client, case, application, visa matter or invoice.</span></div>
+          <div><strong>Exports and downloads</strong><span>Each Excel export and document download, with who ran it and the filters that were applied.</span></div>
+          <div><strong>Access changes</strong><span>Role, office and function-access changes to any staff account, and every sign-in.</span></div>
+        </div>
       </article>
+      <ComplianceControls />
+      </div>
     );
   else if (active === "administration")
     content = (
@@ -13882,7 +14185,7 @@ function HomeWorkspace() {
                   : screenMeta[1]}
               </span>
               {/* While a case window is open the case's own name is the screen's h1; the hidden page title steps down. */}
-              {caseWindowId ? (
+              {caseWindowId || (active === "communications" && role !== "client") ? (
                 <h2 className="pageTitleHeading">{screenMeta[0]}</h2>
               ) : (
                 <h1>
