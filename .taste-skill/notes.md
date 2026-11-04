@@ -59,10 +59,19 @@ Inspector results on the live screens (`inspect.mjs --app`), after the run:
 | --- | --- | --- |
 | Dashboard | 6 FAIL, 1 WARN | 0 FAIL, 0 WARN |
 | Enquiries | 6 FAIL, 1 WARN | 0 FAIL, 0 WARN |
-| Reports | not measured | 0 FAIL, 0 WARN |
-| Case file | not measured | 0 FAIL, 0 WARN |
-| Accounts | not measured | 0 FAIL, 0 WARN |
-| Staff | not measured | 0 FAIL, 0 WARN |
+| Reports | 4 FAIL, 2 WARN | 0 FAIL, 0 WARN |
+| Case file | 4 FAIL, 4 WARN | 0 FAIL, 0 WARN |
+| Accounts | 4 FAIL, 1 WARN | 0 FAIL, 0 WARN |
+| Staff | 3 FAIL, 3 WARN | 0 FAIL, 0 WARN |
+
+The "before" column was measured on the commit before the house style
+(85f298a), built in a separate worktree with only the `/?module=` deep link
+added so the inspector could open each section by URL. What it found there:
+29 tracked uppercase labels and 36 text blocks under 11px on Reports, four
+case tabs at 1.5:1 contrast and no h1 on the case file, 62 sub-11px text
+blocks and a gradient filter bar on Accounts, a terracotta accent and 2.6:1
+link buttons on Staff, and on every screen the gradient sidebar and page
+ground, the floating sidebar shadow and panel borders at 2:1.
 
 The three warnings of the first round were fixed rather than defended:
 
