@@ -177,3 +177,37 @@ What changed, beyond the stylesheet:
 After this run the six first-run screens were measured again on the final
 build and still read 0 FAIL, 0 WARN. Sample data: still none added. The remaining empty states (no sent mail, no
 workflows, no audit rows, no client documents) are what the seed holds.
+
+## Colour pass: the logo's colours through the screens
+
+The owner liked the first sign-in and Gmail designs and wanted the logo's
+colours spread through the product. The mark has four: navy (#102f40 in
+the shell), deep blue #145a8c, sky blue #309ad4, amber #e48e24 and a deeper
+orange #cb5d28. The deeper orange sits inside the inspector's terracotta
+family (hue 6–30, mid lightness) and warm pale tints sit inside its cream
+family, so those two stay on the mark itself; the amber, the sky blue and
+the deep blue carry the brand everywhere else.
+
+The ladder, in `app/house-style.css` tokens:
+
+- **Navy** stays on structure and the one filled button per screen.
+- **Amber (`--hs-accent`, ink `--hs-accent-ink` #9d5d12 at 5.2:1)** marks
+  what is current: the 3px bar on the active sidebar item, the current
+  stage in the case lifecycle track, the current stage on the portal
+  journey, the first stage of the fixed pipeline, calendar events, the
+  starred mark, the sign-in kickers, and the Compose button on Gmail (that
+  screen's one job, navy text on amber).
+- **Sky blue (`--hs-sky`, ink `--hs-sky-ink` #145a8c at 7.3:1)** is the
+  tint for whatever is active: the sidebar row, the stage badge, done
+  lifecycle stages, today's calendar column, avatars, focus rings and
+  links.
+
+Sign-in went back to the two-panel shell the owner liked: a solid navy story
+panel with the amber kicker, sky-blue benefit marks and the "secure
+workspace" line, beside the white form, in one bordered 8px shell with no
+gradient, glow or floating shadow. On a phone the navy panel is a short
+band. Gmail kept its familiar shape (rounded Compose, folder rail, mail
+rows) in the agency's colours and typeface instead of Google's.
+
+All 29 screens were re-measured on this build and read 0 FAIL, 0 WARN; the
+colour share stayed under the inspector's 12% on every first screen.

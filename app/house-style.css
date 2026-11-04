@@ -14,6 +14,13 @@
    - table headers are 12px grey sentence case; numbers are tabular. */
 
 :root {
+  /* The logo's own colours: navy for structure, amber for "now", sky blue for the active tint.
+     Amber #e48e24 (hue 33) is the logo's lighter orange; its deeper #cb5d28 falls in the
+     inspector's terracotta family and is kept to the mark itself. */
+  --hs-accent: #e48e24;
+  --hs-accent-ink: #9d5d12;
+  --hs-sky: #309ad4;
+  --hs-sky-ink: #145a8c;
   --hs-ground: #f7f8fa;
   --hs-surface: #ffffff;
   --hs-raised: #f1f3f5;
@@ -25,8 +32,8 @@
   --hs-faint: #6b7884;
   --hs-brand: #102f40;          /* Maximus navy: the one hue, on small marks */
   --hs-brand-ink: #0d2432;
-  --hs-tint: #e7eef3;           /* the hue's pale tint, for the active row and badges */
-  --hs-tint-strong: #d3e0e8;
+  --hs-tint: #e4f2f9;           /* the logo's sky blue, pale, for the active row and badges */
+  --hs-tint-strong: #bfe0f0;
   --hs-positive: #247b50;
   --hs-negative: #c4242a;
   --hs-warning: #92400e;
@@ -334,49 +341,56 @@ input, select, textarea, .appShell input, .appShell select, .appShell textarea {
   .courseFinderFilters.courseFinderFilterGrid { grid-template-columns: minmax(0, 1fr); }
 }
 
-/* ---------- the sign-in page: the same ground and one card, no gradients, no floating shell ---------- */
+/* ---------- the sign-in page: the two-panel shell, flat, in the logo's colours ---------- */
 .demoLogin.unifiedLogin { background: var(--hs-ground); background-image: none; padding: 28px clamp(16px, 5vw, 72px) 40px; color: var(--hs-text); }
 .unifiedLogin::before, .unifiedLogin::after { display: none; }
-.unifiedLoginShell { max-width: 1040px; width: 100%; margin: 48px auto 0; grid-template-columns: minmax(0, 1fr) minmax(360px, 460px); gap: 56px; align-items: start; border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible; }
-.loginStory { padding: 8px 0 0; color: var(--hs-text); background: none; background-image: none; overflow: visible; justify-content: flex-start; }
-.loginStory::after, .unifiedLogin .loginGlow { display: none; }
-.loginStory > span { color: var(--hs-muted); font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; }
-.loginStory h1 { margin: 10px 0 12px; color: var(--hs-text); font-size: 32px; line-height: 1.2; letter-spacing: -0.02em; max-width: 420px; }
-.loginStory > p { color: var(--hs-muted); font-size: 15px; line-height: 1.6; max-width: 440px; }
+.unifiedLoginShell { max-width: 1040px; width: 100%; margin: 40px auto 0; grid-template-columns: minmax(300px, .9fr) minmax(380px, 1.1fr); gap: 0; align-items: stretch; border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); background: var(--hs-surface); box-shadow: none; overflow: hidden; }
+.loginStory { padding: clamp(28px, 4vw, 44px); justify-content: center; color: #fff; background: var(--hs-brand); background-image: none; overflow: hidden; }
+.loginStory::after { display: none; }
+.unifiedLogin .loginGlow { display: inline-flex; align-items: center; gap: 8px; width: max-content; margin: 0 0 22px; padding: 0; border: 0; background: transparent; box-shadow: none; color: #bfe0f0; font-size: 13px; font-weight: 500; }
+.unifiedLogin .loginGlow svg { color: var(--hs-sky); }
+.loginStory > span { color: var(--hs-accent); font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.loginStory h1 { margin: 10px 0 12px; color: #fff; font-size: 32px; line-height: 1.2; letter-spacing: -0.02em; max-width: 380px; }
+.loginStory > p { color: #c9d6df; font-size: 15px; line-height: 1.6; max-width: 400px; }
 .loginBenefits { margin-top: 28px; gap: 14px; }
-.loginBenefits > div { color: var(--hs-brand); align-items: flex-start; }
-.loginBenefits b { color: var(--hs-text); font-size: 14px; }
-.loginBenefits small { color: var(--hs-muted); font-size: 13px; }
-.unifiedLoginCard { padding: 28px; border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); background: var(--hs-surface); box-shadow: none; backdrop-filter: none; justify-content: flex-start; }
+.loginBenefits > div { color: var(--hs-sky); align-items: flex-start; }
+.loginBenefits b { color: #fff; font-size: 14px; }
+.loginBenefits small { color: #b4c3cf; font-size: 13px; }
+.unifiedLoginCard { padding: clamp(24px, 3vw, 36px); border: 0; border-radius: 0; background: var(--hs-surface); box-shadow: none; backdrop-filter: none; justify-content: center; }
 .portalSwitch { padding: 4px; gap: 4px; border: 1px solid var(--hs-border); border-radius: var(--hs-radius-card); background: var(--hs-ground); }
 .portalSwitch button { border: 1px solid transparent; border-radius: var(--hs-radius-control); min-height: 56px; color: var(--hs-muted); transition: none; }
 .portalSwitch button.active { color: var(--hs-brand-ink); background: var(--hs-surface); box-shadow: none; border-color: var(--hs-border); }
+.portalSwitch button.active svg { color: var(--hs-sky-ink); }
 .portalSwitch b { font-size: 13px; color: inherit; }
 .portalSwitch small { font-size: 13px; color: var(--hs-muted); }
 .loginCardTitle { padding: 22px 0 8px; }
-.loginCardTitle > span { color: var(--hs-muted); font-size: 13px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+.loginCardTitle > span { color: var(--hs-accent-ink); font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .loginCardTitle h2 { margin: 4px 0 6px; color: var(--hs-text); font-size: 22px; letter-spacing: -0.01em; }
 .loginCardTitle p { font-size: 13px; color: var(--hs-muted); }
 .loginFields { gap: 12px; margin: 12px 0 16px; }
 .loginFields label { font-size: 13px; color: var(--hs-text); font-weight: 500; }
 .loginFields input { min-height: 44px; border-radius: var(--hs-radius-control); border-color: var(--hs-control); background: var(--hs-surface); font-size: 14px; transition: none; }
 .loginFields input:hover { border-color: var(--hs-control); background: var(--hs-surface); }
-.loginFields input:focus { border-color: var(--hs-brand); background: var(--hs-surface); box-shadow: 0 0 0 3px var(--hs-tint); }
+.loginFields input:focus { border-color: var(--hs-sky-ink); background: var(--hs-surface); box-shadow: 0 0 0 3px var(--hs-tint); }
 .singleLoginButton { min-height: 44px; border-radius: var(--hs-radius-control); background: var(--hs-brand); background-image: none; box-shadow: none; transition: background 120ms ease; }
 .singleLoginButton:hover:not(:disabled) { transform: none; filter: none; box-shadow: none; background: var(--hs-brand-ink); }
 .unifiedLoginCard > footer { padding-top: 14px; color: var(--hs-muted); font-size: 13px; }
+.unifiedLoginCard > footer svg { color: var(--hs-sky-ink); }
 .loginError { font-size: 13px; }
 @media (max-width: 980px) {
-  .unifiedLoginShell { grid-template-columns: minmax(0, 1fr); gap: 24px; margin-top: 16px; }
-  .loginStory { padding: 0; text-align: left; }
+  .unifiedLoginShell { grid-template-columns: minmax(0, 1fr); margin-top: 16px; }
+  .loginStory { padding: 24px 22px; text-align: left; }
   .loginStory h1, .loginStory > p { margin-left: 0; margin-right: 0; }
   .loginStory h1 { font-size: 28px; }
   .unifiedLoginCard { padding: 22px 18px; }
 }
 @media (max-width: 760px) {
+  /* On a phone the navy panel is a short band: the name, the title and one line. */
   .unifiedLogin { padding: 20px 16px 28px; }
-  .loginStory h1 { font-size: 26px; }
-  .loginBenefits { display: none; }
+  .loginStory { padding: 20px 18px; }
+  .loginStory h1 { font-size: 24px; margin: 6px 0 8px; }
+  .loginStory > p { font-size: 14px; }
+  .unifiedLogin .loginGlow, .loginBenefits { display: none; }
 }
 
 /* ---------- the Gmail workspace in the house style: the product's own type, flat, navy on small marks ---------- */
@@ -544,3 +558,49 @@ input, select, textarea, .appShell input, .appShell select, .appShell textarea {
   .coverageTable > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .coverageTable > div:first-child { display: none; }
 }
+
+/* ======================================================================
+   The logo's colours through the screens: amber marks the thing that is
+   current, sky blue tints what is active, navy stays on structure and the
+   one filled button. Fills stay small; the inspector's colour share is the
+   check.
+   ====================================================================== */
+.sidebar .navGroup button.active, .appShell.mode-direct_visa .sidebar .navGroup button.active, .navGroup button.active { color: var(--hs-sky-ink); border-left: 3px solid var(--hs-accent); padding-left: 7px; border-radius: 0 var(--hs-radius-control) var(--hs-radius-control) 0; }
+.sidebar .navGroup button.active svg, .navGroup button.active svg { color: var(--hs-sky-ink); }
+.sidebar .navGroup button, .navGroup button { border-left: 3px solid transparent; padding-left: 7px; }
+.navGroup button em, .navGroup button i { color: var(--hs-sky-ink); }
+.appShell .linkButton { color: var(--hs-sky-ink); }
+.caseStageBadge, .appShell .caseIdentityMeta .caseStageBadge { background: var(--hs-tint); color: var(--hs-sky-ink); }
+.lifecycleTrack li.done { color: var(--hs-sky-ink); border-color: var(--hs-tint-strong); background: var(--hs-tint); }
+.lifecycleTrack li.current { color: var(--hs-brand-ink); border-color: var(--hs-accent); background: var(--hs-accent); }
+.lifecycleTrack li.parked.current { border-color: var(--hs-accent); background: var(--hs-accent); }
+.pipelineStages li:first-child { border-top-color: var(--hs-accent); }
+.clientNext .nextIcon, .nextIcon { color: var(--hs-accent-ink); }
+.clientNext span { color: var(--hs-accent-ink); }
+.weekGrid > div.today header b { color: var(--hs-sky-ink); }
+.weekGrid > div.today { border-color: var(--hs-sky); }
+.calendarEvent { border-left-color: var(--hs-accent); }
+.appShell .avatar.small, .appShell .signedAccount .avatar, .sidebarFooter .avatar, .sidebar .avatar, .gmailAccount > div, .clientAvatar { color: var(--hs-sky-ink); }
+.topbarPrimary .searchWrap:focus-within { border-color: var(--hs-sky-ink); }
+.appShell .listFilterBar input:focus, .appShell .formGrid input:focus, .appShell .stackedForm input:focus, .appShell select:focus, .appShell textarea:focus { outline-color: var(--hs-sky-ink); border-color: var(--hs-sky-ink); }
+.templateWorkspaceSummary { border-left-color: var(--hs-accent); }
+.templateWorkspaceTabs button.active svg { color: var(--hs-sky-ink); }
+.appShell .emptyState > div, .appShell .docIcon { color: var(--hs-sky-ink); }
+.integrationState.connected { color: var(--hs-positive); }
+.appShell .signal:first-child strong, .appShell .miniStats article:first-child strong { color: var(--hs-brand-ink); }
+
+/* Gmail in the brand: the familiar shape, the agency's colours. */
+.gmailBrand svg, .gmailConnectState > svg { color: var(--hs-accent-ink); }
+.gmailCompose { color: var(--hs-brand-ink); background: var(--hs-accent); border-radius: 16px; font-weight: 600; }
+.gmailCompose:hover { background: #d9801a; box-shadow: none; }
+.gmailSearchBar { border-radius: 20px; }
+.gmailSearchBar:focus-within { border-color: var(--hs-sky-ink); }
+.gmailFolderRail nav button { border-radius: 0 16px 16px 0; }
+.gmailFolderRail nav button.active { background: var(--hs-tint); color: var(--hs-sky-ink); }
+.gmailFolderRail nav button.active svg { color: var(--hs-sky-ink); }
+.gmailCaseNote svg { color: var(--hs-sky-ink); }
+.gmailMailOpen b { color: var(--hs-text); }
+.gmailStar.starred { color: var(--hs-accent); }
+.gmailConnectState button { background: var(--hs-accent); color: var(--hs-brand-ink); }
+.gmailConnectState button:hover { background: #d9801a; }
+.gmailOffline .gmailClientRow .ghostButton svg { color: var(--hs-sky-ink); }
