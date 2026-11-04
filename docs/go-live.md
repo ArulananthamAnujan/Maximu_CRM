@@ -45,7 +45,7 @@ In the deployment (Netlify or Cloudflare) set:
 | `SUPABASE_SERVICE_ROLE_KEY` | Creating staff logins, backups, the scheduled operations |
 | `FIELD_ENCRYPTION_KEY` | Passport numbers (`openssl rand -base64 32`; never change it once data is stored) |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `GOOGLE_SHARED_DRIVE_ID` | Document storage in the agency's Shared Drive |
-| `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Client emails: document requests, invoices, portal welcome, task notifications |
+| `RESEND_API_KEY`, `RESEND_FROM_EMAIL` | Optional. Case email (document requests, invoices, commission invoices, campaigns) goes from each officer's connected Gmail at no extra cost; this system sender is only the fallback for a case nobody has connected Gmail for, and the sender for staff task notifications |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Gmail and Google Calendar connections per staff member |
 | `ANTHROPIC_API_KEY` | Copilot |
 | `INCIDENT_ALERT_WEBHOOK_URL` | Where the daily operations check posts an alert |
@@ -104,9 +104,16 @@ As the owner (super admin), in this order:
 3. **Templates**: read the 35 standard document items and the three client
    emails (document request, invoice, portal welcome) and change the wording
    to the agency's own. These are what clients receive.
-4. **Workflows**: add the stage templates the team actually uses inside the
+4. **Integrations -> Personal Gmail**: every officer connects their own Gmail
+   once. Case email (document requests, invoices, commission invoices,
+   campaigns) then goes from the officer's own address, the acting officer
+   first, then the case owner, then the supervisor, and replies land in that
+   inbox on the same thread the Messages screen reads. No paid email
+   provider is involved. Gmail allows about 2,000 sends a day per Workspace
+   account, so keep a campaign to a few hundred recipients per launch.
+5. **Workflows**: add the stage templates the team actually uses inside the
    fixed pipeline, if any.
-5. **Reports**: open the builder and export once, so the Excel layout has
+6. **Reports**: open the builder and export once, so the Excel layout has
    been seen by a manager before it reaches a client meeting.
 
 ## 6. Import the existing records

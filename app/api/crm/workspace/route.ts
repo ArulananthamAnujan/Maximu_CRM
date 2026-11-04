@@ -17,7 +17,8 @@ import { driveConfigured } from "@/server/google-drive";
 import { protectionConfigured, protect, reveal } from "@/server/protected-fields";
 import { calendarRefreshAccessToken, createCalendarEvent, deleteCalendarEvent } from "@/server/google-calendar";
 import { orgDate, orgTime } from "@/lib/timezone";
-import { emailConfigured, renderTemplate, sendEmail } from "@/server/email";
+import { renderTemplate } from "@/server/email";
+import { caseSenders, mailPossible, sendStaffEmail } from "@/server/staff-mail";
 import { drainClientNotices } from "@/server/client-notices";
 import { publicOrigin } from "@/server/public-origin";
 import { findAccountByEmail, sendAccountSetup } from "@/server/account-access";
@@ -1801,9 +1802,9 @@ export async function POST(request: Request) {
           client_name: fullClientName(invoiceClient),
           amount: `${currency} ${total.toFixed(2)}`,
           due_clause: due ? `, due ${due}` : "",
-            portal_link: publicOrigin(request),
+          portal_link: publicOrigin(request),
           sender_name: session.identity.displayName,
-        });
+        }, await caseSenders(caseId, session.identity.profileId));
       }
       return Response.json(result);
     }
@@ -2506,16 +2507,21 @@ async function notifyClient(
   kind: "invoice_request" | "portal_welcome",
   to: string | null | undefined,
   values: Record<string, string>,
+  senders: string[],
 ): Promise<void> {
   // A document request is not sent from here: the documents trigger queues
   // it in client_notice_outbox and drainClientNotices delivers it.
-  if (!to || !emailConfigured()) return;
+  if (!to || !mailPossible()) return;
   try {
     const template = await emailTemplateFor(org, kind, token);
     if (!template) return;
     const subject = renderTemplate(template.subject, values);
     const rendered = renderTemplate(template.body, values);
-    await sendEmail({
+    // From the officer's own Gmail when connected, so the client can reply to
+    // a person; the system sender only when nobody on the case has one.
+    await sendStaffEmail({
+      organisationId: org,
+      senders,
       to,
       subject,
       text: rendered,

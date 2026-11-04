@@ -1,6 +1,7 @@
 import {canUse} from "@/lib/function-access";
 import { appendRefreshCookies, LiveAccessError, liveSession } from "@/server/supabase-session";
-import { sendEmail, EmailProviderError, renderTemplate } from "@/server/email";
+import { EmailProviderError, renderTemplate } from "@/server/email";
+import { sendStaffEmail } from "@/server/staff-mail";
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
 import { sendWhatsappText, WhatsAppError } from "@/server/whatsapp";
 import { sendSmsText, SmsError } from "@/server/sms";
@@ -80,10 +81,12 @@ export async function POST(request: Request) {
           } else if (campaign.channel === "sms") {
             providerMessageId = (await sendSmsText({ to: String(recipient.destination), body: String(recipient.rendered_body) })).id;
           } else {
-            await sendEmail({
+            // From the launcher's own Gmail when connected; the system sender otherwise.
+            providerMessageId = (await sendStaffEmail({
+              organisationId: session.identity.organisationId, senders: [session.identity.profileId],
               to: String(recipient.destination), subject: String(recipient.rendered_subject || campaign.subject || campaign.name),
               text: String(recipient.rendered_body), html: escapeHtml(String(recipient.rendered_body)).replace(/\n/g, "<br>"),
-            });
+            })).id;
           }
           await patch("campaign_recipients", String(recipient.id), { status: "sent", provider_message_id: providerMessageId, provider_error: null, sent_at: new Date().toISOString() }, token);
           sent += 1;

@@ -1,7 +1,8 @@
 import { recordInvoiceAction, financeRpc, FinanceInputError } from "@/server/finance";
 import { appendRefreshCookies, LiveAccessError, liveSession } from "@/server/supabase-session";
 import { SupabaseError, supabaseRequest } from "@/server/supabase";
-import { EmailProviderError, sendEmail } from "@/server/email";
+import { EmailProviderError } from "@/server/email";
+import { sendStaffEmail } from "@/server/staff-mail";
 
 export const dynamic = "force-dynamic";
 type Json = Record<string, unknown>;
@@ -191,9 +192,10 @@ export async function POST(request: Request) {
         subject = `Receipt ${receipts[0]?.receipt_number || ""} for ${invoiceNumber}`.trim();
         text = `Dear ${name},\n\nReceipt: ${receipts[0]?.receipt_number || "Recorded receipt"}\nCommission invoice: ${invoiceNumber}\nPayment received: ${claim.currency || "AUD"} ${Number(payments[0].amount).toFixed(2)}\nTotal received: ${claim.currency || "AUD"} ${received.toFixed(2)}\nPending: ${claim.currency || "AUD"} ${Math.max(0, total - received).toFixed(2)}\n\nRegards,\nMaximus Education`;
       }
-      await sendEmail({ to: recipient, subject, text, html: escapeHtml(text).replace(/\n/g, "<br>") });
-      await insert("audit_events", { organisation_id: org, actor_id: actor, action: action === "send_commission_invoice" ? "commission.invoice_sent" : "commission.receipt_sent", resource_type: "commission_claim", resource_id: claimId, summary: `${subject} sent to ${recipient}`, after_data: { recipient } }, token);
-      return appendRefreshCookies(Response.json({ ok: true, recipient }), session.refreshed, request);
+      // From the sender's own Gmail when connected, so the institution replies to a person.
+      const delivery = await sendStaffEmail({ organisationId: org, senders: [actor], to: recipient, subject, text, html: escapeHtml(text).replace(/\n/g, "<br>") });
+      await insert("audit_events", { organisation_id: org, actor_id: actor, action: action === "send_commission_invoice" ? "commission.invoice_sent" : "commission.receipt_sent", resource_type: "commission_claim", resource_id: claimId, summary: `${subject} sent to ${recipient} from ${delivery.from}`, after_data: { recipient, from: delivery.from, via: delivery.via } }, token);
+      return appendRefreshCookies(Response.json({ ok: true, recipient, from: delivery.from, via: delivery.via }), session.refreshed, request);
     } else if (action === "link_client_account") {
       if (session.identity.role === "staff") throw new LiveAccessError(403, "Only administrators can link client accounts.");
       await insert("client_user_links", { profile_id: uuid(body.profileId, "Profile"), client_id: uuid(body.clientId, "Client") }, token, "resolution=merge-duplicates,return=minimal");

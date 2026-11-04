@@ -8,6 +8,7 @@ import { driveProbe } from "@/server/google-drive";
 import { serviceRoleKey, supabaseRequest, supabaseAdminRequest } from "@/server/supabase";
 import { aiConfigured } from "@/server/ai";
 import { emailConfigured, emailSenderDiagnostics } from "@/server/email";
+import { googleOAuthConfigured } from "@/server/google-oauth-client";
 import { protectionConfigured } from "@/server/protected-fields";
 import { gmailOAuthConfigured, gmailRefreshAccessToken, gmailSearchMessages } from "@/server/gmail";
 import { reveal } from "@/server/protected-fields";
@@ -202,18 +203,26 @@ export async function GET(request: Request) {
       },
       {
         key: "email",
-        name: "Automatic email notices",
-        purpose: "Staff task assignment and completion emails, plus client document, invoice and portal-access notices.",
-        // Configured credentials are "connected"; a provider that has
+        name: "Case email from staff Gmail",
+        purpose: "Document requests, invoices, commission invoices and campaigns go from the officer's own connected Gmail, so clients reply to a person. The optional system sender covers staff task emails and any case nobody has connected Gmail for.",
+        // Staff Gmail is the primary route and needs only the Google OAuth
+        // client plus a connected mailbox. The system sender stays optional:
+        // configured credentials are "connected"; a provider that has
         // rejected the latest email needs attention, which is neither
         // connected nor unconfigured and must not read as either.
-        state: !emailConfigured() ? "not_configured" : emailFailed ? "attention" : "connected",
+        state: emailConfigured()
+          ? emailFailed ? "attention" : "connected"
+          : googleOAuthConfigured() && mailbox[0]?.active ? "connected" : "not_configured",
         detail: emailConfigured()
           ? emailFailed ? `Task email delivery failed: ${emailEvidence[0].last_error || "Check the sender domain and email provider permissions."} ${senderDiagnostic}`
-            : emailAccepted ? "The email provider accepted the latest task notification. Recipient inbox delivery is not independently verified."
-            : "Email credentials are configured. No email has been submitted yet; the first task notice or client request will confirm the provider accepts them."
-          : "RESEND_API_KEY and RESEND_FROM_EMAIL are not set, so these emails are not sent -- the underlying request or invoice is still recorded either way.",
-        setup: ["RESEND_API_KEY", "RESEND_FROM_EMAIL"],
+            : emailAccepted ? "Case email goes from each officer's connected Gmail. The system sender accepted the latest task notification; recipient inbox delivery is not independently verified."
+            : "Case email goes from each officer's connected Gmail. The system sender is configured for staff task emails and as the fallback; the first task notice will confirm the provider accepts it."
+          : googleOAuthConfigured() && mailbox[0]?.active
+            ? `Case email is sent from ${mailbox[0].email}. No paid email provider is needed; staff task emails stay off until a system sender is configured.`
+            : googleOAuthConfigured()
+              ? "Connect Gmail under Personal Gmail above and case email will be sent from that address. No paid email provider is needed."
+              : "Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET so staff can connect Gmail; case email then goes from their own address at no extra cost.",
+        setup: ["GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "RESEND_API_KEY and RESEND_FROM_EMAIL (optional fallback)"],
       },
       {
         key: "ai",

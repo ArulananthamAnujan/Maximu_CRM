@@ -316,3 +316,13 @@ hidden from assistive technology while on show). Below 1200px it folds
 behind the menu button as before. The Google connection card lost its
 "choose the matching account" note, and native selects now draw one chevron
 with 14px options so an unfolded list reads like the rest of the product.
+
+## Case email from staff Gmail
+
+Every email the CRM sends about a case now goes from a staff member's own
+connected Gmail (the acting officer, then the case owner, then the
+supervisor): invoice notices, document requests from the outbox, commission
+invoices and receipts, and email campaigns. The client sees a person's
+address and replies land on the thread the Messages screen already reads.
+The paid system sender is optional and only a fallback. The Integrations
+card reads "Case email from staff Gmail" and says which address is in use.
