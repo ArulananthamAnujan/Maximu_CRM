@@ -17,6 +17,7 @@
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
     "test:e2e": "bash scripts/verify-ui.sh",
     "import:courses": "node scripts/import-course-finder.mjs",
+    "smoke:production": "node scripts/smoke-production.mjs",
     "verify": "npm test && scripts/verify-rls.sh && scripts/verify-features.sh && scripts/verify-ui.sh"
   },
   "dependencies": {

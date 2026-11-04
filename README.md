@@ -218,6 +218,20 @@ Copy the local Supabase URL and keys into `.env.local`.
 read-only query: paste it into the SQL editor and every row should read OK.
 Anything reading MISSING names the migration that has not been applied yet.
 
+**The database reports its own version.** Since
+`20261104020000_schema_version.sql`, `select public.schema_version()` returns
+the prefix of the newest migration applied, and the deployed code carries the
+version it expects in `lib/schema-version.ts`. When they differ, administrators
+see a banner naming the migrations to apply, `/api/crm/health` reports
+`schema.found` and `schema.expected`, and the Live service check on
+Integrations says the same. Every new migration must end by redefining
+`public.schema_version()` with its own prefix and bump the constant;
+`tests/schema-version.test.mjs` fails otherwise.
+
+**Going live.** `docs/go-live.md` is the handover runbook: migrations,
+secrets, the operations checks, the smoke test (`npm run smoke:production`
+against the live address), agency setup, the legacy import and the pilot.
+
 ### Importing the legacy Course Finder
 
 Apply `0022_course_finder.sql`, `0026_course_finder_catalog.sql` and

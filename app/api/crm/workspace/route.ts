@@ -1,3 +1,4 @@
+import { schemaStatus, schemaVersionFromRpc } from "@/lib/schema-version";
 import { noteProvenance } from "@/server/case-notes";
 import { canUse } from "@/lib/function-access";
 import { financeRequestId, financeRpc, recordInvoiceAction, FinanceInputError } from "@/server/finance";
@@ -358,6 +359,7 @@ export async function GET(request: Request) {
       workflowStages.set(key, [...(workflowStages.get(key) ?? []), stage]);
     }
 
+    const schemaUpdate = await schemaUpdateHint(session.accessToken);
     const payload = {
       identity: session.identity,
       degraded,
@@ -368,6 +370,8 @@ export async function GET(request: Request) {
         protectedFields: protectionConfigured(),
       },
       schemaWarning: lifecycleEnabled ? null : LIFECYCLE_MIGRATION_HINT,
+      // Named for administrators only: staff cannot act on it and clients should not see it.
+      schemaUpdate: session.identity.role === "super_admin" || session.identity.role === "admin" ? schemaUpdate : null,
       branches,
       profiles,
       roles: roles.map((row) => ({
@@ -778,6 +782,23 @@ export async function GET(request: Request) {
 // answer cannot go back to false, and while it is missing every request
 // re-checks, so the CRM starts working the moment the migration is run.
 let lifecycleMigrationApplied = false;
+// The same shape for the schema version: once the database reports the version
+// this build expects, the answer is remembered; until then every request asks.
+let schemaVersionCurrent = false;
+async function schemaUpdateHint(token: string): Promise<string | null> {
+  if (schemaVersionCurrent) return null;
+  let found: string | null = null;
+  try {
+    found = schemaVersionFromRpc(
+      await supabaseRequest<unknown>(`/rest/v1/rpc/schema_version`, { method: "POST", body: "{}" }, token),
+    );
+  } catch {
+    found = null;
+  }
+  const status = schemaStatus(found);
+  if (status.upToDate) schemaVersionCurrent = true;
+  return status.hint;
+}
 export const LIFECYCLE_MIGRATION_HINT =
   "This CRM needs a database update. Apply supabase/migrations/0008_case_lifecycle.sql to your Supabase project, then reload.";
 

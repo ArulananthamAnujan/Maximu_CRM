@@ -6999,6 +6999,7 @@ function ReadinessPanel() {
     status?: string;
     latencyMs?: number;
     readiness?: Record<string, unknown>;
+    schema?: { expected: string; found: string | null; upToDate: boolean; hint: string | null };
     error?: string;
   } | null>(null);
   useEffect(() => {
@@ -7049,6 +7050,13 @@ function ReadinessPanel() {
           <p className="coverageIntro">
             Database responded in {state.latencyMs ?? 0}ms.
           </p>
+          {state.schema ? (
+            state.schema.upToDate ? (
+              <p className="coverageIntro">Database schema {state.schema.found} matches this build.</p>
+            ) : (
+              <p className="caseWorkError">{state.schema.hint}</p>
+            )
+          ) : null}
           <div className="miniStats">
             {Object.entries(labels).map(([key, label]) => (
               <article key={key}>
@@ -12204,6 +12212,7 @@ function HomeWorkspace() {
     [staff, setStaff] = useState<StaffRecord[]>([]),
     [branches, setBranches] = useState<BranchRecord[]>([]),
     [schemaWarning, setSchemaWarning] = useState<string>(""),
+    [schemaUpdate, setSchemaUpdate] = useState<string>(""),
     [storageConnected, setStorageConnected] = useState(false);
   // The module a role lands on is chosen once per sign-in. The workspace loads
   // in two steps -- the session first, then the records -- and the navigation is
@@ -12472,6 +12481,9 @@ function HomeWorkspace() {
       );
       setSchemaWarning(
         typeof result.schemaWarning === "string" ? result.schemaWarning : "",
+      );
+      setSchemaUpdate(
+        typeof result.schemaUpdate === "string" ? result.schemaUpdate : "",
       );
       setStorageConnected(result.capabilities?.documentStorage === true);
       setBranches((result.branches || []) as BranchRecord[]);
@@ -13874,6 +13886,12 @@ function HomeWorkspace() {
         <div className="schemaBanner" role="status">
           <AlertTriangle size={15} />
           <span>{schemaWarning}</span>
+        </div>
+      )}
+      {schemaUpdate && !schemaWarning && (
+        <div className="schemaBanner" role="status">
+          <AlertTriangle size={15} />
+          <span>{schemaUpdate}</span>
         </div>
       )}
       <Sidebar
