@@ -59,20 +59,23 @@ Inspector results on the live screens (`inspect.mjs --app`), after the run:
 | --- | --- | --- |
 | Dashboard | 6 FAIL, 1 WARN | 0 FAIL, 0 WARN |
 | Enquiries | 6 FAIL, 1 WARN | 0 FAIL, 0 WARN |
-| Reports | not measured | 0 FAIL, 1 WARN (below-fold) |
-| Case file | not measured | 0 FAIL, 1 WARN (ragged-row) |
-| Accounts | not measured | 0 FAIL, 1 WARN (tiny-text) |
+| Reports | not measured | 0 FAIL, 0 WARN |
+| Case file | not measured | 0 FAIL, 0 WARN |
+| Accounts | not measured | 0 FAIL, 0 WARN |
 | Staff | not measured | 0 FAIL, 0 WARN |
 
-Warnings kept, with the reason:
+The three warnings of the first round were fixed rather than defended:
 
-- Reports `below-fold`: the report builder is the screen's job and sits
-  first on purpose; the agency figures follow it.
-- Case file `ragged-row`: the case home pairs the client profile with the
-  next-action rail, whose heights follow their content; the row is
-  top-aligned so neither card stretches over empty space.
-- Accounts `tiny-text`: the invoice ledger is a dense list; its 12px labels
-  are within the labels-and-meta band and every figure is 13px or larger.
+- Reports `below-fold`: the page is now a main column (what falls due, the
+  pipeline, workload, offices) beside a headed rail (campaigns, leads, visa
+  matters, fees), the headline figures sit full width under the builder, and
+  the builder keeps its four secondary filters behind "More filters".
+- Case file `ragged-row`: the case home is a main column (client profile,
+  admissions, workflow, documents) beside a headed rail (next action, at a
+  glance, notes, messages); each rail card sits under its own heading, so no
+  card shares a top edge with a card of another height. The branch-access
+  notice is one line under the identity instead of a second card.
+- Accounts `tiny-text`: the ledger's labels and figures read at 13px.
 
 Sample data: none was added; the screens render the seeded two-office agency
 used by the verification scripts.

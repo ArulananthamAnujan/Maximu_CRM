@@ -5982,7 +5982,7 @@ function ReportBuilder({ serviceMode, canSeeFinance, offices, staff, sources, st
         <div>
           <span className="kicker">Report builder</span>
           <h2>Analyse and export by date range</h2>
-          <p className="reportBuilderIntro">Pick the period and filters, preview the leads and patterns on screen, then export the matching records to Excel. Every sheet carries the filters you chose.</p>
+          <p className="reportBuilderIntro">Pick the period and filters, preview the leads and patterns, then export the matching records to Excel with the filters recorded on the first sheet.</p>
         </div>
         <div className="titleActions">
           <button className="ghostButton" disabled={busy !== ""} onClick={() => void preview()}><BarChart3 size={15} /> {busy === "preview" ? "Building…" : "Preview analysis"}</button>
@@ -5998,11 +5998,16 @@ function ReportBuilder({ serviceMode, canSeeFinance, offices, staff, sources, st
         <label>To<input type="date" value={range.to} min={range.from || undefined} onChange={(event) => { setPreset("custom"); setRange({ ...range, to: event.target.value }); }} /></label>
         <label>Office<select value={branchId} onChange={(event) => setBranchId(event.target.value)}><option value="">All offices</option>{offices.map((office) => <option key={office.id} value={office.id}>{office.name}</option>)}</select></label>
         <label>Service stream<select value={stream} onChange={(event) => setStream(event.target.value as "current" | "both")}><option value="current">{serviceMode === "direct_visa" ? "Direct Visa" : "Study Abroad"} (this workspace)</option><option value="both">Both streams</option></select></label>
+      </div>
+      <details className="reportBuilderMore">
+        <summary>More filters</summary>
+        <div className="reportBuilderGrid">
         <label>Assigned staff<select value={ownerId} onChange={(event) => setOwnerId(event.target.value)}><option value="">Everyone</option>{staff.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
         <label>Stage<select value={stage} onChange={(event) => setStage(event.target.value)}><option value="">Any stage</option><option value="enquiry">Enquiry</option><option value="student">{serviceMode === "direct_visa" ? "Client" : "Student"}</option><option value="application">Application</option><option value="visa">Visa</option><option value="deferred">Deferred</option><option value="completed">Completed</option></select></label>
         <label>Lead source<input list="report-sources" value={source} onChange={(event) => setSource(event.target.value)} placeholder="Any source" /><datalist id="report-sources">{sources.map((value) => <option key={value} value={value} />)}</datalist></label>
         <label>Lead status<input list="report-statuses" value={status} onChange={(event) => setStatus(event.target.value)} placeholder="Any status" /><datalist id="report-statuses">{statuses.map((value) => <option key={value} value={value} />)}</datalist></label>
-      </div>
+        </div>
+      </details>
       <div className="datasetChips" role="group" aria-label="Sheets to export">
         {REPORT_DATASETS.filter(([key]) => key !== "finance" || canSeeFinance).map(([key, label, detail]) => (
           <label key={key} title={detail}><input type="checkbox" checked={datasets.includes(key)} onChange={(event) => setDatasets(event.target.checked ? [...datasets, key] : datasets.filter((d) => d !== key))} /> {label}</label>
@@ -6204,292 +6209,297 @@ function ReportsView({
           </article>
         )}
       </div>
-
-      <article className="panel listPanel">
-        <div className="panelHead">
-          <div>
-            <span className="kicker">Needs attention</span>
-            <h2>What falls due next</h2>
-          </div>
-          <button className="ghostButton" onClick={exportAttention}>
-            <Download size={15} />
-            Export to Excel
-          </button>
-        </div>
-        <Attention
-          label="Requests for further information overdue"
-          count={deadlines.informationOverdue}
-          detail="A s56 request left unanswered can end the application"
-          level="critical"
-        />
-        <Attention
-          label="Visas already expired"
-          count={deadlines.visaExpiry.expired}
-          detail="Open cases whose recorded visa expiry has passed"
-          level="critical"
-        />
-        <Attention
-          label="Visas expiring within 30 days"
-          count={deadlines.visaExpiry.in30}
-          detail="Lodge or arrange a bridging visa"
-          level="serious"
-        />
-        <Attention
-          label="Cases past their next action date"
-          count={deadlines.casesPastDue}
-          detail="The follow-up date has gone by"
-          level="serious"
-        />
-        <Attention
-          label="Overdue tasks"
-          count={deadlines.overdueTasks}
-          detail="Assigned work past its due date"
-          level="warning"
-        />
-        <Attention
-          label="Documents still outstanding"
-          count={deadlines.documentsOutstanding}
-          detail="Requested from clients and not yet provided"
-          level="warning"
-        />
-        <Attention
-          label="Application deadlines within 30 days"
-          count={deadlines.applicationDeadlines}
-          detail="Institution closing dates approaching"
-          level="warning"
-        />
-        {deadlines.informationRequests.length > 0 && (
-          <div className="recordTableWrap">
-            <table className="recordTable">
-              <thead>
-                <tr>
-                  <th>Request for further information</th>
-                  <th>Due</th>
-                  <th className="num">Days left</th>
-                </tr>
-              </thead>
-              <tbody>
-                {deadlines.informationRequests.slice(0, 10).map((entry) => (
-                  <tr key={entry.caseId}>
-                    <td>{entry.caseNumber || `Case ${String(entry.caseId).slice(0, 8)}`}</td>
-                    <td>{String(entry.dueAt).slice(0, 10)}</td>
-                    <td className="num">
-                      {entry.daysRemaining === null
-                        ? "—"
-                        : entry.daysRemaining < 0
-                          ? `${Math.abs(entry.daysRemaining)} overdue`
-                          : entry.daysRemaining}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </article>
-
-      <article className="panel listPanel">
-        <div className="panelHead"><div><span className="kicker">Leads &amp; follow-up</span><h2>Enquiry operations</h2></div></div>
-        <div className="miniStats inline">
-          <article><span>Enquiries recorded</span><strong>{leads.total}</strong><small>Lead records</small></article>
-          <article><span>Average lead score</span><strong>{leads.averageScore}</strong><small>Out of 100</small></article>
-          <article><span>Missed follow-ups</span><strong>{leads.missedFollowUps}</strong><small>Past SLA date and not converted</small></article>
-        </div>
-        <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Status</th><th className="num">Count</th></tr></thead><tbody>{Object.entries(leads.byStatus).map(([label, count]) => <tr key={label}><td>{humanise(label)}</td><td className="num">{count}</td></tr>)}</tbody></table></div>
-      </article>
-
-      <article className="panel listPanel">
-        <div className="panelHead"><div><span className="kicker">Campaign performance</span><h2>Email and WhatsApp delivery</h2></div></div>
-        {campaignPerformance.length === 0 ? <p className="caseWorkEmpty">No campaigns have been launched yet.</p> : <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Campaign</th><th>Channel</th><th className="num">Recipients</th><th className="num">Sent</th><th className="num">Failed</th><th className="num">Delivery</th><th>Status</th></tr></thead><tbody>{campaignPerformance.map((item) => <tr key={item.id}><td>{item.name}</td><td>{humanise(item.channel)}</td><td className="num">{item.recipients}</td><td className="num">{item.sent}</td><td className="num">{item.failed}</td><td className="num">{item.deliveryRate}%</td><td><Status value={item.status} /></td></tr>)}</tbody></table></div>}
-      </article>
-
-      <article className="panel listPanel">
-        <div className="panelHead">
-          <div>
-            <span className="kicker">
-              {serviceMode === "direct_visa" ? "Migration pipeline" : "Education pipeline"}
-            </span>
-            <h2>
-              {serviceMode === "direct_visa"
-                ? "Enquiry to visa outcome"
-                : "Enquiry to confirmation of enrolment"}
-            </h2>
-          </div>
-        </div>
-        <ol className="funnel">
-          {(
-            serviceMode === "direct_visa"
-              ? [
-                  ["Enquiries", conversion.enquiries, ""],
-                  [
-                    "Converted to client",
-                    conversion.converted,
-                    `${conversion.conversionRate}% of enquiries`,
-                  ],
-                  ["Visa matters lodged", visas.lodged, `of ${visas.matters} matters`],
-                  [
-                    "Granted",
-                    visas.granted,
-                    `${visas.grantRate}% of lodged and decided`,
-                  ],
-                  ["Refused", visas.refused, ""],
-                ]
-              : [
-                  ["Enquiries", conversion.enquiries, ""],
-                  [
-                    "Converted",
-                    conversion.converted,
-                    `${conversion.conversionRate}% of enquiries`,
-                  ],
-                  ["Applications submitted", conversion.applicationsSubmitted, ""],
-                  [
-                    "Offers received",
-                    conversion.offers,
-                    `${conversion.offerRate}% of submitted`,
-                  ],
-                  [
-                    "CoEs received",
-                    conversion.coes,
-                    `${conversion.coeRate}% of offers`,
-                  ],
-                  [
-                    "Deferred to a later intake",
-                    conversion.deferred,
-                    `${conversion.deferralRate}% of submitted`,
-                  ],
-                ]
-          ).map(([label, value, note]) => (
-            <li key={label}>
-              <span>
-                <b>{label}</b>
-                {note ? <small>{note}</small> : null}
-              </span>
-              <strong>{value}</strong>
-            </li>
-          ))}
-        </ol>
-      </article>
-
-      <article className="panel listPanel">
-        <div className="panelHead">
-          <div>
-            <span className="kicker">Visa matters</span>
-            <h2>Lodgement and decisions</h2>
-          </div>
-        </div>
-        <div className="miniStats inline">
-          <article>
-            <span>Lodged</span>
-            <strong>{visas.lodged}</strong>
-            <small>of {visas.matters} matters</small>
-          </article>
-          <article>
-            <span>Awaiting decision</span>
-            <strong>{visas.awaitingDecision}</strong>
-            <small>Lodged, no decision recorded</small>
-          </article>
-          <article>
-            <span>Granted</span>
-            <strong>{visas.granted}</strong>
-            <small>Recorded outcome</small>
-          </article>
-          <article>
-            <span>Refused</span>
-            <strong>{visas.refused}</strong>
-            <small>Recorded outcome</small>
-          </article>
-        </div>
-      </article>
-
-      <article className="panel listPanel">
-        <div className="panelHead">
-          <div>
-            <span className="kicker">Team</span>
-            <h2>Workload</h2>
-          </div>
-        </div>
-        {workload.length === 0 ? (
-          <p className="caseWorkEmpty">No staff accounts to report on.</p>
-        ) : (
-          <div className="recordTableWrap">
-            <table className="recordTable">
-              <thead>
-                <tr>
-                  <th>Staff</th>
-                  <th>Branch</th>
-                  <th className="num">Open cases</th>
-                  <th className="num">Follow-ups overdue</th>
-                  <th className="num">Open tasks</th>
-                  <th className="num">Overdue</th>
-                </tr>
-              </thead>
-              <tbody>
-                {workload.map((person) => (
-                  <tr key={person.staffId}>
-                    <td>{person.name || "—"}</td>
-                    <td>{person.branch || "—"}</td>
-                    <td className="num">{person.openCases}</td>
-                    <td className="num">{person.needingAttention}</td>
-                    <td className="num">{person.openTasks}</td>
-                    <td className="num">{person.overdueTasks}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </article>
-
-      <article className="panel listPanel">
-        <div className="panelHead">
-          <div>
-            <span className="kicker">Branches</span>
-            <h2>Performance</h2>
-          </div>
-        </div>
-        {branches.length === 0 ? (
-          <p className="caseWorkEmpty">No branches to report on.</p>
-        ) : (
-          <div className="recordTableWrap">
-            <table className="recordTable">
-              <thead>
-                <tr>
-                  <th>Branch</th>
-                  <th className="num">Cases</th>
-                  <th className="num">Open</th>
-                  <th className="num">Completed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {branches.map((branch) => (
-                  <tr key={branch.branchId}>
-                    <td>{branch.name || "—"}</td>
-                    <td className="num">{branch.cases}</td>
-                    <td className="num">{branch.open}</td>
-                    <td className="num">{branch.completed}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </article>
-
-      {canSeeFinance && (
+      {/* The time-sensitive list and the tables take the main column; the summaries sit in a headed rail. */}
+      <div className="reportsColumns">
+        <div className="reportsMain">
         <article className="panel listPanel">
           <div className="panelHead">
             <div>
-              <span className="kicker">Finance</span>
-              <h2>Fees</h2>
+              <span className="kicker">Needs attention</span>
+              <h2>What falls due next</h2>
+            </div>
+            <button className="ghostButton" onClick={exportAttention}>
+              <Download size={15} />
+              Export to Excel
+            </button>
+          </div>
+          <Attention
+            label="Requests for further information overdue"
+            count={deadlines.informationOverdue}
+            detail="A s56 request left unanswered can end the application"
+            level="critical"
+          />
+          <Attention
+            label="Visas already expired"
+            count={deadlines.visaExpiry.expired}
+            detail="Open cases whose recorded visa expiry has passed"
+            level="critical"
+          />
+          <Attention
+            label="Visas expiring within 30 days"
+            count={deadlines.visaExpiry.in30}
+            detail="Lodge or arrange a bridging visa"
+            level="serious"
+          />
+          <Attention
+            label="Cases past their next action date"
+            count={deadlines.casesPastDue}
+            detail="The follow-up date has gone by"
+            level="serious"
+          />
+          <Attention
+            label="Overdue tasks"
+            count={deadlines.overdueTasks}
+            detail="Assigned work past its due date"
+            level="warning"
+          />
+          <Attention
+            label="Documents still outstanding"
+            count={deadlines.documentsOutstanding}
+            detail="Requested from clients and not yet provided"
+            level="warning"
+          />
+          <Attention
+            label="Application deadlines within 30 days"
+            count={deadlines.applicationDeadlines}
+            detail="Institution closing dates approaching"
+            level="warning"
+          />
+          {deadlines.informationRequests.length > 0 && (
+            <div className="recordTableWrap">
+              <table className="recordTable">
+                <thead>
+                  <tr>
+                    <th>Request for further information</th>
+                    <th>Due</th>
+                    <th className="num">Days left</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deadlines.informationRequests.slice(0, 10).map((entry) => (
+                    <tr key={entry.caseId}>
+                      <td>{entry.caseNumber || `Case ${String(entry.caseId).slice(0, 8)}`}</td>
+                      <td>{String(entry.dueAt).slice(0, 10)}</td>
+                      <td className="num">
+                        {entry.daysRemaining === null
+                          ? "—"
+                          : entry.daysRemaining < 0
+                            ? `${Math.abs(entry.daysRemaining)} overdue`
+                            : entry.daysRemaining}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </article>
+        <article className="panel listPanel">
+          <div className="panelHead">
+            <div>
+              <span className="kicker">
+                {serviceMode === "direct_visa" ? "Migration pipeline" : "Education pipeline"}
+              </span>
+              <h2>
+                {serviceMode === "direct_visa"
+                  ? "Enquiry to visa outcome"
+                  : "Enquiry to confirmation of enrolment"}
+              </h2>
             </div>
           </div>
-          {finance.byCurrency?.length ? <div className="recordTableWrap"><table className="recordTable">
-            <thead><tr><th>Currency</th><th className="num">Invoiced</th><th className="num">Collected</th><th className="num">Outstanding</th></tr></thead>
-            <tbody>{finance.byCurrency.map(bucket => <tr key={bucket.currency}><td>{bucket.currency}</td><td className="num">{money(bucket.invoiced)}</td><td className="num">{money(bucket.collected)}</td><td className="num">{money(bucket.outstanding)}</td></tr>)}</tbody>
-          </table></div> : <p className="caseWorkEmpty">No active invoices recorded.</p>}
-          <p className="caseWorkEmpty">{finance.overdueInvoices} overdue invoices. Outstanding balances include credit notes. Covers all invoices permitted for your account.</p>
+          <ol className="funnel">
+            {(
+              serviceMode === "direct_visa"
+                ? [
+                    ["Enquiries", conversion.enquiries, ""],
+                    [
+                      "Converted to client",
+                      conversion.converted,
+                      `${conversion.conversionRate}% of enquiries`,
+                    ],
+                    ["Visa matters lodged", visas.lodged, `of ${visas.matters} matters`],
+                    [
+                      "Granted",
+                      visas.granted,
+                      `${visas.grantRate}% of lodged and decided`,
+                    ],
+                    ["Refused", visas.refused, ""],
+                  ]
+                : [
+                    ["Enquiries", conversion.enquiries, ""],
+                    [
+                      "Converted",
+                      conversion.converted,
+                      `${conversion.conversionRate}% of enquiries`,
+                    ],
+                    ["Applications submitted", conversion.applicationsSubmitted, ""],
+                    [
+                      "Offers received",
+                      conversion.offers,
+                      `${conversion.offerRate}% of submitted`,
+                    ],
+                    [
+                      "CoEs received",
+                      conversion.coes,
+                      `${conversion.coeRate}% of offers`,
+                    ],
+                    [
+                      "Deferred to a later intake",
+                      conversion.deferred,
+                      `${conversion.deferralRate}% of submitted`,
+                    ],
+                  ]
+            ).map(([label, value, note]) => (
+              <li key={label}>
+                <span>
+                  <b>{label}</b>
+                  {note ? <small>{note}</small> : null}
+                </span>
+                <strong>{value}</strong>
+              </li>
+            ))}
+          </ol>
         </article>
-      )}
+        <article className="panel listPanel">
+          <div className="panelHead">
+            <div>
+              <span className="kicker">Team</span>
+              <h2>Workload</h2>
+            </div>
+          </div>
+          {workload.length === 0 ? (
+            <p className="caseWorkEmpty">No staff accounts to report on.</p>
+          ) : (
+            <div className="recordTableWrap">
+              <table className="recordTable">
+                <thead>
+                  <tr>
+                    <th>Staff</th>
+                    <th>Branch</th>
+                    <th className="num">Open cases</th>
+                    <th className="num">Follow-ups overdue</th>
+                    <th className="num">Open tasks</th>
+                    <th className="num">Overdue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {workload.map((person) => (
+                    <tr key={person.staffId}>
+                      <td>{person.name || "—"}</td>
+                      <td>{person.branch || "—"}</td>
+                      <td className="num">{person.openCases}</td>
+                      <td className="num">{person.needingAttention}</td>
+                      <td className="num">{person.openTasks}</td>
+                      <td className="num">{person.overdueTasks}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </article>
+        <article className="panel listPanel">
+          <div className="panelHead">
+            <div>
+              <span className="kicker">Branches</span>
+              <h2>Performance</h2>
+            </div>
+          </div>
+          {branches.length === 0 ? (
+            <p className="caseWorkEmpty">No branches to report on.</p>
+          ) : (
+            <div className="recordTableWrap">
+              <table className="recordTable">
+                <thead>
+                  <tr>
+                    <th>Branch</th>
+                    <th className="num">Cases</th>
+                    <th className="num">Open</th>
+                    <th className="num">Completed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {branches.map((branch) => (
+                    <tr key={branch.branchId}>
+                      <td>{branch.name || "—"}</td>
+                      <td className="num">{branch.cases}</td>
+                      <td className="num">{branch.open}</td>
+                      <td className="num">{branch.completed}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </article>
+        </div>
+        <div className="reportsRail">
+          <h3 className="railHeading">Campaigns</h3>
+        <article className="panel listPanel">
+          <div className="panelHead"><div><span className="kicker">Campaign performance</span><h2>Email and WhatsApp delivery</h2></div></div>
+          {campaignPerformance.length === 0 ? <p className="caseWorkEmpty">No campaigns have been launched yet.</p> : <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Campaign</th><th>Channel</th><th className="num">Recipients</th><th className="num">Sent</th><th className="num">Failed</th><th className="num">Delivery</th><th>Status</th></tr></thead><tbody>{campaignPerformance.map((item) => <tr key={item.id}><td>{item.name}</td><td>{humanise(item.channel)}</td><td className="num">{item.recipients}</td><td className="num">{item.sent}</td><td className="num">{item.failed}</td><td className="num">{item.deliveryRate}%</td><td><Status value={item.status} /></td></tr>)}</tbody></table></div>}
+        </article>
+          <h3 className="railHeading">Leads &amp; follow-up</h3>
+        <article className="panel listPanel">
+          <div className="panelHead"><div><span className="kicker">Leads &amp; follow-up</span><h2>Enquiry operations</h2></div></div>
+          <div className="miniStats inline">
+            <article><span>Enquiries recorded</span><strong>{leads.total}</strong><small>Lead records</small></article>
+            <article><span>Average lead score</span><strong>{leads.averageScore}</strong><small>Out of 100</small></article>
+            <article><span>Missed follow-ups</span><strong>{leads.missedFollowUps}</strong><small>Past SLA date and not converted</small></article>
+          </div>
+          <div className="recordTableWrap"><table className="recordTable"><thead><tr><th>Status</th><th className="num">Count</th></tr></thead><tbody>{Object.entries(leads.byStatus).map(([label, count]) => <tr key={label}><td>{humanise(label)}</td><td className="num">{count}</td></tr>)}</tbody></table></div>
+        </article>
+          <h3 className="railHeading">Visa matters</h3>
+        <article className="panel listPanel">
+          <div className="panelHead">
+            <div>
+              <span className="kicker">Visa matters</span>
+              <h2>Lodgement and decisions</h2>
+            </div>
+          </div>
+          <div className="miniStats inline">
+            <article>
+              <span>Lodged</span>
+              <strong>{visas.lodged}</strong>
+              <small>of {visas.matters} matters</small>
+            </article>
+            <article>
+              <span>Awaiting decision</span>
+              <strong>{visas.awaitingDecision}</strong>
+              <small>Lodged, no decision recorded</small>
+            </article>
+            <article>
+              <span>Granted</span>
+              <strong>{visas.granted}</strong>
+              <small>Recorded outcome</small>
+            </article>
+            <article>
+              <span>Refused</span>
+              <strong>{visas.refused}</strong>
+              <small>Recorded outcome</small>
+            </article>
+          </div>
+        </article>
+          {canSeeFinance && (
+            <>
+              <h3 className="railHeading">Fees</h3>
+            <article className="panel listPanel">
+              <div className="panelHead">
+                <div>
+                  <span className="kicker">Finance</span>
+                  <h2>Fees</h2>
+                </div>
+              </div>
+              {finance.byCurrency?.length ? <div className="recordTableWrap"><table className="recordTable">
+                <thead><tr><th>Currency</th><th className="num">Invoiced</th><th className="num">Collected</th><th className="num">Outstanding</th></tr></thead>
+                <tbody>{finance.byCurrency.map(bucket => <tr key={bucket.currency}><td>{bucket.currency}</td><td className="num">{money(bucket.invoiced)}</td><td className="num">{money(bucket.collected)}</td><td className="num">{money(bucket.outstanding)}</td></tr>)}</tbody>
+              </table></div> : <p className="caseWorkEmpty">No active invoices recorded.</p>}
+              <p className="caseWorkEmpty">{finance.overdueInvoices} overdue invoices. Outstanding balances include credit notes. Covers all invoices permitted for your account.</p>
+            </article>
+            </>
+          )}
+        </div>
+      </div>
 
       <p className="reportFooter">
         Scoped to what your account may see. Built{" "}
@@ -8662,6 +8672,10 @@ function CaseDrawerBody({
         {tab === "tasks" && caseId && <TaskBoard caseId={caseId} branchId={String(file?.case.branch_id??"")||null} onChanged={async()=>{const loaded=await fetchCaseFile(caseId);setFile(loaded.file);setChecklist(loaded.checklist);await refresh();}}/>}
         {tab === "overview" && (
           <div className={`caseHome${direct ? " directCase" : ""}`}>
+            <h3 className="railHeading" style={{ gridArea: "priorityHead" }}>Next action</h3>
+            <h3 className="railHeading" style={{ gridArea: "healthHead" }}>At a glance</h3>
+            <h3 className="railHeading" style={{ gridArea: "auditHead" }}>Notes &amp; activity</h3>
+            {allowed("communications") && <h3 className="railHeading" style={{ gridArea: "communicationHead" }}>Messages</h3>}
             <section className="caseWorkPanel agentClientPanel">
               <span className="kicker">Client profile</span>
               <h3>Client details</h3>

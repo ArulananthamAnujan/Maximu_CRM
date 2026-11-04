@@ -202,3 +202,82 @@ input, select, textarea, .appShell input, .appShell select, .appShell textarea {
 @media (max-width: 760px) {
   .appShell.caseWindow .drawerHead, .appShell.caseWindow .caseWorkspaceContent, .appShell.caseWindow .caseLeftRail, .appShell.caseWindow .caseWindowTopbar { padding-inline: 16px; }
 }
+
+/* ---------- accounts ledger: data and labels at 13px ---------- */
+.appShell .invoiceFacts small, .appShell .invoiceFacts strong, .appShell .invoiceIdentity small, .appShell .invoiceIdentity strong, .appShell .invoiceIdentity span, .appShell .invoiceDescription small, .appShell .overdueFact small, .appShell .bulkSelectAll span, .appShell .listSelectionTools span, .appShell .filterResultCount, .appShell .emptyState p, .appShell .miniStats span, .appShell .miniStats small, .appShell .status, .appShell .kicker { font-size: 13px; }
+.appShell .status, .appShell .statusPill { font-size: 12px; }
+
+/* ---------- rails: section headings outside their cards ---------- */
+.railHeading { margin: 0; font-size: 14px; font-weight: 600; color: var(--hs-text); line-height: 20px; }
+.reportsColumns { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); gap: 16px; align-items: start; margin-bottom: 16px; }
+.reportsMain, .reportsRail { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.reportsRail .railHeading { margin-bottom: -8px; }
+.reportsRail .panelHead .kicker { display: none; }
+.reportsRail .miniStats.inline { grid-template-columns: 1fr; }
+.reportsRail .miniStats.inline article + article { border-left: 0; border-top: 1px solid var(--hs-border); }
+.reportsMain .attentionRow { min-height: 48px; padding-block: 8px; }
+.reportBuilder .panelHead { margin-bottom: 10px; }
+.reportBuilderMore { margin-top: 10px; }
+.reportBuilderMore summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--hs-brand-ink); list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.reportBuilderMore summary::-webkit-details-marker { display: none; }
+.reportBuilderMore summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 120ms ease; }
+.reportBuilderMore[open] summary::before { transform: rotate(45deg); }
+.reportBuilderMore[open] summary { margin-bottom: 10px; }
+@media (max-width: 1100px) { .reportsColumns { grid-template-columns: minmax(0, 1fr); } }
+
+/* The case home: the client profile and the working blocks in the main column, the next action,
+   at-a-glance strip, notes and messages in a headed rail. Every rail card sits under its own
+   heading, so no card shares a top edge with a card of a different height beside it. */
+.appShell .caseHome, .appShell .caseHome.directCase {
+  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
+  grid-template-areas:
+    "client priorityHead"
+    "client priority"
+    "client healthHead"
+    "client health"
+    "admissions auditHead"
+    "admissions audit"
+    "workflow communicationHead"
+    "workflow communication"
+    "documents ."
+    "bottom bottom";
+  gap: 14px;
+  align-items: start;
+}
+.appShell .caseHome.directCase {
+  grid-template-areas:
+    "client priorityHead"
+    "client priority"
+    "client healthHead"
+    "client health"
+    "workflow auditHead"
+    "workflow audit"
+    "documents communicationHead"
+    "documents communication"
+    "bottom bottom";
+}
+.appShell .caseHome > .railHeading { align-self: end; margin-bottom: -6px; }
+.appShell .caseHome > .casePriorityBar .kicker, .appShell .caseHome > .caseAuditPanel .kicker, .appShell .caseHome > .agentCommunicationPanel .kicker { display: none; }
+.appShell .casePriorityBar { background: var(--hs-tint); background-image: none; border: 1px solid var(--hs-tint-strong); }
+@media (max-width: 1100px) {
+  .appShell .caseHome > .railHeading { display: none; }
+  .appShell .caseHome, .appShell .caseHome.directCase { grid-template-columns: minmax(0, 1fr); grid-template-areas: "client" "priority" "health" "admissions" "workflow" "audit" "documents" "communication" "bottom"; }
+  .appShell .caseHome.directCase { grid-template-areas: "client" "priority" "health" "workflow" "audit" "documents" "communication" "bottom"; }
+}
+.reportsRail .miniStats.inline { grid-template-columns: 1fr 1fr; }
+.reportsRail .miniStats.inline article + article { border-left: 1px solid var(--hs-border); border-top: 0; }
+.reportsRail .miniStats.inline article:nth-child(odd) { border-left: 0; }
+.reportsRail .miniStats.inline article:nth-child(n + 3) { border-top: 1px solid var(--hs-border); }
+.reportBuilder .panelHead h2 { font-size: 15px; }
+.reportBuilderIntro { font-size: 12px; }
+.appShell .caseSectionHead { padding-block: 10px; min-height: 0; }
+/* Branch access reads as one line under the case identity, not a second card before the tabs. */
+.appShell .caseBranchTransfer { margin: 0 24px 10px; padding: 8px 12px; border: 0; border-radius: var(--hs-radius-card); background: var(--hs-raised); font-size: 13px; }
+.appShell .caseBranchTransferHead > div { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.appShell .caseBranchTransfer strong { font-size: 13px; }
+.appShell .caseBranchTransfer p { margin: 0; color: var(--hs-muted); }
+.appShell .caseBranchTransferHead .ghostButton { min-height: 30px; padding: 4px 10px; font-size: 12px; }
+.appShell.caseWindow .drawerHead { padding: 14px 24px 10px; }
+/* The rail heading names these cards; their own title block steps aside. */
+.appShell .caseHome > .caseAuditPanel .caseWorkPanelHead > div:first-child, .appShell .caseHome > .agentCommunicationPanel .caseWorkPanelHead > div:first-child { display: none; }
+.appShell .caseHome > .caseAuditPanel .caseWorkPanelHead:not(:has(> :not(div:first-child))), .appShell .caseHome > .agentCommunicationPanel .caseWorkPanelHead:not(:has(> :not(div:first-child))) { display: none; }
