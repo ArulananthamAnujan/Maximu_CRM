@@ -11,7 +11,10 @@ export function WorkspaceConnection() {
     const controller = new AbortController();
     void fetch("/api/crm/workspace-connection", { cache: "no-store", signal: controller.signal }).then(async response => {
       const body = await response.json(); if (!response.ok) throw new Error(body.error);
-      if (!controller.signal.aborted) { setStatus(body); const message = new URLSearchParams(window.location.search).get("workspace_error"); if (message) setError(message); }
+      if (!controller.signal.aborted) setStatus(body);
+      // The OAuth round trip reports its outcome in the address; the card does not repeat it, and the address is tidied so it never lingers across reloads.
+      const address = new URL(window.location.href);
+      if (address.searchParams.has("workspace_error") || address.searchParams.has("gmail")) { address.searchParams.delete("workspace_error"); address.searchParams.delete("gmail"); window.history.replaceState(window.history.state, "", address.toString()); }
     }).catch(reason => { if (!controller.signal.aborted) setError(reason.message || "Connections could not be checked."); });
     return () => controller.abort();
   }, [messagesEnabled,calendarEnabled]);

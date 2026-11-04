@@ -332,3 +332,23 @@
 .sidebar .mobileClose, .appShell .sidebar .mobileClose { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.1); color: var(--bt-on-dark); display: none; place-items: center; }
 .appShell.staffFullMode .sidebar .mobileClose, .appShell:not(.staffFullMode) .sidebar.open .mobileClose { display: grid; }
 @media (min-width: 901px) { .appShell:not(.staffFullMode) .sidebar .mobileClose { display: none; } }
+
+/* ---------- the docked sidebar: on a wide screen the staff navigation stays beside the content ---------- */
+.appShell.sidebarDocked > .sidebar { transform: none !important; width: 244px; box-shadow: none; z-index: 30; }
+.appShell.sidebarDocked > .mainArea { margin-left: 244px !important; width: calc(100% - 244px) !important; max-width: none; }
+.appShell.sidebarDocked .menuButton, .appShell.sidebarDocked .sidebar .mobileClose, .appShell.sidebarDocked .sidebarBackdrop { display: none !important; }
+.appShell.sidebarDocked .content { max-width: 1500px; margin: 0 auto; padding-inline: clamp(16px, 2vw, 32px); }
+.appShell.sidebarDocked .topbarPrimary .searchWrap { width: min(520px, 36vw); }
+.appShell.sidebarDocked .sidebar .brand { padding-right: 0; }
+
+/* ---------- the connection card's one action, and no leftover notice ---------- */
+.appShell .workspaceConnection { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.appShell .workspaceConnection > a { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 18px; border-radius: 10px; background: linear-gradient(135deg, #e48e24, #f7a95b); color: var(--bt-navy) !important; font-weight: 700; text-decoration: none; box-shadow: 0 10px 22px rgba(228, 142, 36, 0.28); }
+.appShell .workspaceConnection > a:hover { filter: saturate(1.08); }
+.appShell .workspaceConnection p[role="alert"] { margin: 6px 0 0; font-size: 13px; color: #ffd9a8; }
+
+/* ---------- selects: one chevron, one height, readable option lists ---------- */
+.appShell select, .demoLogin select { appearance: none; -webkit-appearance: none; min-height: 40px; padding: 8px 36px 8px 12px; border: 1px solid #cddde5; border-radius: var(--bt-radius-control); background-color: #fff; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' fill='none' stroke='%23145f88' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/></svg>"); background-repeat: no-repeat; background-position: right 12px center; color: var(--bt-text); font-size: 14px; color-scheme: light; }
+.appShell select:focus, .demoLogin select:focus { border-color: var(--bt-blue-2); box-shadow: 0 0 0 4px rgba(25, 122, 168, 0.11); outline: none; }
+.appShell select option, .demoLogin select option { padding: 8px 10px; font-size: 14px; color: var(--bt-text); background: #fff; }
+.appShell select:disabled { opacity: 0.6; }

@@ -1733,6 +1733,7 @@ function Sidebar({
   setActive,
   open,
   setOpen,
+  docked = false,
   role,
   serviceMode,
   mobileAccount,
@@ -1741,13 +1742,16 @@ function Sidebar({
   setActive: (x: ModuleKey) => void;
   open: boolean;
   setOpen: (x: boolean) => void;
+  /** Docked beside the content on a wide screen: a plain navigation landmark, never a dialog. */
+  docked?: boolean;
   role: AppRole;
   serviceMode: ServiceMode;
   mobileAccount?: React.ReactNode;
 }) {
   const allowed = useFunctionAccess();
   const navigationRef = useRef<HTMLElement | null>(null);
-  useOverlayFocus(open && role !== "client", navigationRef, () => setOpen(false));
+  const overlay = role !== "client" && !docked;
+  useOverlayFocus(overlay && open, navigationRef, () => setOpen(false));
   const config = roleConfig[role],
     journey = serviceMode === "study" ? studyNavGroups : directVisaNavGroups,
     tools =
@@ -1766,7 +1770,7 @@ function Sidebar({
       }))
       .filter((g) => g.items.length);
   return (
-    <aside ref={navigationRef} className={`sidebar ${open ? "open" : ""}`} inert={role !== "client" && !open} aria-hidden={role !== "client" && !open} role={role !== "client" ? "dialog" : undefined} aria-modal={role !== "client" && open ? true : undefined} aria-label="CRM navigation" tabIndex={-1}>
+    <aside ref={navigationRef} className={`sidebar ${open ? "open" : ""}`} inert={overlay && !open} aria-hidden={overlay && !open} role={overlay ? "dialog" : undefined} aria-modal={overlay && open ? true : undefined} aria-label="CRM navigation" tabIndex={-1}>
       <div className="brand">
         <button
           className="brandHome"
@@ -12149,6 +12153,7 @@ function HomeWorkspace() {
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
   const [active, setActiveModule] = useState<ModuleKey>("dashboard"),
     [menuOpen, setMenuOpen] = useState(false),
+    [wideScreen, setWideScreen] = useState(false),
     [query, setQuery] = useState(""),
     [globalSearchOpen, setGlobalSearchOpen] = useState(false),
     [globalSearchState, setGlobalSearchState] = useState<{ key: string; results: GlobalSearchResult[]; error: string }>({ key: "", results: [], error: "" }),
@@ -12257,6 +12262,14 @@ function HomeWorkspace() {
       "maximus.serviceMode",
       "study",
     );
+  // On a wide screen the staff sidebar is docked beside the content; narrower screens fold it behind the menu button.
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1200px)");
+    const sync = () => setWideScreen(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
   const accessIdentity = identity ? {...identity, serviceMode} : null;
   const role = identity?.role || "staff",
     signedIn = Boolean(identity),
@@ -13900,8 +13913,9 @@ function HomeWorkspace() {
         caseList
       );
   }
+  const sidebarDocked = role !== "client" && wideScreen && active !== "communications" && !caseWindowId;
   return (
-    <FunctionAccessContext.Provider value={accessIdentity}><div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}${active === "dashboard" && role !== "client" ? " dashboardMode" : ""}${active === "communications" && role !== "client" ? " gmailMode" : ""}${role !== "client" ? " staffFullMode" : ""}${active === "enquiries" && role !== "client" ? " enquiryFullMode" : ""}`}>
+    <FunctionAccessContext.Provider value={accessIdentity}><div className={`appShell mode-${serviceMode}${caseWindowId ? " caseWindow" : ""}${active === "dashboard" && role !== "client" ? " dashboardMode" : ""}${active === "communications" && role !== "client" ? " gmailMode" : ""}${role !== "client" ? " staffFullMode" : ""}${active === "enquiries" && role !== "client" ? " enquiryFullMode" : ""}${sidebarDocked ? " sidebarDocked" : ""}`}>
       {schemaWarning && (
         <div className="schemaBanner" role="status">
           <AlertTriangle size={15} />
@@ -13919,6 +13933,7 @@ function HomeWorkspace() {
         setActive={setActive}
         open={menuOpen}
         setOpen={setMenuOpen}
+        docked={sidebarDocked}
         role={role}
         serviceMode={serviceMode}
         mobileAccount={isNativeApp() ? <div className="mobileMenuAccount">
@@ -13927,10 +13942,10 @@ function HomeWorkspace() {
           <button onClick={() => void signOut().then(() => setMenuOpen(false)).catch(reportMobileError)}><LogOut size={18} />Sign out</button>
         </div> : undefined}
       />
-      {role !== "client" && menuOpen ? (
+      {role !== "client" && menuOpen && !sidebarDocked ? (
         <button className="sidebarBackdrop" type="button" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />
       ) : null}
-      <main className="mainArea" inert={role !== "client" && (menuOpen || Boolean(selected && !caseWindowId))} aria-hidden={role !== "client" && (menuOpen || Boolean(selected && !caseWindowId))}>
+      <main className="mainArea" inert={role !== "client" && ((menuOpen && !sidebarDocked) || Boolean(selected && !caseWindowId))} aria-hidden={role !== "client" && ((menuOpen && !sidebarDocked) || Boolean(selected && !caseWindowId))}>
         <header className={`topbar ${role === "client" ? "clientOnly" : ""} ${role !== "client" && active !== "dashboard" ? "moduleFocused" : ""}`}>
           <div className="topbarPrimary">
             <button

@@ -305,3 +305,14 @@ micro-label, colour-sprawl, icon-chips) fail on these screens by the
 owner's decision; its legibility rules (contrast, tiny text, edge text)
 were kept and re-checked on the dashboard, Enquiries, Tasks, the case file,
 the portal, Gmail and Accounts.
+
+## Docked navigation (owner's third round)
+
+On a screen 1200px or wider the staff sidebar now sits docked beside the
+content instead of sliding over it: the menu button, backdrop and close
+control are hidden, the content starts 244px in, and the sidebar is a plain
+navigation landmark rather than a modal dialog (so it is never `inert` or
+hidden from assistive technology while on show). Below 1200px it folds
+behind the menu button as before. The Google connection card lost its
+"choose the matching account" note, and native selects now draw one chevron
+with 14px options so an unfolded list reads like the rest of the product.

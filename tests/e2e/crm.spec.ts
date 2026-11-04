@@ -29,16 +29,23 @@ async function signIn(page: Page, email: string) {
   await expect(page.locator(".appShell")).toBeVisible({ timeout: 25_000 });
 }
 
+/** Opens the folded navigation; on a wide screen the sidebar is already docked and visible. */
+async function openNavigation(page: Page) {
+  const opener = page.getByRole("button", { name: "Open case navigation", exact: true });
+  if (await opener.isVisible()) await opener.click();
+}
+
 async function navigateTo(page: Page, name: string) {
   const daily = page.locator(".topbarSecondary").getByRole("button", { name, exact: true });
   if (await daily.count()) { await daily.click(); return; }
   const button = page.locator(".sidebar").getByRole("button", { name, exact: true });
+  // The staff sidebar is docked beside the content on a wide screen and folds behind the menu button on a narrow one.
   const overlayNavigation = await page.evaluate(() =>
-    innerWidth <= 900 || !!document.querySelector(".appShell.staffFullMode, .appShell.enquiryFullMode, .appShell.gmailMode"),
+    innerWidth <= 900 || (!!document.querySelector(".appShell.staffFullMode, .appShell.enquiryFullMode, .appShell.gmailMode") && !document.querySelector(".appShell.sidebarDocked")),
   );
   const sidebar = page.locator(".sidebar");
   if (overlayNavigation && !(await sidebar.evaluate(element => element.classList.contains("open")))) {
-    await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
+    await openNavigation(page);
     await expect(sidebar).toHaveClass(/\bopen\b/);
   }
   await button.click();
@@ -49,7 +56,7 @@ async function navigateTo(page: Page, name: string) {
 async function openEnquiries(page: Page) {
   if (await page.locator(".journeyList-enquiries").isVisible()) return;
   if (!await page.locator(".sidebar").getByRole("button", { name: /^Enquiries$/ }).isVisible())
-    await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
+    await openNavigation(page);
   await page.getByRole("button", { name: /^Enquiries$/ }).click();
   await expect(page.locator(".journeyList-enquiries")).toBeVisible({ timeout: 25_000 });
 }
@@ -135,7 +142,7 @@ test("an unknown account is refused and stays on the sign-in page", async ({
 
 test("an owner signs in and reaches the workspace", async ({ page }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
+  await openNavigation(page);
   await expect(page.locator(".sidebar").getByRole("button", { name: /^Reports$/ })).toBeVisible();
 });
 
@@ -358,7 +365,7 @@ async function navEntries(page: Page) {
 
 test("a case officer is given no way into Accounts", async ({ page }) => {
   await signIn(page, OFFICER);
-  await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
+  await openNavigation(page);
   // Invoicing and reporting are manager work, so the modules are absent
   // rather than present and empty.
   for (const absent of [
@@ -379,7 +386,7 @@ test("a branch manager gets the operations tools but not the organisation", asyn
   page,
 }) => {
   await signIn(page, MANAGER);
-  await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
+  await openNavigation(page);
   await expect(page.getByRole("button", { name: /^Accounts$/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Reports$/ })).toBeVisible();
   await expect(
@@ -393,7 +400,7 @@ test("a branch manager gets the operations tools but not the organisation", asyn
 
 test("an owner gets the organisation screens as well", async ({ page }) => {
   await signIn(page, OWNER);
-  await page.getByRole("button", { name: "Open case navigation", exact: true }).click();
+  await openNavigation(page);
   await expect(
     page.locator(".sidebar").getByRole("button", { name: /^Integrations$/ }),
   ).toBeVisible();
