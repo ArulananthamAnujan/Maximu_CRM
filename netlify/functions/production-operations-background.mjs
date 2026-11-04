@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { operationsSecret } from "../lib/operations-auth.mjs";
+import { runtimeEnv as env } from "../lib/runtime-env.mjs";
 
 export const TABLES = [
   "case_notes", "case_checklist_items", "case_lifecycle_events", "case_stage_history",
@@ -19,7 +20,6 @@ export const TABLES = [
   "legacy_record_snapshots", "legacy_activity_events", "legacy_file_manifests",
   "legacy_finance_line_items", "legacy_staff_directory", "legacy_master_records",
 ];
-const env = (name) => globalThis.Netlify?.env?.get(name) ?? "";
 const base = () => String(env("SUPABASE_URL")).replace(/\/$/, "");
 const key = () => env("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -187,7 +187,7 @@ async function verifySecurityHeaders() {
 
 export default async function handler(request) {
   if (!operationsSecret(env) || request.headers.get("x-operations-secret") !== operationsSecret(env))
-    return new Response(null, { status: 401 });
+    throw new Error("Production operations authentication failed. Check that the server and worker have matching function-scoped credentials.");
   const options = await request.json().catch(() => ({}));
   const organisationId = typeof options.organisationId === "string" && /^[0-9a-f-]{36}$/i.test(options.organisationId) ? options.organisationId : "";
   const organisations = await rest(`organisations?select=id,name&order=created_at.asc${organisationId ? `&id=eq.${organisationId}` : ""}`);

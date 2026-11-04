@@ -60,9 +60,15 @@ test('invalid input, provider failure and malformed output are explicit failures
  await fixture(async({call,calls})=>{assert.equal((await call('/api/crm/copilot',{caseId:'bad',instruction:'hello'})).status,400);assert.equal((await call('/api/crm/copilot',{instruction:'x'.repeat(4001)})).status,400);assert.equal(calls.filter(c=>c.path==='/v1/messages').length,0);});
  for(const [options,status] of [[{providerStatus:429},429],[{malformed:true},502]])await fixture(async({call})=>{assert.equal((await call('/api/crm/copilot',{instruction:'hello'})).status,status);},options);
 });
-test('staff login offers unified setup, clients do not, and existing connections skip consent',async()=>{
- for(const client of [false,true])await fixture(async({call})=>{const body=await(await call('/api/auth/login',{email:EMAIL,password:'password'})).json();assert.equal(body.next,client?'/':'/api/auth/gmail/start?workspace=1&auto=1');},{client});
- await fixture(async({call,calls})=>{const response=await call('/api/auth/gmail/start?workspace=1&auto=1');assert.equal(response.headers.get('location'),'https://crm.test/');assert.equal(calls.filter(c=>c.path==='/token').length,0);},{connected:true});
+test('staff and client login enter CRM directly, including unconnected Google accounts',async()=>{
+ for(const client of [false,true]) for(const connected of [false,true]) await fixture(async({call})=>{
+  for(const [path,payload] of [['/api/auth/login',{email:EMAIL,password:'password'}],['/api/auth/google/callback',{access_token:'session',refresh_token:'refresh'}]]) {
+   const response=await call(path,payload);assert.equal(response.status,200);assert.equal((await response.json()).next,'/');assert.ok(response.headers.getSetCookie().some(c=>c.startsWith('maximus_access=')));
+  }
+ },{client,connected});
+});
+test('old automatic setup links return to CRM without Google consent',async()=>{
+ for(const connected of [false,true]) await fixture(async({call,calls})=>{const response=await call('/api/auth/gmail/start?workspace=1&auto=1');assert.equal(response.headers.get('location'),'https://crm.test/');assert.equal(calls.filter(c=>c.path==='/token'||c.path==='/rest/v1/mailbox_connections').length,0);},{connected});
 });
 async function connect(call) {
  const start=await call('/api/auth/gmail/start?workspace=1');const url=new URL(start.headers.get('location'));
