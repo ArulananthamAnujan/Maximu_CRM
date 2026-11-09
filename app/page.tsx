@@ -8929,6 +8929,11 @@ function CaseDrawerBody({
       sum + Number(invoice.total ?? invoice.amount ?? invoice.total_amount ?? 0),
     0,
   );
+  const invoicePaid = (file?.invoices ?? []).reduce(
+    (sum, invoice) => sum + Number(invoice.paid ?? invoice.paid_amount ?? invoice.amount_paid ?? 0),
+    0,
+  );
+  const invoiceOutstanding = Math.max(0, Math.round((invoiceTotal - invoicePaid) * 100) / 100);
 
   return (
     <div className={`drawerBackdrop${preview ? " recordPreviewBackdrop" : ""}`} onClick={close}>
@@ -9073,10 +9078,124 @@ function CaseDrawerBody({
         {tab === "tasks" && caseId && <TaskBoard caseId={caseId} branchId={String(file?.case.branch_id??"")||null} onChanged={async()=>{const loaded=await fetchCaseFile(caseId);setFile(loaded.file);setChecklist(loaded.checklist);await refresh();}}/>}
         {tab === "overview" && (
           <div className={`caseHome${direct ? " directCase" : ""}`}>
-            <h3 className="railHeading" style={{ gridArea: "priorityHead" }}>Next action</h3>
-            <h3 className="railHeading" style={{ gridArea: "healthHead" }}>At a glance</h3>
-            <h3 className="railHeading" style={{ gridArea: "auditHead" }}>Notes &amp; activity</h3>
-            {allowed("communications") && <h3 className="railHeading" style={{ gridArea: "communicationHead" }}>Messages</h3>}
+            <section className="lifecyclePanel">
+              <div className="lifecycleHead"><span className="kicker">Case pipeline</span><strong>{stageLabelFor(stage, direct)}</strong></div>
+              <ol className="lifecycleTrack">
+                {LIFECYCLE_STAGES.map((step) => (
+                  <li
+                    key={step}
+                    className={`${stageChipState(step, stage)}${
+                      step === "deferred" ? " parked" : ""
+                    }`}
+                  >
+                    <span>{stageLabelFor(step, direct)}</span>
+                  </li>
+                ))}
+              </ol>
+              {needsExpiry && (
+                <div className="lifecycleBlocker">
+                  <p>
+                    <AlertTriangle size={14} />
+                    Record the current visa expiry before moving to Visa or Completed.
+                  </p>
+                  <div className="lifecycleBlockerRow">
+                    <label htmlFor="lifecycleVisaExpiry">
+                      Visa expiry date
+                    </label>
+                    <input
+                      id="lifecycleVisaExpiry"
+                      name="lifecycleVisaExpiry"
+                      type="date"
+                      value={expiry}
+                      onChange={(e) => setExpiry(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="ghostButton"
+                      disabled={savingExpiry || !expiry}
+                      onClick={() => void saveExpiry()}
+                    >
+                      {savingExpiry ? "Saving…" : "Record expiry"}
+                    </button>
+                  </div>
+                </div>
+              )}
+              <details className="caseStageControls">
+                <summary>Update stage or visa expiry <ChevronDown size={16} /></summary>
+              {!lifecycleReady && (
+                <p className="schemaNotice">
+                  <AlertTriangle size={14} />
+                  {schemaWarning}
+                </p>
+              )}
+              <label className="lifecycleReason">
+                Reason (optional)
+                <input
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder={
+                    stage === "visa"
+                      ? "e.g. Visa approved"
+                      : stage === "deferred"
+                        ? "e.g. Enrolled for the July intake"
+                        : "e.g. Documents received"
+                  }
+                />
+              </label>
+              </details>
+              <div className="lifecycleActions">
+                {moves.map((next) => (
+                  <button
+                    key={next}
+                    type="button"
+                    className={
+                      next === "completed" ? "primaryButton" : "ghostButton"
+                    }
+                    disabled={
+                      moving !== "" ||
+                      !lifecycleReady ||
+                      needsExpiryFor(next) ||
+                      !canModify
+                    }
+                    title={
+                      !canModify
+                        ? "You do not have access to modify this branch record."
+                        : needsExpiryFor(next)
+                          ? "Record the visa expiry date above first"
+                          : undefined
+                    }
+                    onClick={() => void run(next)}
+                  >
+                    {next === "completed" ? (
+                      <>
+                        <Check size={15} />
+                        Mark visa approved &amp; complete
+                      </>
+                    ) : next === "deferred" ? (
+                      <>
+                        <Clock3 size={15} />
+                        Defer this case
+                      </>
+                    ) : stage === "completed" ? (
+                      <>
+                        <RefreshCw size={15} />
+                        Reopen in {stageLabelFor(next, direct).toLowerCase()}
+                      </>
+                    ) : stage === "deferred" ? (
+                      <>
+                        <RefreshCw size={15} />
+                        Resume in {stageLabelFor(next, direct).toLowerCase()}
+                      </>
+                    ) : (
+                      <>
+                        <ArrowRight size={15} />
+                        Move to {stageLabelFor(next, direct).toLowerCase()}
+                      </>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </section>
             <section className="caseWorkPanel agentClientPanel">
               <span className="kicker">Client profile</span>
               <h3>Client details</h3>
@@ -9142,6 +9261,7 @@ function CaseDrawerBody({
                 </div>
               )}
             </section>
+            <div className="caseKeyTiles">
             <section className="casePriorityBar">
               <div>
                 <span className="kicker">Next action</span>
@@ -9167,29 +9287,46 @@ function CaseDrawerBody({
                 Open work area <ArrowRight size={15} />
               </button>
             </section>
-            <div className="drawerHealth caseAtGlance">
-              <div>
-                <small>Stage</small>
-                <strong>{stageLabelFor(stage, direct)}</strong>
+            {allowed("documents")&&<section className="caseWorkPanel agentDocumentsPanel">
+              <div className="caseWorkPanelHead">
+                <div>
+                  <span className="kicker">Documents</span>
+                  <h3>{activeCaseDocuments.length ? `${completedDocuments} received · ${activeCaseDocuments.length - completedDocuments} requested` : "Documents & checklist"}</h3>
+                </div>
+                <button className="primaryButton compactButton" onClick={() => setTab("documents")}>
+                  Request missing
+                </button>
               </div>
-              <div>
-                <small>Client reference</small>
-                <strong>{text(client.crm_id) || item.id}</strong>
+              <div className="agentDocumentChips">
+                {checklist.slice(0, 4).map((entry) => (
+                  <span key={entry.id} className={entry.status === "completed" || entry.status === "waived" ? "done" : "missing"}>
+                    {entry.title}
+                  </span>
+                ))}
+                {activeCaseDocuments.slice(0, 4).map(document => <span key={String(document.id)} className={settledDocument(document) ? "done" : "missing"}>{text(document.display_name)}</span>)}
+                {!checklist.length && !activeCaseDocuments.length ? <small>Add a request, upload a file or choose a checklist here.</small> : null}
               </div>
-              <div>
-                <small>Branch access</small>
-                <strong>{item.branch || "Current branch"}</strong>
-              </div>
-              <div>
-                <small>Visa expiry</small>
-                <strong className={item.visaExpiry ? "" : "missingValue"}>
-                  {item.visaExpiry || "Missing"}
-                </strong>
-              </div>
-              <div>
-                <small>Next deadline</small>
-                <strong>{item.due || "Not set"}</strong>
-              </div>
+              <button className="ghostButton agentPanelFooter" onClick={() => setTab("documents")}>Open document workspace</button>
+            </section>}
+              {(allowed("visas")||allowed("direct_visas"))&&<section className="caseWorkPanel agentVisaPanel">
+                <span className="kicker">Visa &amp; compliance</span>
+                <h3>Visa details</h3>
+                <div className={`agentAlert ${item.visaExpiry ? "ready" : ""}`}>
+                  <strong>{item.visaExpiry ? `Visa expiry ${item.visaExpiry}` : "Visa type and expiry are not recorded."}</strong>
+                  <small>{item.visaExpiry ? "The case can progress to the visa stage." : "This blocks movement to the visa stage."}</small>
+                </div>
+                <button className="primaryButton compactButton" onClick={() => setTab("visa")}>Record visa details</button>
+              </section>}
+              {(allowed("finance"))&&<section className="caseWorkPanel agentFinancePanel">
+                <span className="kicker">Accounts</span>
+                <h3>{invoiceOutstanding > 0 ? `$${invoiceOutstanding.toLocaleString()} outstanding` : file?.invoices.length ? "Paid in full" : "No invoices yet"}</h3>
+                <div className="agentFinanceFacts">
+                  <span><small>Invoices</small><strong>{file?.invoices.length ?? 0}</strong></span>
+                  <span><small>Invoiced</small><strong>${invoiceTotal.toLocaleString()}</strong></span>
+                  <span><small>Received</small><strong>${invoicePaid.toLocaleString()}</strong></span>
+                </div>
+                <button className="ghostButton" onClick={() => setTab("finance")}>Open finance</button>
+              </section>}
             </div>
 
             <section className="caseWorkPanel caseAuditPanel">
@@ -9269,125 +9406,6 @@ function CaseDrawerBody({
                 View complete audit trail
               </button>
             </section>
-            <section className="lifecyclePanel">
-              <span className="kicker">Case pipeline</span>
-              <ol className="lifecycleTrack">
-                {LIFECYCLE_STAGES.map((step) => (
-                  <li
-                    key={step}
-                    className={`${stageChipState(step, stage)}${
-                      step === "deferred" ? " parked" : ""
-                    }`}
-                  >
-                    <span>{stageLabelFor(step, direct)}</span>
-                  </li>
-                ))}
-              </ol>
-              <details className="caseStageControls">
-                <summary>Update stage or visa expiry <ChevronDown size={16} /></summary>
-              {!lifecycleReady && (
-                <p className="schemaNotice">
-                  <AlertTriangle size={14} />
-                  {schemaWarning}
-                </p>
-              )}
-              {needsExpiry && (
-                <div className="lifecycleBlocker">
-                  <p>
-                    <AlertTriangle size={14} />
-                    Record the current visa expiry before moving to Visa or Completed.
-                  </p>
-                  <div className="lifecycleBlockerRow">
-                    <label htmlFor="lifecycleVisaExpiry">
-                      Visa expiry date
-                    </label>
-                    <input
-                      id="lifecycleVisaExpiry"
-                      name="lifecycleVisaExpiry"
-                      type="date"
-                      value={expiry}
-                      onChange={(e) => setExpiry(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      className="ghostButton"
-                      disabled={savingExpiry || !expiry}
-                      onClick={() => void saveExpiry()}
-                    >
-                      {savingExpiry ? "Saving…" : "Record expiry"}
-                    </button>
-                  </div>
-                </div>
-              )}
-              <label className="lifecycleReason">
-                Reason (optional)
-                <input
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder={
-                    stage === "visa"
-                      ? "e.g. Visa approved"
-                      : stage === "deferred"
-                        ? "e.g. Enrolled for the July intake"
-                        : "e.g. Documents received"
-                  }
-                />
-              </label>
-              <div className="lifecycleActions">
-                {moves.map((next) => (
-                  <button
-                    key={next}
-                    type="button"
-                    className={
-                      next === "completed" ? "primaryButton" : "ghostButton"
-                    }
-                    disabled={
-                      moving !== "" ||
-                      !lifecycleReady ||
-                      needsExpiryFor(next) ||
-                      !canModify
-                    }
-                    title={
-                      !canModify
-                        ? "You do not have access to modify this branch record."
-                        : needsExpiryFor(next)
-                          ? "Record the visa expiry date above first"
-                          : undefined
-                    }
-                    onClick={() => void run(next)}
-                  >
-                    {next === "completed" ? (
-                      <>
-                        <Check size={15} />
-                        Mark visa approved &amp; complete
-                      </>
-                    ) : next === "deferred" ? (
-                      <>
-                        <Clock3 size={15} />
-                        Defer this case
-                      </>
-                    ) : stage === "completed" ? (
-                      <>
-                        <RefreshCw size={15} />
-                        Reopen in {stageLabelFor(next, direct).toLowerCase()}
-                      </>
-                    ) : stage === "deferred" ? (
-                      <>
-                        <RefreshCw size={15} />
-                        Resume in {stageLabelFor(next, direct).toLowerCase()}
-                      </>
-                    ) : (
-                      <>
-                        <ArrowRight size={15} />
-                        Move to {stageLabelFor(next, direct).toLowerCase()}
-                      </>
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              </details>
-            </section>
             {!direct && allowed("applications") && (
               <section className="caseWorkPanel agentApplicationsPanel">
                 <div className="caseWorkPanelHead">
@@ -9418,27 +9436,6 @@ function CaseDrawerBody({
                 </div>
               </section>
             )}
-            {allowed("documents")&&<section className="caseWorkPanel agentDocumentsPanel">
-              <div className="caseWorkPanelHead">
-                <div>
-                  <span className="kicker">Documents</span>
-                  <h3>{activeCaseDocuments.length ? `${completedDocuments} received · ${activeCaseDocuments.length - completedDocuments} requested` : "Documents & checklist"}</h3>
-                </div>
-                <button className="primaryButton compactButton" onClick={() => setTab("documents")}>
-                  Request missing
-                </button>
-              </div>
-              <div className="agentDocumentChips">
-                {checklist.slice(0, 4).map((entry) => (
-                  <span key={entry.id} className={entry.status === "completed" || entry.status === "waived" ? "done" : "missing"}>
-                    {entry.title}
-                  </span>
-                ))}
-                {activeCaseDocuments.slice(0, 4).map(document => <span key={String(document.id)} className={settledDocument(document) ? "done" : "missing"}>{text(document.display_name)}</span>)}
-                {!checklist.length && !activeCaseDocuments.length ? <small>Add a request, upload a file or choose a checklist here.</small> : null}
-              </div>
-              <button className="ghostButton agentPanelFooter" onClick={() => setTab("documents")}>Open document workspace</button>
-            </section>}
             {allowed("communications")&&<section className="caseWorkPanel agentCommunicationPanel">
               <div className="caseWorkPanelHead">
                 <div>
@@ -9461,27 +9458,6 @@ function CaseDrawerBody({
                 <p className="caseWorkEmpty">No messages have been recorded for this case.</p>
               )}
             </section>}
-            <div className="agentBottomSummary">
-              {(allowed("visas")||allowed("direct_visas"))&&<section className="caseWorkPanel">
-                <span className="kicker">Visa &amp; compliance</span>
-                <h3>Visa details</h3>
-                <div className={`agentAlert ${item.visaExpiry ? "ready" : ""}`}>
-                  <strong>{item.visaExpiry ? `Visa expiry ${item.visaExpiry}` : "Visa type and expiry are not recorded."}</strong>
-                  <small>{item.visaExpiry ? "The case can progress to the visa stage." : "This blocks movement to the visa stage."}</small>
-                </div>
-                <button className="primaryButton compactButton" onClick={() => setTab("visa")}>Record visa details</button>
-              </section>}
-              {(allowed("finance"))&&<section className="caseWorkPanel">
-                <span className="kicker">Finance</span>
-                <h3>Account position</h3>
-                <div className="agentFinanceFacts">
-                  <span><small>Invoices</small><strong>{file?.invoices.length ?? 0}</strong></span>
-                  <span><small>Total</small><strong>${invoiceTotal.toLocaleString()}</strong></span>
-                </div>
-                <button className="ghostButton" onClick={() => setTab("finance")}>Open finance</button>
-              </section>}
-            </div>
-
           </div>
         )}
 

@@ -372,3 +372,67 @@
 @media (max-width: 760px) {
   .drawerHeadActions { justify-content: flex-start; margin-left: 0; }
 }
+
+/* Case home, ordered the way an agent works a file: the pipeline and its
+   move buttons first, then one row of what decides today's work (next
+   action, documents, visa, accounts), then notes beside the client, the
+   applications and the latest message. The old rail headings are gone. */
+.appShell .caseHome, .appShell .caseHome.directCase, .caseWindow .caseHome {
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+  grid-template-areas:
+    "workflow workflow"
+    "tiles tiles"
+    "audit admissions"
+    "audit communication"
+    "audit client"
+    ". client";
+  gap: 16px;
+  align-items: start;
+}
+.appShell .caseHome.directCase, .caseWindow .caseHome.directCase {
+  grid-template-areas:
+    "workflow workflow"
+    "tiles tiles"
+    "audit communication"
+    "audit client"
+    ". client";
+}
+.appShell .caseHome > .railHeading { display: none; }
+.appShell .caseHome > .caseAuditPanel .kicker, .appShell .caseHome > .agentCommunicationPanel .kicker, .appShell .caseHome > .casePriorityBar .kicker { display: inline-block; }
+.appShell .caseHome > .caseAuditPanel .caseWorkPanelHead > div:first-child, .appShell .caseHome > .agentCommunicationPanel .caseWorkPanelHead > div:first-child { display: block; }
+.appShell .caseHome > .caseAuditPanel .caseWorkPanelHead, .appShell .caseHome > .agentCommunicationPanel .caseWorkPanelHead { display: flex; }
+.appShell .caseHome > .lifecyclePanel, .caseWindow .caseHome > .lifecyclePanel { grid-area: workflow; margin: 0; padding: 18px 20px; border-radius: var(--bt-radius-card); border: 1px solid var(--bt-card-border); background: #fff; box-shadow: var(--bt-card-shadow); display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "head head" "track actions" "blocker blocker" "more more"; gap: 12px 20px; align-items: center; }
+.lifecycleHead { grid-area: head; display: flex; align-items: baseline; gap: 12px; }
+.lifecycleHead strong { font-size: 15px; color: var(--bt-navy); }
+.appShell .lifecyclePanel .lifecycleTrack { grid-area: track; margin: 0; }
+.appShell .lifecyclePanel .lifecycleActions { grid-area: actions; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin: 0; }
+.appShell .lifecyclePanel .lifecycleBlocker { grid-area: blocker; margin: 0; }
+.appShell .lifecyclePanel .caseStageControls { grid-area: more; margin: 0; }
+.appShell .lifecyclePanel .caseStageControls summary { font-size: 13px; color: #145f88; }
+.caseKeyTiles { grid-area: tiles; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.caseKeyTiles > section, .appShell .caseKeyTiles > .casePriorityBar, .appShell .caseKeyTiles > .caseWorkPanel { margin: 0 !important; padding: 16px 18px; min-height: 100%; display: flex; flex-direction: column; gap: 10px; align-items: stretch; border-radius: var(--bt-radius-card); border: 1px solid var(--bt-card-border); background: #fff; background-image: none; box-shadow: var(--bt-card-shadow); }
+.caseKeyTiles .casePriorityBar { border-left: 4px solid var(--bt-amber-strong); }
+.caseKeyTiles .agentDocumentsPanel { border-left: 4px solid var(--bt-sky); }
+.caseKeyTiles .agentVisaPanel { border-left: 4px solid #6c8cd5; }
+.caseKeyTiles .agentFinancePanel { border-left: 4px solid #2f9e6a; }
+.caseKeyTiles h3 { margin: 0 !important; font-size: 16px !important; line-height: 1.3; color: var(--bt-navy); }
+.caseKeyTiles .casePriorityBar p { font-size: 13px; }
+.caseKeyTiles .caseWorkPanelHead { margin: 0; display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.caseKeyTiles .caseWorkPanelHead .primaryButton.compactButton { flex: none; }
+.caseKeyTiles .agentDocumentChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.caseKeyTiles .agentPanelFooter, .caseKeyTiles > section > .ghostButton, .caseKeyTiles > section > .primaryButton { margin-top: auto; align-self: flex-start; }
+.caseKeyTiles .agentFinanceFacts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.caseKeyTiles .agentFinanceFacts span { display: grid; gap: 2px; }
+.caseKeyTiles .agentFinanceFacts small { color: var(--hs-muted); font-size: 12px; }
+.caseKeyTiles .agentFinanceFacts strong { font-size: 15px; color: var(--bt-navy); }
+.appShell .caseHome > .caseAuditPanel { grid-area: audit; }
+.appShell .caseHome > .agentApplicationsPanel { grid-area: admissions; }
+.appShell .caseHome > .agentCommunicationPanel { grid-area: communication; }
+.appShell .caseHome > .agentClientPanel { grid-area: client; }
+@media (max-width: 1240px) { .caseKeyTiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1100px) {
+  .appShell .caseHome, .appShell .caseHome.directCase, .caseWindow .caseHome, .caseWindow .caseHome.directCase { grid-template-columns: minmax(0, 1fr); grid-template-areas: "workflow" "tiles" "audit" "admissions" "communication" "client"; }
+  .appShell .caseHome > .lifecyclePanel { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "track" "actions" "blocker" "more"; }
+  .appShell .lifecyclePanel .lifecycleActions { justify-content: flex-start; }
+}
+@media (max-width: 640px) { .caseKeyTiles { grid-template-columns: minmax(0, 1fr); } }
