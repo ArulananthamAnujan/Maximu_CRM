@@ -5,7 +5,7 @@
  * fails the build when this constant or that function falls behind, so a
  * deployment can always say exactly which migration a database is missing.
  */
-export const EXPECTED_SCHEMA_VERSION = "20261104020000";
+export const EXPECTED_SCHEMA_VERSION = "20261109000000";
 
 /** The first migration that records a version. A database without schema_version() is older than it. */
 export const FIRST_VERSIONED_MIGRATION = "20261104020000_schema_version.sql";

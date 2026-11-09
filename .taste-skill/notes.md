@@ -326,3 +326,15 @@ invoices and receipts, and email campaigns. The client sees a person's
 address and replies land on the thread the Messages screen already reads.
 The paid system sender is optional and only a fallback. The Integrations
 card reads "Case email from staff Gmail" and says which address is in use.
+
+## Client forms
+
+The visa questionnaires the agency ran through Google Forms now live in the
+CRM: templates under Templates > Client forms, a Forms tab on every case, and
+a Forms screen in the portal. The officer's editor lists each question as a
+white card (label, answer type, section, required) with the answers behind a
+second tab, so prefilling and correcting happen in the same place as sending.
+The client's screen groups questions by section in white fieldsets with the
+orange tracked legend; repeating details (family members, addresses, travel)
+are small tables with an add-row control. Status reads as a coloured pill:
+amber with the client, green answers received, blue reviewed.

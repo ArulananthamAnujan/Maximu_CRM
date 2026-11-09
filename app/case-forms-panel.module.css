@@ -1,0 +1,76 @@
+.panel { padding: 24px; min-width: 0; }
+.panel h3 { margin: 0; font-size: 16px; color: #0b2336; }
+.panel small { color: #526175; font-size: 13px; }
+.intro { color: #35475c; font-size: 14px; line-height: 1.6; margin: 0 0 14px; }
+.empty { color: #526175; font-size: 14px; }
+.status { color: #1b6b3a; font-weight: 600; }
+.chooser { display: grid; gap: 12px; padding: 18px; margin: 0 0 18px; border: 1px solid #d5e3ee; border-radius: 14px; background: #f4f9fc; }
+.chooser label { display: grid; gap: 6px; font-weight: 600; font-size: 14px; }
+.chooser p { margin: 0; color: #35475c; font-size: 14px; }
+.form { border-top: 1px solid #e0e5eb; padding: 18px 0; }
+.form:first-of-type { border-top: 0; }
+.formHead, .actions { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; }
+.actions { justify-content: flex-start; margin-top: 12px; }
+.badge { display: inline-block; padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; background: #eef2f6; color: #35475c; }
+.status_sent { background: #fff1dc; color: #9a4a12; }
+.status_submitted { background: #e5f3ea; color: #1b6b3a; }
+.status_reviewed { background: #e0eefa; color: #145f88; }
+.status_withdrawn { background: #f3e9e7; color: #8a3b2c; }
+.noticeLine { margin: 10px 0 0; font-size: 13px; color: #526175; }
+.required { color: #b3521d; }
+
+/* Filling in */
+.filler { display: grid; gap: 18px; margin-top: 16px; }
+.section { display: grid; grid-template-columns: 1fr; gap: 16px 20px; margin: 0; padding: 18px; border: 1px solid #dce3eb; border-radius: 14px; background: #fff; }
+.section legend { padding: 0 8px; font-weight: 800; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #b3521d; }
+.question { display: grid; gap: 6px; min-width: 0; }
+.question label { font-weight: 600; font-size: 14px; color: #0b2336; }
+.question small { color: #526175; font-size: 13px; }
+.question input, .question select, .question textarea, .editor input, .editor select, .editor textarea, .noteField textarea {
+  width: 100%; padding: 10px 12px; border: 1px solid #ccd3dc; border-radius: 10px; color: #172539; background: #fff; font: inherit; font-size: 14px;
+}
+.yesno { display: flex; gap: 18px; }
+.yesno label { display: flex; gap: 6px; align-items: center; font-weight: 500; }
+.wide { grid-column: 1 / -1; }
+.tableWrap { display: grid; gap: 8px; overflow-x: auto; }
+.answerTable { width: 100%; border-collapse: collapse; font-size: 14px; }
+.answerTable th { text-align: left; padding: 8px 6px; font-size: 12px; color: #526175; border-bottom: 1px solid #dce3eb; white-space: nowrap; }
+.answerTable td { padding: 6px; border-bottom: 1px solid #eef2f6; vertical-align: top; min-width: 120px; }
+.answerTable td input, .answerTable td select { padding: 8px 10px; }
+.emptyRow { color: #526175; font-style: italic; }
+.studentForm { margin-top: 12px; }
+.noteField { display: grid; gap: 6px; margin-top: 16px; font-weight: 600; font-size: 14px; }
+
+/* The answers as a record */
+.record { display: grid; gap: 18px; margin-top: 16px; }
+.record section { padding: 18px; border: 1px solid #dce3eb; border-radius: 14px; background: #f8fafc; }
+.record h4 { margin: 0 0 12px; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #b3521d; }
+.record dl { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 24px; margin: 0; }
+.record dt { font-size: 13px; color: #526175; margin-bottom: 3px; }
+.record dd { margin: 0; font-size: 14px; color: #0b2336; white-space: pre-wrap; overflow-wrap: anywhere; }
+.record dd em { color: #8a94a3; }
+.clientNote { padding: 12px 16px; border-left: 3px solid #e9a23b; background: #fff8ec; border-radius: 10px; font-size: 14px; }
+
+/* Editing questions */
+.editor { display: grid; gap: 16px; margin-top: 16px; padding: 18px; border: 1px solid #d5e3ee; border-radius: 14px; background: #f4f9fc; }
+.editorHead { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+.editorHead label, .fieldMain label, .fieldRow > label { display: grid; gap: 6px; font-weight: 600; font-size: 14px; }
+.editorTabs { display: flex; gap: 6px; }
+.editorTabs button { padding: 8px 16px; border: 1px solid #ccd3dc; border-radius: 999px; background: #fff; font: inherit; font-size: 14px; font-weight: 600; color: #35475c; cursor: pointer; }
+.editorTabs .activeTab { background: linear-gradient(135deg, #145f88, #258eb9); color: #fff; border-color: transparent; }
+.fieldEditor { display: grid; gap: 12px; }
+.fieldRow { display: grid; gap: 10px; padding: 14px; border: 1px solid #dce3eb; border-radius: 12px; background: #fff; }
+.fieldMain { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 12px; align-items: end; }
+.check { display: flex !important; align-items: center; gap: 8px; padding-bottom: 10px; }
+.check input { width: auto; }
+.columns { display: grid; gap: 8px; padding: 12px; border-radius: 10px; background: #f4f9fc; }
+.columns > span { font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #526175; }
+.columnRow { display: grid; grid-template-columns: 2fr 1fr 2fr auto; gap: 8px; align-items: center; }
+.fieldTools { display: flex; gap: 8px; flex-wrap: wrap; }
+.editorActions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
+.preview { margin-top: 12px; }
+
+@media (max-width: 760px) {
+  .panel { padding: 16px; }
+  .section, .record dl, .editorHead, .fieldMain, .columnRow { grid-template-columns: 1fr; }
+}

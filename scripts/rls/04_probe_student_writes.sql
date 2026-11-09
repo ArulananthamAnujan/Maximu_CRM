@@ -23,4 +23,16 @@ begin
     raise notice 'payments rows updated by student: %', n;
   exception when others then raise notice 'payments update blocked: %', sqlerrm;
   end;
+  begin
+    update public.case_forms set answers = '{"tampered":true}'::jsonb where true;
+    get diagnostics n = row_count;
+    raise notice 'case_forms rows updated by student: %', n;
+  exception when others then raise notice 'case_forms update blocked: %', sqlerrm;
+  end;
+  begin
+    update public.form_templates set title = 'TAMPERED' where true;
+    get diagnostics n = row_count;
+    raise notice 'form_templates rows updated by student: %', n;
+  exception when others then raise notice 'form_templates update blocked: %', sqlerrm;
+  end;
 end $$;

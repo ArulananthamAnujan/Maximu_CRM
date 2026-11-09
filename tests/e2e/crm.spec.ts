@@ -196,6 +196,7 @@ test("an enquiry is created and opens as a case file with its tabs", async ({
     "Messages",
     "Activity & notes",
     "Finance",
+    "Forms",
   ])
     await expect(drawer.getByRole("tab", { name: tab })).toBeVisible();
 
@@ -424,6 +425,45 @@ test("a client is offered none of the staff navigation", async ({ page }) => {
   ])
     expect(entries).not.toContain(forbidden);
   await expect(page.getByRole("button", { name: /^Journey$/ })).toBeVisible();
+});
+
+/* ------------------------------------------------------------------ *
+ * Client forms: the visa questionnaire goes out from the case and the
+ * answers come back through the portal.
+ * ------------------------------------------------------------------ */
+
+test("an officer sends the Student 500 questionnaire and the client answers it in the portal", async ({ page }) => {
+  await signIn(page, OFFICER);
+  await openEnquiries(page);
+  const { popup, drawer } = await openCaseDrawer(page, "Priya Sharma");
+  await drawer.getByRole("tab", { name: "Forms" }).click();
+  const forms = drawer.locator("#case-forms");
+  await expect(forms.getByRole("heading", { name: "Forms" })).toBeVisible();
+  await forms.getByRole("button", { name: "Send a form" }).click();
+  await forms.getByLabel("Which form?").selectOption({ label: "Student visa (subclass 500) details" });
+  await forms.getByRole("button", { name: "Prepare the form" }).click();
+  // The draft opens in the editor: the officer can change questions and prefill answers.
+  await expect(forms.getByRole("button", { name: "Save changes" })).toBeVisible({ timeout: 15_000 });
+  await forms.getByRole("tab", { name: "Answers" }).click();
+  await forms.locator("#q_circumstances").fill("Prefilled from the enquiry call.");
+  await forms.getByRole("button", { name: "Save changes" }).click();
+  await expect(forms.getByText("Draft, not sent")).toBeVisible();
+  await forms.getByRole("button", { name: "Send to client" }).click();
+  await expect(forms.getByText("With the client")).toBeVisible({ timeout: 15_000 });
+  await popup.close();
+
+  await signIn(page, CLIENT);
+  await page.getByRole("button", { name: "Forms", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /Forms your case team has asked you to complete/ })).toBeVisible();
+  await expect(page.getByText("With the client")).toBeVisible();
+  await page.getByRole("button", { name: "Answer the questions" }).click();
+  await expect(page.locator("#q_circumstances")).toHaveValue("Prefilled from the enquiry call.");
+  await page.locator("#q_course_reasons").fill("The course leads to registration in my field.");
+  await page.getByRole("button", { name: "Save progress" }).click();
+  await expect(page.getByText(/Progress saved/)).toBeVisible();
+  // Sending it back with required questions still empty names them instead of accepting a half-finished form.
+  await page.getByRole("button", { name: "Send my answers" }).click();
+  await expect(page.getByRole("alert")).toContainText(/Please answer/);
 });
 
 /* ------------------------------------------------------------------ *

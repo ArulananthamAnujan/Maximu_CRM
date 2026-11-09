@@ -107,7 +107,7 @@ with expected(area, kind, name, detail) as (values
   ('Client notice wording (20261103)','function','render_client_notice_template','Document requests use the organisation''s own email template'),
   ('View and edit access (20261104)','function','private.case_edit_allowed',    'A view-only section is read-only in the database too'),
   ('View and edit access (20261104)','function','private.edit_allowed',         'The edit check behind every section'),
-  ('Schema version (20261104)', 'function', 'schema_version',                   'Tells the CRM which migration the database is at'),
+  ('Schema version (20261104)', 'function', 'schema_version',                   'Tells the CRM which migration the database is at; should return 20261109000000'),
   ('Course catalogue live sync (0030)', 'table',    'course_catalog_sync_runs',  'One row per catalogue sync attempt, success or failure'),
   ('Course catalogue live sync (0030)', 'function', 'search_course_catalog_v2',  'Student-safe catalogue search with advising filters and source freshness'),
   ('Course catalogue live sync (0030)', 'column',   'institutions.country_code', 'Normalised ISO country code behind the country filter'),
@@ -140,6 +140,12 @@ with expected(area, kind, name, detail) as (values
   ,('Lossless legacy migration (0037)', 'table', 'legacy_master_records',          'Old CRM reference and standard-document records')
   ,('Lossless legacy migration (0037)', 'column','import_batches.source_checksum', 'Whole-export reconciliation checksum')
   ,('Lossless legacy migration (0037)', 'column','import_rows.protected_data',      'Encrypted sensitive source values')
+  ,('Client forms (20261109)',          'table',  'form_templates',                 'Questionnaires sent before a visa application (500, 485, 600)')
+  ,('Client forms (20261109)',          'table',  'case_forms',                     'A questionnaire on one case with the client''s answers')
+  ,('Client forms (20261109)',          'function','case_form_action',              'The only way a form is created, sent, answered or reviewed')
+  ,('Client forms (20261109)',          'column', 'client_notice_outbox.form_id',   'A form request notice points at its form')
+  ,('Client forms (20261109)',          'policy', 'case_forms.case_forms_hide_drafts', 'A portal account never sees an unsent form')
+  ,('Client forms (20261109)',          'function','seed_migration_document_checklist_items', 'Agent appointment, Genuine Student, AFP check and other migration checklist items')
 )
 select
   e.area,

@@ -16,6 +16,7 @@ import { buildWorkbook, columnsFromRows, workbookFileName, type SheetSpec } from
 import { ClientProfileEditor } from "./client-profile-editor";
 import { useOverlayFocus } from "./use-overlay-focus";
 import { AgreementsPanel } from "./agreements-panel";
+import { CaseFormsPanel, FormTemplatesPanel } from "./case-forms-panel";
 import { CaseDocumentRequests } from "./case-document-requests";
 import { CaseFollowUpForm } from "./case-follow-up-form";
 import { CaseBranchTransfer } from "./case-branch-transfer";
@@ -44,6 +45,7 @@ import {
   Command,
   Copy,
   Download,
+  ClipboardList,
   FileCheck2,
   FileText,
   FolderOpen,
@@ -89,6 +91,7 @@ type ModuleKey =
   | "defer"
   | "case_complete"
   | "documents"
+  | "forms"
   | "communications"
   | "courseFinder"
   | "templates"
@@ -688,6 +691,7 @@ const clientNavGroups = [
       ["courseFinder", "Find a course", School],
       ["calendar", "Appointments", CalendarDays],
       ["documents", "Documents", FolderOpen],
+      ["forms", "Forms", FileCheck2],
       ["communications", "Messages", Mail],
       ["finance", "Invoices", CircleDollarSign],
     ],
@@ -915,7 +919,7 @@ const roleConfig: Record<
     legacy: "Student login",
     scope: "Only the linked personal journey and documents",
     initials: "CL",
-    modules: ["portal", "courseFinder", "calendar", "documents", "communications", "finance"],
+    modules: ["portal", "courseFinder", "calendar", "documents", "forms", "communications", "finance"],
   },
 };
 
@@ -1001,6 +1005,11 @@ const clientMeta: Partial<Record<ModuleKey, [string, string, string]>> = {
     "Maximus",
     "The documents we have asked you for, and the ones you have sent us.",
   ],
+  forms: [
+    "My forms",
+    "Maximus",
+    "The questions your case team needs answered before your application is lodged.",
+  ],
   communications: [
     "My messages",
     "Maximus",
@@ -1078,6 +1087,11 @@ const meta: Record<ModuleKey, [string, string, string]> = {
     "File Manager",
     "Documents",
     "Manage standard documents and client documents.",
+  ],
+  forms: [
+    "Client forms",
+    "Documents",
+    "Visa questionnaires sent to clients and the answers that came back.",
   ],
   communications: [
     "Messages",
@@ -4386,9 +4400,10 @@ function TemplatesWorkspace({
   reloadChecklist: () => Promise<void>; reloadEmails: () => Promise<void>;
   onBulkAction: (resource: string, operation: string, ids: string[]) => Promise<void>;
 }) {
-  const [section, setSection] = useState<"documents" | "emails" | "content">("documents");
+  const [section, setSection] = useState<"documents" | "forms" | "emails" | "content">("documents");
   const sections = [
     { key: "documents" as const, label: "Document requests", icon: FileCheck2, count: checklistTemplates.length },
+    { key: "forms" as const, label: "Client forms", icon: ClipboardList, count: 0 },
     { key: "emails" as const, label: "Client emails", icon: Mail, count: emailTemplates.length },
     { key: "content" as const, label: "Reusable content", icon: FileText, count: items.length },
   ];
@@ -4409,11 +4424,12 @@ function TemplatesWorkspace({
         {sections.map(({ key, label, icon: Icon, count }) => (
           <button key={key} role="tab" aria-selected={section === key}
             className={section === key ? "active" : ""} onClick={() => setSection(key)}>
-            <Icon size={17} /><span>{label}</span><b>{count}</b>
+            <Icon size={17} /><span>{label}</span>{count ? <b>{count}</b> : null}
           </button>
         ))}
       </div>
       {section === "documents" && <DocumentChecklistTemplatesPanel templates={checklistTemplates} canManage={canManage} reload={reloadChecklist} />}
+      {section === "forms" && <FormTemplatesPanel canManage={canManage} />}
       {section === "emails" && <EmailTemplatesPanel templates={emailTemplates} canManage={canManage} reload={reloadEmails} />}
       {section === "content" && <TemplatesView items={items} openModal={openModal} setItems={setItems} canManage={canManage} onBulkAction={onBulkAction} />}
     </section>
@@ -5387,6 +5403,7 @@ function ClientModuleBody({
         </p>
       </article>
     );
+  if (module === "forms") return <CaseFormsPanel student />;
   if (module === "documents") {
     const own = ownDocuments;
     return (
@@ -8309,7 +8326,8 @@ type CaseTab =
   | "communication"
   | "timeline"
   | "finance"
-  | "agreements";
+  | "agreements"
+  | "forms";
 
 const caseTabs: [CaseTab, string][] = [
   ["overview", "Case home"],
@@ -8323,6 +8341,7 @@ const caseTabs: [CaseTab, string][] = [
   ["history", "Background"],
   ["finance", "Finance"],
   ["agreements", "Agreements"],
+  ["forms", "Forms"],
   ["timeline", "Activity & notes"],
 ];
 
@@ -8339,6 +8358,7 @@ const caseTabDescriptions: Record<CaseTab, string> = {
   finance: "Invoices and payments recorded against this case.",
   timeline: "File notes and a complete, time-ordered audit trail.",
   agreements: "Prepare agreements, track student review and record signatures.",
+  forms: "Visa questionnaires sent to the client, their answers, and anything the officer added or corrected.",
 };
 
 type CaseFile = {
@@ -8837,7 +8857,7 @@ function CaseDrawerBody({
         : ["overview", "tasks", "applications", "visa", "documents", "communication"],
     },
     { label: "Client profile", tabs: ["client", "family", "history"] },
-    { label: "Records", tabs: ["finance", "agreements", "timeline"] },
+    { label: "Records", tabs: ["forms", "finance", "agreements", "timeline"] },
   ];
   const latestNote = file?.notes[0] ?? null;
   const openCaseTasks = (file?.tasks ?? [])
@@ -8991,6 +9011,7 @@ function CaseDrawerBody({
             {file && <>
 
         {tab === "agreements" && caseId && <AgreementsPanel caseId={caseId} onChanged={refresh}/> }
+        {tab === "forms" && caseId && <CaseFormsPanel caseId={caseId} onChanged={refresh}/> }
         {tab === "documents" && caseId && <AgreementsPanel caseId={caseId} noticesOnly/>}
         {tab === "tasks" && caseId && <TaskBoard caseId={caseId} branchId={String(file?.case.branch_id??"")||null} onChanged={async()=>{const loaded=await fetchCaseFile(caseId);setFile(loaded.file);setChecklist(loaded.checklist);await refresh();}}/>}
         {tab === "overview" && (
@@ -12250,7 +12271,8 @@ function HomeWorkspace() {
     const next = nextIdentity ?? identity;
     const mode = canUse(next,"study_access") ? serviceMode === "direct_visa" && canUse(next,"direct_visa_access") ? "direct_visa" : "study" : "direct_visa";
     setServiceMode(mode);
-    if(nextRole === "client" && new URLSearchParams(window.location.search).get("portal") === "documents") { setActiveModule("documents"); return; }
+    const portalScreen = new URLSearchParams(window.location.search).get("portal");
+    if(nextRole === "client" && (portalScreen === "documents" || portalScreen === "forms")) { setActiveModule(portalScreen); return; }
     // A deep link (/?module=reports) opens that section when the account may use it.
     const requested = new URLSearchParams(window.location.search).get("module");
     if (requested && (roleConfig[nextRole].modules as readonly string[]).includes(requested) && canUse(next, requested, mode)) { setActiveModule(requested as ModuleKey); return; }
@@ -14151,7 +14173,7 @@ function HomeWorkspace() {
                         {unreadAlerts.slice(0, 6).map((alert) => (
                           <li key={alert.id}>
                             <button
-                              onClick={()=>{void markAlertRead(alert.id);setNotifications(false);if(alert.action_url?.startsWith("/?")){const url=new URL(alert.action_url,window.location.origin);if(url.searchParams.get("case")){setCaseWindowId(url.searchParams.get("case")!);setPreviewTab(url.searchParams.get("tab")==="tasks"?"tasks":"overview");}else if(url.searchParams.get("module")==="work")setActive("work");}}}
+                              onClick={()=>{void markAlertRead(alert.id);setNotifications(false);if(alert.action_url?.startsWith("/?")){const url=new URL(alert.action_url,window.location.origin);if(url.searchParams.get("case")){setCaseWindowId(url.searchParams.get("case")!);setPreviewTab(url.searchParams.get("tab")==="tasks"?"tasks":"overview");}else if(url.searchParams.get("module")==="work")setActive("work");else if(url.searchParams.get("portal")==="forms"||url.searchParams.get("portal")==="documents")setActive(url.searchParams.get("portal") as ModuleKey);}}}
                             >
                               <span>
                                 <b>{alert.title}</b>

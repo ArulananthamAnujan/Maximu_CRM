@@ -15,3 +15,5 @@ select 'drive_jobs           ' || count(*) from public.drive_jobs;
 select 'ai_interactions      ' || count(*) from public.ai_interactions;
 select 'ai_action_proposals  ' || count(*) from public.ai_action_proposals;
 select 'case_stage_history   ' || count(*) from public.case_stage_history;
+select 'form_templates       ' || count(*) from public.form_templates;
+select 'case_forms (drafts)  ' || count(*) from public.case_forms where status='draft';

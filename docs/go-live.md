@@ -101,9 +101,12 @@ As the owner (super admin), in this order:
    CRM emails each a one-time password-setup link; no password is ever shown.
    Use **Function access** to set View and Edit per section for anyone who
    should not have everything.
-3. **Templates**: read the 35 standard document items and the three client
-   emails (document request, invoice, portal welcome) and change the wording
-   to the agency's own. These are what clients receive.
+3. **Templates**: read the 50 standard document items, the three visa
+   questionnaires under Client forms (Student 500, Temporary Graduate 485,
+   Visitor 600) and the four client emails (document request, form request,
+   invoice, portal welcome) and change the wording to the agency's own. These
+   are what clients receive. Add a questionnaire for any other visa the
+   agency handles; officers send them from a case's Forms tab.
 4. **Integrations -> Personal Gmail**: every officer connects their own Gmail
    once. Case email (document requests, invoices, commission invoices,
    campaigns) then goes from the officer's own address, the acting officer
