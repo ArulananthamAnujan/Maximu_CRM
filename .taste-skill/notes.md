@@ -365,3 +365,9 @@ received and outstanding). Notes and activity take the wide column; the
 applications, the latest message and the client card sit beside it. The
 "At a glance" strip and the rail headings are gone; the header already
 names the stage and branch.
+
+The Case home is stage-aware: the pipeline states what the current stage
+is about (study and migration files differ), the four tiles reorder so the
+stage's own concern leads (visa at the visa stage, accounts at application
+and completion), and the filled button sits on the tile the agent should
+act on.

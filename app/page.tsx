@@ -9333,7 +9333,7 @@ function CaseDrawerBody({
                 <h3>Visa details</h3>
                 <div className={`agentAlert ${item.visaExpiry ? "ready" : ""}`}>
                   <strong>{item.visaExpiry ? `Visa expiry ${item.visaExpiry}` : "Visa type and expiry are not recorded."}</strong>
-                  <small>{item.visaExpiry ? "The case can progress to the visa stage." : "This blocks movement to the visa stage."}</small>
+                  <small>{item.visaExpiry ? (stage === "visa" ? "Track the lodgement, any requests and the decision under Visa matter." : stage === "completed" ? "Granted. Keep the grant notice on the file." : "The case can progress to the visa stage.") : "This blocks movement to the visa stage."}</small>
                 </div>
                 <button className={`${stage === "visa" || (direct && stage !== "enquiry") || !item.visaExpiry ? "primaryButton" : "ghostButton"} compactButton`} onClick={() => setTab("visa")}>Record visa details</button>
               </section>}
