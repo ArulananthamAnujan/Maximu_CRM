@@ -436,3 +436,13 @@
   .appShell .lifecyclePanel .lifecycleActions { justify-content: flex-start; }
 }
 @media (max-width: 640px) { .caseKeyTiles { grid-template-columns: minmax(0, 1fr); } }
+/* The tiles flow in source order inside their own row; their old grid-area names meant nothing here. */
+.caseKeyTiles > .casePriorityBar, .caseKeyTiles > .agentDocumentsPanel, .caseKeyTiles > .agentVisaPanel, .caseKeyTiles > .agentFinancePanel { grid-area: auto; }
+.caseKeyTiles .agentFinanceFacts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.caseKeyTiles .agentFinanceFacts span { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--bt-card-border); }
+.caseKeyTiles .agentFinanceFacts span:last-child { border-bottom: 0; }
+.caseKeyTiles .agentFinanceFacts strong { white-space: nowrap; }
+/* The notes and messages cards carry their own titles again. */
+.appShell .caseHome > .caseAuditPanel .caseWorkPanelHead, .appShell .caseHome > .agentCommunicationPanel .caseWorkPanelHead { display: flex !important; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.appShell .caseHome > .caseAuditPanel .caseWorkPanelHead > div:first-child, .appShell .caseHome > .agentCommunicationPanel .caseWorkPanelHead > div:first-child { display: block !important; }
+.appShell .caseHome > .caseAuditPanel .kicker, .appShell .caseHome > .agentCommunicationPanel .kicker { display: inline-block !important; }
