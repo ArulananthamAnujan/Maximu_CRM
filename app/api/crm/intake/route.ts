@@ -124,7 +124,7 @@ async function patch(table: string, id: string, value: Json, token: string) { co
 function asRows(value: unknown): Json[] { return Array.isArray(value) ? value as Json[] : []; }
 function optional(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : null; }
 function required(value: unknown,label:string) { const parsed=optional(value); if(!parsed) throw new InputError(`${label} is required.`); return parsed; }
-function uuid(value: unknown,label:string) { const parsed=required(value,label); if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed)) throw new InputError(`${label} is invalid.`); return parsed; }
+function uuid(value: unknown,label:string) { const parsed=required(value,label); if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parsed)) throw new InputError(`${label} is invalid.`); return parsed; }
 function validEmail(value:unknown){const parsed=optional(value);if(!parsed)return null;if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parsed))throw new InputError("Email is invalid.");return parsed.toLowerCase();}
 function validDate(value:unknown){const parsed=optional(value);if(!parsed)return null;const date=new Date(`${parsed}T00:00:00Z`);if(!/^\d{4}-\d{2}-\d{2}$/.test(parsed)||Number.isNaN(date.getTime())||date.toISOString().slice(0,10)!==parsed)throw new InputError("Date is invalid.");return parsed;}
 function optionalNumber(value:unknown){if(value===null||value===undefined||value==="")return null;const parsed=Number(value);if(!Number.isFinite(parsed))throw new InputError("Number is invalid.");return parsed;}

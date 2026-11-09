@@ -3,7 +3,7 @@ import { supabaseRequest, SupabaseError } from "@/server/supabase";
 import { drainClientNotices } from "@/server/client-notices";
 import { publicOrigin } from "@/server/public-origin";
 export const dynamic = "force-dynamic";
-const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
+const uuid = (value: unknown) => typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : null;
 function fail(error: unknown) {
   const status = error instanceof LiveAccessError ? error.status : error instanceof SupabaseError ? (error.status >= 500 ? 503 : 400) : 400;
   return Response.json({ error: error instanceof Error ? error.message : "The agreement could not be updated." }, { status });

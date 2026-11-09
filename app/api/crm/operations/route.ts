@@ -227,7 +227,7 @@ async function remove(table: string, filter: string, token: string) { await supa
 function group(rows: Json[], key: string) { return rows.reduce<Record<string, number>>((acc, row) => { const value = String(row[key] ?? "unknown"); acc[value] = (acc[value] ?? 0) + 1; return acc; }, {}); }
 function required(value: unknown, label: string) { const parsed = optional(value); if (!parsed) throw new InputError(`${label} is required.`); return parsed; }
 function optional(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : null; }
-function uuid(value: unknown, label: string) { const parsed = required(value, label); if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed)) throw new InputError(`${label} is invalid.`); return parsed; }
+function uuid(value: unknown, label: string) { const parsed = required(value, label); if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parsed)) throw new InputError(`${label} is invalid.`); return parsed; }
 function optionalUuid(value: unknown) { const parsed = optional(value); return parsed ? uuid(parsed, "Identifier") : null; }
 function optionalDate(value: unknown) { const parsed = optional(value); if (!parsed) return null; const date = new Date(parsed); if (Number.isNaN(date.getTime())) throw new InputError("Date is invalid."); return date.toISOString(); }
 function positiveNumber(value: unknown, label: string) { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed <= 0) throw new InputError(`${label} must be greater than zero.`); return parsed; }

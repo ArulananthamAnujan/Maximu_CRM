@@ -524,7 +524,7 @@ async function patch(table: string, id: string, value: Json, token: string) {
 }
 function optional(value: unknown) { return typeof value === "string" && value.trim() ? value.trim() : null; }
 function required(value: unknown, label: string) { const parsed = optional(value); if (!parsed) throw new InputError(`${label} is required.`); return parsed; }
-function uuid(value: unknown, label: string) { const parsed = required(value, label); if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed)) throw new InputError(`${label} is invalid.`); return parsed; }
+function uuid(value: unknown, label: string) { const parsed = required(value, label); if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parsed)) throw new InputError(`${label} is invalid.`); return parsed; }
 function uuidList(value: unknown, label: string) {
   if (!Array.isArray(value) || value.length === 0) throw new InputError(`Select at least one ${label.toLowerCase()}.`);
   if (value.length > 100) throw new InputError("Bulk actions are limited to 100 accounts at a time.");

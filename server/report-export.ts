@@ -26,7 +26,7 @@ export type ExportColumn = { key: string; header: string; type?: "text" | "numbe
 export type ExportSheet = { name: string; columns: ExportColumn[]; rows: Row[]; notes?: string[] };
 
 export const EXPORT_DATASETS = ["enquiries", "cases", "applications", "visas", "finance", "staff", "patterns"] as const;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function parseExportFilters(params: URLSearchParams): ExportFilters {
   const day = (value: string | null) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) ? value : null);

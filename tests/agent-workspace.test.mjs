@@ -307,3 +307,15 @@ for (const scenario of [
     assert.equal(invoice.amount, 100, 'Historical invoice total must remain intact');
   }, { invoiceState: scenario.state, invoicePaid: scenario.paid }));
 }
+
+
+test('case workspace accepts canonical PostgreSQL legacy IDs and rejects query injection', async () => fixture(async ({ call, requests }) => {
+  const legacyId = '8aa03523-d458-6893-3a07-1bb00fff0e90';
+  const response = await call('/api/crm/casefile?caseId=' + legacyId);
+  assert.equal(response.status, 200);
+  assert.ok(requests.some(r => r.url.pathname === '/rest/v1/cases' && r.url.searchParams.get('id') === 'eq.' + legacyId));
+  const before = requests.length;
+  const malformed = await call('/api/crm/casefile?caseId=' + encodeURIComponent(legacyId + ',id.not.is.null'));
+  assert.equal(malformed.status, 400);
+  assert.ok(!requests.slice(before).some(r => r.url.pathname === '/rest/v1/cases'));
+}));
