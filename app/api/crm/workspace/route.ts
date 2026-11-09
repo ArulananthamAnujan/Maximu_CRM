@@ -3236,7 +3236,7 @@ function uuidList(value: unknown, label: string): string[] {
   if (value.length > 100)
     throw new InputError("Bulk actions are limited to 100 records at a time.");
   const ids = Array.from(new Set(value.map((item) => String(item))));
-  if (ids.some((id) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)))
+  if (ids.some((id) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)))
     throw new InputError(`${label} contains an invalid record identifier.`);
   return ids;
 }
