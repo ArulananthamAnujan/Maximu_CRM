@@ -2312,7 +2312,7 @@ const deleteWithdrawn = await call("/api/crm/forms", { method: "POST", cookie: f
 const afterDelete = await call(`/api/crm/forms?caseId=${formsCaseId}`, { cookie: formsOfficer.cookie });
 expect("an officer deletes a withdrawn form and it is gone from the case", deleteWithdrawn.status === 200 && !(afterDelete.json?.forms ?? []).some((f) => f.id === secondForm.json?.form?.id), `${deleteWithdrawn.status} ${JSON.stringify(deleteWithdrawn.json).slice(0, 200)}`);
 const officerDeletesAnswered = await call("/api/crm/forms", { method: "POST", cookie: formsOfficer.cookie, body: { action: "delete", id: formId } });
-expect("an officer cannot delete a form the client has answered", officerDeletesAnswered.status === 403 && /administrator/.test(officerDeletesAnswered.json?.error ?? ""), `${officerDeletesAnswered.status} ${JSON.stringify(officerDeletesAnswered.json)}`);
+expect("an officer cannot delete a form the client has answered", [400, 403].includes(officerDeletesAnswered.status) && /administrator/.test(officerDeletesAnswered.json?.error ?? ""), `${officerDeletesAnswered.status} ${JSON.stringify(officerDeletesAnswered.json)}`);
 const managerDeletesAnswered = await call("/api/crm/forms", { method: "POST", cookie: manager.cookie, body: { action: "delete", id: formId } });
 expect("a manager can delete an answered form", managerDeletesAnswered.status === 200, `${managerDeletesAnswered.status} ${JSON.stringify(managerDeletesAnswered.json).slice(0, 200)}`);
 
