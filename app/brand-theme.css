@@ -446,3 +446,18 @@
 .appShell .caseHome > .caseAuditPanel .caseWorkPanelHead, .appShell .caseHome > .agentCommunicationPanel .caseWorkPanelHead { display: flex !important; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .appShell .caseHome > .caseAuditPanel .caseWorkPanelHead > div:first-child, .appShell .caseHome > .agentCommunicationPanel .caseWorkPanelHead > div:first-child { display: block !important; }
 .appShell .caseHome > .caseAuditPanel .kicker, .appShell .caseHome > .agentCommunicationPanel .kicker { display: inline-block !important; }
+/* The tiles follow the stage: what the agent must do next comes first. */
+.lifecycleHead { flex-wrap: wrap; }
+.lifecycleHead small { flex-basis: 100%; color: var(--hs-muted); font-size: 13px; }
+.caseKeyTiles > .casePriorityBar { order: 1; }
+.caseKeyTiles > .agentDocumentsPanel { order: 2; }
+.caseKeyTiles > .agentFinancePanel { order: 3; }
+.caseKeyTiles > .agentVisaPanel { order: 4; }
+.caseKeyTiles[data-stage="application"] > .agentFinancePanel { order: 2; }
+.caseKeyTiles[data-stage="application"] > .agentDocumentsPanel { order: 3; }
+.caseKeyTiles[data-stage="visa"] > .agentVisaPanel { order: 0; }
+.caseKeyTiles[data-stage="deferred"] > .agentVisaPanel { order: 2; }
+.caseKeyTiles[data-stage="deferred"] > .agentDocumentsPanel { order: 3; }
+.caseKeyTiles[data-stage="completed"] > .agentFinancePanel { order: 0; }
+.caseKeyTiles[data-stage="completed"] > .agentVisaPanel { order: 1; }
+.caseKeyTiles[data-stage="completed"] > .casePriorityBar { order: 4; }

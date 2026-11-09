@@ -787,6 +787,26 @@ function stageLabelFor(stage: LifecycleStage, direct: boolean): string {
   if (direct && stage === "student") return "Client";
   return stageLabels[stage];
 }
+/** The one sentence an agent needs about where this file is, shown under the pipeline. */
+function stageFocusFor(stage: LifecycleStage, direct: boolean): string {
+  const study: Record<LifecycleStage, string> = {
+    enquiry: "Capture the client's details, book the first conversation and convert the enquiry.",
+    student: "Collect academic and identity documents, confirm the course choices and lodge the applications.",
+    application: "Track offers and the CoE, collect the fees and start preparing the visa file.",
+    visa: "Lodge the visa, answer health and character requests and watch for the decision.",
+    deferred: "Parked until the next intake. Keep the client warm and resume when they are ready.",
+    completed: "Visa granted and the case closed. Records stay on file for the retention period.",
+  };
+  const migration: Record<LifecycleStage, string> = {
+    enquiry: "Confirm the visa pathway, check eligibility and convert the enquiry.",
+    student: "Collect identity, work, relationship and character documents for the application.",
+    application: "Prepare the application, the forms and the statements, and check everything before lodgement.",
+    visa: "Lodge the visa, answer health and character requests and watch for the decision.",
+    deferred: "Parked for now. Keep the client informed and resume when the matter can proceed.",
+    completed: "Visa granted and the case closed. Records stay on file for the retention period.",
+  };
+  return (direct ? migration : study)[stage];
+}
 const stageModule: Record<LifecycleStage, ModuleKey> = {
   enquiry: "enquiries",
   student: "students",
@@ -9079,7 +9099,7 @@ function CaseDrawerBody({
         {tab === "overview" && (
           <div className={`caseHome${direct ? " directCase" : ""}`}>
             <section className="lifecyclePanel">
-              <div className="lifecycleHead"><span className="kicker">Case pipeline</span><strong>{stageLabelFor(stage, direct)}</strong></div>
+              <div className="lifecycleHead"><span className="kicker">Case pipeline</span><strong>{stageLabelFor(stage, direct)}</strong><small>{stageFocusFor(stage, direct)}</small></div>
               <ol className="lifecycleTrack">
                 {LIFECYCLE_STAGES.map((step) => (
                   <li
@@ -9261,7 +9281,7 @@ function CaseDrawerBody({
                 </div>
               )}
             </section>
-            <div className="caseKeyTiles">
+            <div className="caseKeyTiles" data-stage={stage}>
             <section className="casePriorityBar">
               <div>
                 <span className="kicker">Next action</span>
@@ -9293,7 +9313,7 @@ function CaseDrawerBody({
                   <span className="kicker">Documents</span>
                   <h3>{activeCaseDocuments.length ? `${completedDocuments} received · ${activeCaseDocuments.length - completedDocuments} requested` : "Documents & checklist"}</h3>
                 </div>
-                <button className="primaryButton compactButton" onClick={() => setTab("documents")}>
+                <button className={`${["student", "application"].includes(stage) || outstandingDocuments > 0 ? "primaryButton" : "ghostButton"} compactButton`} onClick={() => setTab("documents")}>
                   Request missing
                 </button>
               </div>
@@ -9315,7 +9335,7 @@ function CaseDrawerBody({
                   <strong>{item.visaExpiry ? `Visa expiry ${item.visaExpiry}` : "Visa type and expiry are not recorded."}</strong>
                   <small>{item.visaExpiry ? "The case can progress to the visa stage." : "This blocks movement to the visa stage."}</small>
                 </div>
-                <button className="primaryButton compactButton" onClick={() => setTab("visa")}>Record visa details</button>
+                <button className={`${stage === "visa" || (direct && stage !== "enquiry") || !item.visaExpiry ? "primaryButton" : "ghostButton"} compactButton`} onClick={() => setTab("visa")}>Record visa details</button>
               </section>}
               {(allowed("finance"))&&<section className="caseWorkPanel agentFinancePanel">
                 <span className="kicker">Accounts</span>
@@ -9325,7 +9345,7 @@ function CaseDrawerBody({
                   <span><small>Invoiced</small><strong>${invoiceTotal.toLocaleString()}</strong></span>
                   <span><small>Received</small><strong>${invoicePaid.toLocaleString()}</strong></span>
                 </div>
-                <button className="ghostButton" onClick={() => setTab("finance")}>Open finance</button>
+                <button className={`${["application", "completed"].includes(stage) && invoiceOutstanding > 0 ? "primaryButton compactButton" : "ghostButton"}`} onClick={() => setTab("finance")}>Open finance</button>
               </section>}
             </div>
 
