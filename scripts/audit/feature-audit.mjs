@@ -1976,8 +1976,8 @@ section("The document-request checklist is editable masters data");
 const checklistRead = await call("/api/crm/document-checklist-templates", { cookie: officer.cookie });
 expect("staff can read the document checklist",
   checklistRead.status === 200, JSON.stringify(checklistRead.json));
-expect("every organisation starts with the same 35 default items",
-  (checklistRead.json?.templates ?? []).length === 35,
+expect("every organisation starts with the same 50 default items (35 general plus the migration practice's 15)",
+  (checklistRead.json?.templates ?? []).length === 50,
   `${(checklistRead.json?.templates ?? []).length} templates`);
 for (const category of ["Identity", "Family and relationships", "Immigration history",
   "Character and health", "Financial capacity", "Employment and skills",
@@ -2032,8 +2032,8 @@ section("Email templates are editable masters data");
 const emailTemplatesRead = await call("/api/crm/email-templates", { cookie: officer.cookie });
 expect("staff can read the email templates", emailTemplatesRead.status === 200, JSON.stringify(emailTemplatesRead.json));
 const templateKinds = (emailTemplatesRead.json?.templates ?? []).map((t) => t.kind).sort();
-expect("every organisation starts with the three system email templates",
-  JSON.stringify(templateKinds) === JSON.stringify(["document_request", "invoice_request", "portal_welcome"]),
+expect("every organisation starts with the four system email templates",
+  JSON.stringify(templateKinds) === JSON.stringify(["document_request", "form_request", "invoice_request", "portal_welcome"]),
   JSON.stringify(templateKinds));
 
 const emailTemplatesAsClient = await call("/api/crm/email-templates", { cookie: student.cookie });
@@ -2264,7 +2264,7 @@ expect("a client cannot change the questions", studentEdit.status === 403 || stu
 const formSend = await call("/api/crm/forms", { method: "POST", cookie: formsOfficer.cookie, body: { action: "send", id: formId } });
 expect("the officer sends the form to the client", formSend.status === 200 && formSend.json?.form?.status === "sent", `${formSend.status} ${JSON.stringify(formSend.json).slice(0, 200)}`);
 const formNotices = await call(`/api/crm/forms?caseId=${formsCaseId}`, { cookie: formsOfficer.cookie });
-expect("a form request email is queued for the client", (formNotices.json?.notices ?? []).some((n) => n.form_id === formId), JSON.stringify(formNotices.json?.notices).slice(0, 200));
+expect("a form request email is queued for the client", (formNotices.json?.notices ?? []).some((n) => n.form_id === formId), JSON.stringify(formNotices.json?.notices ?? null).slice(0, 200));
 const studentAfter = await call("/api/crm/forms", { cookie: student.cookie });
 const studentForm = (studentAfter.json?.forms ?? []).find((f) => f.id === formId);
 expect("the client now sees the sent form with the officer's prefilled answer", studentForm?.status === "sent" && studentForm?.answers?.circumstances?.startsWith("Prefilled"), JSON.stringify(studentForm).slice(0, 200));

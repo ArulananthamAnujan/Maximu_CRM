@@ -13,6 +13,7 @@ const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8")
 const panel = await readFile(new URL("../app/case-forms-panel.tsx", import.meta.url), "utf8");
 const route = await readFile(new URL("../app/api/crm/forms/route.ts", import.meta.url), "utf8");
 const checklist = await readFile(new URL("../lib/visa-document-checklist.ts", import.meta.url), "utf8");
+const access = await readFile(new URL("../server/function-access.ts", import.meta.url), "utf8");
 
 test("the three questionnaires Maximus already uses are seeded for every organisation", () => {
   for (const title of ["Student visa (subclass 500) details", "Temporary Graduate visa (subclass 485) details", "Visitor visa (subclass 600) details"])
@@ -75,4 +76,9 @@ test("the document checklist carries the migration-specific items in both the se
     assert.ok(migration.includes(`'${title}'`), `${title} is seeded`);
     assert.ok(checklist.includes(`"${title}"`), `${title} is in the code list`);
   }
+});
+
+test("the forms route is open to anyone who works cases or documents, not denied by default", () => {
+  // A route missing from this map is refused for every non-admin, which is how staff were locked out once.
+  assert.match(access, /forms:\[\.\.\.caseFunctions,"documents"\]/);
 });
