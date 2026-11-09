@@ -461,3 +461,22 @@
 .caseKeyTiles[data-stage="completed"] > .agentFinancePanel { order: 0; }
 .caseKeyTiles[data-stage="completed"] > .agentVisaPanel { order: 1; }
 .caseKeyTiles[data-stage="completed"] > .casePriorityBar { order: 4; }
+
+/* The top bar must never push its trailing controls past the edge, whatever
+   font the machine renders with (CI and Windows have no Inter, so text runs
+   wider). The search shrinks first; below 1540px the secondary buttons go
+   icon-only, and below 1340px the service switch and Quick create do too. */
+.topbarPrimary .searchWrap, .appShell.sidebarDocked .topbarPrimary .searchWrap, .topbar.moduleFocused .topbarPrimary .searchWrap { flex: 1 1 180px; min-width: 150px; max-width: 520px; width: auto; }
+.topbarPrimary .searchWrap input { min-width: 0; }
+.topbarPrimary .topActions { flex: none; }
+.topbarPrimary .serviceAndFinder { flex: none; }
+@media (max-width: 1540px) {
+  .appShell.sidebarDocked .topbar .copilotTrigger span, .appShell.sidebarDocked .topbar .messageShortcut span, .appShell.sidebarDocked .courseFinderSwitchButton span { display: none; }
+  .appShell.sidebarDocked .topbar .copilotTrigger, .appShell.sidebarDocked .topbar .messageShortcut, .appShell.sidebarDocked .courseFinderSwitchButton { width: 44px; padding: 0; justify-content: center; }
+}
+@media (max-width: 1340px) {
+  .appShell.sidebarDocked .topbar .profileServiceSwitch button span { display: none; }
+  .appShell.sidebarDocked .topbar .profileServiceSwitch button { width: 44px; padding: 0; justify-content: center; }
+  .appShell.sidebarDocked .topbar .quickButton span { display: none; }
+  .appShell.sidebarDocked .topbar .quickButton { padding: 0 12px; }
+}

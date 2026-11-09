@@ -14151,7 +14151,7 @@ function HomeWorkspace() {
               </div>
             ) : null}
             <div className="topActions">
-              {role !== "client" && canUse(accessIdentity,"ai") && !selected && active !== "communications" && <button className="messageShortcut copilotTrigger" aria-expanded={copilot.isOpen} aria-controls="crm-copilot" onClick={copilot.toggle}><Sparkles size={17} /><span>Copilot</span></button>}
+              {role !== "client" && canUse(accessIdentity,"ai") && !selected && active !== "communications" && <button className="messageShortcut copilotTrigger" aria-label="Copilot" aria-expanded={copilot.isOpen} aria-controls="crm-copilot" onClick={copilot.toggle}><Sparkles size={17} /><span>Copilot</span></button>}
               {role !== "client" ? (
                 <button
                   className={`messageShortcut ${active === "communications" ? "active" : ""}`}
