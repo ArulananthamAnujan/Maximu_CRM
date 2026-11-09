@@ -8956,7 +8956,7 @@ function CaseDrawerBody({
             </div>
             <p className="caseIdentityMeta">
               <span className="caseStageBadge">{stageLabelFor(stage, direct)}</span>
-              <span title={`Shared with every Admin and Staff account in ${item.branch}`}><Building2 size={13} /> {item.branch} branch</span>
+              <span title={`Case shared with all staff in ${item.branch}`}><Building2 size={13} /> {item.branch} branch</span>
               {item.target && <span title={item.target}>{enquiryDestinationLabel({ destinationCountry: "", target: item.target })}</span>}
             </p>
           </div>

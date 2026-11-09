@@ -363,7 +363,8 @@
 .appShell.caseWindow .drawerHeadActions .dangerButton { color: #ffd4c8 !important; border-color: rgba(255, 196, 180, 0.38) !important; }
 .appShell.caseWindow .drawerHeadActions .dangerButton:hover { background: rgba(214, 69, 40, 0.28) !important; }
 .appShell.caseWindow .drawerHeadActions .viewOnlyBadge { align-self: center; }
-.appShell.caseWindow .drawerHead .caseIdentityMeta span svg { vertical-align: -2px; margin-right: 2px; color: var(--bt-sky); }
+.appShell.caseWindow .drawerHead .caseIdentityMeta span { display: inline-flex; align-items: center; gap: 5px; }
+.appShell.caseWindow .drawerHead .caseIdentityMeta span svg { color: var(--bt-sky); flex: none; }
 .caseWindow .caseSectionHead { display: none; }
 .appShell .caseBranchTransfer { background: #fff; border: 1px solid var(--bt-card-border); margin: 14px 24px 0; padding: 18px 20px; border-radius: 16px; box-shadow: var(--bt-card-shadow); }
 .appShell .caseBranchTransfer strong { font-size: 15px; color: var(--bt-navy); }
