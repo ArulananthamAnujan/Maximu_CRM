@@ -452,6 +452,8 @@ test("an officer sends the Student 500 questionnaire and the client answers it i
   await expect(forms.getByText("With the client")).toBeVisible({ timeout: 15_000 });
   await popup.close();
 
+  // The same browser now signs in as the client, so the officer's session goes first.
+  await page.context().clearCookies();
   await signIn(page, CLIENT);
   await page.getByRole("button", { name: "Forms", exact: true }).click();
   await expect(page.getByRole("heading", { name: /Forms your case team has asked you to complete/ })).toBeVisible();
