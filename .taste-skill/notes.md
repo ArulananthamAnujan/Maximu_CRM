@@ -354,3 +354,14 @@ status) used the browser's datalist, which draws a bare native menu that
 ignores the product and escapes the dialog. They now use one combo box:
 the field keeps its look, a chevron opens a white list with hints, typing
 filters it, and anything not in the list is kept as typed.
+
+## Case home in the agent's order
+
+The pipeline leads the Case home, its move buttons always visible beside
+the stage track (reason and visa expiry fold under it). One row of four
+tiles follows, each with a coloured left edge: next action (amber),
+documents (sky), visa (blue) and accounts (green, showing invoiced,
+received and outstanding). Notes and activity take the wide column; the
+applications, the latest message and the client card sit beside it. The
+"At a glance" strip and the rail headings are gone; the header already
+names the stage and branch.
