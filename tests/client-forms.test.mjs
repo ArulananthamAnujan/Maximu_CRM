@@ -14,6 +14,7 @@ const panel = await readFile(new URL("../app/case-forms-panel.tsx", import.meta.
 const route = await readFile(new URL("../app/api/crm/forms/route.ts", import.meta.url), "utf8");
 const checklist = await readFile(new URL("../lib/visa-document-checklist.ts", import.meta.url), "utf8");
 const access = await readFile(new URL("../server/function-access.ts", import.meta.url), "utf8");
+const deletion = await readFile(new URL("../supabase/migrations/20261109010000_client_forms_delete.sql", import.meta.url), "utf8");
 
 test("the three questionnaires Maximus already uses are seeded for every organisation", () => {
   for (const title of ["Student visa (subclass 500) details", "Temporary Graduate visa (subclass 485) details", "Visitor visa (subclass 600) details"])
@@ -50,7 +51,7 @@ test("a client can only answer, and only while the form is with them", () => {
 test("the officer can change the questions and the answers before and after sending", () => {
   assert.match(migration, /if not staff or f\.status='withdrawn' then raise exception 'Only staff can change a form/);
   assert.match(migration, /answers=case when p_answers is null then answers else answers \|\| p_answers end/);
-  assert.match(route, /CASE_ACTIONS = \["create", "update", "send", "view", "save", "submit", "review", "withdraw"\]/);
+  assert.match(route, /CASE_ACTIONS = \["create", "update", "send", "view", "save", "submit", "review", "withdraw", "delete"\]/);
   assert.match(route, /if \(action === "send"\) await drainClientNotices/, "sending emails the client straight away");
 });
 
@@ -81,4 +82,10 @@ test("the document checklist carries the migration-specific items in both the se
 test("the forms route is open to anyone who works cases or documents, not denied by default", () => {
   // A route missing from this map is refused for every non-admin, which is how staff were locked out once.
   assert.match(access, /forms:\[\.\.\.caseFunctions,"documents"\]/);
+});
+
+test("a form can be deleted, but an answered form only by an administrator", () => {
+  assert.match(deletion, /elsif p_action = 'delete' then/);
+  assert.match(deletion, /f\.status in \('submitted','reviewed'\) and public\.current_user_level\(\)::text not in \('platform_owner','super_admin','branch_admin'\)/);
+  assert.match(deletion, /delete from public\.case_forms where id=f\.id;/);
 });

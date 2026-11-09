@@ -129,6 +129,20 @@ test("the sign-in page renders its form", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("a forgotten password can be reset from the sign-in page", async ({ page }) => {
+  await page.goto("/");
+  await page.locator('input[name="email"]').fill("student@maximus.test");
+  await page.getByRole("button", { name: "Forgot your password?" }).click();
+  const reset = page.getByRole("group", { name: "Reset your password" });
+  await expect(reset.getByLabel("Email address for the reset link")).toHaveValue("student@maximus.test");
+  await reset.getByRole("button", { name: "Send reset link" }).click();
+  await expect(reset.getByRole("status")).toContainText(/reset link is on its way/);
+  // The password field can be shown while typing.
+  await page.locator('input[name="password"]').fill("secret-typing");
+  await page.getByRole("button", { name: "Show password" }).click();
+  await expect(page.locator('input[name="password"]')).toHaveAttribute("type", "text");
+});
+
 test("an unknown account is refused and stays on the sign-in page", async ({
   page,
 }) => {

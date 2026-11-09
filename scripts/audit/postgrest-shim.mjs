@@ -280,6 +280,9 @@ const server = http.createServer((req, res) => {
         return send(200, { id: uid, email });
       }
       if (url.pathname === "/auth/v1/logout") return send(204, undefined);
+      // A password reset request: GoTrue answers 200 whether or not the
+      // address has an account, and emails the link out of band.
+      if (url.pathname === "/auth/v1/recover" && req.method === "POST") return send(200, {});
       // The public settings endpoint GoTrue exposes so a client can tell
       // which social providers are switched on. Controlled by an env var so
       // the integration status test can exercise both answers.

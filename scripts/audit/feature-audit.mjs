@@ -2308,6 +2308,21 @@ expect("a manager deletes a template", managerTemplateDelete.status === 200, `${
 const secondForm = await call("/api/crm/forms", { method: "POST", cookie: formsOfficer.cookie, body: { action: "create", caseId: formsCaseId, title: "Follow-up questions", fields: [{ key: "anything_else", label: "Anything else?", type: "textarea" }] } });
 const withdraw = await call("/api/crm/forms", { method: "POST", cookie: formsOfficer.cookie, body: { action: "withdraw", id: secondForm.json?.form?.id } });
 expect("a blank form can be written on the spot and withdrawn", secondForm.status === 200 && withdraw.status === 200 && withdraw.json?.form?.status === "withdrawn", `${secondForm.status} ${withdraw.status} ${JSON.stringify(withdraw.json).slice(0, 200)}`);
+const deleteWithdrawn = await call("/api/crm/forms", { method: "POST", cookie: formsOfficer.cookie, body: { action: "delete", id: secondForm.json?.form?.id } });
+const afterDelete = await call(`/api/crm/forms?caseId=${formsCaseId}`, { cookie: formsOfficer.cookie });
+expect("an officer deletes a withdrawn form and it is gone from the case", deleteWithdrawn.status === 200 && !(afterDelete.json?.forms ?? []).some((f) => f.id === secondForm.json?.form?.id), `${deleteWithdrawn.status} ${JSON.stringify(deleteWithdrawn.json).slice(0, 200)}`);
+const officerDeletesAnswered = await call("/api/crm/forms", { method: "POST", cookie: formsOfficer.cookie, body: { action: "delete", id: formId } });
+expect("an officer cannot delete a form the client has answered", officerDeletesAnswered.status === 403 && /administrator/.test(officerDeletesAnswered.json?.error ?? ""), `${officerDeletesAnswered.status} ${JSON.stringify(officerDeletesAnswered.json)}`);
+const managerDeletesAnswered = await call("/api/crm/forms", { method: "POST", cookie: manager.cookie, body: { action: "delete", id: formId } });
+expect("a manager can delete an answered form", managerDeletesAnswered.status === 200, `${managerDeletesAnswered.status} ${JSON.stringify(managerDeletesAnswered.json).slice(0, 200)}`);
+
+section("Forgotten password");
+const resetKnown = await call("/api/auth/reset-password", { method: "POST", body: { email: "student@maximus.test" } });
+expect("a reset link is requested for a registered address", resetKnown.status === 200 && /reset link/.test(resetKnown.json?.message ?? ""), `${resetKnown.status} ${JSON.stringify(resetKnown.json)}`);
+const resetUnknown = await call("/api/auth/reset-password", { method: "POST", body: { email: "nobody@maximus.test" } });
+expect("an unknown address gets the same answer, so accounts cannot be enumerated", resetUnknown.status === 200 && resetUnknown.json?.message === resetKnown.json?.message, `${resetUnknown.status} ${JSON.stringify(resetUnknown.json)}`);
+const resetInvalid = await call("/api/auth/reset-password", { method: "POST", body: { email: "not an email" } });
+expect("a malformed address is refused", resetInvalid.status === 400, `${resetInvalid.status}`);
 
 section("Sign out");
 const out = await call("/api/auth/logout", { method: "POST", cookie: owner.cookie });

@@ -18,7 +18,7 @@ type Json = Record<string, unknown>;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const uuid = (value: unknown) => (typeof value === "string" && UUID.test(value) ? value : null);
 const text = (value: unknown, max = 20000) => (typeof value === "string" ? value.slice(0, max) : null);
-const CASE_ACTIONS = ["create", "update", "send", "view", "save", "submit", "review", "withdraw"];
+const CASE_ACTIONS = ["create", "update", "send", "view", "save", "submit", "review", "withdraw", "delete"];
 
 export async function GET(request: Request) {
   try {

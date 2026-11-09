@@ -107,7 +107,7 @@ with expected(area, kind, name, detail) as (values
   ('Client notice wording (20261103)','function','render_client_notice_template','Document requests use the organisation''s own email template'),
   ('View and edit access (20261104)','function','private.case_edit_allowed',    'A view-only section is read-only in the database too'),
   ('View and edit access (20261104)','function','private.edit_allowed',         'The edit check behind every section'),
-  ('Schema version (20261104)', 'function', 'schema_version',                   'Tells the CRM which migration the database is at; should return 20261109000000'),
+  ('Schema version (20261104)', 'function', 'schema_version',                   'Tells the CRM which migration the database is at; should return 20261109010000'),
   ('Course catalogue live sync (0030)', 'table',    'course_catalog_sync_runs',  'One row per catalogue sync attempt, success or failure'),
   ('Course catalogue live sync (0030)', 'function', 'search_course_catalog_v2',  'Student-safe catalogue search with advising filters and source freshness'),
   ('Course catalogue live sync (0030)', 'column',   'institutions.country_code', 'Normalised ISO country code behind the country filter'),

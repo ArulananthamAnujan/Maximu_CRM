@@ -41,7 +41,7 @@ In the deployment (Netlify or Cloudflare) set:
 
 | Secret | What it turns on |
 | --- | --- |
-| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | The application itself |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY` | The application itself. In the Supabase project, **Authentication -> URL Configuration**, set the Site URL to the production URL and add `https://<production host>/auth/google-callback` to the redirect list: password-setup and "Forgot your password?" links land there |
 | `SUPABASE_SERVICE_ROLE_KEY` | Creating staff logins, backups, the scheduled operations |
 | `FIELD_ENCRYPTION_KEY` | Passport numbers (`openssl rand -base64 32`; never change it once data is stored) |
 | `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_PRIVATE_KEY`, `GOOGLE_SHARED_DRIVE_ID` | Document storage in the agency's Shared Drive |

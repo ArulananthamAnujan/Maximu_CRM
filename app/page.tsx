@@ -1568,7 +1568,28 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
   const [portal, setPortal] = useState<"staff" | "client">("staff"),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [showPassword, setShowPassword] = useState(false);
+    [showPassword, setShowPassword] = useState(false),
+    [resetting, setResetting] = useState(false),
+    [resetEmail, setResetEmail] = useState(""),
+    [resetMessage, setResetMessage] = useState(""),
+    [resetBusy, setResetBusy] = useState(false);
+  const requestReset = async () => {
+    setResetBusy(true);
+    setResetMessage("");
+    try {
+      const response = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: resetEmail }),
+      });
+      const result = await response.json().catch(() => ({}));
+      setResetMessage(result.message || result.error || "The reset link could not be requested.");
+    } catch {
+      setResetMessage("The reset link could not be requested. Check your connection and try again.");
+    } finally {
+      setResetBusy(false);
+    }
+  };
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setBusy(true);
@@ -1721,6 +1742,36 @@ function LiveLogin({ onLogin }: { onLogin: () => Promise<void> }) {
                 </button>
               </span>
             </label>
+            <button
+              type="button"
+              className="forgotPassword"
+              onClick={() => {
+                setResetMessage("");
+                setResetting((value) => !value);
+                const typed = (document.querySelector('.loginFields input[name="email"]') as HTMLInputElement | null)?.value ?? "";
+                if (typed) setResetEmail(typed);
+              }}
+            >
+              Forgot your password?
+            </button>
+            {resetting && (
+              <div className="resetPassword" role="group" aria-label="Reset your password">
+                <p>We will email you a one-time link to choose a new password.</p>
+                <label>
+                  Email address for the reset link
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    value={resetEmail}
+                    onChange={(event) => setResetEmail(event.target.value)}
+                  />
+                </label>
+                <button type="button" className="ghostButton" disabled={resetBusy || !resetEmail.trim()} onClick={() => void requestReset()}>
+                  {resetBusy ? "Sending…" : "Send reset link"}
+                </button>
+                {resetMessage && <p role="status" className="resetMessage">{resetMessage}</p>}
+              </div>
+            )}
           </div>
           {error ? (
             <div className="loginError">
