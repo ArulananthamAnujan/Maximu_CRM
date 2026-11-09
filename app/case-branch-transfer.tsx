@@ -2,15 +2,18 @@
 
 import { useId, useState } from "react";
 
-export function CaseBranchTransfer({ caseId, branchId, branchName, branches, onTransferred }: {
+export function CaseBranchTransfer({ caseId, branchId, branchName, branches, onTransferred, open, onClose }: {
   caseId: string;
   branchId: string | null;
   branchName: string;
   branches: { id: string; name: string }[];
   onTransferred: (transfer: { branchId: string; branch: string }) => void | Promise<void>;
+  /** Opened from the "Transfer branch" action in the case header. */
+  open: boolean;
+  onClose: () => void;
 }) {
   const formId = useId();
-  const [open, setOpen] = useState(false);
+  const setOpen = (next: boolean) => { if (!next) onClose(); };
   const [destination, setDestination] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -18,13 +21,13 @@ export function CaseBranchTransfer({ caseId, branchId, branchName, branches, onT
   const [notice, setNotice] = useState("");
   const destinationName = branches.find(branch => branch.id === destination)?.name;
 
+  if (!open && !notice) return null;
   return (
     <section className="caseBranchTransfer" aria-label="Branch transfer">
-      <div className="caseBranchTransferHead">
-        <div><strong>Branch access</strong><p>All Admin and Staff accounts in {branchName || "the assigned branch"} can work on this case.</p></div>
-        {!open && <button type="button" className="ghostButton" onClick={() => { setOpen(true); setNotice(""); }}>Transfer branch</button>}
-      </div>
-      {notice && <p role="status">{notice}</p>}
+      {open && <div className="caseBranchTransferHead">
+        <div><strong>Transfer this case to another branch</strong><p>Today every Admin and Staff account in {branchName || "the assigned branch"} can work on it.</p></div>
+      </div>}
+      {notice && <p role="status">{notice} <button type="button" className="textButton" onClick={() => setNotice("")}>Dismiss</button></p>}
       {open && <form onSubmit={async event => {
         event.preventDefault();
         if (busy || !destination || !reason.trim()) return;
@@ -38,7 +41,7 @@ export function CaseBranchTransfer({ caseId, branchId, branchName, branches, onT
           });
           const result = await response.json();
           if (!response.ok) throw new Error(result.error || "The case could not be transferred.");
-          setOpen(false);
+          onClose();
           setDestination("");
           setReason("");
           setNotice(`Transferred to ${result.transfer.branch}. Its Admin and Staff accounts now have access.`);

@@ -1,0 +1,22 @@
+.combo { position: relative; display: block; width: 100%; }
+.combo input { width: 100%; padding-right: 40px; }
+.toggle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 30px; height: 30px; display: grid; place-items: center;
+  border: 0; border-radius: 8px; background: transparent; color: #31586e; cursor: pointer;
+}
+.toggle:hover { background: #e8f3f8; color: #0d719d; }
+.list {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 40;
+  margin: 0; padding: 6px; list-style: none; max-height: 280px; overflow-y: auto;
+  background: #fff; border: 1px solid #d5e3ee; border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(11, 35, 54, 0.16);
+}
+.option {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  padding: 9px 12px; border-radius: 8px; cursor: pointer;
+  font-size: 14px; color: #0b2336;
+}
+.option small { color: #526175; font-size: 12px; white-space: nowrap; }
+.option.active, .option:hover { background: #eaf4fa; }
+.option.selected { font-weight: 700; color: #145f88; }

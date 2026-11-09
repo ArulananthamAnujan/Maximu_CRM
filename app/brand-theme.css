@@ -352,3 +352,22 @@
 .appShell select:focus, .demoLogin select:focus { border-color: var(--bt-blue-2); box-shadow: 0 0 0 4px rgba(25, 122, 168, 0.11); outline: none; }
 .appShell select option, .demoLogin select option { padding: 8px 10px; font-size: 14px; color: var(--bt-text); background: #fff; }
 .appShell select:disabled { opacity: 0.6; }
+
+/* Case header: the actions sit in the dark hero, so the branch strip and the
+   footer with Archive are gone. Ghost buttons read light on the gradient. */
+.appShell.caseWindow .drawerHead, .caseDrawer .drawerHead { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 14px 24px; }
+.drawerHeadActions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; margin-left: auto; }
+.appShell.caseWindow .drawerHeadActions .ghostButton { color: #fff !important; background: rgba(255, 255, 255, 0.1) !important; border-color: rgba(255, 255, 255, 0.26) !important; box-shadow: none; }
+.appShell.caseWindow .drawerHeadActions .ghostButton:hover { background: rgba(255, 255, 255, 0.18) !important; }
+.appShell.caseWindow .drawerHeadActions .ghostButton:disabled { opacity: 0.55; }
+.appShell.caseWindow .drawerHeadActions .dangerButton { color: #ffd4c8 !important; border-color: rgba(255, 196, 180, 0.38) !important; }
+.appShell.caseWindow .drawerHeadActions .dangerButton:hover { background: rgba(214, 69, 40, 0.28) !important; }
+.appShell.caseWindow .drawerHeadActions .viewOnlyBadge { align-self: center; }
+.appShell.caseWindow .drawerHead .caseIdentityMeta span svg { vertical-align: -2px; margin-right: 2px; color: var(--bt-sky); }
+.caseWindow .caseSectionHead { display: none; }
+.appShell .caseBranchTransfer { background: #fff; border: 1px solid var(--bt-card-border); margin: 14px 24px 0; padding: 18px 20px; border-radius: 16px; box-shadow: var(--bt-card-shadow); }
+.appShell .caseBranchTransfer strong { font-size: 15px; color: var(--bt-navy); }
+.appShell .caseBranchTransfer .textButton { margin-left: 8px; padding: 0; border: 0; background: transparent; color: #145f88; font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
+@media (max-width: 760px) {
+  .drawerHeadActions { justify-content: flex-start; margin-left: 0; }
+}

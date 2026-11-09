@@ -20,6 +20,7 @@ import { CaseFormsPanel, FormTemplatesPanel } from "./case-forms-panel";
 import { CaseDocumentRequests } from "./case-document-requests";
 import { CaseFollowUpForm } from "./case-follow-up-form";
 import { CaseBranchTransfer } from "./case-branch-transfer";
+import { ComboBox } from "./combo-box";
 import { CourseMasters } from "./course-masters";
 import { DocumentActions } from "./document-actions";
 import { StaffDeleteDialog } from "./staff-delete-dialog";
@@ -6321,8 +6322,8 @@ function ReportBuilder({ serviceMode, canSeeFinance, offices, staff, sources, st
         <div className="reportBuilderGrid">
         <label>Assigned staff<select value={ownerId} onChange={(event) => setOwnerId(event.target.value)}><option value="">Everyone</option>{staff.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
         <label>Stage<select value={stage} onChange={(event) => setStage(event.target.value)}><option value="">Any stage</option><option value="enquiry">Enquiry</option><option value="student">{serviceMode === "direct_visa" ? "Client" : "Student"}</option><option value="application">Application</option><option value="visa">Visa</option><option value="deferred">Deferred</option><option value="completed">Completed</option></select></label>
-        <label>Lead source<input list="report-sources" value={source} onChange={(event) => setSource(event.target.value)} placeholder="Any source" /><datalist id="report-sources">{sources.map((value) => <option key={value} value={value} />)}</datalist></label>
-        <label>Lead status<input list="report-statuses" value={status} onChange={(event) => setStatus(event.target.value)} placeholder="Any status" /><datalist id="report-statuses">{statuses.map((value) => <option key={value} value={value} />)}</datalist></label>
+        <label>Lead source<ComboBox value={source} onChange={setSource} options={sources} placeholder="Any source" ariaLabel="Lead source" /></label>
+        <label>Lead status<ComboBox value={status} onChange={setStatus} options={statuses} placeholder="Any status" ariaLabel="Lead status" /></label>
         </div>
       </details>
       <div className="datasetChips" role="group" aria-label="Sheets to export">
@@ -8639,6 +8640,7 @@ function CaseDrawerBody({
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [newItem, setNewItem] = useState("");
   const [newNote, setNewNote] = useState("");
+  const [transferOpen, setTransferOpen] = useState(false);
   const [activityFilter, setActivityFilter] = useState<"all" | "notes">("all");
   const [noteSearch, setNoteSearch] = useState("");
   const [working, setWorking] = useState(false);
@@ -8954,9 +8956,17 @@ function CaseDrawerBody({
             </div>
             <p className="caseIdentityMeta">
               <span className="caseStageBadge">{stageLabelFor(stage, direct)}</span>
-              <span title={`shared with all staff in ${item.branch}`}>{item.branch}</span>
+              <span title={`Shared with every Admin and Staff account in ${item.branch}`}><Building2 size={13} /> {item.branch} branch</span>
               {item.target && <span title={item.target}>{enquiryDestinationLabel({ destinationCountry: "", target: item.target })}</span>}
             </p>
+          </div>
+          <div className="drawerHeadActions">
+            {viewOnly ? <span className="viewOnlyBadge" title="Your account can read this case but not change it">View only</span>
+              : <button className="ghostButton" onClick={() => edit({ ...item, email: String(client.email ?? item.email), phone: String(client.mobile ?? item.phone), dob: String(client.date_of_birth ?? item.dob ?? ""), nationality: String(client.nationality ?? item.nationality ?? "") })} disabled={caseLoading || !canModify || !allowed(stageFunction(stage))}>
+                <Pencil size={14} /> Edit case
+              </button>}
+            {canTransferBranch && caseId && <button className="ghostButton" onClick={() => setTransferOpen((value) => !value)} aria-expanded={transferOpen}><Building2 size={14} /> Transfer branch</button>}
+            <button className="ghostButton dangerButton" onClick={() => remove(item.id)}><Trash2 size={14} /> {canArchive ? "Archive" : "Request archive"}</button>
           </div>
           <button
             className="iconButton"
@@ -8973,6 +8983,8 @@ function CaseDrawerBody({
           branchId={item.branchId ?? null}
           branchName={item.branch}
           branches={branches}
+          open={transferOpen}
+          onClose={() => setTransferOpen(false)}
           onTransferred={async transfer => { await onBranchTransferred(transfer); await reload(); }}
         />}
 
@@ -9045,12 +9057,6 @@ function CaseDrawerBody({
               <div>
                 <h2>{activeTabLabel}</h2>
                 <p className="caseSectionDescription">{caseTabDescriptions[tab]}</p>
-              </div>
-              <div className="caseQuickActions">
-                {viewOnly && <span className="viewOnlyBadge" title="Your account can read this case but not change it">View only</span>}
-                {!viewOnly && <button className="ghostButton" onClick={() => edit({ ...item, email: String(client.email ?? item.email), phone: String(client.mobile ?? item.phone), dob: String(client.date_of_birth ?? item.dob ?? ""), nationality: String(client.nationality ?? item.nationality ?? "") })} disabled={caseLoading || !canModify || !allowed(stageFunction(stage))}>
-                  <Pencil size={14} /> Edit case
-                </button>}
               </div>
             </header>
 
@@ -9981,15 +9987,6 @@ function CaseDrawerBody({
         )}
 
             </>}
-        <div className="drawerFooter">
-          <button
-            className="ghostButton dangerButton"
-            onClick={() => remove(item.id)}
-          >
-            <Trash2 size={15} />
-            {canArchive ? "Archive" : "Request archive"}
-          </button>
-        </div>
           </main>
         </div>
       </aside>
@@ -10085,6 +10082,9 @@ function HistorySection({
             <label key={name}>
               {label}
               {requiredField ? " *" : ""}
+              {name === "testType" ? (
+                <ComboBox name={name} required={requiredField} defaultValue={String(rowValue(editingRow, name))} options={["IELTS", "TOEFL", "PTE", "GRE", "GMAT", "SAT", "Duolingo", "CELPIP", "TOPIK", "JLPT", "Others"]} placeholder="Choose or type the test" />
+              ) : (
               <input
                 name={name}
                 type={kind === "number" ? "number" : kind}
@@ -10092,12 +10092,11 @@ function HistorySection({
                 required={requiredField}
                 min={name === "details.backlogs" ? 0 : name === "details.yearOfPassing" ? 1900 : undefined}
                 max={name === "details.yearOfPassing" ? 2200 : undefined}
-                list={name === "testType" ? "case-proficiency-tests" : undefined}
                 defaultValue={String(rowValue(editingRow, name))}
               />
+              )}
             </label>
           ))}
-          {action === "english_test" && <datalist id="case-proficiency-tests">{["IELTS", "TOEFL", "PTE", "GRE", "GMAT", "SAT", "Duolingo", "CELPIP", "TOPIK", "JLPT", "Others"].map(test => <option key={test} value={test} />)}</datalist>}
           <div className="formActions">
             <button className="primaryButton" disabled={working}>
               <Plus size={15} />
@@ -11474,10 +11473,7 @@ function RecordModal({
                 </label>
                 <label>
                   Visa type
-                  <input name="visaType" list="commonVisaTypes" placeholder="Select or type the visa type" />
-                  <datalist id="commonVisaTypes">
-                    {COMMON_VISA_TYPES.map((visaType) => <option key={visaType} value={visaType} />)}
-                  </datalist>
+                  <ComboBox name="visaType" options={COMMON_VISA_TYPES} placeholder="Select or type the visa type" />
                 </label>
                 <label>
                   Next follow-up
@@ -11566,9 +11562,6 @@ function RecordModal({
                         <input type="hidden" name="intake" value={studyChoices[0]?.intake || ""} />
                         <input type="hidden" name="proposedCourseStart" value={studyChoices[0]?.start || ""} />
                         <input type="hidden" name="proposedCourseEnd" value={studyChoices[0]?.end || ""} />
-                        <datalist id="intakeInstitutions">
-                          {intakeInstitutions.map((institution) => <option key={institution.id} value={institution.name}>{institution.country}{institution.city ? ` · ${institution.city}` : ""}</option>)}
-                        </datalist>
                         <div className="repeatableIntakeList wide">
                           <div className="repeatableSectionHead">
                             <div><strong>Suggested universities and courses</strong><small>Add every option discussed with the client.</small></div>
@@ -11581,8 +11574,8 @@ function RecordModal({
                             return (
                               <fieldset className="repeatableIntakeRow" key={`study-choice-${index}`}>
                                 <legend>Choice {index + 1}</legend>
-                                <label>University / institution<input list="intakeInstitutions" value={choice.institution} onChange={(event) => { const institution = intakeInstitutions.find((item) => item.name === event.target.value); update({ institution: event.target.value, institutionId: institution?.id || "", course: institution?.id === choice.institutionId ? choice.course : "" }); if (institution) void loadInstitutionCourses(institution.id); }} /></label>
-                                <label>Course<input list={`intakeCourses-${index}`} value={choice.course} onChange={(event) => update({ course: event.target.value })} /><datalist id={`intakeCourses-${index}`}>{courses.map((course) => <option key={course.id} value={course.name}>{[course.level, course.campus].filter(Boolean).join(" · ")}</option>)}</datalist></label>
+                                <label>University / institution<ComboBox value={choice.institution} ariaLabel="University / institution" options={intakeInstitutions.map((institution) => ({ value: institution.name, hint: [institution.country, institution.city].filter(Boolean).join(" · ") }))} onChange={(next) => { const institution = intakeInstitutions.find((item) => item.name === next); update({ institution: next, institutionId: institution?.id || "", course: institution?.id === choice.institutionId ? choice.course : "" }); if (institution) void loadInstitutionCourses(institution.id); }} /></label>
+                                <label>Course<ComboBox value={choice.course} ariaLabel="Course" options={courses.map((course) => ({ value: course.name, hint: [course.level, course.campus].filter(Boolean).join(" · ") }))} onChange={(next) => update({ course: next })} /></label>
                                 <label>Campus<input value={choice.campus} onChange={(event) => update({ campus: event.target.value })} /></label>
                                 <label>Intake<input value={choice.intake} onChange={(event) => update({ intake: event.target.value })} placeholder="e.g. February 2027" /></label>
                                 <label>Proposed course start<input type="date" value={choice.start} onChange={(event) => update({ start: event.target.value })} /></label>

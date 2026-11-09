@@ -338,3 +338,19 @@ The client's screen groups questions by section in white fieldsets with the
 orange tracked legend; repeating details (family members, addresses, travel)
 are small tables with an add-row control. Status reads as a coloured pill:
 amber with the client, green answers received, blue reviewed.
+
+## Case header actions and a real combo box (owner's suggestion)
+
+The case window's controls now sit where a person looks for them: Edit
+case, Transfer branch and Archive are light ghost buttons on the dark hero,
+so the "Branch access" strip under it and the lone Archive at the foot of
+the page are gone and the content starts one row higher. The branch is
+named in the hero's meta line with a building mark. Transfer opens a white
+card under the hero rather than a permanent banner.
+
+Fields that offered a list of suggestions (visa type, English test,
+institution and course on an enquiry, the report builder's source and
+status) used the browser's datalist, which draws a bare native menu that
+ignores the product and escapes the dialog. They now use one combo box:
+the field keeps its look, a chevron opens a white list with hints, typing
+filters it, and anything not in the list is kept as typed.
