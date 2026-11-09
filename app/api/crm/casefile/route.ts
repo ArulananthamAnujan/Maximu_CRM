@@ -1,4 +1,5 @@
 import { noteProvenance } from "@/server/case-notes";
+import { legacyDateLabel, timelineOrder } from "@/server/legacy-timeline";
 import {
   appendRefreshCookies,
   LiveAccessError,
@@ -640,11 +641,12 @@ function buildTimeline(
       detail: typeof row.body === "string" ? row.body : null,
       actorId: (row.actor_profile_id as string) ?? null,
       actorName: actorNames.get(String(row.actor_profile_id ?? "")) ?? String(row.actor_label ?? "Legacy staff member"),
+      dateLabel: legacyDateLabel(row),
     })),
   ];
   return entries
-    .filter((entry) => entry.at)
-    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+    .filter((entry) => entry.at || entry.dateLabel)
+    .sort((a, b) => timelineOrder(b) - timelineOrder(a))
     .slice(0, 300);
 }
 
