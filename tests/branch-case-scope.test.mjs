@@ -84,17 +84,17 @@ test("staff receive complete operational tools only for permitted cases", () => 
   assert.doesNotMatch(operations, /Only administrators can send payment reminders/);
 });
 
-test("student and client directories keep converted people visible throughout the case", () => {
+test("student and client lists hold only the cases at that stage", () => {
   assert.match(
     page,
-    /active === "students"[\s\S]*?cases\.filter\([\s\S]*?c\.lifecycleStage !== "enquiry"/,
+    /active === "students"[\s\S]*?atStage\("student"\)/,
   );
   assert.match(
     page,
-    /active === "direct_visas"[\s\S]*?cases\.filter\([\s\S]*?c\.lifecycleStage !== "enquiry"/,
+    /active === "direct_visas"[\s\S]*?atStage\("student"\)/,
   );
-  assert.match(page, /active === "direct_visas"[\s\S]*?"Client directory"/);
-  assert.match(page, /active === "students"[\s\S]*?"Student directory"/);
+  assert.match(page, /active === "direct_visas"[\s\S]*?"Cases at the client stage"/);
+  assert.match(page, /active === "students"[\s\S]*?"Cases at the student stage"/);
   assert.match(
     workspace,
     /row\.lifecycle_stage === "deferred" \|\| row\.health === "attention"/,

@@ -13296,17 +13296,17 @@ function HomeWorkspace() {
       setEnquiryPageRecords(current => current.filter(item => item.dbId !== record.dbId));
       setEnquiriesLoaded(false);
       const movedDirect = record.serviceType === "direct_visa";
+      const moved = {
+        lifecycleStage: stage,
+        stage: stageLabelFor(stage, movedDirect),
+        status: (stage === "completed" ? "completed" : stage === "deferred" ? "waiting" : "active") as CaseRecord["status"],
+      };
+      // An enquiry is loaded with the enquiry list, not with the other cases,
+      // so add it here: it must be on its new list as soon as it is moved.
       setCases((current) =>
-        current.map((item) =>
-          item.dbId === record.dbId
-            ? {
-                ...item,
-                lifecycleStage: stage,
-                stage: stageLabelFor(stage, movedDirect),
-                status: stage === "completed" ? "completed" : stage === "deferred" ? "waiting" : "active",
-              }
-            : item,
-        ),
+        current.some((item) => item.dbId === record.dbId)
+          ? current.map((item) => item.dbId === record.dbId ? { ...item, ...moved } : item)
+          : [{ ...record, ...moved }, ...current],
       );
       // Direct Visa's nav has no screen of its own for the student or
       // application stages: "Clients" is where the student stage lives, and
@@ -13912,13 +13912,10 @@ function HomeWorkspace() {
       active === "enquiries"
         ? enquiryList
         : active === "students"
-          ? // Students is the enduring Study Abroad directory, not a
-            // temporary pipeline bucket. A converted student must remain
-            // findable here after applications are submitted or the case
-            // reaches the visa stage.
-            cases.filter(
-              (c) => inStream(c) && c.lifecycleStage !== "enquiry",
-            )
+          ? // A case is listed on one screen only: the one for the stage it
+            // is at. Once a student moves to application they leave this
+            // list and appear under Applications; search still finds them.
+            atStage("student")
           : active === "applications"
             ? atStage("application")
             : active === "visas"
@@ -13937,14 +13934,10 @@ function HomeWorkspace() {
                   )
                 : atStage("visa")
               : active === "direct_visas"
-                ? // Clients is the enduring Direct Visa directory. Keep a
-                  // person visible here throughout application, lodgement,
-                  // deferral and completion; the other screens are focused
-                  // operational views of the same case, not replacements for
-                  // the client record.
-                  cases.filter(
-                    (c) => inStream(c) && c.lifecycleStage !== "enquiry",
-                  )
+                ? // The same rule for Direct Visa: Clients holds the cases at
+                  // the client stage, and a case that moves on is listed
+                  // under Visa Applications instead.
+                  atStage("student")
                 : active === "case_complete"
                   ? atStage("completed")
                   : active === "defer"
@@ -13971,9 +13964,9 @@ function HomeWorkspace() {
                 ? "Cases at the application or visa stage"
                 : "Cases at the visa stage"
               : active === "direct_visas"
-                ? "Client directory"
+                ? "Cases at the client stage"
                 : active === "students"
-                  ? "Student directory"
+                  ? "Cases at the student stage"
                 : meta[active][0]
         }
         module={active}
