@@ -8011,6 +8011,9 @@ function AdminView({
                             })
                           }
                         >
+                          {!STAFF_LEVELS.some(([key]) => key === person.level) && person.level && (
+                            <option value={person.level}>{levelLabel(person.level)}</option>
+                          )}
                           {STAFF_LEVELS.map(([key]) => (
                             <option key={key} value={key}>
                               {levelLabel(key)}
@@ -10869,11 +10872,12 @@ function VisaMatterTab({
         ).map(([name, label, key]) => (
           <label key={name}>
             {label}
+            {/* An imported answer that is not one of ours stays selectable. */}
             <select
               name={name}
-              defaultValue={text(value[key]) || "not_started"}
+              defaultValue={recordedChoice(CHECK_STATUS_OPTIONS, value[key], "not_started").value}
             >
-              {CHECK_STATUS_OPTIONS.map((option) => (
+              {recordedChoice(CHECK_STATUS_OPTIONS, value[key], "not_started").options.map((option) => (
                 <option key={option} value={option}>
                   {humanise(option)}
                 </option>
@@ -11486,21 +11490,25 @@ function RecordModal({
                   />
                   <small>Optional at enquiry. Required before moving the case to Visa.</small>
                 </label>
-                <label>
-                  Branch
-                  <select
-                    name="branchId"
-                    defaultValue={editing?.branchId ?? ""}
-                  >
-                    <option value="">Your own branch</option>
-                    {branches.map((branch) => (
-                      <option key={branch.id} value={branch.id}>
-                        {branch.name}
-                        {branch.code ? ` (${branch.code})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {/* Saving an edit never moved a case between branches; that is
+                    the branch transfer on the case itself. */}
+                {!editing && (
+                  <label>
+                    Branch
+                    <select
+                      name="branchId"
+                      defaultValue=""
+                    >
+                      <option value="">Your own branch</option>
+                      {branches.map((branch) => (
+                        <option key={branch.id} value={branch.id}>
+                          {branch.name}
+                          {branch.code ? ` (${branch.code})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 {editing?.ownerId ? (
                   <input type="hidden" name="ownerId" value={editing.ownerId} />
                 ) : null}

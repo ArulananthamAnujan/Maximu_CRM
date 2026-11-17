@@ -451,7 +451,7 @@ export async function GET(request: Request) {
             clientIntake.destinationCountry ??
             "",
           intake: latestApplication.intake ?? caseIntake.intake ?? clientIntake.intake ?? "",
-          source: client.source ?? "",
+          source: enquiry.source ?? client.source ?? "",
           campaign: enquiry.campaign ?? "",
           priority: row.priority ?? enquiry.priority ?? "medium",
           passportMasked: client.passport_masked ?? "",
@@ -1219,6 +1219,9 @@ export async function POST(request: Request) {
           score: leadScore(body), next_follow_up_at: nullableDate(body.due),
           lost_reason: nullable(body.lostReason),
         }, token);
+      // With no enquiry row to hold it, the source lives on the client.
+      else if (body.source !== undefined)
+        await patchRow("clients", clientId, { source: nullable(body.source) }, token);
       await auditEvent(
         org,
         actor,
