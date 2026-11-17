@@ -224,6 +224,7 @@ export async function GET(request: Request) {
         latestNoteDateLabel: noteSources.get(String(latestNote.id))?.dateLabel ?? "",
         enquiryStatus: enquiry.status ?? row.next_action ?? caseFields.mainStatus ?? "",
         detailedStatus: caseFields.subStatus ?? row.next_action ?? "",
+        visaType: caseFields.visaType ?? "",
         nextFollowUpAt: enquiry.next_follow_up_at ?? row.due_at ?? "",
         updatedAt: legacy.updated_at ?? legacy.updated_date ?? row.opened_at ?? "",
         alternatePhone: clientFields.alternatePhone ?? legacy.alternate_phone ?? "",

@@ -469,6 +469,10 @@ export async function GET(request: Request) {
             caseIntake.visaType ??
             row.matter_type ??
             "",
+          // What the edit form's dropdowns open on.
+          enquiryStatus: enquiry.status ?? row.next_action ?? caseIntake.mainStatus ?? "",
+          detailedStatus: caseIntake.subStatus ?? "",
+          visaType: caseIntake.visaType ?? "",
           notesUnavailable: degraded.includes("case_notes"),
           latestNote: latestNote.body ?? "",
           latestNoteAt: latestNote.created_at ?? "",
@@ -1173,6 +1177,22 @@ export async function POST(request: Request) {
         health: normalHealth(body.health),
       };
       if (await lifecycleReady(token)) caseChanges.visa_expiry_on = visaExpiry;
+      // The detailed status and visa type live beside the imported fields in
+      // custom_fields; merge them so an edit keeps everything else on file.
+      if (body.subStatus !== undefined || body.visaType !== undefined) {
+        const [current] = await rest<Json[]>(
+          `cases?select=id,custom_fields&id=eq.${encodeURIComponent(caseId)}&limit=1`,
+          token,
+        );
+        if (!current) throw new LiveAccessError(403, "That case is not available to you.");
+        const fields: Json =
+          current.custom_fields && typeof current.custom_fields === "object" && !Array.isArray(current.custom_fields)
+            ? { ...(current.custom_fields as Json) }
+            : {};
+        if (body.subStatus !== undefined) fields.subStatus = detailedStatus(body.subStatus);
+        if (body.visaType !== undefined) fields.visaType = nullable(body.visaType);
+        caseChanges.custom_fields = fields;
+      }
       // Progress tracks the lifecycle stage, so an edit that does not carry a
       // progress value must not reset it to zero.
       if (body.progress !== undefined && body.progress !== "")
@@ -1303,7 +1323,7 @@ export async function POST(request: Request) {
             priority: "medium",
             progress: Number(body.progress ?? 0),
             target: nullable(body.target),
-            next_action: nullable(body.subStatus) ?? nullable(body.stage),
+            next_action: detailedStatus(body.subStatus) ?? nullable(body.stage),
             due_at: nullableDate(body.due),
             // Written only when the lifecycle migration has been applied, so
             // an out-of-date database still accepts new cases.
@@ -1372,7 +1392,7 @@ export async function POST(request: Request) {
           case_id: caseId,
           branch_id: branchId, assigned_to: ownerId, source: nullable(body.source),
           campaign: nullable(body.campaign), priority: "medium",
-          status: (nullable(body.subStatus) ?? nullable(body.stage))?.toLowerCase().replace(/\s+/g, "_") || "new",
+          status: nullable(body.stage)?.toLowerCase().replace(/\s+/g, "_") || "new",
           score: leadScore(body), next_follow_up_at: followUp,
           lost_reason: nullable(body.lostReason),
           converted_at: null,
@@ -3068,6 +3088,12 @@ function nullableDay(value: unknown): string | null {
   const date = new Date(`${parsed}T12:00:00Z`);
   if (Number.isNaN(date.getTime())) throw new InputError("Date is invalid.");
   return parsed.slice(0, 10);
+}
+// "No status" is the form's way of saying no detailed status was chosen; it is
+// not a status to file the enquiry under.
+function detailedStatus(value: unknown): string | null {
+  const chosen = nullable(value);
+  return chosen && chosen.toLowerCase() !== "no status" ? chosen : null;
 }
 function intakeFields(body: Json, excluded: string[]): Json {
   const result: Json = {};

@@ -11,6 +11,24 @@ const groups: { title: string; fields: Field[] }[] = [
   { title: "Address", fields: [["line1", "Street address"], ["city", "City"], ["state", "State / province"], ["postcode", "Postcode"]] },
   { title: "Travel, refusals and history gaps", fields: [["visitedOtherCountry", "Visited another country"], ["travelCountry", "Travel country"], ["travelDate", "Travel date", "date"], ["travelPurpose", "Travel purpose"], ["hasVisaRefusal", "Visa refusal"], ["refusalDetails", "Refusal details"], ["gapFrom", "Gap from", "date"], ["gapTo", "Gap to", "date"], ["gapReason", "Gap reason"]] },
 ];
+// Fields with a fixed set of answers are dropdowns, as they are on the intake
+// form. Each choice is [stored value, label].
+const choices: Record<string, [string, string][]> = {
+  gender: [["Male", "Male"], ["Female", "Female"], ["Other", "Other"], ["Prefer not to say", "Prefer not to say"]],
+  marital_status: [["single", "Single"], ["married", "Married"], ["divorced", "Divorced"], ["widowed", "Widowed"], ["separated", "Separated"]],
+  visitedOtherCountry: [["yes", "Yes"], ["no", "No"]],
+  hasVisaRefusal: [["yes", "Yes"], ["no", "No"]],
+};
+// The value on file is always one of the choices, exactly as recorded: wording
+// imported from the old CRM stays selectable instead of the dropdown showing
+// blank and the save wiping it.
+const choicesFor = (name: string, recorded: string): [string, string][] => {
+  const key = recorded.trim().toLowerCase();
+  if (!key) return choices[name];
+  if (choices[name].some(([stored]) => stored.toLowerCase() === key))
+    return choices[name].map(([stored, label]) => stored.toLowerCase() === key ? [recorded, label] : [stored, label]);
+  return [...choices[name], [recorded, recorded]];
+};
 const object = (v: unknown): Row => v && typeof v === "object" && !Array.isArray(v) ? v as Row : {};
 const value = (v: unknown) => typeof v === "string" ? v : "";
 
@@ -60,7 +78,10 @@ export function ClientProfileEditor({ client, canModify, onSave }: {
         {group.title === "Passport" && <p className="coverageIntro">Current number: {value(client.passport_masked) || "Not recorded"}. Leave the number blank to keep it unchanged. New values are encrypted.</p>}
         <div className="caseProfileFields">{group.fields.map(([name, label, type = "text"]) => <label key={name}>
           {label}
-          <input name={name} type={type} defaultValue={initial[name] ?? ""} required={name === "firstName"} autoComplete={name === "passportNumber" ? "off" : undefined} maxLength={type === "date" ? undefined : 250} />
+          {choices[name] ? <select name={name} defaultValue={initial[name] ?? ""}>
+            <option value="">Not recorded</option>
+            {choicesFor(name, initial[name] ?? "").map(([stored, text]) => <option key={stored} value={stored}>{text}</option>)}
+          </select> : <input name={name} type={type} defaultValue={initial[name] ?? ""} required={name === "firstName"} autoComplete={name === "passportNumber" ? "off" : undefined} maxLength={type === "date" ? undefined : 250} />}
         </label>)}</div>
       </fieldset>)}
       <div className="formActions"><button className="primaryButton" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button><span role="status">{message}</span></div>

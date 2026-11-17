@@ -171,6 +171,7 @@ type CaseRecord = {
   notesUnavailable?: boolean;
   enquiryStatus?: string;
   detailedStatus?: string;
+  visaType?: string;
   nextFollowUpAt?: string;
   updatedAt?: string;
   alternatePhone?: string;
@@ -537,6 +538,44 @@ const ENQUIRY_DETAIL_STATUSES = [
   "Wrong number",
   "Rejected",
 ] as const;
+
+const ENQUIRY_SOURCES = [
+  "Walk in",
+  "Referral",
+  "Website",
+  "Social media",
+  "Facebook",
+  "WhatsApp",
+  "Email marketing",
+  "Phone enquiry",
+  "Education expo",
+  "Agent",
+  "Existing client",
+] as const;
+
+// A dropdown can only show a value it has an option for. Records brought over
+// from the old CRM carry wording this product never offered ("Hot lead"), and
+// statuses are stored in snake_case ("follow_up"), so an edit form that simply
+// passed the recorded value to a <select> fell back to its first option, and
+// saving then overwrote what was on file. This matches the recorded value to
+// the list loosely and, when it is not there, keeps it as an extra choice.
+const choiceKey = (value: unknown) =>
+  String(value ?? "").toLowerCase().replace(/[\s_-]+/g, " ").trim();
+function recordedChoice(
+  options: readonly string[],
+  recorded: unknown,
+  fallback = "",
+  aliases: Record<string, string> = {},
+): { options: string[]; value: string } {
+  const raw = String(recorded ?? "").trim();
+  if (!raw) return { options: [...options], value: fallback };
+  const key = choiceKey(raw);
+  const match = options.find((option) => choiceKey(option) === key) ?? aliases[key];
+  if (match) return { options: [...options], value: match };
+  return { options: [...options, raw], value: raw };
+}
+const choiceLabel = (value: string) =>
+  value.includes("_") ? value.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()) : value;
 
 type StudyChoiceDraft = {
   institutionId: string;
@@ -11135,6 +11174,30 @@ function RecordModal({
     editing?.matterType ||
       (workspace === "Direct Visa" ? "Migration enquiry" : "Education enquiry"),
   );
+  // What the edit form's dropdowns open on: the status, source and matter type
+  // already on file, including wording imported from the old CRM.
+  const mainStatusChoice = recordedChoice(
+    ENQUIRY_MAIN_STATUSES,
+    editing?.enquiryStatus,
+    "New Inquiry",
+    { new: "New Inquiry", "no status": "New Inquiry" },
+  );
+  // The detailed status falls back to the main one when none was recorded.
+  const detailStatusChoice = recordedChoice(
+    ENQUIRY_DETAIL_STATUSES,
+    editing && choiceKey(editing.detailedStatus) !== choiceKey(editing.enquiryStatus) &&
+      choiceKey(editing.detailedStatus) !== choiceKey(mainStatusChoice.value)
+      ? editing.detailedStatus
+      : "",
+    "No status",
+  );
+  const sourceChoice = recordedChoice(ENQUIRY_SOURCES, editing?.source);
+  const matterTypeList: readonly string[] =
+    workspace === "Direct Visa" ? DIRECT_VISA_MATTER_TYPES : STUDY_MATTER_TYPES;
+  const matterTypeOptions =
+    matterType && !matterTypeList.includes(matterType)
+      ? [...matterTypeList, matterType]
+      : matterTypeList;
   const [checklistCaseId, setChecklistCaseId] = useState("");
   const [checklistSelection, setChecklistSelection] = useState<Set<string>>(new Set());
   const [studyChoices, setStudyChoices] = useState<StudyChoiceDraft[]>([
@@ -11409,10 +11472,7 @@ function RecordModal({
                     value={matterType}
                     onChange={(e) => setMatterType(e.target.value)}
                   >
-                    {(workspace === "Direct Visa"
-                      ? DIRECT_VISA_MATTER_TYPES
-                      : STUDY_MATTER_TYPES
-                    ).map((option) => (
+                    {matterTypeOptions.map((option) => (
                       <option key={option}>{option}</option>
                     ))}
                   </select>
@@ -11456,20 +11516,20 @@ function RecordModal({
                   Main enquiry status
                   <select
                     name="stage"
-                    defaultValue={editing?.stage || "New Inquiry"}
+                    defaultValue={mainStatusChoice.value}
                   >
-                    {ENQUIRY_MAIN_STATUSES.map((status) => <option key={status}>{status}</option>)}
+                    {mainStatusChoice.options.map((status) => <option key={status} value={status}>{choiceLabel(status)}</option>)}
                   </select>
                 </label>
                 <label>
                   Detailed status
-                  <select name="subStatus" defaultValue="No status">
-                    {ENQUIRY_DETAIL_STATUSES.map((status) => <option key={status}>{status}</option>)}
+                  <select name="subStatus" defaultValue={detailStatusChoice.value}>
+                    {detailStatusChoice.options.map((status) => <option key={status} value={status}>{choiceLabel(status)}</option>)}
                   </select>
                 </label>
                 <label>
                   Visa type
-                  <ComboBox name="visaType" options={COMMON_VISA_TYPES} placeholder="Select or type the visa type" />
+                  <ComboBox key={openKey} name="visaType" defaultValue={editing?.visaType || ""} options={COMMON_VISA_TYPES} placeholder="Select or type the visa type" />
                 </label>
                 <label>
                   Next follow-up
@@ -11482,19 +11542,9 @@ function RecordModal({
                 {!editing && <label className="wide">Appointment remarks<input name="appointmentRemarks" placeholder="Purpose, preparation or location" /></label>}
                 <label>
                   Source
-                  <select name="source" defaultValue={editing?.source || ""}>
+                  <select name="source" defaultValue={sourceChoice.value}>
                     <option value="">Select source</option>
-                    <option>Walk in</option>
-                    <option>Referral</option>
-                    <option>Website</option>
-                    <option>Social media</option>
-                    <option>Facebook</option>
-                    <option>WhatsApp</option>
-                    <option>Email marketing</option>
-                    <option>Phone enquiry</option>
-                    <option>Education expo</option>
-                    <option>Agent</option>
-                    <option>Existing client</option>
+                    {sourceChoice.options.map((option) => <option key={option} value={option}>{choiceLabel(option)}</option>)}
                   </select>
                 </label>
                 <label>
