@@ -13295,6 +13295,12 @@ function HomeWorkspace() {
       enquiryPageCacheRef.current.clear();
       setEnquiryPageRecords(current => current.filter(item => item.dbId !== record.dbId));
       setEnquiriesLoaded(false);
+      // The enquiry count is only re-read when the enquiry list is opened, so
+      // keep it in step here: the dashboard total drops as soon as one leaves.
+      if (record.lifecycleStage === "enquiry" && stage !== "enquiry")
+        setEnquiriesTotal((total) => Math.max(0, total - 1));
+      else if (record.lifecycleStage !== "enquiry" && stage === "enquiry")
+        setEnquiriesTotal((total) => total + 1);
       const movedDirect = record.serviceType === "direct_visa";
       const moved = {
         lifecycleStage: stage,
