@@ -77,8 +77,8 @@
   .copilotIsOpen .appShell .caseNavGroup > span { display:none; }
   .copilotIsOpen .appShell .caseTabs .caseNavGroup button { width:auto; padding:8px 10px; font-size:.875rem; }
   .copilotIsOpen .appShell .caseWorkspaceContent { min-width:0; padding:16px; }
-  .copilotIsOpen .appShell .caseHome { grid-template-columns:minmax(0,1fr); grid-template-areas:"client" "priority" "health" "admissions" "workflow" "audit" "documents" "communication" "bottom"; }
-  .copilotIsOpen .appShell .caseHome.directCase { grid-template-areas:"client" "priority" "health" "workflow" "audit" "documents" "communication" "bottom"; }
+  .copilotIsOpen .appShell .caseHome { grid-template-columns:minmax(0,1fr); grid-template-areas:"workflow" "tiles" "audit" "admissions" "communication" "client"; }
+  .copilotIsOpen .appShell .caseHome.directCase { grid-template-areas:"workflow" "tiles" "audit" "communication" "client"; }
   .copilotIsOpen .appShell .gmailWorkspace { width:100%; min-width:0; }
   .copilotIsOpen .appShell .gmailWorkspaceHeader { flex-wrap:wrap; }
   .copilotIsOpen .appShell .gmailWorkspaceBody { grid-template-columns:160px minmax(0,1fr); }

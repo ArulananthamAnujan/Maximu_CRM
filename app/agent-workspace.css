@@ -208,8 +208,8 @@
 .appShell .recordPreviewBackdrop { z-index: 80; background: #102f4038; backdrop-filter: none; }
 .appShell .caseDrawer.recordPreview { width: min(850px,86vw); max-width: 850px; height: 100dvh; padding: 0; border-left: 1px solid #d3e0e7; border-radius: 0; background: #f5f7f9; overflow: auto; box-shadow: -14px 0 40px #102f4026; }
 .appShell .recordPreview .drawerHead { position: relative; top: auto; }
-.appShell .recordPreview .caseHome, .appShell .recordPreview .caseHome.directCase { grid-template-columns: minmax(0,1fr); grid-template-areas: "client" "priority" "health" "admissions" "workflow" "audit" "documents" "communication" "bottom"; }
-.appShell .recordPreview .caseHome.directCase { grid-template-areas: "client" "priority" "health" "workflow" "audit" "documents" "communication" "bottom"; }
+.appShell .recordPreview .caseHome, .appShell .recordPreview .caseHome.directCase { grid-template-columns: minmax(0,1fr); grid-template-areas: "workflow" "tiles" "audit" "admissions" "communication" "client"; }
+.appShell .recordPreview .caseHome.directCase { grid-template-areas: "workflow" "tiles" "audit" "communication" "client"; }
 .appShell .recordPreview .caseLeftRail { position: static; }
 .appShell .recordPreview .caseAtGlance { grid-template-columns: repeat(3,minmax(0,1fr)); }
 .appShell .recordPreview .caseWindowTopbar { flex-wrap: wrap; gap: 8px 14px; }

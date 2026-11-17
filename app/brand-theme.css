@@ -480,3 +480,12 @@
   .appShell.sidebarDocked .topbar .quickButton span { display: none; }
   .appShell.sidebarDocked .topbar .quickButton { padding: 0 12px; }
 }
+
+/* The case preview drawer and a page narrowed by the open copilot are one
+   column wide whatever the window measures, so the stage panel and the tiles
+   stack there too. Their older layouts named areas the Case home no longer
+   has, which pushed the tiles into columns of their own and crushed the rest. */
+.appShell .recordPreview .caseHome > .lifecyclePanel, .copilotIsOpen .appShell .caseHome > .lifecyclePanel { grid-template-columns: minmax(0, 1fr); grid-template-areas: "head" "track" "actions" "blocker" "more"; }
+.appShell .recordPreview .lifecyclePanel .lifecycleActions, .copilotIsOpen .appShell .lifecyclePanel .lifecycleActions { justify-content: flex-start; }
+.appShell .recordPreview .caseKeyTiles, .copilotIsOpen .appShell .caseKeyTiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 640px) { .appShell .recordPreview .caseKeyTiles, .copilotIsOpen .appShell .caseKeyTiles { grid-template-columns: minmax(0, 1fr); } }
