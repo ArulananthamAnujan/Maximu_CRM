@@ -1172,7 +1172,7 @@ export async function POST(request: Request) {
         service_type: serviceStream(body.workspace, body.matterType ?? body.type),
         matter_type: nullable(body.matterType ?? body.type),
         target: nullable(body.target),
-        next_action: nullable(body.stage),
+        next_action: detailedStatus(body.subStatus) ?? nullable(body.stage),
         due_at: nullableDate(body.due),
         health: normalHealth(body.health),
       };
@@ -1209,13 +1209,17 @@ export async function POST(request: Request) {
       }
       await patchRow("cases", caseId, caseChanges, token);
       const [enquiry] = await rest<Json[]>(
-        `enquiries?select=id&case_id=eq.${encodeURIComponent(caseId)}&order=created_at.desc&limit=1`,
+        `enquiries?select=id,status&case_id=eq.${encodeURIComponent(caseId)}&order=created_at.desc&limit=1`,
         token,
       );
+      // An imported status keeps its original wording when the edit did not
+      // change it; only a different choice is stored in this product's form.
+      const statusKey = (value: unknown) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+      const chosenStatus = statusKey(nullable(body.stage)) || "new";
       if (enquiry?.id)
         await patchRow("enquiries", String(enquiry.id), {
           source: nullable(body.source), campaign: nullable(body.campaign),
-          status: nullable(body.stage)?.toLowerCase().replace(/\s+/g, "_") || "new",
+          status: statusKey(enquiry.status) === chosenStatus ? enquiry.status : chosenStatus,
           score: leadScore(body), next_follow_up_at: nullableDate(body.due),
           lost_reason: nullable(body.lostReason),
         }, token);

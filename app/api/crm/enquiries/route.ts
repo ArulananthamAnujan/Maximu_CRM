@@ -187,7 +187,7 @@ export async function GET(request: Request) {
         nationality: client.nationality ?? "",
         type: row.matter_type || row.service_type,
         serviceType: row.service_type ?? "study_abroad",
-        matterType: row.matter_type ?? "",
+        matterType: row.matter_type ?? caseFields.intake_type ?? "",
         target: row.target ?? "",
         stage: ({ enquiry: "Enquiry", student: "Student", application: "Application", visa: "Visa", deferred: "Deferred", completed: "Completed" } as Record<string, string>)[String(row.lifecycle_stage)] || "Enquiry",
         owner: profileById.get(String(row.owner_id))?.display_name ?? "",

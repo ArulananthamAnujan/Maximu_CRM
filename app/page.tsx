@@ -12656,6 +12656,20 @@ function HomeWorkspace() {
       if (workspaceRefreshRef.current === request) workspaceRefreshRef.current = null;
     }
   };
+  const refreshCaseRecord = async (caseId: string) => {
+    try {
+      const response = await fetch(`/api/crm/enquiries?caseId=${encodeURIComponent(caseId)}&limit=1`, { cache: "no-store" });
+      if (!response.ok) return;
+      const exact = ((await response.json()).records?.[0] ?? null) as CaseRecord | null;
+      if (!exact) return;
+      const merge = (item: CaseRecord) => item.dbId === caseId ? { ...item, ...exact } : item;
+      setSelected((current) => current ? merge(current) : current);
+      setEnquiryPageRecords((current) => current.map(merge));
+      setCases((current) => current.map(merge));
+    } catch {
+      // The full refresh that follows a save still brings the lists up to date.
+    }
+  };
   const queueWorkspaceRefresh = (invalidateEnquiries = false, broadcast = true) => {
     if (broadcast) notifyWorkspaceChanged();
     if (invalidateEnquiries) {
@@ -13073,6 +13087,10 @@ function HomeWorkspace() {
       // later lifecycle stages does not need to reload all enquiry pages.
       const invalidatesEnquiries =
         kind === "case" && (!editing || editing.lifecycleStage === "enquiry");
+      // The open case is a copy taken when it was opened. Re-read the one
+      // record that was edited so the case page, the lists and the next Edit
+      // all show what was just saved rather than the copy from before.
+      if (kind === "case" && editing?.dbId) void refreshCaseRecord(editing.dbId);
       setModal(null);
       setEditing(null);
       setDuplicates(null);
