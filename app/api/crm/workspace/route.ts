@@ -20,6 +20,7 @@ import { orgDate, orgTime } from "@/lib/timezone";
 import { renderTemplate } from "@/server/email";
 import { caseSenders, mailPossible, sendStaffEmail } from "@/server/staff-mail";
 import { drainClientNotices } from "@/server/client-notices";
+import { drainTaskEmails } from "@/server/task-notices";
 import { publicOrigin } from "@/server/public-origin";
 import { findAccountByEmail, sendAccountSetup } from "@/server/account-access";
 
@@ -109,7 +110,7 @@ export async function GET(request: Request) {
         degraded,
       ),
       safeRestPaged(
-        `cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at,custom_fields${portalWorkspace ? "" : "&lifecycle_stage=neq.enquiry"}&order=opened_at.desc`,
+        `cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,stage_entered_at,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at,custom_fields${portalWorkspace ? "" : "&lifecycle_stage=neq.enquiry"}&order=opened_at.desc`,
         token,
         CLIENT_CASE_LIMIT,
         degraded,
@@ -261,7 +262,7 @@ export async function GET(request: Request) {
       .map(row => String(row.case_id ?? "")).filter(id => id && !knownCases.has(id)))];
     for (let offset = 0; offset < parentCaseIds.length; offset += 120) {
       const ids = parentCaseIds.slice(offset, offset + 120).map(encodeURIComponent).join(",");
-      cases.push(...await safeRest(`cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at&id=in.(${ids})`, token, degraded));
+      cases.push(...await safeRest(`cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,stage_entered_at,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at&id=in.(${ids})`, token, degraded));
     }
     const knownClients = new Set(clients.map(row => String(row.id)));
     const parentClientIds = [...new Set([...cases, ...invoices, ...documents, ...enquiries, ...appointments]
@@ -440,6 +441,8 @@ export async function GET(request: Request) {
           completedAt: dateOnly(row.completed_at),
           reopenedAt: dateOnly(row.reopened_at),
           createdAt: row.opened_at ?? "",
+          // When the case last changed stage, including being reopened.
+          stageEnteredAt: row.stage_entered_at ?? "",
           updatedAt: client.updated_at ?? row.opened_at ?? "",
           highestQualification: clientIntake.highestQualification ?? "",
           testGiven: clientIntake.testGiven ?? "",
@@ -1430,6 +1433,7 @@ export async function POST(request: Request) {
     if (action === "task") {
       const id = nullable(body.requestId) ?? crypto.randomUUID();
       await supabaseRequest("/rest/v1/rpc/task_action", {method:"POST",body:JSON.stringify({p_action:"create",p_id:id,p_expected:null,p_values:{caseId:nullable(body.caseId),title:required(body.title,"Task title"),description:nullable(body.description),assignedTo:nullable(body.assignedTo)??actor,taskType:nullable(body.taskType)??"case_work",priority:String(body.priority||"medium").toLowerCase(),due:nullableDate(body.due)}})},token);
+      await drainTaskEmails(publicOrigin(request), actor);
       return Response.json({ok:true,id});
     }
 

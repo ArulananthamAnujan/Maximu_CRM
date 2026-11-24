@@ -64,3 +64,24 @@ test('empty queue never contacts email provider', async () => {
   assert.deepEqual(await deliverTaskEmails(f), { claimed: 0, sent: 0 });
   assert.ok(!f.calls.some(c => c.url.includes('resend.com')));
 });
+
+test('with a staff mailbox the system sender is optional and the claimed row is delivered through it', async () => {
+  const f = fixture();
+  const delivered = [];
+  const env = (name) => (name.startsWith('RESEND') ? '' : values[name]);
+  const result = await deliverTaskEmails({ ...f, env, send: async (claimed) => { delivered.push(claimed.id); return { id: 'gmail-id' }; } });
+  assert.deepEqual(result, { claimed: 1, sent: 1 });
+  assert.deepEqual(delivered, ['queue-id']);
+  assert.equal(f.calls.some(c => c.url.includes('resend.com')), false);
+  const finish = f.calls.find(c => c.url.endsWith('/finish_task_email'));
+  assert.equal(finish.body.p_status, 'sent');
+  assert.equal(finish.body.p_provider_id, 'gmail-id');
+});
+test('a mailbox that cannot send leaves the task email queued for the next attempt', async () => {
+  const f = fixture();
+  const result = await deliverTaskEmails({ ...f, send: async () => { throw new Error('Connect your Gmail account'); } });
+  assert.deepEqual(result, { claimed: 1, sent: 0 });
+  const finish = f.calls.find(c => c.url.endsWith('/finish_task_email'));
+  assert.equal(finish.body.p_status, 'queued');
+  assert.match(finish.body.p_error, /Connect your Gmail/);
+});

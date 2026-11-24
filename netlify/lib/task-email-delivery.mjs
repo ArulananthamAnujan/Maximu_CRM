@@ -1,11 +1,23 @@
 // The injected transport keeps retries testable without sending real emails.
-export async function deliverTaskEmails({ env, fetchImpl = fetch }) {
+//
+// Used two ways, like the client notices: the scheduled Netlify function
+// drains the queue every minute through the system sender, and the CRM calls
+// this straight after a task changes with `send`, which delivers a claimed row
+// from a connected staff Gmail (see server/task-notices.ts). With `send` the
+// system sender is optional, so task email works on a deployment that has
+// only Google Workspace. Both paths claim a row with a lock token, so a
+// notice is never sent twice.
+const LOCAL_ORIGIN = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+export async function deliverTaskEmails({ env, fetchImpl = fetch, origin: originOverride, send }) {
   const base = env('SUPABASE_URL')?.replace(/\/$/, '');
   const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
   const apiKey = env('RESEND_API_KEY');
-  const from = env('RESEND_FROM_EMAIL');
-  const origin = (env('PRODUCTION_URL') || env('URL') || '').replace(/\/$/, '');
-  const configured = Boolean(base && serviceKey && apiKey && from && !from.includes('example.invalid') && /^https:\/\/[^/]+$/.test(origin));
+  const systemFrom = env('RESEND_FROM_EMAIL');
+  const systemReady = Boolean(apiKey && systemFrom && !systemFrom.includes('example.invalid'));
+  const from = systemReady ? systemFrom : 'Maximus CRM';
+  const origin = (originOverride || env('PRODUCTION_URL') || env('URL') || '').replace(/\/$/, '');
+  const originOk = /^https:\/\/[^/]+$/.test(origin) || (Boolean(send) && LOCAL_ORIGIN.test(origin));
+  const configured = Boolean(base && serviceKey && (send || systemReady) && originOk);
   const heartbeat = async (status, counts = {}) => {
     if (!base || !serviceKey) return;
     const response = await fetchImpl(`${base}/rest/v1/task_email_worker_status?on_conflict=id`, {
@@ -35,6 +47,19 @@ export async function deliverTaskEmails({ env, fetchImpl = fetch }) {
   // Five sequential sends plus bounded DB requests stay within the 30s schedule limit.
   for (const row of rows) {
     let status = 'queued', providerId = null, error = null;
+    if (send) {
+      try {
+        const result = await send(row);
+        status = 'sent';
+        providerId = result?.id || null;
+        sent++;
+      } catch (reason) {
+        // Left queued: the next task change, or the scheduled sender, tries again.
+        error = String(reason?.message || 'Delivery failed.').slice(0, 300);
+      }
+      await rpc('finish_task_email', { p_id: row.id, p_token: row.lock_token, p_status: status, p_provider_id: providerId, p_error: error });
+      continue;
+    }
     try {
       const response = await fetchImpl('https://api.resend.com/emails', {
         method: 'POST', signal: AbortSignal.timeout(2000),

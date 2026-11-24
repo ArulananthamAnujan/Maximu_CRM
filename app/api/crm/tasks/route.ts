@@ -1,5 +1,7 @@
 import {appendRefreshCookies,liveSession,LiveAccessError} from "@/server/supabase-session";
 import {supabaseRequest,supabasePageRequest,SupabaseError} from "@/server/supabase";
+import {drainTaskEmails} from "@/server/task-notices";
+import {publicOrigin} from "@/server/public-origin";
 export const dynamic="force-dynamic";
 type Row=Record<string,unknown>;
 const uuid=(value:unknown)=>{if(typeof value!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))throw new Error("Choose a valid record.");return value;};
@@ -13,7 +15,9 @@ export async function GET(request:Request){try{
  const p=new URL(request.url).searchParams,token=session.accessToken,page=Math.max(1,Math.min(100000,Number(p.get("page"))||1));
  if(p.has("taskId")){const comments=await supabasePageRequest<Row[]>(`/rest/v1/task_comments?select=*&task_id=eq.${uuid(p.get("taskId"))}&order=created_at.asc,id.asc&limit=50&offset=${(page-1)*50}`,{},token);return appendRefreshCookies(Response.json({ok:true,...comments}),session.refreshed,request);}
  const base=new URLSearchParams();if(p.get("caseId"))base.set("case_id",`eq.${uuid(p.get("caseId"))}`);
- const q=new URLSearchParams(base);q.set("select","*");q.set("order","created_at.desc,id.desc");q.set("limit","50");q.set("offset",String((page-1)*50));
+ const q=new URLSearchParams(base);q.set("select","*");
+ // Recently updated first: a reopened or commented task comes back to the top.
+ const sort=p.get("sort");q.set("order",sort==="created"?"created_at.desc,id.desc":sort==="due"?"due_at.asc.nullslast,id.desc":"updated_at.desc,id.desc");q.set("limit","50");q.set("offset",String((page-1)*50));
  const status=p.get("status");if(status==="open"||status==="completed")q.set("status",`eq.${status}`);
  if(status==="overdue"){q.set("status","eq.open");q.set("due_at",`lt.${new Date().toISOString()}`);}
  if(["low","medium","high","critical"].includes(p.get("priority")||""))q.set("priority",`eq.${p.get("priority")}`);
@@ -34,5 +38,7 @@ export async function POST(request:Request){try{
  const b=await request.json() as Row;let result;
  if(b.action==="bulk")result=await supabaseRequest("/rest/v1/rpc/task_bulk_action",{method:"POST",body:JSON.stringify({p_items:b.items,p_operation:b.operation,p_assignee:b.assignedTo||null})},session.accessToken);
  else {if(!["create","edit","status","delete","comment"].includes(String(b.action)))throw new Error("Unknown task action.");result=await supabaseRequest("/rest/v1/rpc/task_action",{method:"POST",body:JSON.stringify({p_action:b.action,p_id:uuid(b.id),p_values:b.values??{},p_expected:b.expected??null})},session.accessToken);}
+ // The change is saved; now tell the people on the task. Never fails the save.
+ if(b.action!=="delete"&&!(b.action==="bulk"&&b.operation==="delete"))await drainTaskEmails(publicOrigin(request),session.identity.profileId);
  return appendRefreshCookies(Response.json({ok:true,result}),session.refreshed,request);
  }catch(error){return fail(error);}}

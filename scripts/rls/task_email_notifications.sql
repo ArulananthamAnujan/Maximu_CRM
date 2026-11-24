@@ -92,4 +92,39 @@ do $$declare q public.task_email_outbox; n integer=0; begin
  if n<>1 then raise exception 'Super admin should retain completion email after transfer'; end if;
 end $$;
 reset role;
+-- Editing, commenting on and reopening a task each tell the other people on it, never the person who did it.
+set local role authenticated;
+set local test.uid='c0000000-0000-4000-8000-000000000001';
+select public.task_action('create','f8000000-0000-4000-8000-000000000004','{"title":"Follow up","assignedTo":"c0000000-0000-4000-8000-000000000003"}',null);
+do $$declare t public.tasks; before timestamptz; begin
+ select * into t from public.tasks where id='f8000000-0000-4000-8000-000000000004';
+ perform public.task_action('edit',t.id,'{"title":"Follow up today","priority":"high","assignedTo":"c0000000-0000-4000-8000-000000000003"}',t.updated_at);
+ select * into t from public.tasks where id=t.id; before=t.updated_at;
+ perform public.task_action('comment',t.id,'{"id":"f9000000-0000-4000-8000-000000000001","body":"Client called back."}',null);
+ if (select updated_at from public.tasks where id=t.id)<=before then raise exception 'A comment must mark the task as updated'; end if;
+end $$;
+set local test.uid='c0000000-0000-4000-8000-000000000003';
+do $$declare t public.tasks; begin
+ select * into t from public.tasks where id='f8000000-0000-4000-8000-000000000004';
+ perform public.task_action('status',t.id,'{"status":"completed"}',t.updated_at);
+ select * into t from public.tasks where id=t.id;
+ perform public.task_action('status',t.id,'{"status":"open"}',t.updated_at);
+end $$;
+reset role;
+do $$declare task constant uuid='f8000000-0000-4000-8000-000000000004'; begin
+ if (select count(*) from public.task_email_outbox where task_id=task and event_kind='updated' and recipient_id='c0000000-0000-4000-8000-000000000003')<>1 then raise exception 'The assignee must hear about an edit'; end if;
+ if exists(select 1 from public.task_email_outbox where task_id=task and event_kind='updated' and recipient_id='c0000000-0000-4000-8000-000000000001') then raise exception 'The editor emailed themselves'; end if;
+ if (select count(*) from public.task_email_outbox where task_id=task and event_kind='comment' and recipient_id='c0000000-0000-4000-8000-000000000003')<>1 then raise exception 'The assignee must hear about a comment'; end if;
+ if exists(select 1 from public.task_email_outbox where task_id=task and event_kind='comment' and recipient_id='c0000000-0000-4000-8000-000000000001') then raise exception 'The commenter emailed themselves'; end if;
+ if (select count(*) from public.task_email_outbox where task_id=task and event_kind='reopened' and recipient_id='c0000000-0000-4000-8000-000000000001')<>1 then raise exception 'The creator must hear about a reopen'; end if;
+ if exists(select 1 from public.task_email_outbox where task_id=task and event_kind='reopened' and recipient_id='c0000000-0000-4000-8000-000000000003') then raise exception 'The person reopening emailed themselves'; end if;
+end $$;
+set local role service_role;
+set local test.uid='';
+do $$declare kinds text[]; begin
+ select array_agg(event_kind order by event_kind) into kinds from public.claim_task_emails('sender@test.invalid','http://127.0.0.1:8100') where task_id='f8000000-0000-4000-8000-000000000004';
+ -- The task is open again, so its completion notice is stale and is not sent.
+ if kinds is distinct from array['assigned','comment','reopened','updated'] then raise exception 'Unexpected task emails claimed: %',kinds; end if;
+end $$;
+reset role;
 rollback;

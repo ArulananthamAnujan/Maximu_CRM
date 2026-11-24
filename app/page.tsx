@@ -151,6 +151,7 @@ type CaseRecord = {
   deferredApplications: number;
   completedAt: string;
   reopenedAt: string;
+  stageEnteredAt?: string;
   createdAt: string;
   destinationCountry: string;
   intake: string;
@@ -13315,6 +13316,7 @@ function HomeWorkspace() {
       const movedDirect = record.serviceType === "direct_visa";
       const moved = {
         lifecycleStage: stage,
+        stageEnteredAt: new Date().toISOString(),
         stage: stageLabelFor(stage, movedDirect),
         status: (stage === "completed" ? "completed" : stage === "deferred" ? "waiting" : "active") as CaseRecord["status"],
       };
@@ -13917,8 +13919,17 @@ function HomeWorkspace() {
     const direct = serviceMode === "direct_visa";
     const inStream = (c: CaseRecord) =>
       (c.serviceType === "direct_visa") === direct;
+    // Most recently worked first: a case that was just moved here, reopened
+    // or noted on comes to the top instead of staying where its opening date
+    // put it, which left a reopened old case at the bottom of the list.
+    const lastActivity = (c: CaseRecord) =>
+      [c.stageEnteredAt, c.latestNoteAt, c.createdAt].reduce<number>((latest, value) => {
+        const time = value ? Date.parse(value) : NaN;
+        return Number.isNaN(time) ? latest : Math.max(latest, time);
+      }, 0);
+    const recentFirst = (rows: CaseRecord[]) => [...rows].sort((a, b) => lastActivity(b) - lastActivity(a));
     const atStage = (stage: LifecycleStage) =>
-      cases.filter((c) => c.lifecycleStage === stage && inStream(c));
+      recentFirst(cases.filter((c) => c.lifecycleStage === stage && inStream(c)));
     // The enquiry directory is server-paged independently from the large
     // workspace payload. RLS supplies the office boundary: Super Admin gets
     // every office, while branch roles receive only their permitted office.
@@ -13943,12 +13954,12 @@ function HomeWorkspace() {
                 // Clients, and the visa stage represents it once lodged, so
                 // both stages belong on this one list for Direct Visa.
                 direct
-                ? cases.filter(
+                ? recentFirst(cases.filter(
                     (c) =>
                       inStream(c) &&
                       (c.lifecycleStage === "application" ||
                         c.lifecycleStage === "visa"),
-                  )
+                  ))
                 : atStage("visa")
               : active === "direct_visas"
                 ? // The same rule for Direct Visa: Clients holds the cases at
@@ -13961,12 +13972,12 @@ function HomeWorkspace() {
                     ? // Two things an agency calls a deferral: the case itself
                       // parked at the deferred stage, and a case still being
                       // worked whose application moved to a later intake.
-                      cases.filter(
+                      recentFirst(cases.filter(
                         (c) =>
                           inStream(c) &&
                           (c.lifecycleStage === "deferred" ||
                             c.deferredApplications > 0),
-                      )
+                      ))
                     : direct
                       ? visa
                       : education;
