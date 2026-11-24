@@ -496,3 +496,53 @@
 .connectionNotice strong { display: block; font-size: 15px; }
 .connectionNotice p { margin: 4px 0 0; font-size: 14px; line-height: 1.5; }
 .connectionNotice .ghostButton { flex: none; }
+
+/* ---------- staff screens: a one-line title in place of the banner ----------
+   Staff work in these screens all day, so the page opens with its name and
+   its main action on one line and the records start straight under it. The
+   stream ("Study Abroad") is already in the top bar and the sidebar, so the
+   label above the title is not repeated. The client portal keeps its panel. */
+.appShell.staffFullMode .pageTitle {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap;
+  min-height: 0; margin: 0 0 14px !important; padding: 0 !important; border-radius: 0; overflow: visible;
+  background: none !important; box-shadow: none; color: var(--bt-navy);
+}
+.appShell.staffFullMode .pageTitle::after { display: none; }
+.appShell.staffFullMode .pageTitle > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; min-width: 0; }
+.appShell.staffFullMode .pageTitle > div:first-child > span { display: none !important; }
+.appShell.staffFullMode .pageTitle h1, .appShell.staffFullMode .pageTitle .pageTitleHeading { color: var(--bt-navy); font-size: 24px; font-weight: 650; letter-spacing: -0.01em; margin: 0; }
+.appShell.staffFullMode .pageTitle p { color: #46545f; font-size: 14px; margin: 0; }
+.appShell.staffFullMode .pageTitle .titleActions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-left: auto; }
+.appShell.staffFullMode .pageTitle .ghostButton { background: #fff; border-color: #cddde5; color: #145f88; }
+.appShell.staffFullMode .pageTitle .ghostButton svg { color: #145f88; }
+.appShell.staffFullMode .pageTitle .viewOnlyBadge { color: #46545f; }
+
+/* The list tools sit on one row: search, scope, count and export together. */
+@media (min-width: 1100px) {
+  .appShell.staffFullMode .enquiryDirectoryTools:has(> .registerExport) { grid-template-columns: minmax(280px, 1fr) minmax(200px, .5fr) minmax(104px, .26fr) auto; align-items: center; }
+  .appShell.staffFullMode .enquiryDirectoryTools .registerExport { margin-left: 0; }
+}
+/* Summary figures are a short strip that fills the row, not tall tiles with a gap beside them. */
+.appShell.staffFullMode .miniStats { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.appShell.staffFullMode .miniStats article { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "label figure" "note figure"; align-items: center; gap: 2px 12px; padding: 10px 16px; box-shadow: none; }
+.appShell.staffFullMode .miniStats article > span { grid-area: label; }
+.appShell.staffFullMode .miniStats article > strong { grid-area: figure; font-size: 22px; margin: 0; }
+.appShell.staffFullMode .miniStats article > small { grid-area: note; }
+
+/* The mail screen has its own header; the page title stays hidden there. */
+.appShell.staffFullMode.gmailMode .pageTitle { display: none; }
+/* Dashboard: connection status is one quiet line, and the four figures are a
+   short row, so the work lists start higher. */
+.appShell.staffFullMode .workspaceConnection { margin: 0 0 12px; padding: 8px 14px; border-radius: 10px; background: #fff !important; background-image: none !important; border: 1px solid #dbe4ea; box-shadow: none; gap: 6px 16px; }
+.appShell.staffFullMode .workspaceConnection > div { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+.appShell.staffFullMode .workspaceConnection strong { color: var(--bt-navy) !important; font-size: 14px; }
+.appShell.staffFullMode .workspaceConnection span { color: #46545f !important; font-size: 13px; margin: 0; }
+.appShell.staffFullMode .workspaceConnection p[role="alert"] { color: #b42318; margin: 0; }
+.appShell.staffFullMode .workspaceConnection > a { min-height: 34px; padding: 0 14px; }
+.appShell.staffFullMode .signalGrid { gap: 12px; margin-bottom: 14px; }
+.appShell.staffFullMode .signal { min-height: 0; padding: 12px 16px; box-shadow: none; }
+.appShell.staffFullMode .signal strong, .appShell.staffFullMode .signal > div:first-child > strong { font-size: 26px; margin: 2px 0; }
+.appShell.staffFullMode .signalIcon, .appShell.staffFullMode .signal .signalIcon { width: 36px; height: 36px; flex-basis: 36px; border-radius: 10px; box-shadow: none; }
+.appShell.staffFullMode .signalIcon svg { width: 18px; height: 18px; }
+.appShell.staffFullMode .miniStats article > strong { white-space: nowrap; }
+.appShell.staffFullMode .panel + .miniStats { margin-top: 12px; }

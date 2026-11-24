@@ -2725,7 +2725,7 @@ function CaseWorkspace({
         ? `Intake ${record.intake}`
         : record.highestQualification
           ? `${record.highestQualification}${record.yearPassed ? ` · ${record.yearPassed}` : ""}`
-          : record.enquiryStatus || "Status not set",
+          : choiceLabel(record.enquiryStatus || "") || "Status not set",
     };
     if (module === "defer") return {
       primary: record.due ? `Review ${orgDate(record.due)}` : "Review date not set",
@@ -2941,7 +2941,8 @@ function CaseWorkspace({
                   <button type="button" className="journeyInfoCell journeyInterestCell" onClick={() => onSelect(record)}>
                     <strong title={String(journey.primary)}>{journey.primary}</strong>
                     <span>{journey.secondary}</span>
-                    {module === "enquiries" && record.enquiryStatus && <small className="registerState">{record.enquiryStatus}</small>}
+                    {/* The status is stored as "new_inquiry"; it reads as words, and is not repeated when the line above already says it. */}
+                    {module === "enquiries" && record.enquiryStatus && choiceLabel(record.enquiryStatus) !== journey.secondary && <small className="registerState">{choiceLabel(record.enquiryStatus)}</small>}
                   </button>
                   <div className="journeyNoteCell">
                     <button type="button" onClick={() => onQuickAction(record, "timeline")}>
