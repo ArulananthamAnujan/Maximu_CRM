@@ -21,6 +21,7 @@ import { renderTemplate } from "@/server/email";
 import { caseSenders, mailPossible, sendStaffEmail } from "@/server/staff-mail";
 import { drainClientNotices } from "@/server/client-notices";
 import { drainTaskEmails } from "@/server/task-notices";
+import { caseListSource } from "@/server/case-activity";
 import { publicOrigin } from "@/server/public-origin";
 import { findAccountByEmail, sendAccountSetup } from "@/server/account-access";
 
@@ -73,6 +74,8 @@ export async function GET(request: Request) {
     // whole load; the names of any that failed are reported to the client.
     const degraded: string[] = [];
     const lifecycleEnabled = await lifecycleReady(token);
+    // Latest work first, where the database has the activity view.
+    const caseSource = await caseListSource(token);
     const [
       clients,
       cases,
@@ -110,7 +113,7 @@ export async function GET(request: Request) {
         degraded,
       ),
       safeRestPaged(
-        `cases?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,stage_entered_at,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at,custom_fields${portalWorkspace ? "" : "&lifecycle_stage=neq.enquiry"}&order=opened_at.desc`,
+        `${caseSource.table}?select=id,client_id,branch_id,case_number,service_type,matter_type,owner_id,health,priority,progress,target,next_action,due_at,lifecycle_stage,stage_entered_at,visa_expiry_on,opened_at,closed_at,completed_at,reopened_at,custom_fields${caseSource.column}${portalWorkspace ? "" : "&lifecycle_stage=neq.enquiry"}&order=${caseSource.order}`,
         token,
         CLIENT_CASE_LIMIT,
         degraded,
@@ -443,6 +446,7 @@ export async function GET(request: Request) {
           createdAt: row.opened_at ?? "",
           // When the case last changed stage, including being reopened.
           stageEnteredAt: row.stage_entered_at ?? "",
+          lastActivityAt: row.last_activity_at ?? "",
           updatedAt: client.updated_at ?? row.opened_at ?? "",
           highestQualification: clientIntake.highestQualification ?? "",
           testGiven: clientIntake.testGiven ?? "",

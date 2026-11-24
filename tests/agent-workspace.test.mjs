@@ -34,7 +34,8 @@ async function fixture(run, options = {}) {
       return send(200, []);
     }
     if (table === 'clients') return send(200, options.denyClient ? [] : [client]);
-    if (table === 'cases') {
+    if (table === 'cases_by_activity' && options.noActivityView) return send(404, { code: 'PGRST205', message: "Could not find the table 'public.cases_by_activity' in the schema cache" });
+    if (table === 'cases' || table === 'cases_by_activity') {
       // Reject the real schema defect that previously made all live search fail.
       if (/created_at/.test((url.searchParams.get('select') ?? '') + (url.searchParams.get('order') ?? ''))) return send(400, { message: 'cases.created_at does not exist' });
       if (options.failCases) return send(503, { message: 'Temporary database outage' });
@@ -96,8 +97,12 @@ test('5119 enquiries return only one visible page and an exact total', async () 
   assert.equal(result.count, 5119);
   assert.equal(result.records.length, 50);
   assert.ok(result.records.some(r => r.serviceType === 'direct_visa'));
-  const reads = requests.filter(r => r.url.pathname === '/rest/v1/cases');
+  // The list is read through the activity view, latest work first; the one
+  // other request is the check that the view exists.
+  const reads = requests.filter(r => r.url.pathname === '/rest/v1/cases_by_activity' && r.url.searchParams.get('select') !== 'id');
   assert.equal(reads.length, 1);
+  assert.match(reads[0].url.searchParams.get('order'), /^last_activity_at\.desc/);
+  assert.equal(requests.filter(r => r.url.pathname === '/rest/v1/cases').length, 0);
   assert.equal(reads[0].url.searchParams.get('limit'), '50');
   assert.match(response.headers.get('Server-Timing'), /enquiries;dur=/);
   console.log(`Fixture only: 5119-record directory, 50-row response, ${(performance.now() - started).toFixed(1)}ms. Not a production benchmark.`);
@@ -107,7 +112,7 @@ test('a normal name search does not download the entire case directory', async (
   const response = await call('/api/crm/enquiries?q=Test%20Applicant&limit=50');
   assert.equal(response.status, 200);
   assert.equal((await response.json()).count, 1);
-  const fullReads = requests.filter(r => r.url.pathname === '/rest/v1/cases' && r.url.searchParams.get('select') !== 'id');
+  const fullReads = requests.filter(r => ['/rest/v1/cases', '/rest/v1/cases_by_activity'].includes(r.url.pathname) && r.url.searchParams.get('select') !== 'id');
   assert.equal(fullReads.length, 1);
   assert.match(fullReads[0].url.searchParams.get('id'), /^in\./);
   assert.equal(fullReads[0].url.searchParams.get('limit'), '50');
@@ -125,7 +130,7 @@ test('deep-linked applications retain their stage rather than becoming enquiries
   const response = await call(`/api/crm/enquiries?caseId=${id(1)}&limit=1`);
   const result = await response.json();
   assert.equal(result.records[0].lifecycleStage, 'application');
-  const read = requests.find(r => r.url.pathname === '/rest/v1/cases');
+  const read = requests.find(r => r.url.pathname === '/rest/v1/cases_by_activity' && r.url.searchParams.get('select') !== 'id');
   assert.equal(read.url.searchParams.has('lifecycle_stage'), false);
 }));
 
@@ -319,3 +324,15 @@ test('case workspace accepts canonical PostgreSQL legacy IDs and rejects query i
   assert.equal(malformed.status, 400);
   assert.ok(!requests.slice(before).some(r => r.url.pathname === '/rest/v1/cases'));
 }));
+
+test('a database without the activity view still lists enquiries, in the order they were opened', async () => {
+  // A separate module instance, so the answer remembered by the tests above is not reused.
+  await fixture(async ({ call, requests }) => {
+    const response = await call('/api/crm/enquiries?limit=50');
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).records.length, 50);
+    const reads = requests.filter(r => r.url.pathname === '/rest/v1/cases' && r.url.searchParams.get('select') !== 'id');
+    assert.equal(reads.length, 1);
+    assert.match(reads[0].url.searchParams.get('order'), /^opened_at\.desc/);
+  }, { noActivityView: true });
+});

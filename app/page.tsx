@@ -152,6 +152,8 @@ type CaseRecord = {
   completedAt: string;
   reopenedAt: string;
   stageEnteredAt?: string;
+  /** When anything was last done on the case; what the lists are ordered by. */
+  lastActivityAt?: string;
   createdAt: string;
   destinationCountry: string;
   intake: string;
@@ -13317,6 +13319,7 @@ function HomeWorkspace() {
       const moved = {
         lifecycleStage: stage,
         stageEnteredAt: new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
         stage: stageLabelFor(stage, movedDirect),
         status: (stage === "completed" ? "completed" : stage === "deferred" ? "waiting" : "active") as CaseRecord["status"],
       };
@@ -13923,7 +13926,7 @@ function HomeWorkspace() {
     // or noted on comes to the top instead of staying where its opening date
     // put it, which left a reopened old case at the bottom of the list.
     const lastActivity = (c: CaseRecord) =>
-      [c.stageEnteredAt, c.latestNoteAt, c.createdAt].reduce<number>((latest, value) => {
+      [c.lastActivityAt, c.stageEnteredAt, c.latestNoteAt, c.createdAt].reduce<number>((latest, value) => {
         const time = value ? Date.parse(value) : NaN;
         return Number.isNaN(time) ? latest : Math.max(latest, time);
       }, 0);

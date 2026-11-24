@@ -1,3 +1,4 @@
+import { caseListSource } from "@/server/case-activity";
 import { noteProvenance } from "@/server/case-notes";
 import {
   appendRefreshCookies,
@@ -225,6 +226,7 @@ export async function GET(request: Request) {
         enquiryStatus: enquiry.status ?? row.next_action ?? caseFields.mainStatus ?? "",
         detailedStatus: caseFields.subStatus ?? row.next_action ?? "",
         visaType: caseFields.visaType ?? "",
+        lastActivityAt: row.last_activity_at ?? "",
         nextFollowUpAt: enquiry.next_follow_up_at ?? row.due_at ?? "",
         updatedAt: legacy.updated_at ?? legacy.updated_date ?? row.opened_at ?? "",
         alternatePhone: clientFields.alternatePhone ?? legacy.alternate_phone ?? "",
@@ -294,7 +296,9 @@ async function directPage(input: {
   if (input.matchedCaseIds?.length === 0) return { data: [], count: 0 };
   const filters = caseFilters(input);
   if (input.matchedCaseIds) filters.push(`id=in.(${input.matchedCaseIds.join(",")})`);
-  const path = `/rest/v1/cases?select=${CASE_SELECT}&${filters.join("&")}&order=opened_at.desc.nullslast,id.asc&limit=${input.limit}&offset=${input.offset}`;
+  // Latest work first, where the database has the activity view.
+  const source = await caseListSource(input.token);
+  const path = `/rest/v1/${source.table}?select=${CASE_SELECT}${source.column}&${filters.join("&")}&order=${source.order}&limit=${input.limit}&offset=${input.offset}`;
   return input.offset === 0
     ? supabasePageRequest<Json[]>(path, { method: "GET" }, input.token)
     : {
@@ -330,11 +334,12 @@ async function indexedPage(input: {
   updatedTo: string;
 }) {
   const needsEnquiries = Boolean(input.statusFilter || input.sourceFilter);
+  const source = await caseListSource(input.token);
   const [allCases, queryIds, documentRows, notedRows, enquiryRows] = await Promise.all([
     cachedRows(enquiryCaseCache, `${input.accessKey}:cases`, () =>
       allRows(
-        "cases",
-        `${CASE_SELECT}&lifecycle_stage=eq.enquiry&order=opened_at.desc.nullslast,id.asc`,
+        source.table,
+        `${CASE_SELECT}${source.column}&lifecycle_stage=eq.enquiry&order=${source.order}`,
         input.token,
       ),
     ),
