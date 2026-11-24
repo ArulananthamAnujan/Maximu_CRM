@@ -82,7 +82,7 @@ test('one Google consent saves encrypted personal Gmail and Calendar connections
  for(const write of writes){assert.equal(write.body.profile_id,USER);assert.equal(write.body.email,EMAIL);assert.notEqual(write.body.token_reference,'google-refresh');assert.equal(write.authorization,'Bearer session');}
 }));
 test('account mismatch, forged state and partial consent cannot silently connect everything',async()=>{
- await fixture(async({call,calls})=>{const response=await connect(call);assert.match(new URL(response.headers.get('location')).searchParams.get('workspace_error'),/matching your CRM/);assert.equal(calls.filter(c=>c.path==='/rest/v1/mailbox_connections'&&c.method==='POST').length,0);},{googleEmail:'other@maximus.test'});
+ await fixture(async({call,calls})=>{const response=await connect(call);assert.match(new URL(response.headers.get('location')).searchParams.get('workspace_error'),/same address as your CRM sign-in/);assert.equal(calls.filter(c=>c.path==='/rest/v1/mailbox_connections'&&c.method==='POST').length,0);},{googleEmail:'other@maximus.test'});
  await fixture(async({call,calls})=>{const response=await call('/api/auth/gmail/callback?code=test&state=forged');assert.match(new URL(response.headers.get('location')).searchParams.get('workspace_error'),/expired/);assert.equal(calls.filter(c=>c.path==='/token').length,0);});
  await fixture(async({call,calls})=>{const response=await connect(call);assert.match(new URL(response.headers.get('location')).searchParams.get('workspace_error'),/remaining Google permissions/);assert.deepEqual(calls.filter(c=>c.path==='/rest/v1/mailbox_connections'&&c.method==='POST').map(c=>c.body.provider),['google_calendar']);},{scope:'https://www.googleapis.com/auth/calendar.events'});
 });

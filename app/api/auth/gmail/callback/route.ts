@@ -27,7 +27,7 @@ export async function GET(request: Request) {
     const workspace = state.split(".")[1] === "workspace";
     const tokens = await gmailExchangeCode({ code, redirectUri: `${url.origin}/api/auth/gmail/callback` });
     const email = await gmailAccountEmail(tokens.access_token);
-    if (email.trim().toLowerCase() !== session.identity.email.trim().toLowerCase()) return respond("Choose the Google account matching your CRM sign-in email. Your existing connections were not changed.");
+    if (email.trim().toLowerCase() !== session.identity.email.trim().toLowerCase()) return respond(`You chose the Google account ${email}, but your CRM sign-in is ${session.identity.email}. Connect the Google account with the same address as your CRM sign-in. Nothing was changed.`);
     if (!tokens.refresh_token) return respond("Google did not provide continuing access. Please reconnect and approve the requested permissions.");
     const scopes = new Set((tokens.scope ?? "").split(/\s+/));
     const gmailGranted = GMAIL_SCOPE.split(" ").filter(scope => !scope.endsWith("userinfo.email")).every(scope => scopes.has(scope));

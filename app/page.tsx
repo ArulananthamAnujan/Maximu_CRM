@@ -12280,6 +12280,7 @@ function HomeWorkspace() {
     [caseWindowId, setCaseWindowId] = useState(""),
     [editing, setEditing] = useState<CaseRecord | null>(null),
     [toast, setToast] = useState(""),
+    [connectionNotice, setConnectionNotice] = useState<{ ok: boolean; text: string } | null>(null),
     [formError, setFormError] = useState(""),
     [saving, setSaving] = useState(false),
     [quickOpen, setQuickOpen] = useState(false),
@@ -12869,7 +12870,17 @@ function HomeWorkspace() {
   }, [active, query, searchKey]);
   useEffect(() => {
     const timer = window.setTimeout(
-      () => {const params=new URL(window.location.href).searchParams;setCaseWindowId(params.get("case")??"");if(params.get("tab")==="tasks")setPreviewTab("tasks");if(params.get("module")==="work")setActiveModule("work");},
+      () => {
+        const address=new URL(window.location.href),params=address.searchParams;setCaseWindowId(params.get("case")??"");if(params.get("tab")==="tasks")setPreviewTab("tasks");if(params.get("module")==="work")setActiveModule("work");
+        // Coming back from Google: say plainly whether the mailbox was
+        // connected and, when it was not, why. The reason used to be dropped,
+        // so a failed connection looked like nothing had happened.
+        const outcome=params.get("gmail");
+        if(outcome){
+          setConnectionNotice(outcome==="error"?{ok:false,text:params.get("workspace_error")||"Your Google connection could not be completed. Please try again."}:{ok:true,text:"Gmail is connected. Email from the CRM is now sent from your own mailbox."});
+          params.delete("gmail");params.delete("workspace_error");window.history.replaceState(window.history.state,"",address.toString());
+        }
+      },
       0,
     );
     return () => window.clearTimeout(timer);
@@ -14372,6 +14383,12 @@ function HomeWorkspace() {
           ) : null}
         </header>
         <div className="content">
+          {connectionNotice && (
+            <div className={`connectionNotice${connectionNotice.ok ? " ok" : ""}`} role={connectionNotice.ok ? "status" : "alert"}>
+              <div><strong>{connectionNotice.ok ? "Gmail connected" : "Gmail was not connected"}</strong><p>{connectionNotice.text}</p></div>
+              <button type="button" className="ghostButton" onClick={() => setConnectionNotice(null)}>Dismiss</button>
+            </div>
+          )}
           {/* The task screen is worked in all day: it carries its own one-line
               title in place of the banner. */}
 {!(active === "work" && role !== "client") && (
