@@ -21,6 +21,7 @@ import { CaseDocumentRequests } from "./case-document-requests";
 import { CaseFollowUpForm } from "./case-follow-up-form";
 import { CaseBranchTransfer } from "./case-branch-transfer";
 import { ComboBox } from "./combo-box";
+import { CALLING_CODES, COUNTRIES, LANGUAGES, stateOptions } from "@/lib/reference-lists";
 import { CourseMasters } from "./course-masters";
 import { DocumentActions } from "./document-actions";
 import { StaffDeleteDialog } from "./staff-delete-dialog";
@@ -482,19 +483,6 @@ const STUDY_MATTER_TYPES = [
   "Student admission",
   "Student visa",
 ];
-
-const COUNTRY_CALLING_CODES = [
-  ["Australia", "+61"],
-  ["Bangladesh", "+880"],
-  ["Canada / United States", "+1"],
-  ["India", "+91"],
-  ["Nepal", "+977"],
-  ["New Zealand", "+64"],
-  ["Pakistan", "+92"],
-  ["Sri Lanka", "+94"],
-  ["United Arab Emirates", "+971"],
-  ["United Kingdom", "+44"],
-] as const;
 
 const COMMON_VISA_TYPES = [
   "Student Subclass 500",
@@ -10120,7 +10108,9 @@ function HistorySection({
             <label key={name}>
               {label}
               {requiredField ? " *" : ""}
-              {name === "testType" ? (
+              {name === "countryCode" ? (
+                <ComboBox name={name} required={requiredField} defaultValue={String(rowValue(editingRow, name))} options={COUNTRIES} placeholder="Select country" />
+              ) : name === "testType" ? (
                 <ComboBox name={name} required={requiredField} defaultValue={String(rowValue(editingRow, name))} options={["IELTS", "TOEFL", "PTE", "GRE", "GMAT", "SAT", "Duolingo", "CELPIP", "TOPIK", "JLPT", "Others"]} placeholder="Choose or type the test" />
               ) : (
               <input
@@ -10791,10 +10781,12 @@ function VisaMatterTab({
       >
         <label>
           Destination country *
-          <input
+          <ComboBox
             name="destinationCountry"
             required
-            defaultValue={text(value.destination_country) || "AU"}
+            defaultValue={text(value.destination_country) || "Australia"}
+            options={COUNTRIES}
+            placeholder="Select country"
           />
         </label>
         <label>
@@ -11070,7 +11062,7 @@ function FamilyTab({
           </label>
           <label>
             Nationality
-            <input name="nationality" />
+            <ComboBox name="nationality" options={COUNTRIES} placeholder="Select country" />
           </label>
           <label>
             Passport number
@@ -11202,6 +11194,7 @@ function RecordModal({
     matterType && !matterTypeList.includes(matterType)
       ? [...matterTypeList, matterType]
       : matterTypeList;
+  const [currentCountry, setCurrentCountry] = useState("");
   const [checklistCaseId, setChecklistCaseId] = useState("");
   const [checklistSelection, setChecklistSelection] = useState<Set<string>>(new Set());
   const [studyChoices, setStudyChoices] = useState<StudyChoiceDraft[]>([
@@ -11231,6 +11224,7 @@ function RecordModal({
   const [openFor, setOpenFor] = useState(openKey);
   if (openKey !== openFor) {
     setOpenFor(openKey);
+    setCurrentCountry("");
     setChecklistCaseId(presetCaseId || "");
     setStudyChoices([blankStudyChoice()]);
     setEducationRows([blankEducation()]);
@@ -11450,8 +11444,7 @@ function RecordModal({
                 <label>
                   Mobile *
                   <span className="phoneFieldPair">
-                    <input name="phoneCountryCode" aria-label="Mobile country code" list="callingCodes" defaultValue="+61" />
-                    <datalist id="callingCodes">{COUNTRY_CALLING_CODES.map(([country, code]) => <option key={`${country}-${code}`} value={code}>{country}</option>)}</datalist>
+                    <ComboBox key={`code-${openKey}`} name="phoneCountryCode" ariaLabel="Mobile country code" options={CALLING_CODES} defaultValue="+61" />
                     <input
                       name="phone"
                       required
@@ -11466,7 +11459,7 @@ function RecordModal({
                 </label>
                 <label>
                   Nationality
-                  <input name="nationality" defaultValue={editing?.nationality} />
+                  <ComboBox key={`nationality-${openKey}`} name="nationality" defaultValue={editing?.nationality || ""} options={COUNTRIES} placeholder="Select or type a country" />
                 </label>
                 <label>
                   Matter type *
@@ -11580,18 +11573,18 @@ function RecordModal({
                   <details open>
                     <summary>Personal, contact and passport details</summary>
                     <div className="intakeFields">
-                      <label>Alternate mobile<span className="phoneFieldPair"><input name="alternatePhoneCountryCode" aria-label="Alternate mobile country code" list="callingCodes" defaultValue="+61" /><input name="alternatePhone" placeholder="412 345 678" /></span></label>
+                      <label>Alternate mobile<span className="phoneFieldPair"><ComboBox name="alternatePhoneCountryCode" ariaLabel="Alternate mobile country code" options={CALLING_CODES} defaultValue="+61" /><input name="alternatePhone" placeholder="412 345 678" /></span></label>
                       <label>Gender<select name="gender" defaultValue=""><option value="">Select gender</option><option>Male</option><option>Female</option><option>Other</option><option>Prefer not to say</option></select></label>
                       <label>Marital status<select name="maritalStatus" defaultValue=""><option value="">Select status</option><option>Single</option><option>Married</option><option>Divorced</option><option>Widowed</option><option>Separated</option></select></label>
-                      <label>Country of birth<input name="countryOfBirth" /></label>
-                      <label>Current country<input name="currentCountry" /></label>
-                      <label>Preferred language<input name="preferredLanguage" /></label>
+                      <label>Country of birth<ComboBox name="countryOfBirth" options={COUNTRIES} placeholder="Select country" /></label>
+                      <label>Current country<ComboBox name="currentCountry" value={currentCountry} onChange={setCurrentCountry} options={COUNTRIES} placeholder="Select country" /></label>
+                      <label>Preferred language<ComboBox name="preferredLanguage" options={LANGUAGES} placeholder="Select language" /></label>
                       <label className="wide">Residential address<input name="addressLine" placeholder="Street address" /></label>
                       <label>City<input name="city" /></label>
-                      <label>State / province<input name="state" /></label>
+                      <label>State / province<ComboBox name="state" options={stateOptions(currentCountry)} placeholder={currentCountry ? "Select or type" : "Select state or province"} /></label>
                       <label>Postcode<input name="postcode" /></label>
                       <label>Passport number<input name="passportNumber" autoComplete="off" /></label>
-                      <label>Passport country<input name="passportCountry" /></label>
+                      <label>Passport country<ComboBox name="passportCountry" options={COUNTRIES} placeholder="Select country" /></label>
                       <label>Passport issue date<input name="passportIssue" type="date" /></label>
                       <label>Passport expiry date<input name="passportExpiry" type="date" /></label>
                     </div>
@@ -11650,10 +11643,10 @@ function RecordModal({
                         <label>Destination country<select name="migrationDestination" defaultValue="Australia"><option>Australia</option>{DESTINATION_COUNTRIES.filter((country) => country !== "Australia").map((country) => <option key={country}>{country}</option>)}</select></label>
                         <label>Current visa status<input name="currentVisaStatus" /></label>
                         <label>Visited another country?<select name="visitedOtherCountry" defaultValue=""><option value="">Select</option><option value="yes">Yes</option><option value="no">No</option></select></label>
-                        <label>Country visited<input name="travelCountry" /></label>
+                        <label>Country visited<ComboBox name="travelCountry" options={COUNTRIES} placeholder="Select country" /></label>
                         <label>Date visited<input name="travelDate" type="date" /></label>
                         <label>Purpose of travel<input name="travelPurpose" /></label>
-                        <label>Previous visa country<input name="previousVisaCountry" /></label>
+                        <label>Previous visa country<ComboBox name="previousVisaCountry" options={COUNTRIES} placeholder="Select country" /></label>
                         <label>Previous visa type<input name="previousVisaType" /></label>
                         <label>Previous visa outcome<select name="previousVisaOutcome" defaultValue=""><option value="">Select outcome</option><option>Approved</option><option>Rejected</option><option>Withdrawn</option><option>Pending</option></select></label>
                         <label>Previous application date<input name="previousVisaApplied" type="date" /></label>
@@ -11680,7 +11673,7 @@ function RecordModal({
                             <label>Qualification<input value={education.qualification} onChange={(event) => update({ qualification: event.target.value })} /></label>
                             <label>Institution / board<input value={education.institution} onChange={(event) => update({ institution: event.target.value })} /></label>
                             <label>Subjects / stream<input value={education.field} onChange={(event) => update({ field: event.target.value })} /></label>
-                            <label>Country<input value={education.country} onChange={(event) => update({ country: event.target.value })} /></label>
+                            <label>Country<ComboBox value={education.country} onChange={(next) => update({ country: next })} options={COUNTRIES} ariaLabel="Country" placeholder="Select country" /></label>
                             <label>Started<input type="date" value={education.start} onChange={(event) => update({ start: event.target.value })} /></label>
                             <label>Year passed / completed<input type="date" value={education.end} onChange={(event) => update({ end: event.target.value })} /></label>
                             <label>Percentage / grade<input value={education.result} onChange={(event) => update({ result: event.target.value })} /></label>
@@ -11715,7 +11708,7 @@ function RecordModal({
                           return <fieldset className="repeatableIntakeRow" key={`employment-${index}`}><legend>Employment {index + 1}</legend>
                             <label>Company name<input value={employment.employer} onChange={(event) => update({ employer: event.target.value })} /></label>
                             <label>Position<input value={employment.position} onChange={(event) => update({ position: event.target.value })} /></label>
-                            <label>Country<input value={employment.country} onChange={(event) => update({ country: event.target.value })} /></label>
+                            <label>Country<ComboBox value={employment.country} onChange={(next) => update({ country: next })} options={COUNTRIES} ariaLabel="Country" placeholder="Select country" /></label>
                             <label>Start date<input type="date" value={employment.start} onChange={(event) => update({ start: event.target.value })} /></label>
                             <label>End date<input type="date" value={employment.end} onChange={(event) => update({ end: event.target.value })} /></label>
                             <label>Total experience<input value={months ? `${Math.floor(months / 12)}y ${months % 12}m` : ""} readOnly /></label>
@@ -11735,7 +11728,7 @@ function RecordModal({
                       <label>Date of birth<input name="spouseDob" type="date" /></label>
                       <label>Email<input name="spouseEmail" type="email" /></label>
                       <label>Mobile<input name="spousePhone" /></label>
-                      <label>Nationality<input name="spouseNationality" /></label>
+                      <label>Nationality<ComboBox name="spouseNationality" options={COUNTRIES} placeholder="Select country" /></label>
                       <label>Passport number<input name="spousePassport" autoComplete="off" /></label>
                       <label>Passport issue date<input name="spousePassportIssue" type="date" /></label>
                       <label>Passport expiry<input name="spousePassportExpiry" type="date" /></label>
@@ -11747,7 +11740,7 @@ function RecordModal({
                       <label className="checkboxLabel"><input name="spouseIncluded" type="checkbox" />Included in this application</label>
                       <label>Child full name<input name="childFullName" /></label>
                       <label>Child date of birth<input name="childDob" type="date" /></label>
-                      <label>Child nationality<input name="childNationality" /></label>
+                      <label>Child nationality<ComboBox name="childNationality" options={COUNTRIES} placeholder="Select country" /></label>
                       <label className="checkboxLabel"><input name="childIncluded" type="checkbox" />Child included in this application</label>
                     </div>
                     <small>Additional family members can be added as individual records in the case workspace.</small>

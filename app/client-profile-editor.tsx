@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { ComboBox } from "./combo-box";
+import { COUNTRIES, LANGUAGES, stateOptions } from "@/lib/reference-lists";
 
 type Row = Record<string, unknown>;
 type Field = [string, string, string?];
@@ -29,6 +31,9 @@ const choicesFor = (name: string, recorded: string): [string, string][] => {
     return choices[name].map(([stored, label]) => stored.toLowerCase() === key ? [recorded, label] : [stored, label]);
   return [...choices[name], [recorded, recorded]];
 };
+// Countries, states and languages are picked from a list, with typing to
+// narrow it; what is already on file stays even when it is not in the list.
+const countryFields = ["nationality", "country_of_birth", "current_country", "passport_country", "travelCountry"];
 const object = (v: unknown): Row => v && typeof v === "object" && !Array.isArray(v) ? v as Row : {};
 const value = (v: unknown) => typeof v === "string" ? v : "";
 
@@ -37,6 +42,7 @@ export function ClientProfileEditor({ client, canModify, onSave }: {
 }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [country, setCountry] = useState(value(client.current_country));
   const custom = object(client.custom_fields);
   const address = object(client.address);
   const initial: Record<string, string> = {
@@ -81,7 +87,11 @@ export function ClientProfileEditor({ client, canModify, onSave }: {
           {choices[name] ? <select name={name} defaultValue={initial[name] ?? ""}>
             <option value="">Not recorded</option>
             {choicesFor(name, initial[name] ?? "").map(([stored, text]) => <option key={stored} value={stored}>{text}</option>)}
-          </select> : <input name={name} type={type} defaultValue={initial[name] ?? ""} required={name === "firstName"} autoComplete={name === "passportNumber" ? "off" : undefined} maxLength={type === "date" ? undefined : 250} />}
+          </select> : name === "current_country" ? <ComboBox name={name} value={country} onChange={setCountry} options={COUNTRIES} placeholder="Select country" />
+            : countryFields.includes(name) ? <ComboBox name={name} defaultValue={initial[name] ?? ""} options={COUNTRIES} placeholder="Select country" />
+            : name === "preferred_language" ? <ComboBox name={name} defaultValue={initial[name] ?? ""} options={LANGUAGES} placeholder="Select language" />
+            : name === "state" ? <ComboBox name={name} defaultValue={initial[name] ?? ""} options={stateOptions(country)} placeholder="Select state or province" />
+            : <input name={name} type={type} defaultValue={initial[name] ?? ""} required={name === "firstName"} autoComplete={name === "passportNumber" ? "off" : undefined} maxLength={type === "date" ? undefined : 250} />}
         </label>)}</div>
       </fieldset>)}
       <div className="formActions"><button className="primaryButton" disabled={saving}>{saving ? "Saving…" : "Save profile"}</button><span role="status">{message}</span></div>

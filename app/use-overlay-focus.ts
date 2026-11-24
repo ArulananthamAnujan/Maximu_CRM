@@ -46,6 +46,10 @@ export function useOverlayFocus(
       // becomes disabled and the browser temporarily moves focus to the body.
       if (overlayStack.at(-1) !== panel) return;
       if (event.key === "Escape") {
+        // An open dropdown takes the first Escape to close its own list; the
+        // form behind it stays open with everything typed into it.
+        // It marks the key as handled, and by now its list is already shut.
+        if (event.defaultPrevented) return;
         event.preventDefault();
         event.stopPropagation();
         close.current();

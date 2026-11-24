@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { ComboBox } from "../../combo-box";
+import { COUNTRIES } from "@/lib/reference-lists";
 
 export default function SecureIntakePage({params}:{params:Promise<{token:string}>}){
   const [token,setToken]=useState("");
@@ -22,8 +24,8 @@ export default function SecureIntakePage({params}:{params:Promise<{token:string}
         <label>Full name *<input name="name" required style={fieldStyle}/></label>
         <label>Email *<input name="email" type="email" required style={fieldStyle}/></label>
         <label>Mobile *<input name="mobile" required style={fieldStyle}/></label>
-        <label>Nationality<input name="nationality" style={fieldStyle}/></label>
-        <label>Destination country<input name="destination" style={fieldStyle}/></label>
+        <label>Nationality<ComboBox name="nationality" options={COUNTRIES} placeholder="Select country" inputStyle={comboStyle}/></label>
+        <label>Destination country<ComboBox name="destination" options={COUNTRIES} placeholder="Select country" inputStyle={comboStyle}/></label>
         <label>{service==="direct_visa"?"Visa category":"Study level / course"}<input name="matterType" style={fieldStyle}/></label>
         <label>Current visa expiry *<input name="visaExpiry" type="date" required style={fieldStyle}/></label>
         <label style={{gridColumn:"1 / -1"}}>What help do you need?<textarea name="message" rows={4} style={fieldStyle}/></label>
@@ -36,3 +38,5 @@ export default function SecureIntakePage({params}:{params:Promise<{token:string}
 }
 
 const fieldStyle={display:"block",width:"100%",boxSizing:"border-box" as const,marginTop:7,border:"1px solid #cbd5e1",borderRadius:9,padding:"11px 12px",font:"inherit"};
+// The dropdown keeps room on the right for its arrow.
+const comboStyle={...fieldStyle,paddingRight:40};

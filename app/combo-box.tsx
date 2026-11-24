@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { ChevronDown } from "lucide-react";
 import styles from "./combo-box.module.css";
 
@@ -14,7 +14,7 @@ import styles from "./combo-box.module.css";
  */
 export type ComboOption = { value: string; hint?: string };
 
-export function ComboBox({ options, name, id, value, defaultValue = "", onChange, placeholder, required, ariaLabel, allowCustom = true, disabled }: {
+export function ComboBox({ options, name, id, value, defaultValue = "", onChange, placeholder, required, ariaLabel, allowCustom = true, disabled, inputStyle }: {
   options: readonly (string | ComboOption)[];
   name?: string;
   id?: string;
@@ -27,6 +27,8 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
   /** Whether something that is not in the list is kept as typed. */
   allowCustom?: boolean;
   disabled?: boolean;
+  /** For pages outside the product's stylesheet, such as the public intake. */
+  inputStyle?: CSSProperties;
 }) {
   const generated = useId();
   const inputId = id ?? `combo-${generated}`;
@@ -38,6 +40,8 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
   const [active, setActive] = useState(-1);
   const [filtering, setFiltering] = useState(false);
   const root = useRef<HTMLDivElement | null>(null);
+  const list = useRef<HTMLUListElement | null>(null);
+  const [above, setAbove] = useState(false);
 
   const items: ComboOption[] = options.map((o) => (typeof o === "string" ? { value: o } : o));
   const needle = text.trim().toLowerCase();
@@ -63,6 +67,20 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
     return () => document.removeEventListener("mousedown", away);
   }, [open]);
 
+  // Near the bottom of a dialog or of the window there is no room under the
+  // field, and a list drawn there is cut off: open it upward instead.
+  useEffect(() => {
+    if (!open || !root.current) return;
+    const box = root.current.getBoundingClientRect();
+    const room = window.innerHeight - box.bottom;
+    setAbove(room < 300 && box.top > room);
+  }, [open]);
+  // Keeps the highlighted choice in view when moving through a long list.
+  useEffect(() => {
+    if (!open || active < 0) return;
+    list.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [open, active]);
+
   const rows = [...shown.map((o) => ({ kind: "option" as const, ...o })), ...(custom ? [{ kind: "custom" as const, value: custom }] : [])];
 
   return (
@@ -74,6 +92,7 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
         placeholder={placeholder}
         required={required}
         disabled={disabled}
+        style={inputStyle}
         autoComplete="off"
         role="combobox"
         aria-label={ariaLabel}
@@ -81,12 +100,22 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
         aria-controls={listId}
         aria-autocomplete="list"
         aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
-        onChange={(event) => { set(event.target.value); setFiltering(true); setOpen(true); setActive(-1); }}
+        onChange={(event) => {
+          const typed = event.target.value;
+          set(typed);
+          setFiltering(true);
+          setOpen(true);
+          // The first match is ready to take with Enter; with none, nothing is.
+          const probe = typed.trim().toLowerCase();
+          setActive(probe && items.some((o) => o.value.toLowerCase().includes(probe) || (o.hint ?? "").toLowerCase().includes(probe)) ? 0 : -1);
+        }}
         onFocus={() => { setFiltering(false); setOpen(true); }}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setActive((i) => Math.min(rows.length - 1, i + 1)); }
           else if (event.key === "ArrowUp") { event.preventDefault(); setActive((i) => Math.max(0, i - 1)); }
-          else if (event.key === "Enter" && open && active >= 0) { event.preventDefault(); choose(rows[active].value); }
+          else if (event.key === "Enter" && open && active >= 0 && rows[active]) { event.preventDefault(); choose(rows[active].value); }
+          // Enter while choosing closes the list; it must not send the whole form.
+          else if (event.key === "Enter" && open) { event.preventDefault(); setOpen(false); setFiltering(false); }
           else if (event.key === "Escape" && open) { event.preventDefault(); setOpen(false); setFiltering(false); }
           else if (event.key === "Tab") { setOpen(false); setFiltering(false); }
         }}
@@ -95,11 +124,12 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
         <ChevronDown size={16} />
       </button>
       {open && rows.length > 0 && (
-        <ul className={styles.list} id={listId} role="listbox">
+        <ul className={`${styles.list} ${above ? styles.above : ""}`} id={listId} role="listbox" ref={list}>
           {rows.map((row, index) => (
             <li
               key={`${row.kind}-${row.value}`}
               id={`${listId}-${index}`}
+              data-index={index}
               role="option"
               aria-selected={row.value === text}
               className={`${styles.option} ${index === active ? styles.active : ""} ${row.value === text ? styles.selected : ""}`}
