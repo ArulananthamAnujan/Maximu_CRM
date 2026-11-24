@@ -13662,7 +13662,7 @@ function HomeWorkspace() {
         enquiriesTotal={enquiriesTotal}
       />
     );
-  else if (active === "work") content = <TaskBoard onChanged={async()=>{notifyWorkspaceChanged();await refreshWorkspace();}}/>;
+  else if (active === "work") content = <TaskBoard pageTitle onChanged={async()=>{notifyWorkspaceChanged();await refreshWorkspace();}}/>;
   else if (active === "calendar")
     content = (
       <CalendarView
@@ -14369,6 +14369,9 @@ function HomeWorkspace() {
           ) : null}
         </header>
         <div className="content">
+          {/* The task screen is worked in all day: it carries its own one-line
+              title in place of the banner. */}
+{!(active === "work" && role !== "client") && (
           <div className="pageTitle">
             <div>
               <span>
@@ -14398,6 +14401,7 @@ function HomeWorkspace() {
               </div>
             ) : null}
           </div>
+          )}
           {active === "dashboard" && role !== "client" && <WorkspaceConnection />}
           {canUse(accessIdentity,active)?content:<article className="panel listPanel"><h2>Choose an available function</h2><p>Your account has access to the functions shown in the menu.</p></article>}
         </div>
