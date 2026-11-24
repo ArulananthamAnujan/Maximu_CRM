@@ -41,7 +41,6 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
   const [filtering, setFiltering] = useState(false);
   const root = useRef<HTMLDivElement | null>(null);
   const list = useRef<HTMLUListElement | null>(null);
-  const [above, setAbove] = useState(false);
 
   const items: ComboOption[] = options.map((o) => (typeof o === "string" ? { value: o } : o));
   const needle = text.trim().toLowerCase();
@@ -67,13 +66,12 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
     return () => document.removeEventListener("mousedown", away);
   }, [open]);
 
-  // Near the bottom of a dialog or of the window there is no room under the
-  // field, and a list drawn there is cut off: open it upward instead.
+  // The list always opens under the field, where the eye already is while
+  // typing. With no room there, the form scrolls just enough to show it.
   useEffect(() => {
-    if (!open || !root.current) return;
-    const box = root.current.getBoundingClientRect();
-    const room = window.innerHeight - box.bottom;
-    setAbove(room < 300 && box.top > room);
+    if (!open) return;
+    list.current?.scrollIntoView({ block: "nearest" });
+    root.current?.scrollIntoView({ block: "nearest" });
   }, [open]);
   // Keeps the highlighted choice in view when moving through a long list.
   useEffect(() => {
@@ -124,7 +122,7 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
         <ChevronDown size={16} />
       </button>
       {open && rows.length > 0 && (
-        <ul className={`${styles.list} ${above ? styles.above : ""}`} id={listId} role="listbox" ref={list}>
+        <ul className={styles.list} id={listId} role="listbox" ref={list}>
           {rows.map((row, index) => (
             <li
               key={`${row.kind}-${row.value}`}

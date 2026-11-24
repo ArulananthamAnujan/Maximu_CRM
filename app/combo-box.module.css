@@ -20,4 +20,3 @@
 .option small { color: #526175; font-size: 12px; white-space: nowrap; }
 .option.active, .option:hover { background: #eaf4fa; }
 .option.selected { font-weight: 700; color: #145f88; }
-.list.above { top: auto; bottom: calc(100% + 6px); }
