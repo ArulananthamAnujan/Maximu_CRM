@@ -546,3 +546,6 @@
 .appShell.staffFullMode .signalIcon svg { width: 18px; height: 18px; }
 .appShell.staffFullMode .miniStats article > strong { white-space: nowrap; }
 .appShell.staffFullMode .panel + .miniStats { margin-top: 12px; }
+/* One headline only: the page's name. The line of description beside it is
+   kept for screen readers and not drawn. */
+.appShell.staffFullMode .pageTitle p { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
