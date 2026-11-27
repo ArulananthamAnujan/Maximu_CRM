@@ -44,6 +44,9 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
   onClose?: () => void;
 } = {}) {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
+  // What was typed when the list above was fetched. Until it catches up with
+  // the box, the list belongs to an earlier search and is not offered.
+  const [resultsFor, setResultsFor] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<InstitutionDetail | null>(null);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -87,8 +90,8 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
   useEffect(() => {
     let active = true;
     const timer = window.setTimeout(() => {
-      void loadList(searchFor).then(rows => { if (active) setInstitutions(rows); }).catch(reason => { if (active) setError(reason.message); });
-    }, searchFor ? 220 : 0);
+      void loadList(searchFor).then(rows => { if (active) { setInstitutions(rows); setResultsFor(searchFor); } }).catch(reason => { if (active) { setInstitutions([]); setResultsFor(searchFor); setError(reason.message); } });
+    }, searchFor ? 160 : 0);
     return () => { active = false; window.clearTimeout(timer); };
   }, [loadList, searchFor]);
   useEffect(() => {
@@ -118,9 +121,11 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
     return next;
   });
 
+  const searching = resultsFor !== searchFor;
+  const matches = searching ? [] : institutions;
   // Picking a row opens that university; a name that is not on file starts a new one.
   const choose = (name: string) => {
-    const match = institutions.find(item => item.name.toLowerCase() === name.trim().toLowerCase());
+    const match = matches.find(item => item.name.toLowerCase() === name.trim().toLowerCase());
     setError(""); setNotice(""); setEditingCourse(""); setOpenSectors(null); setAddingIn(null); setEditingUniversity(false); setCourseQuery("");
     if (!match) { setSelected(null); setCourses([]); setAdding(name.trim()); return; }
     setAdding(null);
@@ -213,9 +218,10 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
       <div className={styles.finderRow}>
         <label className={styles.finder}>Find a university
           <ComboBox value={query} onChange={setQuery} onChoose={choose} remote minChars={2}
-            options={institutions.map(item => ({ value: item.name, hint: [item.country, item.city, item.active === false ? "Hidden" : ""].filter(Boolean).join(" · ") }))}
+            note={searching ? "Searching…" : searchFor && matches.length === 0 ? `No university matches “${searchFor}”.` : undefined}
+            options={matches.map(item => ({ value: item.name, hint: [item.country, item.city, item.active === false ? "Hidden" : ""].filter(Boolean).join(" · ") }))}
             placeholder="Type a university name, country or city"
-            allowCustom={canManage} customLabel={typed => `Add “${typed}” as a new university`} ariaLabel="Find a university" />
+            allowCustom={canManage && !searching} customLabel={typed => `Add “${typed}” as a new university`} ariaLabel="Find a university" />
         </label>
         {canManage && <button type="button" className="ghostButton" onClick={() => { setSelected(null); setCourses([]); setQuery(""); setAdding(""); setError(""); setNotice(""); }}>Add a new university</button>}
       </div>

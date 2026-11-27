@@ -14,7 +14,7 @@ import styles from "./combo-box.module.css";
  */
 export type ComboOption = { value: string; hint?: string };
 
-export function ComboBox({ options, name, id, value, defaultValue = "", onChange, placeholder, required, ariaLabel, allowCustom = true, disabled, inputStyle, customLabel, limit, onChoose, remote, minChars = 0 }: {
+export function ComboBox({ options, name, id, value, defaultValue = "", onChange, placeholder, required, ariaLabel, allowCustom = true, disabled, inputStyle, customLabel, limit, onChoose, remote, minChars = 0, note }: {
   options: readonly (string | ComboOption)[];
   name?: string;
   id?: string;
@@ -31,6 +31,8 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
   remote?: boolean;
   /** Suggest only once this many letters are typed. A search box should not open a list just for being clicked; the arrow still shows the list on request. */
   minChars?: number;
+  /** A line shown in the list that is not a choice: "Searching…", or that nothing matched. */
+  note?: string;
   /** Called only when a row is picked, not on every letter typed. */
   onChoose?: (value: string) => void;
   /** What the "keep what I typed" row says; by default, Use “…”. */
@@ -47,7 +49,7 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
   const [own, setOwn] = useState(defaultValue);
   const text = controlled ? value : own;
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(-1);
+  const [picked, setActive] = useState(-1);
   const [filtering, setFiltering] = useState(false);
   // Set when the arrow is pressed: the person asked to see the list.
   const [asked, setAsked] = useState(false);
@@ -61,6 +63,9 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
   const hidden = matching.length - shown.length;
   const exact = items.some((o) => o.value.toLowerCase() === needle);
   const custom = allowCustom && needle && !exact ? text.trim() : "";
+  // With a search done elsewhere the matches arrive after the typing, so the
+  // first of them is the highlighted one until the arrows move it.
+  const active = picked >= 0 ? picked : remote && filtering && needle && shown.length ? 0 : -1;
 
   const set = (next: string) => {
     if (!controlled) setOwn(next);
@@ -138,8 +143,9 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
       <button type="button" className={styles.toggle} tabIndex={-1} aria-label={open ? "Hide choices" : "Show choices"} disabled={disabled} onClick={() => { setFiltering(false); setAsked(!open); setOpen(!open); }}>
         <ChevronDown size={16} />
       </button>
-      {open && rows.length > 0 && (
+      {open && (rows.length > 0 || (note && !quiet)) && (
         <ul className={styles.list} id={listId} role="listbox" ref={list}>
+          {note && !quiet ? <li className={styles.more} role="presentation">{note}</li> : null}
           {rows.map((row, index) => (
             <li
               key={`${row.kind}-${row.value}`}

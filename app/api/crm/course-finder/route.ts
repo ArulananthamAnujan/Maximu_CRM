@@ -226,7 +226,10 @@ async function findInstitutions(query: string, token: string): Promise<Json[]> {
   if (!words.length) return read([]);
   const named = (parts: string[]) => parts.map((part) => `name=ilike.*${part}*`);
   const place = words.join(" ");
-  const [exact, placed] = await Promise.all([
+  // Names that begin with what was typed are asked for separately, so they
+  // lead the list even when hundreds of other names contain the same word.
+  const [leading, exact, placed] = await Promise.all([
+    read([`name=ilike.${words[0]}*`, ...named(words.slice(1))]).catch(() => [] as Json[]),
     read(named(words)),
     read([`or=(country.ilike.*${place}*,city.ilike.*${place}*)`]).catch(() => [] as Json[]),
   ]);
@@ -248,8 +251,15 @@ async function findInstitutions(query: string, token: string): Promise<Json[]> {
       rows = [...seen.values()].sort((a, b) => b.hits - a.hits).map((item) => item.row).slice(0, 50);
     }
   }
-  const ids = new Set(rows.map((row) => String(row.id)));
-  return [...rows, ...placed.filter((row) => !ids.has(String(row.id)))].slice(0, 50);
+  const ordered: Json[] = [];
+  const ids = new Set<string>();
+  for (const row of [...leading, ...rows, ...placed]) {
+    const key = String(row.id);
+    if (ids.has(key)) continue;
+    ids.add(key);
+    ordered.push(row);
+  }
+  return ordered.slice(0, 50);
 }
 
 async function insert(table: string, value: Json, token: string) {

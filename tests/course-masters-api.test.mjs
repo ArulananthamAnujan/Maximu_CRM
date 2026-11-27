@@ -94,10 +94,11 @@ test('A caller that already holds the institution list can leave it out',async()
  assert.equal(result.status,200);assert.equal(result.body.institutions,undefined);assert.equal(result.reads.length,0);
 });
 test('A university is searched for by every word typed, in any order',async()=>{
- const result=await read('/api/crm/course-finder?masters=1&q='+encodeURIComponent('institute of Polytechnic'),url=>url.searchParams.getAll('name').length===2?[{...row(1),name:'Polytechnic Institute Australia'}]:[]);
+ const result=await read('/api/crm/course-finder?masters=1&q='+encodeURIComponent('institute of Polytechnic'),url=>url.searchParams.getAll('name').join()==='ilike.*institute*,ilike.*polytechnic*'?[{...row(1),name:'Polytechnic Institute Australia'}]:[]);
  assert.deepEqual(result.body.institutions.map(i=>i.name),['Polytechnic Institute Australia']);
- const named=result.reads.find(url=>url.searchParams.has('name'));
- assert.deepEqual(named.searchParams.getAll('name'),['ilike.*institute*','ilike.*polytechnic*']);
+ const reads=result.reads.map(url=>url.searchParams.getAll('name').join()).filter(Boolean);
+ assert.ok(reads.includes('ilike.*institute*,ilike.*polytechnic*'),'every word is looked for anywhere in the name');
+ assert.ok(reads.includes('ilike.institute*,ilike.*polytechnic*'),'names beginning with the first word are asked for too, to lead the list');
 });
 test('A misspelt university name still finds it by the start of each word',async()=>{
  const result=await read('/api/crm/course-finder?masters=1&q='+encodeURIComponent('polythnetic institute'),url=>{const names=url.searchParams.getAll('name');return names.join()==='ilike.*poly*,ilike.*inst*'?[{...row(1),name:'Polytechnic Institute Australia'}]:[];});
@@ -106,4 +107,8 @@ test('A misspelt university name still finds it by the start of each word',async
 test('A slip at the start of a word still finds the university by the word ending',async()=>{
  const result=await read('/api/crm/course-finder?masters=1&q=ploytechnic',url=>url.searchParams.getAll('name').join()==='ilike.*hnic*'?[{...row(1),name:'Polytechnic Institute Australia'}]:[]);
  assert.deepEqual(result.body.institutions.map(i=>i.name),['Polytechnic Institute Australia']);
+});
+test('Names beginning with what was typed come before names that only contain it',async()=>{
+ const result=await read('/api/crm/course-finder?masters=1&q=poly',url=>{const names=url.searchParams.getAll('name').join();return names==='ilike.poly*'?[{...row(2),name:'Polytechnic Institute Australia'}]:names==='ilike.*poly*'?[{...row(1),name:'Hong Kong Polytechnic University'},{...row(2),name:'Polytechnic Institute Australia'}]:[];});
+ assert.deepEqual(result.body.institutions.map(i=>i.name),['Polytechnic Institute Australia','Hong Kong Polytechnic University']);
 });
