@@ -1,1 +1,29 @@
-.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;padding:24px}.form h3{grid-column:1/-1;margin:0;font-size:20px}.form label{display:grid;gap:7px;font-size:14px;color:#343653}.form input,.form select,.form textarea{width:100%;min-width:0;box-sizing:border-box;font:inherit;padding:11px;border:1px solid #d4d8e4;border-radius:8px;background:#fff;color:#252843}.form textarea{min-height:75px}.form button{align-self:end;justify-self:start}.form button:disabled{opacity:.5}@media(max-width:700px){.form{grid-template-columns:1fr;padding:16px}}
+.masters{display:grid;gap:14px;padding:16px 18px}
+.head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px}
+.head h2{margin:0;font-size:18px;color:#0c293f}
+.finder{display:grid;gap:6px;font-size:14px;font-weight:600;color:#0c293f;max-width:720px}
+.finder input{font:inherit;font-weight:400;min-height:42px;padding:8px 40px 8px 12px;border:1px solid #cddde5;border-radius:8px;background:#fff;color:#15202b;box-sizing:border-box}
+.finder input:focus-visible{outline:2px solid #145f88;outline-offset:1px}
+.notice{margin:0;padding:8px 12px;border:1px solid #bfe0cd;border-radius:8px;background:#f1f9f4;color:#1b6a43;font-size:14px}
+.form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 14px;padding:14px 16px;border:1px solid #dbe4ea;border-radius:10px;background:#fff}
+.form h3{grid-column:1/-1;margin:0;font-size:16px;color:#0c293f}
+.form label{display:grid;gap:5px;font-size:13px;font-weight:600;color:#22323f;min-width:0;align-content:start}
+.form .wide{grid-column:span 2}
+.form input:not([type=checkbox]),.form select,.form textarea{width:100%;min-width:0;box-sizing:border-box;font:inherit;font-weight:400;min-height:38px;padding:7px 10px;border:1px solid #cddde5;border-radius:8px;background:#fff;color:#15202b}
+.form textarea{min-height:64px;resize:vertical}
+.form .check{grid-column:1/-1;display:flex;align-items:center;gap:8px;font-weight:500}
+.actions{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:8px}
+.form button:disabled{opacity:.5}
+.courses{display:grid;gap:10px}
+.courses>h3{margin:4px 0 0;font-size:16px;color:#0c293f}
+.courses>h3 span{margin-left:6px;padding:1px 8px;border-radius:6px;background:#eef3f6;color:#34495a;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.courses ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.courseRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;border:1px solid #dbe4ea;border-radius:8px;background:#fff}
+.courseRow>div{display:grid;gap:2px;min-width:0}
+.courseRow strong{font-size:14px;color:#102f40;overflow-wrap:anywhere}
+.courseRow small{font-size:13px;color:#56687a;overflow-wrap:anywhere}
+.hidden .courseRow{background:#f6f8f9}
+.hidden .courseRow strong{color:#56687a}
+.empty{margin:0;padding:14px;border:1px dashed #cddde5;border-radius:8px;color:#46545f;font-size:14px}
+@media(max-width:900px){.form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.form{grid-template-columns:1fr;padding:12px}.form .wide{grid-column:auto}}

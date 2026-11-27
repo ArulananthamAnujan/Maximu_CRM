@@ -20,3 +20,4 @@
 .option small { color: #526175; font-size: 12px; white-space: nowrap; }
 .option.active, .option:hover { background: #eaf4fa; }
 .option.selected { font-weight: 700; color: #145f88; }
+.more { padding: 8px 12px; font-size: 13px; color: #526175; }

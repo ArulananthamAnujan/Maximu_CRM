@@ -24,6 +24,28 @@ export async function GET(request: Request) {
     const page = Math.max(Number(url.searchParams.get("page")) || 1, 1);
     const institution = url.searchParams.get("institution");
     if (institution) uuid(institution, "Institution");
+    // The masters screen: every institution, including ones taken out of
+    // Course Finder, so a hidden one can be found again and put back.
+    if (url.searchParams.get("masters") === "1") {
+      if (session.identity.role === "client") throw new LiveAccessError(403, "Course Finder masters are available to staff only.");
+      const all = await supabaseRequest<Json[]>(
+        "/rest/v1/institutions?select=id,name,country,city,active&order=name.asc&limit=5000",
+        { method: "GET" }, token,
+      );
+      return appendRefreshCookies(Response.json({ ok: true, institutions: all }), session.refreshed, request);
+    }
+    // One institution in full, with the courses recorded under it, for editing.
+    const detail = url.searchParams.get("institutionDetail");
+    if (detail) {
+      if (session.identity.role === "client") throw new LiveAccessError(403, "Course Finder masters are available to staff only.");
+      const id = uuid(detail, "Institution");
+      const [rows, courses] = await Promise.all([
+        supabaseRequest<Json[]>(`/rest/v1/institutions?select=id,name,country,city,website,notes,active&id=eq.${id}&limit=1`, { method: "GET" }, token),
+        supabaseRequest<Json[]>(`/rest/v1/courses?select=id,name,level,field_of_study,duration_months,tuition_fee,currency,intake_months,notes,active&institution_id=eq.${id}&order=name.asc&limit=2000`, { method: "GET" }, token),
+      ]);
+      if (!rows.length) throw new InputError("That institution is not in your catalogue.");
+      return appendRefreshCookies(Response.json({ ok: true, institution: rows[0], courses }), session.refreshed, request);
+    }
     const v2Body = {
       p_query: optional(url.searchParams.get("q")),
       p_country: optional(url.searchParams.get("country")),
@@ -117,9 +139,16 @@ export async function POST(request: Request) {
         token,
       );
     } else if (action === "update_institution") {
+      // Only what was sent is changed, so switching an institution off does
+      // not need the rest of its details repeated.
       const changes: Json = {};
       if (typeof body.active === "boolean") changes.active = body.active;
+      if (body.name !== undefined) changes.name = required(body.name, "Institution name");
+      if (body.country !== undefined) changes.country = required(body.country, "Country");
+      if (body.city !== undefined) changes.city = optional(body.city);
+      if (body.website !== undefined) changes.website = optional(body.website);
       if (body.notes !== undefined) changes.notes = optional(body.notes);
+      if (!Object.keys(changes).length) throw new InputError("Nothing to change.");
       await patch("institutions", uuid(body.institutionId, "Institution"), changes, token);
     } else if (action === "create_course") {
       const institutionId = uuid(body.institutionId, "Institution");
@@ -149,7 +178,15 @@ export async function POST(request: Request) {
     } else if (action === "update_course") {
       const changes: Json = {};
       if (typeof body.active === "boolean") changes.active = body.active;
+      if (body.name !== undefined) changes.name = required(body.name, "Course name");
+      if (body.level !== undefined) changes.level = optional(body.level);
+      if (body.fieldOfStudy !== undefined) changes.field_of_study = optional(body.fieldOfStudy);
+      if (body.durationMonths !== undefined) changes.duration_months = optionalInt(body.durationMonths);
+      if (body.tuitionFee !== undefined) changes.tuition_fee = optionalNumber(body.tuitionFee);
+      if (body.currency !== undefined) changes.currency = optional(body.currency) || "AUD";
+      if (body.intakeMonths !== undefined) changes.intake_months = optional(body.intakeMonths);
       if (body.notes !== undefined) changes.notes = optional(body.notes);
+      if (!Object.keys(changes).length) throw new InputError("Nothing to change.");
       await patch("courses", uuid(body.courseId, "Course"), changes, token);
     } else {
       throw new InputError("Unsupported Course Finder action.");

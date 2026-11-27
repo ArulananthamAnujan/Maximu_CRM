@@ -14,7 +14,7 @@ import styles from "./combo-box.module.css";
  */
 export type ComboOption = { value: string; hint?: string };
 
-export function ComboBox({ options, name, id, value, defaultValue = "", onChange, placeholder, required, ariaLabel, allowCustom = true, disabled, inputStyle }: {
+export function ComboBox({ options, name, id, value, defaultValue = "", onChange, placeholder, required, ariaLabel, allowCustom = true, disabled, inputStyle, customLabel, limit, onChoose }: {
   options: readonly (string | ComboOption)[];
   name?: string;
   id?: string;
@@ -27,6 +27,12 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
   /** Whether something that is not in the list is kept as typed. */
   allowCustom?: boolean;
   disabled?: boolean;
+  /** Called only when a row is picked, not on every letter typed. */
+  onChoose?: (value: string) => void;
+  /** What the "keep what I typed" row says; by default, Use “…”. */
+  customLabel?: (typed: string) => string;
+  /** With a very long list, how many choices to draw at once; typing narrows to the rest. */
+  limit?: number;
   /** For pages outside the product's stylesheet, such as the public intake. */
   inputStyle?: CSSProperties;
 }) {
@@ -44,7 +50,9 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
 
   const items: ComboOption[] = options.map((o) => (typeof o === "string" ? { value: o } : o));
   const needle = text.trim().toLowerCase();
-  const shown = filtering && needle ? items.filter((o) => o.value.toLowerCase().includes(needle) || (o.hint ?? "").toLowerCase().includes(needle)) : items;
+  const matching = filtering && needle ? items.filter((o) => o.value.toLowerCase().includes(needle) || (o.hint ?? "").toLowerCase().includes(needle)) : items;
+  const shown = limit && matching.length > limit ? matching.slice(0, limit) : matching;
+  const hidden = matching.length - shown.length;
   const exact = items.some((o) => o.value.toLowerCase() === needle);
   const custom = allowCustom && needle && !exact ? text.trim() : "";
 
@@ -54,6 +62,7 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
   };
   const choose = (next: string) => {
     set(next);
+    onChoose?.(next);
     setOpen(false);
     setFiltering(false);
     setActive(-1);
@@ -134,10 +143,11 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
               onMouseDown={(event) => { event.preventDefault(); choose(row.value); }}
               onMouseEnter={() => setActive(index)}
             >
-              {row.kind === "custom" ? <span>Use “{row.value}”</span> : <span>{row.value}</span>}
+              {row.kind === "custom" ? <span>{customLabel ? customLabel(row.value) : `Use “${row.value}”`}</span> : <span>{row.value}</span>}
               {row.kind === "option" && row.hint ? <small>{row.hint}</small> : null}
             </li>
           ))}
+          {hidden > 0 ? <li className={styles.more} role="presentation">{hidden.toLocaleString()} more. Type a few letters to narrow the list.</li> : null}
         </ul>
       )}
     </div>
