@@ -28,11 +28,12 @@ export async function GET(request: Request) {
     // Course Finder, so a hidden one can be found again and put back.
     if (url.searchParams.get("masters") === "1") {
       if (session.identity.role === "client") throw new LiveAccessError(403, "Course Finder masters are available to staff only.");
-      const all = await supabaseRequest<Json[]>(
-        "/rest/v1/institutions?select=id,name,country,city,active&order=name.asc&limit=5000",
-        { method: "GET" }, token,
-      );
-      return appendRefreshCookies(Response.json({ ok: true, institutions: all }), session.refreshed, request);
+      // Searched in the database as the person types. The list used to be
+      // read whole and searched in the browser, but the database returns at
+      // most a thousand rows to one request, so in a large catalogue every
+      // university after the first thousand names could never be found.
+      const found = await findInstitutions(optional(url.searchParams.get("q")) ?? "", token);
+      return appendRefreshCookies(Response.json({ ok: true, institutions: found }), session.refreshed, request);
     }
     // One institution in full, with the courses recorded under it, for editing.
     const detail = url.searchParams.get("institutionDetail");
@@ -84,15 +85,12 @@ export async function GET(request: Request) {
         token,
       );
     }
-    const institutions = await
-      // Small compared to the course catalogue -- the list an administrator
-      // picks from when adding a course, and looks a new institution up
-      // against before adding a duplicate.
-      supabaseRequest<Json[]>(
-        "/rest/v1/institutions?select=id,name,country,city&active=eq.true&order=name.asc&limit=5000",
-        { method: "GET" },
-        token,
-      );
+    // The list a filter or a form picks an institution from. It is read in
+    // pages because the database returns at most a thousand rows to one
+    // request; read in one go, every institution past the first thousand
+    // names was missing from the pickers. A caller that already holds the
+    // list asks for it to be left out.
+    const institutions = url.searchParams.get("institutions") === "0" ? undefined : await allActiveInstitutions(token);
     const sources = await supabaseRequest<Json[]>(
       "/rest/v1/course_source_registry?select=country_code,country_name,source_system,source_name,source_url,authority_type,coverage,sync_mode,status,last_success_at,last_error&order=country_name.asc",
       { method: "GET" }, token,
@@ -195,6 +193,59 @@ export async function POST(request: Request) {
   } catch (error) {
     return apiError(error);
   }
+}
+
+async function allActiveInstitutions(token: string): Promise<Json[]> {
+  const rows: Json[] = [];
+  for (let offset = 0; offset < 20_000; offset += 1000) {
+    const page = await supabaseRequest<Json[]>(
+      `/rest/v1/institutions?select=id,name,country,city&active=eq.true&order=name.asc,id.asc&limit=1000&offset=${offset}`,
+      { method: "GET" }, token,
+    );
+    rows.push(...page);
+    if (page.length < 1000) break;
+  }
+  return rows;
+}
+
+const SEARCH_NOISE = new Set(["of", "the", "and", "for", "in", "at", "de", "la"]);
+/**
+ * Institutions matching what was typed, best first. Every word typed has to
+ * appear in the name, in any order ("institute polytechnic" finds
+ * "Polytechnic Institute Australia"). When nothing matches, the words are
+ * shortened to their first four letters, which forgives a misspelling later
+ * in a word ("polythnetic"), and failing that one word at a time is left out.
+ * A country or city typed on its own lists the institutions there.
+ */
+async function findInstitutions(query: string, token: string): Promise<Json[]> {
+  const select = "/rest/v1/institutions?select=id,name,country,city,active&order=name.asc&limit=50";
+  const read = (filters: string[]) =>
+    supabaseRequest<Json[]>(`${select}${filters.map((filter) => `&${filter}`).join("")}`, { method: "GET" }, token);
+  const words = query.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 1 && !SEARCH_NOISE.has(word)).slice(0, 6);
+  if (!words.length) return read([]);
+  const named = (parts: string[]) => parts.map((part) => `name=ilike.*${part}*`);
+  const place = words.join(" ");
+  const [exact, placed] = await Promise.all([
+    read(named(words)),
+    read([`or=(country.ilike.*${place}*,city.ilike.*${place}*)`]).catch(() => [] as Json[]),
+  ]);
+  let rows = exact;
+  if (!rows.length) {
+    const stems = words.map((word) => (word.length > 4 ? word.slice(0, 4) : word));
+    rows = await read(named(stems));
+    if (!rows.length && stems.length > 1) {
+      const partial = await Promise.all(stems.map((_, skip) => read(named(stems.filter((__, index) => index !== skip)))));
+      // Those matching most of the words come first.
+      const seen = new Map<string, { row: Json; hits: number }>();
+      for (const list of partial) for (const row of list) {
+        const key = String(row.id);
+        seen.set(key, { row, hits: (seen.get(key)?.hits ?? 0) + 1 });
+      }
+      rows = [...seen.values()].sort((a, b) => b.hits - a.hits).map((item) => item.row).slice(0, 50);
+    }
+  }
+  const ids = new Set(rows.map((row) => String(row.id)));
+  return [...rows, ...placed.filter((row) => !ids.has(String(row.id)))].slice(0, 50);
 }
 
 async function insert(table: string, value: Json, token: string) {

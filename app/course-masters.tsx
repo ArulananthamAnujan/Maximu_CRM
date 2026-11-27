@@ -61,8 +61,10 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  const loadList = useCallback(async () => {
-    const response = await fetch("/api/crm/course-finder?masters=1", { cache: "no-store" });
+  // The matches for what is typed, found in the database: the catalogue is
+  // too long to bring to the browser whole.
+  const loadList = useCallback(async (search = "") => {
+    const response = await fetch(`/api/crm/course-finder?masters=1&q=${encodeURIComponent(search)}`, { cache: "no-store" });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "Could not load universities.");
     return (result.institutions ?? []) as Institution[];
@@ -79,11 +81,16 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
     setQuery(text(detail.institution.name));
   };
   const loadDetail = async (id: string) => show(await fetchDetail(id));
+  // Searches a moment after the typing stops; the name of the university
+  // already open is not searched for again.
+  const searchFor = selected && query === selected.name ? "" : query.trim();
   useEffect(() => {
     let active = true;
-    void loadList().then(rows => { if (active) setInstitutions(rows); }).catch(reason => { if (active) setError(reason.message); });
-    return () => { active = false; };
-  }, [loadList]);
+    const timer = window.setTimeout(() => {
+      void loadList(searchFor).then(rows => { if (active) setInstitutions(rows); }).catch(reason => { if (active) setError(reason.message); });
+    }, searchFor ? 220 : 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [loadList, searchFor]);
   useEffect(() => {
     if (!institutionId) return;
     let active = true;
@@ -133,7 +140,7 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
     const data = values(event);
     const ok = await run(async () => {
       await post({ ...data, action: "create_institution" });
-      const rows = await loadList();
+      const rows = await loadList(data.name);
       setInstitutions(rows);
       const created = rows.find(item => item.name.toLowerCase() === data.name.trim().toLowerCase());
       if (created) { setAdding(null); setQuery(created.name); await loadDetail(created.id); }
@@ -145,7 +152,6 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
     const data = values(event);
     await run(async () => {
       await post({ ...data, active: data.active === "on", action: "update_institution", institutionId: selected.id });
-      setInstitutions(await loadList());
       setQuery(data.name.trim());
       await loadDetail(selected.id);
     }, "University details saved.").then(ok => { if (ok) setEditingUniversity(false); });
@@ -206,9 +212,9 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
       {/* Finding comes first, with adding a new one right beside it. */}
       <div className={styles.finderRow}>
         <label className={styles.finder}>Find a university
-          <ComboBox value={query} onChange={setQuery} onChoose={choose} limit={50}
+          <ComboBox value={query} onChange={setQuery} onChoose={choose} remote minChars={2}
             options={institutions.map(item => ({ value: item.name, hint: [item.country, item.city, item.active === false ? "Hidden" : ""].filter(Boolean).join(" · ") }))}
-            placeholder={institutions.length ? `Type a name or country — ${institutions.length.toLocaleString()} on file` : "Type a university name"}
+            placeholder="Type a university name, country or city"
             allowCustom={canManage} customLabel={typed => `Add “${typed}” as a new university`} ariaLabel="Find a university" />
         </label>
         {canManage && <button type="button" className="ghostButton" onClick={() => { setSelected(null); setCourses([]); setQuery(""); setAdding(""); setError(""); setNotice(""); }}>Add a new university</button>}
@@ -250,7 +256,7 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
           <div className={styles.coursesHead}>
             <h3>Courses by sector <span>{courseNeedle ? `${shownCount} of ${courses.length}` : courses.length}</span></h3>
             {courses.length > 0 && <div className={styles.tools}>
-              <input type="search" aria-label="Search this university's courses" placeholder="Search courses…" value={courseQuery} onChange={event => setCourseQuery(event.target.value)} />
+              <input type="search" autoComplete="off" aria-label="Search this university's courses" placeholder="Search courses…" value={courseQuery} onChange={event => setCourseQuery(event.target.value)} />
               {sectors.length > 1 && !courseNeedle && <>
                 <button type="button" className="ghostButton" onClick={() => setOpenSectors(new Set(sectors))}>Open all</button>
                 <button type="button" className="ghostButton" onClick={() => setOpenSectors(new Set())}>Close all</button>

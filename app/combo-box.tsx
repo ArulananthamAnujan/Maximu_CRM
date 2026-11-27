@@ -14,7 +14,7 @@ import styles from "./combo-box.module.css";
  */
 export type ComboOption = { value: string; hint?: string };
 
-export function ComboBox({ options, name, id, value, defaultValue = "", onChange, placeholder, required, ariaLabel, allowCustom = true, disabled, inputStyle, customLabel, limit, onChoose }: {
+export function ComboBox({ options, name, id, value, defaultValue = "", onChange, placeholder, required, ariaLabel, allowCustom = true, disabled, inputStyle, customLabel, limit, onChoose, remote, minChars = 0 }: {
   options: readonly (string | ComboOption)[];
   name?: string;
   id?: string;
@@ -27,6 +27,10 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
   /** Whether something that is not in the list is kept as typed. */
   allowCustom?: boolean;
   disabled?: boolean;
+  /** The options are already the matches for what was typed (a search done elsewhere), so they are not filtered again here. */
+  remote?: boolean;
+  /** Suggest only once this many letters are typed. A search box should not open a list just for being clicked; the arrow still shows the list on request. */
+  minChars?: number;
   /** Called only when a row is picked, not on every letter typed. */
   onChoose?: (value: string) => void;
   /** What the "keep what I typed" row says; by default, Use “…”. */
@@ -45,12 +49,14 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const [filtering, setFiltering] = useState(false);
+  // Set when the arrow is pressed: the person asked to see the list.
+  const [asked, setAsked] = useState(false);
   const root = useRef<HTMLDivElement | null>(null);
   const list = useRef<HTMLUListElement | null>(null);
 
   const items: ComboOption[] = options.map((o) => (typeof o === "string" ? { value: o } : o));
   const needle = text.trim().toLowerCase();
-  const matching = filtering && needle ? items.filter((o) => o.value.toLowerCase().includes(needle) || (o.hint ?? "").toLowerCase().includes(needle)) : items;
+  const matching = remote ? items : filtering && needle ? items.filter((o) => o.value.toLowerCase().includes(needle) || (o.hint ?? "").toLowerCase().includes(needle)) : items;
   const shown = limit && matching.length > limit ? matching.slice(0, limit) : matching;
   const hidden = matching.length - shown.length;
   const exact = items.some((o) => o.value.toLowerCase() === needle);
@@ -65,12 +71,13 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
     onChoose?.(next);
     setOpen(false);
     setFiltering(false);
+    setAsked(false);
     setActive(-1);
   };
 
   useEffect(() => {
     if (!open) return;
-    const away = (event: MouseEvent) => { if (!root.current?.contains(event.target as Node)) { setOpen(false); setFiltering(false); } };
+    const away = (event: MouseEvent) => { if (!root.current?.contains(event.target as Node)) { setOpen(false); setFiltering(false); setAsked(false); } };
     document.addEventListener("mousedown", away);
     return () => document.removeEventListener("mousedown", away);
   }, [open]);
@@ -88,7 +95,8 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
     list.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
   }, [open, active]);
 
-  const rows = [...shown.map((o) => ({ kind: "option" as const, ...o })), ...(custom ? [{ kind: "custom" as const, value: custom }] : [])];
+  const quiet = minChars > 0 && !asked && needle.length < minChars;
+  const rows = quiet ? [] : [...shown.map((o) => ({ kind: "option" as const, ...o })), ...(custom ? [{ kind: "custom" as const, value: custom }] : [])];
 
   return (
     <div className={styles.combo} ref={root}>
@@ -103,7 +111,7 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
         autoComplete="off"
         role="combobox"
         aria-label={ariaLabel}
-        aria-expanded={open}
+        aria-expanded={open && rows.length > 0}
         aria-controls={listId}
         aria-autocomplete="list"
         aria-activedescendant={open && active >= 0 ? `${listId}-${active}` : undefined}
@@ -114,7 +122,7 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
           setOpen(true);
           // The first match is ready to take with Enter; with none, nothing is.
           const probe = typed.trim().toLowerCase();
-          setActive(probe && items.some((o) => o.value.toLowerCase().includes(probe) || (o.hint ?? "").toLowerCase().includes(probe)) ? 0 : -1);
+          setActive(probe && (remote ? items.length > 0 : items.some((o) => o.value.toLowerCase().includes(probe) || (o.hint ?? "").toLowerCase().includes(probe))) ? 0 : -1);
         }}
         onFocus={() => { setFiltering(false); setOpen(true); }}
         onKeyDown={(event) => {
@@ -127,7 +135,7 @@ export function ComboBox({ options, name, id, value, defaultValue = "", onChange
           else if (event.key === "Tab") { setOpen(false); setFiltering(false); }
         }}
       />
-      <button type="button" className={styles.toggle} tabIndex={-1} aria-label={open ? "Hide choices" : "Show choices"} disabled={disabled} onClick={() => { setFiltering(false); setOpen(!open); }}>
+      <button type="button" className={styles.toggle} tabIndex={-1} aria-label={open ? "Hide choices" : "Show choices"} disabled={disabled} onClick={() => { setFiltering(false); setAsked(!open); setOpen(!open); }}>
         <ChevronDown size={16} />
       </button>
       {open && rows.length > 0 && (

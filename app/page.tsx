@@ -6019,6 +6019,7 @@ function catalogueLevelLabel(value: string | null | undefined) {
 function CourseFinderView({ canManage }: { canManage: boolean }) {
   const [catalogueNow] = useState(() => Date.now());
   const [universityId, setUniversityId] = useState("");
+  const institutionsLoaded = useRef(false);
   const [courses, setCourses] = useState<CourseFinderCourse[]>([]);
   const [countries, setCountries] = useState<CourseFacet[]>([]);
   const [levels, setLevels] = useState<CourseFacet[]>([]);
@@ -6077,6 +6078,7 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
       if (maxDuration) params.set("maxDuration", maxDuration);
       if (verifiedOnly) params.set("verified", "true");
       if (institution) params.set("institution", institution);
+      if (institutionsLoaded.current) params.set("institutions", "0");
       const response = await fetch(`/api/crm/course-finder?${params}`, { cache: "no-store", signal });
       const result = await response.json();
       if (!response.ok)
@@ -6085,7 +6087,9 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
       setCountries(result.countries || []);
       setLevels(result.levels || []);
       setFields(result.fields || []);
-      setInstitutions(result.institutions || []);
+      // The institution list comes with the first load only; later searches
+      // ask for it to be left out and keep the one already here.
+      if (result.institutions) { setInstitutions(result.institutions); institutionsLoaded.current = true; }
       setHealth(result.health || null);
       setSources(result.sources || []);
       setTotal(Number(result.total) || 0);
@@ -6109,7 +6113,7 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
   // by sector, with the forms to change them for those who maintain the
   // catalogue. Coming back re-reads the results, which may have changed.
   if (universityId)
-    return <CourseMasters institutionId={universityId} canManage={canManage} onClose={() => { setUniversityId(""); void load(); }} />;
+    return <CourseMasters institutionId={universityId} canManage={canManage} onClose={() => { setUniversityId(""); institutionsLoaded.current = false; void load(); }} />;
   if (!loaded)
     return (
       <article className="panel listPanel" aria-busy="true">
