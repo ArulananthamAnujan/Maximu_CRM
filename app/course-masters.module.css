@@ -1,7 +1,9 @@
 .masters{display:grid;gap:14px;padding:16px 18px}
-.head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px}
-.head h2{margin:0;font-size:18px;color:#0c293f}
-.finder{display:grid;gap:6px;font-size:14px;font-weight:600;color:#0c293f;max-width:720px}
+.back{justify-self:start;border:0;background:none;padding:0;font:inherit;font-size:14px;font-weight:600;color:#145f88;cursor:pointer}
+.back:hover,.back:focus-visible{text-decoration:underline;outline:none}
+.finderRow{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px 12px}
+.finderRow>button{min-height:42px}
+.finder{display:grid;gap:6px;font-size:14px;font-weight:600;color:#0c293f;flex:1 1 360px;max-width:640px;min-width:0}
 .finder input{font:inherit;font-weight:400;min-height:42px;padding:8px 40px 8px 12px;border:1px solid #cddde5;border-radius:8px;background:#fff;color:#15202b;box-sizing:border-box}
 .finder input:focus-visible{outline:2px solid #145f88;outline-offset:1px}
 .notice{margin:0;padding:8px 12px;border:1px solid #bfe0cd;border-radius:8px;background:#f1f9f4;color:#1b6a43;font-size:14px}
@@ -39,3 +41,17 @@
 .facts dt{font-size:13px;color:#56687a}
 .facts dd{margin:2px 0 0;font-size:14px;color:#15202b;overflow-wrap:anywhere}
 .facts a{color:#145f88}
+.university{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 20px;padding:14px 16px;border:1px solid #dbe4ea;border-radius:10px;background:#f4f8fa}
+.university>div:first-child{min-width:0;display:grid;gap:3px}
+.university h2{margin:0;font-size:20px;line-height:1.25;color:#0c293f;overflow-wrap:anywhere}
+.university p{margin:0;font-size:14px;color:#46545f;overflow-wrap:anywhere}
+.university a{color:#145f88}
+.university .actions{grid-column:auto;flex:none}
+.uniNotes{max-width:80ch}
+.badge{margin-left:10px;padding:2px 8px;border-radius:6px;background:#eef3f6;color:#56687a;font-size:12px;font-weight:600;vertical-align:middle}
+.coursesHead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px}
+.coursesHead h3{margin:0;font-size:16px;color:#0c293f}
+.coursesHead h3 span{margin-left:6px;padding:1px 8px;border-radius:6px;background:#eef3f6;color:#34495a;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.tools input{min-height:36px;width:240px;max-width:100%;box-sizing:border-box;padding:6px 10px;border:1px solid #cddde5;border-radius:8px;background:#fff;color:#15202b;font:inherit;font-size:14px}
+.sector li>.form{background:#f9fbfc}

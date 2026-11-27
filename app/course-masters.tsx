@@ -51,7 +51,11 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
   const [editingCourse, setEditingCourse] = useState("");
   // Bumped after a course is added, so the form starts again empty, dropdowns included.
   const [addRound, setAddRound] = useState(0);
-  const [addSector, setAddSector] = useState("");
+  // Where the add-course form is open: null for nowhere, "" for the general
+  // one above the sectors, otherwise inside the sector of that name.
+  const [addingIn, setAddingIn] = useState<string | null>(null);
+  const [editingUniversity, setEditingUniversity] = useState(false);
+  const [courseQuery, setCourseQuery] = useState("");
   const [openSectors, setOpenSectors] = useState<Set<string> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -89,14 +93,18 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
 
   // Courses under their sector, sectors in alphabetical order with the unsorted ones last.
   const bySector = new Map<string, Course[]>();
+  const courseNeedle = courseQuery.trim().toLowerCase();
   for (const course of courses) {
+    if (courseNeedle && !`${course.name} ${text(course.level)} ${text(course.field_of_study)}`.toLowerCase().includes(courseNeedle)) continue;
     const sector = text(course.field_of_study).trim() || NO_SECTOR;
     bySector.set(sector, [...(bySector.get(sector) ?? []), course]);
   }
   const sectors = [...bySector.keys()].sort((a, b) => (a === NO_SECTOR ? 1 : b === NO_SECTOR ? -1 : a.localeCompare(b)));
   const sectorChoices = [...new Set([...sectors.filter(name => name !== NO_SECTOR), ...COMMON_SECTORS])].sort((a, b) => a.localeCompare(b));
   // A short catalogue is shown open; a long one starts as a list of sectors to pick from.
-  const isOpen = (sector: string) => openSectors ? openSectors.has(sector) : sectors.length <= 3 || courses.length <= 12;
+  // Searching opens every sector that still has a match.
+  const isOpen = (sector: string) => Boolean(courseNeedle) || addingIn === sector || (openSectors ? openSectors.has(sector) : sectors.length <= 3 || courses.length <= 12);
+  const shownCount = [...bySector.values()].reduce((sum, list) => sum + list.length, 0);
   const toggleSector = (sector: string) => setOpenSectors(current => {
     const next = new Set(current ?? sectors.filter(isOpen));
     if (next.has(sector)) next.delete(sector); else next.add(sector);
@@ -106,7 +114,7 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
   // Picking a row opens that university; a name that is not on file starts a new one.
   const choose = (name: string) => {
     const match = institutions.find(item => item.name.toLowerCase() === name.trim().toLowerCase());
-    setError(""); setNotice(""); setEditingCourse(""); setOpenSectors(null); setAddSector("");
+    setError(""); setNotice(""); setEditingCourse(""); setOpenSectors(null); setAddingIn(null); setEditingUniversity(false); setCourseQuery("");
     if (!match) { setSelected(null); setCourses([]); setAdding(name.trim()); return; }
     setAdding(null);
     void loadDetail(match.id).catch(reason => setError(reason.message));
@@ -140,7 +148,7 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
       setInstitutions(await loadList());
       setQuery(data.name.trim());
       await loadDetail(selected.id);
-    }, "University details saved.");
+    }, "University details saved.").then(ok => { if (ok) setEditingUniversity(false); });
   };
   const createCourse = async (event: FormEvent<HTMLFormElement>) => {
     if (!selected) return;
@@ -152,6 +160,7 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
     if (ok) {
       const sector = text(data.fieldOfStudy).trim() || NO_SECTOR;
       setOpenSectors(current => new Set([...(current ?? sectors.filter(isOpen)), sector]));
+      setAddingIn(null);
       setAddRound(round => round + 1);
     }
   };
@@ -168,7 +177,7 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
   const courseFields = (course?: Course) => <>
     <label className={styles.wide}>Course name *<input name="name" required maxLength={250} defaultValue={text(course?.name)} /></label>
     <label>Study level<ComboBox name="level" defaultValue={text(course?.level)} options={STUDY_LEVELS} placeholder="Select or type" /></label>
-    <label>Sector / field of study<ComboBox name="fieldOfStudy" defaultValue={course ? text(course.field_of_study) : addSector} options={sectorChoices} placeholder="Select or type" /></label>
+    <label>Sector / field of study<ComboBox name="fieldOfStudy" defaultValue={course ? text(course.field_of_study) : addingIn && addingIn !== NO_SECTOR ? addingIn : ""} options={sectorChoices} placeholder="Select or type" /></label>
     <label>Duration in months<input name="durationMonths" type="number" min="1" max="240" step="1" defaultValue={text(course?.duration_months)} /></label>
     <label>Tuition fee<input name="tuitionFee" type="number" min="0" step="0.01" defaultValue={text(course?.tuition_fee)} /></label>
     <label>Currency<input name="currency" defaultValue={text(course?.currency) || "AUD"} required pattern="[A-Z]{3}" maxLength={3} /></label>
@@ -183,21 +192,27 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
     <label className={styles.wide}>Notes<textarea name="notes" maxLength={4000} defaultValue={text(institution?.notes)} /></label>
   </>;
 
+  const addForm = selected && canManage && addingIn !== null ? (
+    <form id="add-course-form" key={`add-${selected.id}-${addingIn}-${addRound}`} className={styles.form} onSubmit={event => void createCourse(event)}>
+      <h3>{addingIn && addingIn !== NO_SECTOR ? `New course in ${addingIn}` : "New course"}</h3>
+      {courseFields()}
+      <div className={styles.actions}><button className="primaryButton" disabled={busy} type="submit">Add course</button><button type="button" className="ghostButton" onClick={() => setAddingIn(null)}>Cancel</button></div>
+    </form>
+  ) : null;
+
   return <section className="adminStack" aria-label="University and course masters">
     <article className={`panel listPanel ${styles.masters}`}>
-      <div className={styles.head}>
-        <h2>Universities &amp; courses</h2>
-        <div className={styles.actions}>
-          {onClose && <button type="button" className="ghostButton" onClick={onClose}>Back to Course Finder</button>}
-          {canManage && <button type="button" className="ghostButton" onClick={() => { setSelected(null); setCourses([]); setQuery(""); setAdding(""); setError(""); setNotice(""); }}>Add a new university</button>}
-        </div>
+      {onClose && <button type="button" className={styles.back} onClick={onClose}>← Back to Course Finder</button>}
+      {/* Finding comes first, with adding a new one right beside it. */}
+      <div className={styles.finderRow}>
+        <label className={styles.finder}>Find a university
+          <ComboBox value={query} onChange={setQuery} onChoose={choose} limit={50}
+            options={institutions.map(item => ({ value: item.name, hint: [item.country, item.city, item.active === false ? "Hidden" : ""].filter(Boolean).join(" · ") }))}
+            placeholder={institutions.length ? `Type a name or country — ${institutions.length.toLocaleString()} on file` : "Type a university name"}
+            allowCustom={canManage} customLabel={typed => `Add “${typed}” as a new university`} ariaLabel="Find a university" />
+        </label>
+        {canManage && <button type="button" className="ghostButton" onClick={() => { setSelected(null); setCourses([]); setQuery(""); setAdding(""); setError(""); setNotice(""); }}>Add a new university</button>}
       </div>
-      <label className={styles.finder}>Find a university
-        <ComboBox value={query} onChange={setQuery} onChoose={choose} limit={50}
-          options={institutions.map(item => ({ value: item.name, hint: [item.country, item.city, item.active === false ? "Hidden" : ""].filter(Boolean).join(" · ") }))}
-          placeholder={institutions.length ? `Type a name or country — ${institutions.length.toLocaleString()} on file` : "Type a university name"}
-          allowCustom={canManage} customLabel={typed => `Add “${typed}” as a new university`} ariaLabel="Find a university" />
-      </label>
       {error && <p className="caseWorkError" role="alert">{error}</p>}
       {notice && <p className={styles.notice} role="status">{notice}</p>}
 
@@ -210,23 +225,41 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
       )}
 
       {selected && <>
-        {canManage ? <form key={`edit-${selected.id}`} className={styles.form} onSubmit={event => void saveInstitution(event)}>
+        {/* The university: what it is on the left, what you can do with it on the right. */}
+        <header className={styles.university}>
+          <div>
+            <h2>{selected.name}{selected.active === false && <span className={styles.badge}>Hidden</span>}</h2>
+            <p>{[selected.country, selected.city].filter(Boolean).join(" · ")}{selected.website ? <> · <a href={selected.website} target="_blank" rel="noreferrer">{selected.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}</a></> : null}</p>
+            {selected.notes && !editingUniversity ? <p className={styles.uniNotes}>{selected.notes}</p> : null}
+          </div>
+          {canManage && <div className={styles.actions}>
+            <button type="button" className="ghostButton" aria-expanded={editingUniversity} onClick={() => setEditingUniversity(open => !open)}>{editingUniversity ? "Close" : "Edit university"}</button>
+            <button type="button" className="primaryButton" onClick={() => { setAddingIn(""); setCourseQuery(""); }}>Add course</button>
+          </div>}
+        </header>
+        {canManage && editingUniversity && (
+          <form key={`edit-${selected.id}`} className={styles.form} onSubmit={event => void saveInstitution(event)}>
             <h3>University details</h3>
             {institutionFields(selected)}
             <label className={styles.check}><input type="checkbox" name="active" defaultChecked={selected.active !== false} /> Shown in Course Finder and application forms</label>
-            <div className={styles.actions}><button className="primaryButton" disabled={busy} type="submit">Save university</button></div>
-          </form> : (
-          <dl className={styles.facts}>
-            <div><dt>University</dt><dd>{selected.name}</dd></div>
-            <div><dt>Country</dt><dd>{[selected.country, selected.city].filter(Boolean).join(" · ")}</dd></div>
-            {selected.website ? <div><dt>Website</dt><dd><a href={selected.website} target="_blank" rel="noreferrer">{selected.website}</a></dd></div> : null}
-            {selected.notes ? <div><dt>Notes</dt><dd>{selected.notes}</dd></div> : null}
-          </dl>
+            <div className={styles.actions}><button className="primaryButton" disabled={busy} type="submit">Save university</button><button type="button" className="ghostButton" onClick={() => setEditingUniversity(false)}>Cancel</button></div>
+          </form>
         )}
 
         <div className={styles.courses}>
-          <h3>Courses at {selected.name} by sector <span>{courses.length}</span></h3>
-          {courses.length === 0 && <p className={styles.empty}>{canManage ? "No courses recorded for this university yet. Add the first one below." : "No courses are recorded for this university yet."}</p>}
+          <div className={styles.coursesHead}>
+            <h3>Courses by sector <span>{courseNeedle ? `${shownCount} of ${courses.length}` : courses.length}</span></h3>
+            {courses.length > 0 && <div className={styles.tools}>
+              <input type="search" aria-label="Search this university's courses" placeholder="Search courses…" value={courseQuery} onChange={event => setCourseQuery(event.target.value)} />
+              {sectors.length > 1 && !courseNeedle && <>
+                <button type="button" className="ghostButton" onClick={() => setOpenSectors(new Set(sectors))}>Open all</button>
+                <button type="button" className="ghostButton" onClick={() => setOpenSectors(new Set())}>Close all</button>
+              </>}
+            </div>}
+          </div>
+          {addingIn === "" && addForm}
+          {courses.length === 0 && <p className={styles.empty}>{canManage ? "No courses recorded for this university yet. Use Add course to record the first one." : "No courses are recorded for this university yet."}</p>}
+          {courses.length > 0 && sectors.length === 0 && <p className={styles.empty}>No course matches “{courseQuery.trim()}”.</p>}
           {sectors.map(sector => {
             const list = bySector.get(sector) ?? [];
             const open = isOpen(sector);
@@ -235,12 +268,14 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
                 <button type="button" className={styles.sectorToggle} aria-expanded={open} onClick={() => toggleSector(sector)}>
                   <span aria-hidden="true">{open ? "−" : "+"}</span><strong>{sector}</strong><small>{list.length} {list.length === 1 ? "course" : "courses"}</small>
                 </button>
-                {canManage && sector !== NO_SECTOR && <button type="button" className="ghostButton" aria-label={`Add a course in ${sector}`} onClick={() => { setAddSector(sector); setAddRound(round => round + 1); document.getElementById("add-course-form")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}>Add course here</button>}
+                {canManage && <button type="button" className="ghostButton" aria-label={`Add a course in ${sector}`} onClick={() => setAddingIn(sector)}>Add course</button>}
               </div>
               {open && <ul>
+                {addingIn === sector && <li>{addForm}</li>}
                 {list.map(course => <li key={course.id} className={course.active === false ? styles.hidden : ""}>
                   {editingCourse === course.id ? (
                     <form className={styles.form} onSubmit={event => void saveCourse(event, course)}>
+                      <h3>Edit course</h3>
                       {courseFields(course)}
                       <label className={styles.check}><input type="checkbox" name="active" defaultChecked={course.active !== false} /> Shown in Course Finder</label>
                       <div className={styles.actions}><button className="primaryButton" disabled={busy} type="submit">Save course</button><button type="button" className="ghostButton" onClick={() => setEditingCourse("")}>Cancel</button></div>
@@ -255,14 +290,9 @@ export function CourseMasters({ institutionId, canManage = true, onClose }: {
               </ul>}
             </section>;
           })}
-          {canManage && <form id="add-course-form" key={`add-${selected.id}-${addRound}`} className={styles.form} onSubmit={event => void createCourse(event)}>
-            <h3>Add a course to {selected.name}</h3>
-            {courseFields()}
-            <div className={styles.actions}><button className="primaryButton" disabled={busy} type="submit">Add course</button></div>
-          </form>}
         </div>
       </>}
-      {!selected && adding === null && <p className={styles.empty}>{canManage ? "Type a university name above and pick it to see its courses by sector, change its details, change its courses or add a course. If it is not on file, the same box lets you add it." : "Type a university name above and pick it to see its courses by sector."}</p>}
+      {!selected && adding === null && <p className={styles.empty}>{canManage ? "Type a university name above and pick it to see its courses by sector, change its details, change its courses or add a course." : "Type a university name above and pick it to see its courses by sector."}</p>}
     </article>
   </section>;
 }
