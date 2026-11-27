@@ -6018,6 +6018,7 @@ function catalogueLevelLabel(value: string | null | undefined) {
  */
 function CourseFinderView({ canManage }: { canManage: boolean }) {
   const [catalogueNow] = useState(() => Date.now());
+  const [universityId, setUniversityId] = useState("");
   const [courses, setCourses] = useState<CourseFinderCourse[]>([]);
   const [countries, setCountries] = useState<CourseFacet[]>([]);
   const [levels, setLevels] = useState<CourseFacet[]>([]);
@@ -6104,6 +6105,11 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [load]);
 
+  // A university's name opens that university: its details and its courses
+  // by sector, with the forms to change them for those who maintain the
+  // catalogue. Coming back re-reads the results, which may have changed.
+  if (universityId)
+    return <CourseMasters institutionId={universityId} canManage={canManage} onClose={() => { setUniversityId(""); void load(); }} />;
   if (!loaded)
     return (
       <article className="panel listPanel" aria-busy="true">
@@ -6206,7 +6212,7 @@ function CourseFinderView({ canManage }: { canManage: boolean }) {
                   <div className="courseInstitutionMark"><School size={19} /></div>
                   <div>
                     <span>{cleanCatalogueText(course.country)} · {cleanCatalogueText(course.campus || course.institution_city, "Campus to confirm")}</span>
-                    <strong>{cleanCatalogueText(course.institution_name)}</strong>
+                    <button type="button" className="courseInstitutionLink" title="See this university and its courses by sector" onClick={() => setUniversityId(course.institution_id)}>{cleanCatalogueText(course.institution_name)}</button>
                   </div>
                   <span className={current ? "sourceCurrentBadge" : "sourceReviewBadge"}>{current ? "Source checked" : "Verify with provider"}</span>
                 </header>

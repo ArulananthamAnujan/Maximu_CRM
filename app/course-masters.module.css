@@ -27,3 +27,15 @@
 .empty{margin:0;padding:14px;border:1px dashed #cddde5;border-radius:8px;color:#46545f;font-size:14px}
 @media(max-width:900px){.form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.form{grid-template-columns:1fr;padding:12px}.form .wide{grid-column:auto}}
+.sector{display:grid;gap:6px}
+.sectorHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 6px 4px 4px;border-radius:8px;background:#eef3f6}
+.sectorToggle{display:flex;align-items:baseline;gap:10px;flex:1;min-width:0;min-height:36px;padding:0 8px;border:0;background:transparent;color:#0c293f;font:inherit;text-align:left;cursor:pointer;border-radius:6px}
+.sectorToggle:focus-visible{outline:2px solid #145f88;outline-offset:1px}
+.sectorToggle span{width:12px;font-weight:700;color:#145f88}
+.sectorToggle strong{font-size:15px;overflow-wrap:anywhere}
+.sectorToggle small{font-size:13px;color:#56687a;white-space:nowrap}
+.sector ul{padding-left:12px}
+.facts{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px 20px;padding:12px 16px;border:1px solid #dbe4ea;border-radius:10px;background:#fff}
+.facts dt{font-size:13px;color:#56687a}
+.facts dd{margin:2px 0 0;font-size:14px;color:#15202b;overflow-wrap:anywhere}
+.facts a{color:#145f88}
