@@ -214,7 +214,8 @@ const SEARCH_NOISE = new Set(["of", "the", "and", "for", "in", "at", "de", "la"]
  * appear in the name, in any order ("institute polytechnic" finds
  * "Polytechnic Institute Australia"). When nothing matches, the words are
  * shortened to their first four letters, which forgives a misspelling later
- * in a word ("polythnetic"), and failing that one word at a time is left out.
+ * in a word ("polythnetic"), then to their last four, which forgives one at
+ * the start, and failing that one word at a time is left out.
  * A country or city typed on its own lists the institutions there.
  */
 async function findInstitutions(query: string, token: string): Promise<Json[]> {
@@ -233,6 +234,9 @@ async function findInstitutions(query: string, token: string): Promise<Json[]> {
   if (!rows.length) {
     const stems = words.map((word) => (word.length > 4 ? word.slice(0, 4) : word));
     rows = await read(named(stems));
+    // A slip near the start of a word ("ploytechnic") leaves its ending
+    // intact, so the last letters are tried when the first ones find nothing.
+    if (!rows.length) rows = await read(named(words.map((word) => (word.length > 5 ? word.slice(-4) : word))));
     if (!rows.length && stems.length > 1) {
       const partial = await Promise.all(stems.map((_, skip) => read(named(stems.filter((__, index) => index !== skip)))));
       // Those matching most of the words come first.

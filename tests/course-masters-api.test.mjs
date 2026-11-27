@@ -103,3 +103,7 @@ test('A misspelt university name still finds it by the start of each word',async
  const result=await read('/api/crm/course-finder?masters=1&q='+encodeURIComponent('polythnetic institute'),url=>{const names=url.searchParams.getAll('name');return names.join()==='ilike.*poly*,ilike.*inst*'?[{...row(1),name:'Polytechnic Institute Australia'}]:[];});
  assert.deepEqual(result.body.institutions.map(i=>i.name),['Polytechnic Institute Australia']);
 });
+test('A slip at the start of a word still finds the university by the word ending',async()=>{
+ const result=await read('/api/crm/course-finder?masters=1&q=ploytechnic',url=>url.searchParams.getAll('name').join()==='ilike.*hnic*'?[{...row(1),name:'Polytechnic Institute Australia'}]:[]);
+ assert.deepEqual(result.body.institutions.map(i=>i.name),['Polytechnic Institute Australia']);
+});
